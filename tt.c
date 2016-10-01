@@ -1,0 +1,2449 @@
+
+#include "alloca.h"
+#include "errno.h"
+#include "stdio.h"
+#include "stdlib.h"
+#include "string.h"
+
+/*
+	Towntalk (c)2016 Martin Cameron.
+
+	A program file consists of a list of declarations.
+	Variables are integers, strings or array references.
+	Strings have value-semantics and are immutable, can be used as byte arrays.
+	Arrays are held in separate global variables to avoid reference cycles.
+	Variable/Function/Array names must match "[A-Za-Z][A-Za-z0-9$:]*".
+	Commas within name and argument lists are optional.
+
+	Example:
+		rem { Test }
+		function add( a b ) {
+			return +( a b );
+		}
+		program main {
+			var a;
+			let a = 0;
+			while <(a 10) {
+				print a;
+				let a = add( a 1 );
+			}
+		}
+
+	Declarations:
+		rem {}                   Comment (all brackets must be balanced).
+		include "file.tt";       Include declarations from specified file.
+		const name = value;      Integer or string constant.
+		global a,b,c;            Global variables.
+		array a,b,c;             Global arrays.
+		function(a){statements}  Function, no forward declarations.
+		program {statements}     Entry point function (no arguments).
+
+	Statements:
+		rem {}                   Comment.
+		var a,b,c;               Local variable.
+		let a = expr;            Variable assignment.
+		print expr;              Write integer or string to standard output.
+		write expr;              Same as print, but do not add a newline.
+		error expr;              Same as print, but write to standard error.
+		return expr;             Return from the current function.
+		throw expr;              Return to the nearest catch statement.
+		while expr {statements}  Repeat statements until expr is zero.
+		break;                   Exit current while statement.
+		continue;                Stop current iteration of while statement.
+		if expr {statements}     Execute statements if expr is non-zero.
+		   else {statements}     Optional, execute if expr is zero.
+		try {statements}         Execute statements unless exception thrown.
+		   catch a {statements}  Assign exception to named var and execute.
+		call expr;               Evaluate expression and discard result.
+		dim [arr len];           Resize specified array.
+		set [arr idx] = expr;    Assign expression to array at index.
+
+	Expressions:
+		-123                     Decimal integer literal.
+		0x100                    Hexadecimal integer literal.
+		0888                     Octal integer literal.
+		"String"                 String literal.
+		name                     Value of named local or global variable.
+		name(expr, expr)         Call named function with specified args.
+		+(int int)               Addition.
+		-(int int)               Subtraction.
+		*(int int)               Multiplication.
+		/(int int)               Division.
+		%(int int)               Modulo division.
+		>>(int int)              Arithmetic shift-right.
+		=(int int)               Equality.
+		<(int int)               Less than.
+		<e(int int)              Less than or equal.
+		>(int int)               Greater than.
+		>e(int int)              Greater than or equal.
+		&(int int)               Logical AND.
+		|(int int)               Logical OR.
+		^(int int)               Logical XOR (for NOT use ^(int -1)).
+		!(int)                   Evaluates to 1 if non-zero, else 0.
+		[arr idx]                Array element.
+		$str(int)                Integer to string.
+		$cmp(str str)            String comparison, returns 0 if equal.
+		$cat(str str)            String concatenation.
+		$chr(str idx)            Character at idx as integer.
+		$sub(str off len)        Substring.
+		$asc(int)                Character code to string.
+		$int(str)                String to integer.
+		$len(str)                String/Array length.
+		$tup(str int)            String/Integer tuple.
+		$load("abc.bin")         Load raw bytes into string.
+		$argc                    Number of command-line arguments.
+		$argv(idx)               Command-line argument as string.
+*/
+
+/* Array or string. */
+struct array {
+	char *data;
+	int reference_count, length;
+	struct variable *values;
+};
+
+/* Variable. */
+struct variable {
+	int integer_value;
+	struct array *array_value;
+};
+
+struct string_list {
+	char *value;
+	struct string_list *next;
+};
+
+/* Global variables. */
+struct global_variable {
+	char *name;
+	struct variable value;
+	struct global_variable *next;
+};
+
+/* Expression list. */
+struct expression {
+	int oper, local;
+	struct global_variable *global;
+	struct function_declaration *function;
+	struct expression *parameters, *next;
+	int ( *evaluate )( struct expression *this, struct variable *variables,
+		struct variable *result, struct variable *exception );
+};
+
+/* Statement list. */
+struct statement {
+	int local;
+	struct variable *global;
+	struct expression *source, *destination, *index;
+	struct statement *if_block, *else_block, *next;
+	int ( *execute )( struct statement *this, struct variable *variables,
+		struct variable *result, struct variable *exception );
+};
+
+/* Execution environment. */
+struct environment {
+	int argc;
+	char **argv;
+	struct global_variable *constants;
+	struct global_variable *globals, *globals_tail;
+	struct global_variable *arrays, *arrays_tail;
+	struct function_declaration *functions, *functions_tail, *entry_point;
+};
+
+/* Function declaration list. */
+struct function_declaration {
+	char *name;
+	int num_parameters, num_variables;
+	struct environment *env;
+	struct string_list *variable_decls, *variable_decls_tail;
+	struct statement *statements, *statements_tail;
+	struct function_declaration *next;
+};
+
+/* Parser element. */
+struct element {
+	int line;
+	char *value;
+	struct element *child, *next;
+};
+
+/* Parser keyword. */
+struct keyword {
+	char *name, *syntax;
+	/* Parse the current declaration into env, or statement into prev->next. */
+	struct element* (*parse)( struct element *elem, struct environment *env,
+		struct function_declaration *func, struct statement *prev, char *message );
+};
+
+/* Parser operator. */
+struct operator {
+	char *name, oper;
+	int num_operands;
+	int ( *evaluate )( struct expression *this, struct variable *variables,
+		struct variable *result, struct variable *exception );
+};
+
+/* Forward declarations. */
+static void dispose_variable( struct variable *var );
+static int validate_name( char *name );
+static int validate_decl( struct element *elem, struct environment *env, char *message );
+static int parse_tt_file( char *file_name, struct environment *env, char *message );
+static struct element* parse_decl_list( struct element *elem, struct environment *env,
+	int (*add)( struct environment *env, struct element *elem, char *message ), char *message );
+static int parse_expressions( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct expression *prev, char *message );
+static struct element* parse_if_statement( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct statement *prev, char *message );
+static struct element* parse_while_statement( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct statement *prev, char *message );
+static struct element* parse_try_statement( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct statement *prev, char *message );
+
+static void print_element( struct element *elem, int indent ) {
+	int i;
+	while( elem ) {
+		for( i = 0; i < indent; i++ ) {
+			printf( " " );
+		}
+		printf( "%s\n", elem->value );
+		if( elem->child ) {
+			print_element( elem->child, indent + 2 );
+		}
+		elem = elem->next;
+	}
+}
+
+static int parse_string( char *buffer, int idx, struct element *elem ) {
+	int offset = idx, length = 0;
+	char chr = '"';
+	while( chr >= 32 ) {
+		chr = buffer[ idx++ ];
+		if( chr == '\\' ) {
+			chr = buffer[ idx++ ];
+		} else if( chr == '"' ) {
+			break;
+		}
+	}
+	length = idx - offset + 1;
+	elem->value = malloc( sizeof( char ) * length + 1 );
+	if( elem->value ) {
+		elem->value[ 0 ] = '"';
+		memcpy( &elem->value[ 1 ], &buffer[ offset ], length );
+		elem->value[ length ] = 0;
+	} else {
+		return -1;
+	}
+	return idx;
+}
+
+static char* new_string( char *source ) {
+	char *dest = malloc( sizeof( char ) * strlen( source ) + 1 );
+	if( dest ) {
+		strcpy( dest, source );
+	}
+	return dest;
+}
+
+static char* unquote_string( char *value ) {
+	int offset = 0, length = 0, chr = 1;
+	if( value ) {
+		while( chr ) {
+			chr = value[ offset++ ];
+			if( chr == '\\' ) {
+				chr = value[ offset++ ];
+				value[ length++ ] = chr;
+			} else if( chr != '"' ) {
+				value[ length++ ] = chr;
+			}
+		}
+	}
+	return value;
+}
+
+static int parse_child_element( char *buffer, int idx, struct element *parent, char *message ) {
+	struct element *elem = NULL;
+	int offset = idx, length = 0, line = parent->line;
+	char chr = '\n';
+	while( chr ) {
+		chr = buffer[ idx++ ];
+		if( chr <= 32 || strchr( "\"#(),;=[]{}", chr ) ) {
+			if( length > 0 ) {
+				if( elem == NULL ) {
+					elem = malloc( sizeof( struct element ) );
+					parent->child = elem;
+				} else {
+					elem->next = malloc( sizeof( struct element ) );
+					elem = elem->next;
+				}
+				if( elem ) {
+					elem->line = line;
+					elem->child = elem->next = NULL;
+					elem->value = malloc( sizeof( char ) * length + 1 );
+					if( elem->value ) {
+						memcpy( elem->value, &buffer[ offset ], length );
+						elem->value[ length ] = 0;
+						/*printf("%d %d %c :%s\n",offset,length,chr,elem->value);*/
+					} else {
+						strcpy( message, "Out of memory." );
+						return -1;
+					}
+				} else {
+					strcpy( message, "Out of memory." );
+					return -1;
+				}
+			}
+			if( chr == '\n' || chr == '#' ) {
+				while( chr >= 32 ) {
+					chr = buffer[ idx++ ];
+				}
+				if( chr == '\n' ) {
+					line++;
+				}
+			} else if( chr != 0 && strchr( "\"(,;=[{", chr ) ) {
+				if( elem == NULL ) {
+					elem = malloc( sizeof( struct element ) );
+					parent->child = elem;
+				} else {
+					elem->next = malloc( sizeof( struct element ) );
+					elem = elem->next;
+				}
+				if( elem ) {
+					elem->line = line;
+					elem->child = elem->next = NULL;
+					if( chr == '"' ) {
+						idx = parse_string( buffer, idx, elem );
+						if( idx < 0 ) {
+							return idx;
+						}
+						if( buffer[ idx - 1 ] != '"' ) {
+							sprintf( message, "Unclosed string on line %d.", line );
+							return -3;
+						}
+					} else {
+						elem->value = malloc( sizeof( char ) * 2 );
+						if( elem->value ) {
+							elem->value[ 0 ] = chr;
+							elem->value[ 1 ] = 0;
+							if( chr != ',' && chr != ';' && chr != '=' ) {
+								idx = parse_child_element( buffer, idx, elem, message );
+								if( idx > 0 ) {
+									line = elem->line - line;
+									elem->line = elem->line - line;
+									line = elem->line + line;
+									offset = buffer[ idx - 1 ] - chr;
+									if( offset < 1 || offset > 2 ) {
+										sprintf( message, "Unclosed element on line %d.", line );
+										return -2;
+									}
+								} else {
+									return idx;
+								}
+							}
+						} else {
+							strcpy( message, "Out of memory." );
+							return -1;
+						}
+					}
+				} else {
+					strcpy( message, "Out of memory." );
+					return -1;
+				}
+			} else if( chr == ')' || chr == ']' || chr == '}' ) {
+				parent->line = line;
+				return idx;
+			}
+			offset = idx;
+			length = 0;
+		} else {
+			length++;
+		}
+	}
+	return idx;
+}
+
+static void dispose_element( struct element *elem ) {
+	if( elem->value ) {
+		free( elem->value );
+	}
+	if( elem->child ) {
+		dispose_element( elem->child );
+	}
+	if( elem->next ) {
+		dispose_element( elem->next );
+	}
+	free( elem );
+}
+
+static struct element* parse_element( char *buffer, char *message ) {
+	int idx;
+	struct element elem;
+	elem.line = 1;
+	elem.value = NULL;
+	elem.child = elem.next = NULL;
+	idx = parse_child_element( buffer, 0, &elem, message );
+	if( idx > 0 ) {
+		if( buffer[ idx - 1 ] != 0 ) {
+			sprintf( message, "Unexpected closing bracket '%c' on line %d.", buffer[ idx - 1 ], elem.line );
+			idx = -4;
+		}
+	}
+	if( idx < 0 ) {
+		dispose_element( elem.child );
+		elem.child = NULL;
+	}
+	return elem.child;
+}
+
+static int load_file( char *file_name, char *buffer, char *message ) {
+	int file_length = -1, bytes_read;
+	FILE *input_file = fopen( file_name, "rb" );
+	if( input_file != NULL ) {
+		if( fseek( input_file, 0L, SEEK_END ) == 0 ) {
+			file_length = ftell( input_file );
+			if( file_length >= 0 && buffer ) {
+				if( fseek( input_file, 0L, SEEK_SET ) == 0 ) {
+					bytes_read = fread( buffer, 1, file_length, input_file ); 
+					if( bytes_read != file_length ) {
+						file_length = -1;
+					}
+				} else {
+					file_length = -1;
+				}
+			}
+		}
+		fclose( input_file );
+	}
+	if( file_length < 0 ) {
+		strncpy( message, strerror( errno ), 63 );
+		message[ 63 ] = 0;
+	}
+	return file_length;
+}
+
+static void dispose_string_list( struct string_list *str ) {
+	struct string_list *next;
+	while( str ) {
+		next = str->next;
+		free( str->value );
+		free( str );
+		str = next;
+	}
+}
+
+static void dispose_variable( struct variable *var ) {
+	int idx, len;
+	struct array *arr = var->array_value;
+	if( arr && --arr->reference_count < 1 ) {
+		free( arr->data );
+		if( arr->values ) {
+			idx = 0, len = arr->length;
+			while( idx < len ) {
+				dispose_variable( &arr->values[ idx++ ] );
+			}
+			free( arr->values );
+		}
+		free( arr );
+	}
+	var->array_value = NULL;
+}
+
+static void assign_variable( struct variable *src, struct variable *dest ) {
+	dispose_variable( dest );
+	dest->integer_value = src->integer_value;
+	dest->array_value = src->array_value;
+	if( dest->array_value ) {
+		dest->array_value->reference_count++;
+	}
+}
+
+static void dispose_global_variables( struct global_variable *global ) {
+	struct global_variable *next;
+	while( global ) {
+		next = global->next;
+		free( global->name );
+		dispose_variable( &global->value );
+		free( global );
+		global = next;
+	}
+}
+
+static void dispose_expressions( struct expression *expr ) {
+	struct expression *next;
+	while( expr ) {
+		next = expr->next;
+		dispose_expressions( expr->parameters );
+		free( expr );
+		expr = next;
+	}
+}
+
+static void dispose_statements( struct statement *statements ) {
+	struct statement *next;
+	while( statements ) {
+		next = statements->next;
+		dispose_expressions( statements->source );
+		dispose_expressions( statements->destination );
+		dispose_expressions( statements->index );
+		dispose_statements( statements->if_block );
+		dispose_statements( statements->else_block );
+		free( statements );
+		statements = next;
+	}
+}
+
+static void dispose_function_declarations( struct function_declaration *function ) {
+	struct function_declaration *next;
+	while( function ) {
+		next = function->next;
+		free( function->name );
+		dispose_string_list( function->variable_decls );
+		dispose_statements( function->statements );
+		free( function );
+		function = next;
+	}
+}
+
+static struct environment* new_environment() {
+	struct environment *env = malloc( sizeof( struct environment ) );
+	if( env ) {
+		env->argc = 0;
+		env->argv = NULL;
+		env->constants = NULL;
+		env->globals = env->globals_tail = NULL;
+		env->arrays = env->arrays_tail = NULL;
+		env->functions = env->functions_tail = env->entry_point = NULL;
+	}
+	return env;
+}
+
+static void dispose_environment( struct environment *env ) {
+	if( env ) {
+		dispose_global_variables( env->constants );
+		dispose_global_variables( env->globals );
+		dispose_global_variables( env->arrays );
+		dispose_function_declarations( env->functions );
+		free( env );
+	}
+}
+
+static struct string_list *new_string_list( char *value ) {
+	struct string_list *str = malloc( sizeof( struct string_list ) );
+	if( str ) {
+		str->value = new_string( value );
+		if( str->value ) {
+			str->next = NULL;
+		} else {
+			free( str );
+			str = NULL;
+		}
+	}
+	return str;
+}
+
+static int get_string_list_index( struct string_list *list, char *value ) {
+	int idx = 0;
+	while( list && strcmp( list->value, value ) ) {
+		idx++;
+		list = list->next;
+	}
+	if( list == NULL ) {
+		idx = -1;
+	}
+	return idx;
+}
+
+static struct array* new_array() {
+	struct array *arr = malloc( sizeof( struct array ) );
+	if( arr ) {
+		arr->data = NULL;
+		arr->reference_count = arr->length = 0;
+		arr->values = NULL;
+	}
+	return arr;
+}
+
+static int throw( struct variable *exception, int integer, char *string ) {
+	struct array *arr = NULL;
+	if( string ) {
+		arr = new_array();
+		if( arr ) {
+			arr->reference_count = 1;
+			arr->data = new_string( string );
+			if( arr->data ) {
+				arr->length = strlen( arr->data );
+			}
+		}
+	}
+	dispose_variable( exception );
+	exception->integer_value = integer;
+	exception->array_value = arr;
+	return 0;
+}
+
+static struct global_variable* new_global_variable( char *name, char *value, int line, char *message ) {
+	char *end = NULL;
+	struct array *arr;
+	struct global_variable *global = malloc( sizeof( struct global_variable ) );
+	if( global ) {
+printf("Global '%s'\n", name);
+		global->name = new_string( name );
+		if( global->name ) {
+			global->value.integer_value = 0;
+			global->value.array_value = NULL;
+			global->next = NULL;
+			if( value ) {
+				if( value[ 0 ] == '"' ) {
+					/* String constant. */
+					arr = new_array();
+					if( arr ) {
+						global->value.array_value = arr;
+						arr->data = unquote_string( new_string( value ) );
+						if( arr->data ) {
+							arr->reference_count = 1;
+							arr->length = strlen( arr->data );
+						} else {
+							strcpy( message, "Out of memory." );
+						}
+					} else {
+						strcpy( message, "Out of memory." );
+					}
+				} else {
+					/* Integer constant. */
+					global->value.integer_value = strtol( value, &end, 0 );
+					if( end[ 0 ] != 0 ) {
+						sprintf( message, "Invalid integer constant '%s' at line %d.", value, line );
+					}
+				}
+			}
+		} else {
+			strcpy( message, "Out of memory." );
+		}
+	} else {
+		strcpy( message, "Out of memory." );
+	}
+	if( global && message[ 0 ] != 0 ) {
+		dispose_global_variables( global );
+		global = NULL;
+	}
+	return global;
+}
+
+static struct global_variable* new_array_variable( char *name ) {
+	struct array *arr;
+	struct global_variable *global = malloc( sizeof( struct global_variable ) );
+	if( global ) {
+		global->name = new_string( name );
+		if( global->name ) {
+			global->value.integer_value = 0;
+			global->value.array_value = NULL;
+			global->next = NULL;
+			arr = new_array();
+			if( arr ) {
+				global->value.array_value = arr;
+				arr->data = new_string( "#Array@" );
+				if( arr->data ) {
+					arr->reference_count = 1;
+					arr->values = malloc( sizeof( struct variable ) );
+					if( arr->values ) {
+						arr->values->integer_value = 0;
+						arr->values->array_value = NULL;
+printf("Array '%s'\n", name);
+					} else {
+						dispose_global_variables( global );
+						global = NULL;
+					}
+				} else {
+					dispose_global_variables( global );
+					global = NULL;
+				}
+			} else {
+				dispose_global_variables( global );
+				global = NULL;
+			}
+		} else {
+			free( global );
+			global = NULL;
+		}
+	}
+	return global;
+}
+
+static struct statement* new_statement( char *message ) {
+	struct statement *stmt = malloc( sizeof( struct statement ) );
+	if( stmt ) {
+		stmt->local = 0;
+		stmt->global = NULL;
+		stmt->source = stmt->destination = stmt->index = NULL;
+		stmt->if_block = stmt->else_block = stmt->next = NULL;
+		stmt->execute = NULL;
+	} else {
+		strcpy( message, "Out of memory." );
+	}
+	return stmt;
+}
+
+static int execute_global_assignment( struct statement *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	struct variable *destination = this->global;
+	return this->source->evaluate( this->source, variables, destination, exception );
+}
+
+static int execute_local_assignment( struct statement *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	struct variable *destination = &variables[ this->local ];
+	return this->source->evaluate( this->source, variables, destination, exception );
+}
+
+static int execute_print_statement( struct statement *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	struct variable value = { 0, NULL };
+	if( this->source->evaluate( this->source, variables, &value, exception ) ) {
+		if( value.array_value && value.array_value->data ) {
+			puts( value.array_value->data );
+		} else {
+			printf( "%d\n", value.integer_value );
+		}
+		dispose_variable( &value );
+		return 1;
+	}
+	return 0;
+}
+
+static int execute_error_statement( struct statement *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	struct variable value = { 0, NULL };
+	if( this->source->evaluate( this->source, variables, &value, exception ) ) {
+		if( value.array_value && value.array_value->data ) {
+			fputs( value.array_value->data, stderr );
+			fputc( '\n', stderr );
+		} else {
+			fprintf( stderr, "%d\n", value.integer_value );
+		}
+		dispose_variable( &value );
+		return 1;
+	}
+	return 0;
+}
+
+static int execute_write_statement( struct statement *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	struct variable value = { 0, NULL };
+	if( this->source->evaluate( this->source, variables, &value, exception ) ) {
+		if( value.array_value && value.array_value->data ) {
+			fputs( value.array_value->data, stdout );
+		} else {
+			printf( "%d", value.integer_value );
+		}
+		dispose_variable( &value );
+		return 1;
+	}
+	return 0;
+}
+
+static int execute_throw_statement( struct statement *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	this->source->evaluate( this->source, variables, exception, exception );
+	return 0;
+}
+
+static int execute_return_statement( struct statement *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	if( this->source->evaluate( this->source, variables, result, exception ) ) {
+		return 2;
+	}
+	return 0;
+}
+
+static int execute_break_statement( struct statement *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	return 3;
+}
+
+static int execute_continue_statement( struct statement *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	return 4;
+}
+
+static int execute_try_statement( struct statement *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	int ret;
+	struct variable *exc = &variables[ this->local ];
+	struct statement *stmt = this->if_block;
+	while( stmt ) {
+		ret = stmt->execute( stmt, variables, result, exc );
+		if( ret == 1 ) {
+			stmt = stmt->next;
+		} else {
+			break;
+		}
+	}
+	if( ret == 0 ) {
+		ret = 1;
+		stmt = this->else_block;
+		while( stmt ) {
+			ret = stmt->execute( stmt, variables, result, exception );
+			if( ret == 1 ) {
+				stmt = stmt->next;
+			} else {
+				break;
+			}
+		}
+	}
+	return ret;
+}
+
+static int execute_if_statement( struct statement *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	int ret;
+	struct variable condition = { 0, NULL };
+	struct statement *stmt = this->if_block;
+	ret = this->source->evaluate( this->source, variables, &condition, exception );
+	if( ret ) {
+		if( !condition.integer_value ) {
+			stmt = this->else_block;
+		}
+		dispose_variable( &condition );
+		while( stmt ) {
+			ret = stmt->execute( stmt, variables, result, exception );
+			if( ret == 1 ) {
+				stmt = stmt->next;
+			} else {
+				break;
+			}
+		}
+	}
+	return ret;
+}
+
+static int execute_while_statement( struct statement *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	struct variable condition = { 0, NULL };
+	struct statement *stmt;
+	int ret;
+	while( this->source->evaluate( this->source, variables, &condition, exception ) ) {
+		if( condition.integer_value ) {
+			dispose_variable( &condition );
+			stmt = this->if_block;
+			while( stmt ) {
+				ret = stmt->execute( stmt, variables, result, exception );
+				if( ret == 1 ) {
+					stmt = stmt->next;
+				} else if( ret == 2 ) {
+					return 2;
+				} else if( ret == 3 ) {
+					return 1;
+				} else if( ret == 4 ) {
+					break;
+				} else if( ret == 0 ) {
+					return 0;
+				}
+			}
+		} else {
+			dispose_variable( &condition );
+			return 1;
+		}
+	}
+	return 0;
+}
+
+static int execute_call_statement( struct statement *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	int ret;
+	struct variable var = { 0, NULL };
+	ret = this->source->evaluate( this->source, variables, &var, exception );
+	if( ret ) {
+		dispose_variable( &var );
+	}
+	return ret;
+}
+
+static int execute_dim_statement( struct statement *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	int ret, idx, count;
+	struct variable arr = { 0, NULL }, len = { 0, NULL }, *old, *new;
+	ret = this->destination->evaluate( this->destination, variables, &arr, exception );
+	if( ret ) {
+		ret = this->source->evaluate( this->source, variables, &len, exception );
+		if( ret ) {
+			if( arr.array_value && arr.array_value->values ) {
+				old = arr.array_value->values;
+				if( len.integer_value >= 0 ) {
+					new = calloc( len.integer_value, sizeof( struct variable ) );
+					count = arr.array_value->length;
+					if( count > len.integer_value ) {
+						memcpy( new, old, len.integer_value * sizeof( struct variable ) );
+						idx = len.integer_value;
+						while( idx < count ) {
+							dispose_variable( &old[ idx++ ] );
+						}
+					} else {
+						memcpy( new, old, count * sizeof( struct variable ) );
+					}
+					arr.array_value->values = new;
+					arr.array_value->length = len.integer_value;
+					free( old );
+				} else {
+					ret = throw( exception, 0, "Negative array size." );
+				}
+			} else {
+				ret = throw( exception, 0, "Not an array." );
+			}
+			dispose_variable( &len );
+		}
+		dispose_variable( &arr );
+	}
+	return ret;
+}
+
+static int execute_set_statement( struct statement *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	int ret;
+	struct variable arr = { 0, NULL }, idx = { 0, NULL };
+	ret = this->destination->evaluate( this->destination, variables, &arr, exception );
+	if( ret ) {
+		ret = this->index->evaluate( this->index, variables, &idx, exception );
+		if( ret ) {
+			if( arr.array_value && arr.array_value->values ) {
+				if( idx.integer_value >= 0 && idx.integer_value < arr.array_value->length ) {
+					ret = this->source->evaluate( this->source, variables,
+						&arr.array_value->values[ idx.integer_value ], exception );
+				} else {
+					ret = throw( exception, idx.integer_value, "Array index out of bounds." );
+				}
+			} else {
+				ret = throw( exception, 0, "Not an array." );
+			}
+			dispose_variable( &idx );
+		}
+		dispose_variable( &arr );
+	}
+	return ret;
+}
+
+struct expression *new_expression() {
+	struct expression *expr = malloc( sizeof( struct expression ) );
+	if( expr ) {
+		expr->oper = expr->local = 0;
+		expr->global = NULL;
+		expr->function = NULL;
+		expr->parameters = expr->next = NULL;
+		expr->evaluate = NULL;
+	}
+	return expr;
+}
+
+static int evaluate_local( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	assign_variable( &variables[ this->local ], result );
+	return 1;
+}
+
+static int evaluate_global( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	assign_variable( &this->global->value, result );
+	return 1;
+}
+
+static int evaluate_function_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	int idx, count, ret = 1;
+	struct statement *stmt;
+	struct variable *locals;
+	struct expression *parameter;
+	struct function_declaration *function = this->function;
+	count = sizeof( struct variable ) * function->num_variables;
+	locals = alloca( count );
+	memset( locals, 0, count );
+	parameter = this->parameters;
+	idx = 0, count = function->num_parameters;
+	while( idx < count ) {
+		ret = parameter->evaluate( parameter, variables, &locals[ idx++ ], exception );
+		if( ret ) {
+			parameter = parameter->next;
+		} else {
+			break;
+		}
+	}
+	if( ret ) {
+		stmt = function->statements;
+		while( stmt ) {
+			ret = stmt->execute( stmt, locals, result, exception );
+			if( ret == 1 || ret > 2 ) {
+				stmt = stmt->next;
+			} else {
+				ret = ( ret == 2 );
+				break;
+			}
+		}
+	}
+	idx = 0, count = function->num_variables;
+	while( idx < count ) {
+		dispose_variable( &locals[ idx++ ] );
+	}
+	return ret;
+}
+
+static int evaluate_index_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	int ret;
+	struct expression *parameter = this->parameters;
+	struct variable arr = { 0, NULL }, idx = { 0, NULL };
+	ret = parameter->evaluate( parameter, variables, &arr, exception );
+	if( ret ) {
+		parameter = parameter->next;
+		ret = parameter->evaluate( parameter, variables, &idx, exception );
+		if( ret ) {
+			if( arr.array_value && arr.array_value->values ) {
+				if( idx.integer_value >= 0 && idx.integer_value < arr.array_value->length ) {
+					assign_variable( &arr.array_value->values[ idx.integer_value ], result );
+				} else {
+					ret = throw( exception, idx.integer_value, "Array index out of bounds." );
+				}
+			} else {
+				ret = throw( exception, 0, "Not an array." );
+			}
+			dispose_variable( &idx );
+		}
+		dispose_variable( &arr );
+	}
+	return ret;
+}
+
+static struct function_declaration* new_function_declaration( char *name ) {
+	struct function_declaration *func = malloc( sizeof( struct function_declaration ) );
+	if( func ) {
+		func->name = new_string( name );
+		if( func->name ) {
+			func->num_parameters = func->num_variables = 0;
+			func->env = NULL;
+			func->variable_decls = func->variable_decls_tail = NULL;
+			func->statements = func->statements_tail = NULL;
+			func->next = NULL;
+printf("Function '%s'\n", name);
+		} else {
+			free( func );
+			func = NULL;
+		}
+	}
+	return func;
+}
+
+static struct function_declaration* get_function_declaration( struct function_declaration *functions, char *name ) {
+	while( functions && strcmp( functions->name, name ) ) {
+		functions = functions->next;
+	}
+	return functions;
+}
+
+static struct global_variable* get_global_variable( struct global_variable *globals, char *name ) {
+	while( globals && strcmp( globals->name, name ) ) {
+		globals = globals->next;
+	}
+	return globals;
+}
+
+static int add_global_variable( struct environment *env, struct element *elem, char *message ) {
+	char *name = elem->value;
+	struct global_variable *global = new_global_variable( name, NULL, elem->line, message );
+	if( global ) {
+		if( env->globals ) {
+			env->globals_tail->next = global;
+		} else {
+			env->globals = global;
+		}
+		env->globals_tail = global;
+	}
+	return message[ 0 ] == 0;
+}
+
+static int add_array_variable( struct environment *env, struct element *elem, char *message ) {
+	char *name = elem->value;
+	struct global_variable *arr = new_array_variable( name );
+	if( arr ) {
+		if( env->arrays ) {
+			env->arrays_tail->next = arr;
+		} else {
+			env->arrays = arr;
+		}
+		env->arrays_tail = arr;
+	} else {
+		strcpy( message, "Out of memory." );
+	}
+	return message[ 0 ] == 0;
+}
+
+static int add_function_parameter( struct environment *env, struct element *elem, char *message ) {
+	char *name = elem->value;
+	struct function_declaration *func = env->functions_tail;
+	struct string_list *param = new_string_list( name );
+	if( param ) {
+printf("Function parameter '%s'\n", name);
+		if( get_string_list_index( func->variable_decls, name ) < 0 ) {
+			func->num_parameters = func->num_variables = func->num_parameters + 1;
+			if( func->variable_decls ) {
+				func->variable_decls_tail->next = param;
+			} else {
+				func->variable_decls = param;
+			}
+			func->variable_decls_tail = param;
+		} else {
+			dispose_string_list( param );
+			sprintf( message, "Parameter '%.8s' already defined on line %d.", name, elem->line );
+		}
+	} else {
+		strcpy( message, "Out of memory." );
+	}
+	return message[ 0 ] == 0;
+}
+
+static int add_local_variable( struct environment *env, struct element *elem, char *message ) {
+	char *name = elem->value;
+	struct function_declaration *func = env->functions_tail;
+	struct string_list *param = new_string_list( name );
+	if( param ) {
+		if( get_string_list_index( func->variable_decls, name ) < 0 ) {
+printf("Local variable '%s'\n", name);
+			func->num_variables = func->num_variables + 1;
+			if( func->variable_decls ) {
+				func->variable_decls_tail->next = param;
+			} else {
+				func->variable_decls = param;
+			}
+			func->variable_decls_tail = param;
+		} else {
+			dispose_string_list( param );
+			sprintf( message, "Local variable '%.8s' already defined on line %d.", name, elem->line );
+		}
+	} else {
+		strcpy( message, "Out of memory." );
+	}
+	return message[ 0 ] == 0;
+}
+
+static struct element* parse_variable_declaration( struct element *elem, struct environment *env,
+	int (*add)( struct environment *env, struct element *elem, char *message ), char *message ) {
+	struct element *next = elem->next;
+	next = parse_decl_list( next, env, add, message );
+	if( next && next->value[ 0 ] == ';' ) {
+		next = next->next;
+	}
+	return next;
+}
+
+static struct element* parse_const_declaration( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct statement *prev, char *message ) {
+	struct element *next = elem->next;
+	struct global_variable *constant;
+	char *name = next->value;
+	next = next->next->next;
+	constant = new_global_variable( name, next->value, next->line, message );
+	if( constant ) {
+		constant->next = env->constants;
+		env->constants = constant;
+	}
+	return next->next->next;
+}
+
+static struct element* parse_comment( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct statement *prev, char *message ) {
+	return elem->next->next;
+}
+
+static struct element* parse_global_declaration( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct statement *prev, char *message ) {
+	return parse_variable_declaration( elem, env, add_global_variable, message);
+}
+
+static struct element* parse_array_declaration( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct statement *prev, char *message ) {
+	return parse_variable_declaration( elem, env, add_array_variable, message);
+}
+
+static struct element* parse_local_declaration( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct statement *prev, char *message ) {
+	return parse_variable_declaration( elem, env, add_local_variable, message);
+}
+
+static int evaluate_int_not_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	int ret;
+	struct variable var = { 0, NULL };
+	ret = this->parameters->evaluate( this->parameters, variables, &var, exception );
+	if( ret ) {
+		dispose_variable( result );
+		result->integer_value = !var.integer_value;
+		result->array_value = NULL;
+		dispose_variable( &var );
+	}
+	return ret;
+}
+
+static int evaluate_integer_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	int ret, value;
+	struct variable lhs = { 0, NULL }, rhs = { 0, NULL };
+	struct expression *parameter = this->parameters;
+	ret = parameter->evaluate( parameter, variables, &lhs, exception );
+	if( ret ) {
+		parameter = parameter->next;
+		ret = parameter->evaluate( parameter, variables, &rhs, exception );
+		if( ret ) {
+			switch( this->oper ) {
+				case '%':
+					if( rhs.integer_value != 0 ) {
+						value = lhs.integer_value % rhs.integer_value;
+					} else {
+						ret = throw( exception, 0, "Modulo division by zero." );
+					}
+					break;
+				case '&': value = lhs.integer_value  & rhs.integer_value; break;
+				case '*': value = lhs.integer_value  * rhs.integer_value; break;
+				case '+': value = lhs.integer_value  + rhs.integer_value; break;
+				case '-': value = lhs.integer_value  - rhs.integer_value; break;
+				case '/':
+					if( rhs.integer_value != 0 ) {
+						value = lhs.integer_value / rhs.integer_value;
+					} else {
+						ret = throw( exception, 0, "Integer division by zero." );
+					}
+					break;
+				case '<': value = lhs.integer_value  < rhs.integer_value; break;
+				case '>': value = lhs.integer_value  > rhs.integer_value; break;
+				case 'A': value = lhs.integer_value >> rhs.integer_value; break;
+				case 'G': value = lhs.integer_value >= rhs.integer_value; break;
+				case 'L': value = lhs.integer_value <= rhs.integer_value; break;
+				case '^': value = lhs.integer_value  ^ rhs.integer_value; break;
+				case '=': value = lhs.integer_value == rhs.integer_value; break;
+				case '|': value = lhs.integer_value  | rhs.integer_value; break;
+				default :
+					value = 0;
+					ret = throw( exception, 0, "Unhandled integer operator." );
+					break;
+			}
+			if( ret ) {
+				dispose_variable( result );
+				result->integer_value = value;
+				result->array_value = NULL;
+			}
+			dispose_variable( &rhs );
+		}
+		dispose_variable( &lhs );
+	}
+	return ret;
+}
+
+static int evaluate_sint_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	int ret, val;
+	char *end;
+	struct variable str = { 0, NULL };
+	ret = this->parameters->evaluate( this->parameters, variables, &str, exception );
+	if( ret ) {
+		if( str.array_value && str.array_value->data ) {
+			val = strtol( str.array_value->data, &end, 0 );
+			if( end[ 0 ] == 0 && str.array_value->data != end ) {
+				dispose_variable( result );
+				result->integer_value = val;
+				result->array_value = NULL;
+			} else {
+				ret = throw( exception, 0, "Unable to convert string to integer." );
+			}
+		} else {
+			ret = throw( exception, 0, "Not a string." );
+		}
+		dispose_variable( &str );
+	}
+	return ret;
+}
+
+static int evaluate_sstr_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	int ret;
+	struct array *arr;
+	struct variable val = { 0, NULL };
+	ret = this->parameters->evaluate( this->parameters, variables, &val, exception );
+	if( ret ) {
+		if( val.array_value && val.array_value->data ) {
+			assign_variable( &val, result );
+		} else {
+			arr = new_array();
+			if( arr ) {
+				arr->reference_count = 1;
+				arr->data = malloc( sizeof( char ) * 24 );
+				if( arr->data ) {
+					sprintf( arr->data, "%d", val.integer_value );
+					arr->length = strlen( arr->data );
+					dispose_variable( result );
+					result->integer_value = 0;
+					result->array_value = arr;
+				} else {
+					free( arr );
+					ret = throw( exception, 0, NULL );
+				}
+			}
+		}
+		dispose_variable( &val );
+	}
+	return ret;
+}
+
+static int evaluate_sasc_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	int ret;
+	struct array *arr;
+	struct variable val = { 0, NULL };
+	ret = this->parameters->evaluate( this->parameters, variables, &val, exception );
+	if( ret ) {
+		arr = new_array();
+		if( arr ) {
+			arr->reference_count = 1;
+			arr->data = malloc( sizeof( char ) * 2 );
+			if( arr->data ) {
+				arr->length = 2;
+				arr->data[ 0 ] = val.integer_value;
+				arr->data[ 1 ] = 0;
+				dispose_variable( result );
+				result->integer_value = 0;
+				result->array_value = arr;
+			} else {
+				free( arr );
+				ret = throw( exception, 0, NULL );
+			}
+		}
+		dispose_variable( &val );
+	}
+	return ret;
+}
+
+static int evaluate_slen_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	int ret;
+	struct variable len = { 0, NULL };
+	ret = this->parameters->evaluate( this->parameters, variables, &len, exception );
+	if( ret ) {
+		if( len.array_value ) {
+			dispose_variable( result );
+			result->integer_value = len.array_value->length;
+			result->array_value = NULL;
+		} else {
+			ret = throw( exception, 0, "Not a string or array." );
+		}
+		dispose_variable( &len );
+	}
+	return ret;
+}
+
+static int evaluate_stup_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	int ret;
+	struct expression *parameter = this->parameters;
+	struct variable str = { 0, NULL }, val = { 0, NULL };
+	ret = parameter->evaluate( parameter, variables, &str, exception );
+	if( ret ) {
+		parameter = parameter->next;
+		ret = parameter->evaluate( parameter, variables, &val, exception );
+		if( ret ) {
+			assign_variable( &str, result );
+			result->integer_value = val.integer_value;
+			dispose_variable( &val );
+		}
+		dispose_variable( &str );
+	}
+	return ret;
+}
+
+static int evaluate_sload_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	int ret, len;
+	char message[ 64 ], *buf;
+	struct array *arr;
+	struct variable file = { 0, NULL };
+	ret = this->parameters->evaluate( this->parameters, variables, &file, exception );
+	if( ret ) {
+		if( file.array_value && file.array_value->data ) {
+			len = load_file( file.array_value->data, NULL, message );
+			if( len >= 0 ) {
+				buf = malloc( len + 1 );
+				if( buf ) {
+					len = load_file( file.array_value->data, buf, message );
+					if( len >= 0 ) {
+						buf[ len ] = 0;
+						arr = new_array();
+						if( arr ) {
+							arr->reference_count = 1;
+							arr->length = len;
+							arr->data = buf;
+							dispose_variable( result );
+							result->integer_value = 0;
+							result->array_value = arr;
+						} else {
+							free( buf );
+							ret = throw( exception, 0, NULL );
+						}
+					} else {
+						free( buf );
+						ret = throw( exception, 0, message );
+					}
+				} else {
+					ret = throw( exception, 0, NULL );
+				}
+			} else {
+				ret = throw( exception, 0, message );
+			}
+		} else {
+			ret = throw( exception, 0, "Not a string." );
+		}
+		dispose_variable( &file );
+	}
+	return ret;
+}
+
+static int evaluate_scmp_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	int ret;
+	struct expression *parameter = this->parameters;
+	struct variable str1 = { 0, NULL }, str2 = { 0, NULL };
+	ret = parameter->evaluate( parameter, variables, &str1, exception );
+	if( ret ) {
+		parameter = parameter->next;
+		ret = parameter->evaluate( parameter, variables, &str2, exception );
+		if( ret ) {
+			if( str1.array_value && str1.array_value->data
+				&& str2.array_value && str2.array_value->data ) {
+				dispose_variable( result );
+				result->integer_value = strcmp( str1.array_value->data, str2.array_value->data );
+				result->array_value = NULL;
+			} else {
+				ret = throw( exception, 0, "Not a string." );
+			}
+			dispose_variable( &str2 );
+		}
+		dispose_variable( &str1 );
+	}
+	return ret;
+}
+
+static int evaluate_scat_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	int ret, len1, len2;
+	struct array *arr;
+	struct expression *parameter = this->parameters;
+	struct variable str1 = { 0, NULL }, str2 = { 0, NULL };
+	ret = parameter->evaluate( parameter, variables, &str1, exception );
+	if( ret ) {
+		parameter = parameter->next;
+		ret = parameter->evaluate( parameter, variables, &str2, exception );
+		if( ret ) {
+			if( str1.array_value && str1.array_value->data
+				&& str2.array_value && str2.array_value->data ) {
+				arr = new_array();
+				if( arr ) {
+					arr->reference_count = 1;
+					len1 = str1.array_value->length;
+					len2 = str2.array_value->length;
+					arr->data = malloc( sizeof( char ) * len1 + len2 + 1 );
+					if( arr->data ) {
+						arr->length = len1 + len2;
+						strcpy( arr->data, str1.array_value->data );
+						strcpy( &arr->data[ len1 ], str2.array_value->data );
+						arr->data[ arr->length ] = 0;
+						dispose_variable( result );
+						result->integer_value = 0;
+						result->array_value = arr;
+					} else {
+						free( arr );
+						ret = throw( exception, 0, NULL );
+					}
+				} else {
+					ret = throw( exception, 0, NULL );
+				}
+			} else {
+				ret = throw( exception, 0, "Not a string." );
+			}
+			dispose_variable( &str2 );
+		}
+		dispose_variable( &str1 );
+	}
+	return ret;
+}
+
+static int evaluate_schr_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	int ret;
+	struct expression *parameter = this->parameters;
+	struct variable str = { 0, NULL }, idx = { 0, NULL };
+	ret = parameter->evaluate( parameter, variables, &str, exception );
+	if( ret ) {
+		parameter = parameter->next;
+		ret = parameter->evaluate( parameter, variables, &idx, exception );
+		if( ret ) {
+			if( str.array_value && str.array_value->data ) {
+				if( idx.integer_value >= 0 && idx.integer_value < str.array_value->length ) {
+					dispose_variable( result );
+					result->integer_value = str.array_value->data[ idx.integer_value ];
+					result->array_value = NULL;
+				} else {
+					ret = throw( exception, idx.integer_value, "String index out of bounds." );
+				}
+			} else {
+				ret = throw( exception, 0, "Not a string." );
+			}
+			dispose_variable( &idx );
+		}
+		dispose_variable( &str );
+	}
+	return ret;
+}
+
+static int evaluate_ssub_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	int ret;
+	struct array *arr;
+	struct expression *parameter = this->parameters;
+	struct variable str = { 0, NULL }, idx = { 0, NULL }, len = { 0, NULL };
+	ret = parameter->evaluate( parameter, variables, &str, exception );
+	if( ret ) {
+		parameter = parameter->next;
+		ret = parameter->evaluate( parameter, variables, &idx, exception );
+		if( ret ) {
+			parameter = parameter->next;
+			ret = parameter->evaluate( parameter, variables, &len, exception );
+			if( ret ) {
+				if( str.array_value && str.array_value->data ) {
+					if( idx.integer_value >= 0 && len.integer_value >= 0 
+						&& idx.integer_value + len.integer_value <= str.array_value->length ) {
+						arr = new_array();
+						if( arr ) {
+							arr->reference_count = 1;
+							arr->data = malloc( sizeof( char ) * len.integer_value + 1 );
+							if( arr->data ) {
+								arr->length = len.integer_value;
+								memcpy( arr->data, &str.array_value->data[ idx.integer_value ],
+									sizeof( char ) * len.integer_value );
+								arr->data[ len.integer_value ] = 0;
+								dispose_variable( result );
+								result->integer_value = 0;
+								result->array_value = arr;
+							} else {
+								free( arr );
+								ret = throw( exception, 0, NULL );
+							}
+						} else {
+							ret = throw( exception, 0, NULL );
+						}
+					} else {
+						ret = throw( exception, idx.integer_value, "String index out of bounds." );
+					}
+				} else {
+					ret = throw( exception, 0, "Not a string." );
+				}	
+				dispose_variable( &len );
+			}
+			dispose_variable( &idx );
+		}
+		dispose_variable( &str );
+	}
+	return ret;
+}
+
+static int evaluate_sargc_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	dispose_variable( result );
+	result->integer_value = this->function->env->argc;
+	result->array_value = NULL;
+	return 1;
+}
+
+static int evaluate_sargv_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	int ret;
+	struct array *arr;
+	struct expression *parameter = this->parameters;
+	struct variable idx = { 0, NULL };
+	ret = parameter->evaluate( parameter, variables, &idx, exception );
+	if( ret ) {
+		if( idx.integer_value >= 0 && idx.integer_value < this->function->env->argc ) {
+			arr = new_array();
+			if( arr ) {
+				arr->reference_count = 1;
+				arr->data = new_string( this->function->env->argv[ idx.integer_value ] );
+				if( arr->data ) {
+					arr->length = strlen( arr->data );
+					dispose_variable( result );
+					result->integer_value = 0;
+					result->array_value = arr;
+				} else {
+					free( arr );
+					ret = throw( exception, 0, NULL );
+				}
+			} else {
+				ret = throw( exception, 0, NULL );
+			}
+		} else {
+			ret = throw( exception, idx.integer_value, "Command-line argument index out of bounds." );
+		}
+		dispose_variable( &idx );
+	}
+	return ret;
+}
+
+static struct operator operators[] = {
+	{ "!", '!', 1, &evaluate_int_not_expression },
+	{ "%", '%', 2, &evaluate_integer_expression },
+	{ "&", '&', 2, &evaluate_integer_expression },
+	{ "*", '*', 2, &evaluate_integer_expression },
+	{ "+", '+', 2, &evaluate_integer_expression },
+	{ "-", '-', 2, &evaluate_integer_expression },
+	{ "/", '/', 2, &evaluate_integer_expression },
+	{ "<", '<', 2, &evaluate_integer_expression },
+	{ "<e",'L', 2, &evaluate_integer_expression },
+	{ ">", '>', 2, &evaluate_integer_expression },
+	{ ">e",'G', 2, &evaluate_integer_expression },
+	{ ">>",'A', 2, &evaluate_integer_expression },
+	{ "^", '^', 2, &evaluate_integer_expression },
+	{ "=", '=', 2, &evaluate_integer_expression },
+	{ "|", '|', 2, &evaluate_integer_expression },
+	{ "$int", '$', 1, &evaluate_sint_expression },
+	{ "$str", '$', 1, &evaluate_sstr_expression },
+	{ "$len", '$', 1, &evaluate_slen_expression },
+	{ "$asc", '$', 1, &evaluate_sasc_expression },
+	{ "$cmp", '$', 2, &evaluate_scmp_expression },
+	{ "$cat", '$', 2, &evaluate_scat_expression },
+	{ "$chr", '$', 2, &evaluate_schr_expression },
+	{ "$tup", '$', 2, &evaluate_stup_expression },
+	{ "$sub", '$', 3, &evaluate_ssub_expression },
+	{ "$load",'$', 1, &evaluate_sload_expression },
+	{ "$argc",'$', 0, &evaluate_sargc_expression },
+	{ "$argv",'$', 1, &evaluate_sargv_expression },
+	{ NULL, 0, 0, NULL }
+};
+
+static struct operator* get_operator( char *name ) {
+	int idx = 1;
+	struct operator *oper = operators;
+	while( oper->name && strcmp( oper->name, name ) ) {
+		oper = &operators[ idx++ ];
+	}
+	return oper;
+}
+
+static struct element* parse_operator_expression( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct expression *expr, char *message ) {
+	struct element *next = elem->next;
+	struct expression prev;
+	int num_operands;
+	struct operator *oper = get_operator( elem->value );
+	if( oper->name ) {
+		expr->oper = oper->oper;
+		expr->function = func;
+		expr->evaluate = oper->evaluate;
+		if( oper->num_operands > 0 ) {
+			if( next && next->value[ 0 ] == '(' ) {
+				prev.next = NULL;
+				num_operands = parse_expressions( next->child, env, func, &prev, message );
+				expr->parameters = prev.next;
+				if( message[ 0 ] == 0 ) {
+					if( num_operands == oper->num_operands ) {
+						next = next->next;
+					} else {
+						sprintf( message, "Wrong number of arguments to '%.8s()' on line %d.", oper->name, next->line );
+					}
+				}
+			} else {
+				sprintf( message, "Expected '(' after '%s' on line %d.", oper->name, elem->line );
+			}
+		}
+	} else {
+		sprintf( message, "Unhandled expression '%.8s' on line %d.", elem->value, elem->line );
+	}
+	return next;
+}
+
+static struct element* parse_function_expression( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct function_declaration *decl, struct expression *expr, char *message ) {
+	struct element *next = elem->next;
+	struct expression prev;
+	int num_params;
+	if( next && strcmp( next->value, "(" ) == 0 ) {
+		expr->function = decl;
+		expr->evaluate = &evaluate_function_expression;
+		prev.next = NULL;
+		num_params = parse_expressions( next->child, env, func, &prev, message );
+		expr->parameters = prev.next;
+		if( message[ 0 ] == 0 ) {
+			if( num_params == expr->function->num_parameters ) {
+				next = next->next;
+			} else {
+				sprintf( message, "Wrong number of arguments to '%.8s()' on line %d.", elem->value, next->line );
+			}
+		}
+	} else {
+		sprintf( message, "Expected '(' after function name on line %d.", next->line );
+	}
+	return next;
+}
+
+static struct element* parse_index_expression( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct expression *expr, char *message ) {
+	struct expression prev;
+	prev.next = NULL;
+	parse_expressions( elem->child, env, func, &prev, message );
+	if( prev.next ) {
+		expr->parameters = prev.next;
+		expr->evaluate = &evaluate_index_expression;
+	}
+	return elem->next;
+}
+
+static struct element* parse_expression( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct expression *prev, char *message ) {
+	struct element *next = elem->next;
+	struct global_variable *constant, *global;
+	char *value = elem->value;
+	int local;
+	struct function_declaration *decl;
+	struct expression *expr = new_expression();
+	if( expr ) {
+		if( value[ 0 ] == '"' || ( value[ 0 ] >= '0' && value[ 0 ] <= '9' )
+			|| ( value[ 0 ] == '-' && ( value[ 1 ] >= '0' && value[ 1 ] <= '9' ) ) ) {
+			/* Constant. */
+			constant = new_global_variable( "#Const#", value, elem->line, message );
+			if( constant ) {
+				constant->next = env->constants;
+				env->constants = constant;
+				expr->global = constant;
+				expr->evaluate = &evaluate_global;
+			}
+		} else if( value[ 0 ] == '[' ) {
+			/* Array index operator. */
+			next = parse_index_expression( elem, env, func, expr, message );
+		} else {
+			local = get_string_list_index( func->variable_decls, value );
+			if( local >= 0 ) {
+				/* Local variable reference.*/
+				expr->local = local;
+				expr->evaluate = &evaluate_local;
+			} else {
+				global = get_global_variable( env->constants, value );
+				if( global == NULL ) {
+					global = get_global_variable( env->globals, value );
+				}
+				if( global == NULL ) {
+					global = get_global_variable( env->arrays, value );
+				}
+				if( global ) {
+					/* Global variable reference.*/
+					expr->global = global;
+					expr->evaluate = &evaluate_global;
+				} else {
+					decl = get_function_declaration( env->functions, elem->value );
+					if( decl ) {
+						/* Function.*/
+						next = parse_function_expression( elem, env, func, decl, expr, message );
+					} else {
+						/* Operator. */
+						next = parse_operator_expression( elem, env, func, expr, message );
+					}
+				}
+			}
+		}
+		if( message[ 0 ] == 0 && next && next->value[ 0 ] == '(' ) {
+			sprintf( message, "Unexpected '(' after expression on line %d.", next->line );
+		}
+		if( message[ 0 ] == 0 ) {
+			prev->next = expr;
+		} else {
+			dispose_expressions( expr );
+		}
+	} else {
+		strcpy( message, "Out of memory." );
+	}
+	return next;
+}
+
+static int parse_expressions( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct expression *prev, char *message ) {
+	int line, count = 0;
+	while( elem && message[ 0 ] == 0 ) {
+		elem = parse_expression( elem, env, func, prev, message );
+		prev = prev->next;
+		count++;
+		while( elem && message[ 0 ] == 0 && elem->value[ 0 ] == ',' ) {
+			line = elem->line;
+			elem = elem->next;
+			if( elem && elem->value[ 0 ] != ',' ) {
+				elem = parse_expression( elem, env, func, prev, message );
+				prev = prev->next;
+				count++;
+			} else {
+				sprintf( message, "Expected expression after ',' on line %d.", line );
+			}
+		}
+	}
+	return count;
+}
+
+static struct element* parse_assignment_statement( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct statement *prev, char *message ) {
+	int local;
+	struct statement *stmt;
+	struct expression expr;
+	struct global_variable *global = NULL;
+	struct element *next = elem->next;
+	local = get_string_list_index( func->variable_decls, next->value );
+	if( local < 0 ) {
+		global = get_global_variable( env->globals, next->value );
+	}
+	if( local >= 0 || global ) {
+		expr.next = NULL;
+		next = parse_expression( next->next->next, env, func, &expr, message );
+		if( expr.next ) {
+			stmt = new_statement( message );
+			if( stmt ) {
+				stmt->source = expr.next;
+				if( global ) {
+					stmt->global = &global->value;
+					stmt->execute = &execute_global_assignment;
+				} else {
+					stmt->local = local;
+					stmt->execute = &execute_local_assignment;
+				}
+				prev->next = stmt;
+				next = next->next;
+			}
+		}
+	} else {
+		sprintf( message, "Undeclared variable '%.8s' on line %d.", next->value, next->line );
+	}
+	return next;
+}
+
+static struct element* parse_single_expr_statement( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct statement *prev,
+	int ( *execute )( struct statement *this, struct variable *variables,
+	struct variable *result, struct variable *exception ), char *message ) {
+	struct expression expr;
+	struct statement *stmt;
+	struct element *next = elem->next;
+	expr.next = NULL;
+	next = parse_expression( next, env, func, &expr, message );
+	if( expr.next ) {
+		stmt = new_statement( message );
+		if( stmt ) {
+			stmt->source = expr.next;
+			stmt->execute = execute;
+			prev->next = stmt;
+			next = next->next;
+		}
+	}
+	return next;
+}
+
+static struct element* parse_print_statement( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct statement *prev, char *message ) {
+	return parse_single_expr_statement( elem, env, func, prev, &execute_print_statement, message );
+}
+
+static struct element* parse_write_statement( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct statement *prev, char *message ) {
+	return parse_single_expr_statement( elem, env, func, prev, &execute_write_statement, message );
+}
+
+static struct element* parse_error_statement( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct statement *prev, char *message ) {
+	return parse_single_expr_statement( elem, env, func, prev, &execute_error_statement, message );
+}
+
+static struct element* parse_return_statement( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct statement *prev, char *message ) {
+	return parse_single_expr_statement( elem, env, func, prev, &execute_return_statement, message );
+}
+
+static struct element* parse_throw_statement( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct statement *prev, char *message ) {
+	return parse_single_expr_statement( elem, env, func, prev, &execute_throw_statement, message );
+}
+
+static struct element* parse_break_statement( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct statement *prev, char *message ) {
+	struct statement *stmt;
+	struct element *next = elem->next;
+	stmt = new_statement( message );
+	if( stmt ) {
+		stmt->execute = &execute_break_statement;
+		prev->next = stmt;
+		next = next->next;
+	}
+	return next;
+}
+
+static struct element* parse_continue_statement( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct statement *prev, char *message ) {
+	struct statement *stmt;
+	struct element *next = elem->next;
+	stmt = new_statement( message );
+	if( stmt ) {
+		stmt->execute = &execute_continue_statement;
+		prev->next = stmt;
+		next = next->next;
+	}
+	return next;
+}
+
+static struct element* parse_call_statement( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct statement *prev, char *message ) {
+	return parse_single_expr_statement( elem, env, func, prev, &execute_call_statement, message );
+}
+
+static struct element* parse_dim_statement( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct statement *prev, char *message ) {
+	struct expression expr;
+	struct element *next = elem->next, *child = next->child;
+	struct statement *stmt = new_statement( message );
+	if( stmt ) {
+		prev->next = stmt;
+		expr.next = NULL;
+		child = parse_expression( child, env, func, &expr, message );
+		if( expr.next ) {
+			stmt->destination = expr.next;
+			expr.next = NULL;
+			child = parse_expression( child, env, func, &expr, message );
+			if( expr.next ) {
+				stmt->source = expr.next;
+				next = next->next->next;
+			}
+			stmt->execute = &execute_dim_statement;
+		}
+	}
+	return next;
+}
+
+static struct element* parse_set_statement( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct statement *prev, char *message ) {
+	struct expression expr;
+	struct element *next = elem->next, *child = next->child;
+	struct statement *stmt = new_statement( message );
+	if( stmt ) {
+		prev->next = stmt;
+		expr.next = NULL;
+		child = parse_expression( child, env, func, &expr, message );
+		if( expr.next ) {
+			stmt->destination = expr.next;
+			expr.next = NULL;
+			child = parse_expression( child, env, func, &expr, message );
+			if( expr.next ) {
+				stmt->index = expr.next;
+				expr.next = NULL;
+				next = parse_expression( next->next->next, env, func, &expr, message );
+				if( expr.next ) {
+					stmt->source = expr.next;
+					next = next->next;
+				}
+			}
+			stmt->execute = &execute_set_statement;
+		}
+	}
+	return next;
+}
+
+static struct keyword statements[] = {
+	{ "rem", "{", &parse_comment },
+	{ "var", "l;", &parse_local_declaration },
+	{ "let", "n=x;", &parse_assignment_statement },
+	{ "print", "x;", &parse_print_statement },
+	{ "write", "x;", &parse_write_statement },
+	{ "error", "x;", &parse_error_statement },
+	{ "throw", "x;", &parse_throw_statement },
+	{ "return", "x;", &parse_return_statement },
+	{ "break", ";", &parse_break_statement },
+	{ "continue", ";", &parse_continue_statement },
+	{ "if", "x{", &parse_if_statement },
+	{ "while", "x{", &parse_while_statement },
+	{ "call", "x;", &parse_call_statement },
+	{ "try", "{cn{", &parse_try_statement },
+	{ "dim", "[;", &parse_dim_statement },
+	{ "set", "[=x;", &parse_set_statement },
+	{ NULL, NULL }
+};
+
+static int is_keyword( struct keyword *keywords, char *value ) {
+	while( keywords->name ) {
+		if( strcmp( keywords->name, value ) == 0 ) {
+			return 1;
+		}
+		keywords++;
+	}
+	return 0;
+}
+
+static int validate_syntax( char *syntax, struct element *elem, struct element *key, char *message ) {
+	int idx = 1, chr = syntax[ 0 ], line = key->line;
+	while( chr && message[ 0 ] == 0 ) {
+		if( elem ) {
+			line = elem->line;
+		}
+		if( chr == '0' ) {
+			/* List end. */
+			if( elem ) {
+				sprintf( message, "Unexpected '%.8s' after '%s' on line %d.", elem->value, key->value, line );
+			}
+		} else if( strchr( "\",;={", chr ) ) {
+			/* Strings, separators or blocks. */
+			if( elem == NULL || elem->value[ 0 ] != chr ) {
+				sprintf( message, "Expected '%c' after '%s' on line %d.", chr, key->value, line );
+			}
+		} else if( chr == '(' ) {
+			/* Bracketed name list. */
+			if( elem && elem->value[ 0 ] == '(' ) {
+				if( elem->child ) {
+					validate_syntax( "l0", elem->child, elem, message );
+				}
+			} else {
+				sprintf( message, "Expected '(' after '%s' on line %d.", key->value, line );
+			}
+		} else if( chr == '[' ) {
+			/* Index expression. */
+			if( elem && elem->value[ 0 ] == '[' ) {
+				if( elem->child ) {
+					validate_syntax( "xx0", elem->child, key, message );
+				} else {
+					sprintf( message, "Expected '[' after '%s' on line %d.", key->value, line );
+				}
+			} else {
+				sprintf( message, "Expected '[' after '%s' on line %d.", key->value, line );
+			}
+		} else if( chr == 'c' ) {
+			/* Catch */
+			if( elem == NULL || strcmp( elem->value, "catch" ) ) {
+				sprintf( message, "Expected 'catch' after '%s' on line %d.", key->value, line );
+			}
+		} else if( chr == 'n' ) {
+			/* Name. */
+			if( elem == NULL || elem->value[ 0 ] == ';' ) {
+				sprintf( message, "Expected name after '%s' on line %d.", key->value, line );
+			} else if( !validate_name( elem->value ) ) {
+				sprintf( message, "Invalid name '%.8s' on line %d.", elem->value, line );
+			}
+		} else if( chr == 'l' ) {
+			/* Name list. */
+			if( validate_syntax( "n", elem, key, message ) ) {
+				while( elem->next && elem->next->value[ 0 ] != ';' && message[ 0 ] == 0 ) {
+					elem = elem->next;
+					line = elem->line;
+					if( elem->value[ 0 ] == ',' ) {
+						if( elem->next && validate_name( elem->next->value ) ) {
+							elem = elem->next;
+							line = elem->line;
+						} else {
+							sprintf( message, "Expected name after ',' on line %d.", line );							
+						}
+					} else if( !validate_name( elem->value ) ) {
+						sprintf( message, "Invalid name '%.8s' on line %d.", elem->value, line );
+					}
+				}
+			}
+		} else if( chr == 'v' ) {
+			/* String or integer constant. */
+			if( elem == NULL || strchr( "\"-0123456789", elem->value[ 0 ] ) == NULL ) {
+				sprintf( message, "Expected constant after '%s' on line %d.", key->value, line );
+			}
+		} else if( chr == 'x' ) {
+			/* Expression. */
+			if( elem && strchr( ";({", elem->value[ 0 ] ) == NULL ) {
+				if( elem->next && elem->next->value[ 0 ] == '(' ) {
+					elem = elem->next;
+				}
+			} else if( elem && elem->value[ 0 ] == '[' ) {
+				validate_syntax( "[", elem, key, message );
+			} else {
+				sprintf( message, "Expected expression after '%s' on line %d.", key->value, line );
+			}
+		} else {
+			/* Internal error. */
+			sprintf( message, "Internal error. Unknown specifier '%c' in syntax for '%s'.", chr, key->value );
+		}
+		chr = syntax[ idx++ ];
+		if( elem ) {
+			elem = elem->next;
+		}
+	}
+	return message[ 0 ] == 0;
+}
+
+static void parse_keywords( struct keyword *keywords, struct element *elem,
+	struct environment *env, struct function_declaration *func,
+	struct statement *stmt, char *message ) {
+	int idx;
+	struct keyword *key;
+	while( elem && message[ 0 ] == 0 ) {
+		idx = 1;
+		key = keywords;
+		while( key->name != NULL && strcmp( key->name, elem->value ) ) {
+			key = &keywords[ idx++ ];
+		}
+		if( key->name != NULL ) {
+			if( validate_syntax( key->syntax, elem->next, elem, message ) ) {
+				elem = key->parse( elem, env, func, stmt, message );
+				if( stmt && stmt->next ) {
+					stmt = stmt->next;
+				}
+			}
+		} else {
+			sprintf( message, "Unrecognized keyword '%.8s' on line %d.", elem->value, elem->line );
+		}
+	}
+}
+
+static struct element* parse_if_statement( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct statement *prev, char *message ) {
+	struct expression expr;
+	struct statement block, *stmt;
+	struct element *next = elem->next;
+	expr.next = NULL;
+	next = parse_expression( next, env, func, &expr, message );
+	if( expr.next ) {
+		stmt = new_statement( message );
+		if( stmt ) {
+			stmt->source = expr.next;
+			if( next->child ) {
+				block.next = NULL;
+				parse_keywords( statements, next->child, env, func, &block, message );
+				stmt->if_block = block.next;
+			}
+			if( message[ 0 ] == 0 ) {
+				next = next->next;
+				if( next && strcmp( next->value, "else" ) == 0 ) {
+					if( next->next && next->next->value[ 0 ] == '{' ) {
+						next = next->next;
+						if( next->child ) {
+							block.next = NULL;
+							parse_keywords( statements, next->child, env, func, &block, message );
+							stmt->else_block = block.next;
+						}
+						if( message[ 0 ] == 0 ) {
+							next = next->next;
+						}
+					} else {
+						sprintf( message, "Expected '{' after 'else' on line %d.", next->line );
+					}
+				}
+			}
+			stmt->execute = &execute_if_statement;
+			prev->next = stmt;
+		}
+	}
+	return next;
+}
+
+static struct element* parse_while_statement( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct statement *prev, char *message ) {
+	struct expression expr;
+	struct statement block, *stmt;
+	struct element *next = elem->next;
+	expr.next = NULL;
+	next = parse_expression( next, env, func, &expr, message );
+	if( expr.next ) {
+		stmt = new_statement( message );
+		if( stmt ) {
+			stmt->source = expr.next;
+			if( next->child ) {
+				block.next = NULL;
+				parse_keywords( statements, next->child, env, func, &block, message );
+				stmt->if_block = block.next;
+			}
+			if( message[ 0 ] == 0 ) {
+				next = next->next;
+			}
+			stmt->execute = &execute_while_statement;
+			prev->next = stmt;
+		}
+	}
+	return next;
+}
+
+static struct element* parse_try_statement( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct statement *prev, char *message ) {
+	struct statement block, *stmt;
+	struct element *next = elem->next;
+	stmt = new_statement( message );
+	if( stmt ) {
+		if( next->child ) {
+			block.next = NULL;
+			parse_keywords( statements, next->child, env, func, &block, message );
+			stmt->if_block = block.next;
+		}
+		if( message[ 0 ] == 0 ) {
+			next = next->next->next;
+			stmt->local = get_string_list_index( func->variable_decls, next->value );
+			if( stmt->local >= 0 ) {
+				next = next->next;
+				if( next->child ) {
+					block.next = NULL;
+					parse_keywords( statements, next->child, env, func, &block, message );
+					stmt->else_block = block.next;
+				}
+				if( message[ 0 ] == 0 ) {
+					next = next->next;
+				}
+				stmt->execute = &execute_try_statement;
+			} else {
+				sprintf( message, "Undeclared variable '%.8s' on line %d.", next->value, next->line );
+			}
+		}
+		prev->next = stmt;
+	}
+	return next;
+}
+
+static struct element* parse_function_declaration( struct element *elem, struct environment *env,
+	struct function_declaration *decl, struct statement *prev, char *message ) {
+	struct statement stmt;
+	struct element *next = elem->next;
+	if( validate_decl( next, env, message ) ) {
+		decl = new_function_declaration( next->value );
+		if( decl ) {
+			if( env->functions ) {
+				env->functions_tail->next = decl;
+			} else {
+				env->functions = decl;
+			}
+			env->functions_tail = decl;
+			decl->env = env;
+			next = next->next;
+			if( strcmp( next->value, "(" ) == 0 ) {
+				parse_decl_list( next->child, env, add_function_parameter, message );
+				next = next->next;
+			}
+			if( strcmp( message, "" ) == 0 ) {
+				if( next->child ) {
+					stmt.next = NULL;
+					parse_keywords( statements, next->child, env, decl, &stmt, message );
+					decl->statements = stmt.next;
+				}
+				next = next->next;
+			}
+		} else {
+			strcpy( message, "Out of memory." );
+		}
+	}
+	return next;
+}
+
+static struct element* parse_program_declaration( struct element *elem, struct environment *env,
+	struct function_declaration *decl, struct statement *prev, char *message ) {
+	struct element *next = parse_function_declaration( elem, env, decl, prev, message );
+	env->entry_point = env->functions_tail;
+	return next;
+}
+
+static struct element* parse_include( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct statement *prev, char *message ) {
+	int success;
+	char *file_name;
+	struct element *next;
+	next = elem->next;
+	if( next && strcmp( next->value, ";" ) ) {
+		file_name = new_string( next->value );
+		if( file_name ) {
+			success = parse_tt_file( unquote_string( file_name ), env, message );
+			if( success ) {
+				next = next->next;
+				if( next && strcmp( next->value, ";" ) == 0 ) {
+					next = next->next;
+				} else {
+					sprintf( message, "Expected ';' after 'include' statement on line %d.", elem->line );
+				}
+			}
+			free( file_name );
+		} else {
+			strcpy( message, "Out of memory." );
+			return next;
+		}
+	} else {
+		sprintf( message, "Expected file name after 'include' statement on line %d.", elem->line );
+	}
+	return next;
+}
+
+static struct keyword declarations[] = {
+	{ "rem", "{", &parse_comment },
+	{ "include", "\";", &parse_include },
+	{ "function", "n({", &parse_function_declaration },
+	{ "program", "n{",&parse_program_declaration },
+	{ "global", "l;", &parse_global_declaration },
+	{ "array", "l;", &parse_array_declaration },
+	{ "const", "n=v;", &parse_const_declaration },	
+	{ NULL, NULL }
+};
+
+static int validate_name( char *name ) {
+	int chr, idx, result = 1;
+	chr = name[ 0 ];
+	if( ( chr >= 'A' && chr <= 'Z') || ( chr >= 'a' && chr <= 'z' ) ) {
+		/* First character must be alphabetical.*/
+		idx = 1;
+		chr = name[ idx ];
+		while( chr ) {
+			if( chr == '$' || chr == ':' || ( chr >= '0' && chr <= '9' )
+			|| ( chr >= 'A' && chr <= 'Z' ) || ( chr >= 'a' && chr <= 'z' ) ) {
+				/* Subsequent characters must be alphanumerical, dollar or colon. */
+				chr = name[ ++idx ];
+			} else {
+				result = 0;
+			}
+		}
+	} else {
+		result = 0;
+	}
+	if( result ) {
+		/* Declaration keywords not permitted. */
+		result = !is_keyword( declarations, name );
+	}
+	if( result ) {
+		/* Statement keywords not permitted. */
+		result = !is_keyword( statements, name );
+	}
+	if( result ) {
+		/* Operator name not permitted. */
+		result = ( get_operator( name )->name == NULL );
+	}
+	return result;
+}
+
+static int validate_decl( struct element *elem, struct environment *env, char *message ) {
+	int result = 1;
+	char *name = elem->value;
+	struct global_variable *global;
+	struct function_declaration *func;
+	global = env->globals;
+	while( global ) {
+		if( strcmp( name, global->name ) == 0 ) {
+			/* Existing global variable name not permitted. */
+			result = 0;
+		}
+		global = global->next;
+	}
+	if( result ) {
+		global = env->arrays;
+		while( global ) {
+			if( strcmp( name, global->name ) == 0 ) {
+				/* Existing array name not permitted. */
+				result = 0;
+			}
+			global = global->next;
+		}
+	}
+	if( result ) {
+		func = env->functions;
+		while( func ) {
+			if( strcmp( name, func->name ) == 0 ) {
+				/* Existing function name not permitted. */
+				result = 0;
+			}
+			func = func->next;
+		}
+	}
+	if( !result ) {
+		sprintf( message, "Name '%.8s' already defined on line %d.", elem->value, elem->line );
+	}
+	return result;
+}
+
+static struct element* parse_decl_list( struct element *elem, struct environment *env,
+	int (*add)( struct environment *env, struct element *elem, char *message ), char *message ) {
+	while( elem && elem->value[ 0 ] != ';' && message[ 0 ] == 0 ) {
+		if( validate_decl( elem, env, message ) ) {
+			if( add( env, elem, message ) ) {
+				elem = elem->next;
+				if( elem && elem->value[ 0 ] == ',' ) {
+					elem = elem->next;
+				}
+			}
+		}
+	}
+	return elem;
+}
+
+static int parse_tt_program( char *program, struct environment *env, char *message ) {
+	struct element *elem;
+	elem = parse_element( program, message );
+	if( elem ) {
+/*print_element( elem, 0 );*/
+		/* Populate execution environment.*/
+		parse_keywords( declarations, elem, env, NULL, NULL, message );
+		dispose_element( elem );
+	}
+	return message[ 0 ] == 0;
+}
+
+static int parse_tt_file( char *file_name, struct environment *env, char *message ) {
+	int file_length, success = 0;
+	char *program_buffer, error[ 64 ] = "";
+	/* Load program file into string.*/
+	file_length = load_file( file_name, NULL, message );
+	if( file_length > 0 ) {
+		/*printf( "Parsing '%s'. Length %d\n", file_name, file_length );*/
+		program_buffer = malloc( file_length + 1 );
+		file_length = load_file( file_name, program_buffer, message );
+		if( file_length > 0 ) {
+			program_buffer[ file_length ] = 0;
+			/* Parse program structure.*/
+			success = parse_tt_program( program_buffer, env, message );
+			free( program_buffer );
+		}
+	}
+	if( !success && strncmp( message, "Unable to parse", 15 ) ) {
+		strncpy( error, message, 63 );
+		error[ 63 ] = 0;
+		sprintf( message, "Unable to parse '%.16s'.\n%s", file_name, error );
+	}
+	return success;
+}
+
+int main( int argc, char **argv ) {
+	int success;
+	char *file_name, message[ 256 ] = "";
+	struct environment *env;
+	struct variable result, except;
+	struct expression expr;
+	/* Handle command-line.*/
+	if( argc < 2 ) {
+		fprintf( stderr, "Usage: tt program.tt [args]\n" );
+		return EXIT_FAILURE;
+	}
+	file_name = argv[ 1 ];
+	/* Parse program file. */
+	env = new_environment();
+	if( env ) {
+		env->argc = argc - 1;
+		env->argv = &argv[ 1 ];
+		success = parse_tt_file( file_name, env, message );
+		if( success ) {
+			if( env->entry_point ) {
+				/* Evaluate entry-point function. */
+				result.integer_value = except.integer_value = 0;
+				result.array_value = except.array_value = NULL;
+				expr.function = env->entry_point;
+				expr.parameters = NULL;
+				expr.evaluate = &evaluate_function_expression;
+				if( expr.evaluate( &expr, NULL, &result, &except ) == 0 ) {
+					fprintf( stderr, "Unhandled exception %d.\n", except.integer_value );
+					if( except.array_value && except.array_value->data ) {
+						fprintf( stderr, "%s\n", except.array_value->data );
+					}
+				}
+				dispose_variable( &result );
+				dispose_variable( &except );
+			} else {
+				fprintf( stderr, "No programs found.\n" );
+			}
+		} else {
+			fprintf( stderr, "%s\n", message );
+		}
+		dispose_environment( env );
+	} else {
+		fputs( "Out of memory.\n", stderr );
+		return EXIT_FAILURE;
+	}
+	return EXIT_SUCCESS;
+}
