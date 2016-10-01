@@ -12,12 +12,14 @@
 	Variables are integers, strings or array references.
 	Strings have value-semantics and are immutable, can be used as byte arrays.
 	Arrays are held in separate global variables to avoid reference cycles.
+	When a '#' character is encountered, the rest of the line is ignored.
 	Variable/Function/Array names must match "[A-Za-Z][A-Za-z0-9$:]*".
 	Commas within name and argument lists are optional.
 
 	Example:
 		rem { Test }
 		function add( a b ) {
+			# Sum two integers.
 			return +( a b );
 		}
 		program main {
@@ -53,7 +55,7 @@
 		if expr {statements}     Execute statements if expr is non-zero.
 		   else {statements}     Optional, execute if expr is zero.
 		try {statements}         Execute statements unless exception thrown.
-		   catch a {statements}  Assign exception to named var and execute.
+		   catch a {statements}  Assign exception to local var and execute.
 		call expr;               Evaluate expression and discard result.
 		dim [arr len];           Resize specified array.
 		set [arr idx] = expr;    Assign expression to array at index.
@@ -2187,7 +2189,7 @@ static struct element* parse_try_statement( struct element *elem, struct environ
 				}
 				stmt->execute = &execute_try_statement;
 			} else {
-				sprintf( message, "Undeclared variable '%.8s' on line %d.", next->value, next->line );
+				sprintf( message, "Undeclared local variable '%.8s' on line %d.", next->value, next->line );
 			}
 		}
 		prev->next = stmt;
