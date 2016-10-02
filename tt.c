@@ -49,6 +49,7 @@
 		error expr;              Same as print, but write to standard error.
 		return expr;             Return from the current function.
 		throw expr;              Return to the nearest catch statement.
+		exit expr;               Terminate program with specified exit code.
 		while expr {statements}  Repeat statements until expr is zero.
 		break;                   Exit current while statement.
 		continue;                Stop current iteration of while statement.
@@ -748,6 +749,20 @@ static int execute_throw_statement( struct statement *this, struct variable *var
 	return 0;
 }
 
+static int execute_exit_statement( struct statement *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	int code;
+	this->source->evaluate( this->source, variables, exception, exception );
+	code = exception->integer_value;
+	dispose_variable( exception );
+	exception->integer_value = code;
+	exception->array_value = new_array();
+	if( exception->array_value ) {
+		exception->array_value->reference_count = 1;
+	}
+	return 0;
+}
+
 static int execute_return_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	if( this->source->evaluate( this->source, variables, result, exception ) ) {
@@ -780,14 +795,18 @@ static int execute_try_statement( struct statement *this, struct variable *varia
 		}
 	}
 	if( ret == 0 ) {
-		ret = 1;
-		stmt = this->else_block;
-		while( stmt ) {
-			ret = stmt->execute( stmt, variables, result, exception );
-			if( ret == 1 ) {
-				stmt = stmt->next;
-			} else {
-				break;
+		if( exc->array_value && exc->array_value->data == NULL ) {
+			assign_variable( exc, exception );
+		} else {
+			ret = 1;
+			stmt = this->else_block;
+			while( stmt ) {
+				ret = stmt->execute( stmt, variables, result, exception );
+				if( ret == 1 ) {
+					stmt = stmt->next;
+				} else {
+					break;
+				}
 			}
 		}
 	}
@@ -1866,6 +1885,11 @@ static struct element* parse_throw_statement( struct element *elem, struct envir
 	return parse_single_expr_statement( elem, env, func, prev, &execute_throw_statement, message );
 }
 
+static struct element* parse_exit_statement( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct statement *prev, char *message ) {
+	return parse_single_expr_statement( elem, env, func, prev, &execute_exit_statement, message );
+}
+
 static struct element* parse_break_statement( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message ) {
 	struct statement *stmt;
@@ -1957,6 +1981,7 @@ static struct keyword statements[] = {
 	{ "error", "x;", &parse_error_statement },
 	{ "throw", "x;", &parse_throw_statement },
 	{ "return", "x;", &parse_return_statement },
+	{ "exit", "x;", &parse_exit_statement },
 	{ "break", ";", &parse_break_statement },
 	{ "continue", ";", &parse_continue_statement },
 	{ "if", "x{", &parse_if_statement },
@@ -2370,7 +2395,7 @@ static int parse_tt_program( char *program, struct environment *env, char *messa
 	struct element *elem;
 	elem = parse_element( program, message );
 	if( elem ) {
-/*print_element( elem, 0 );*/
+		/*print_element( elem, 0 );*/
 		/* Populate execution environment.*/
 		parse_keywords( declarations, elem, env, NULL, NULL, message );
 		dispose_element( elem );
@@ -2430,6 +2455,8 @@ int main( int argc, char **argv ) {
 				expr.evaluate = &evaluate_function_expression;
 				if( expr.evaluate( &expr, NULL, &result, &except ) ) {
 					exit_code = EXIT_SUCCESS;
+				} else if( except.array_value && except.array_value->data == NULL ) {
+					exit_code = except.integer_value;
 				} else {
 					fprintf( stderr, "Unhandled exception %d.\n", except.integer_value );
 					if( except.array_value && except.array_value->data ) {
