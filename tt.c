@@ -125,7 +125,7 @@ struct global_variable {
 
 /* Expression list. */
 struct expression {
-	int oper, local;
+	int line, index;
 	struct global_variable *global;
 	struct function_declaration *function;
 	struct expression *parameters, *next;
@@ -146,7 +146,7 @@ struct statement {
 /* Execution environment. */
 struct environment {
 	int argc;
-	char **argv;
+	char **argv, *file;
 	struct global_variable *constants;
 	struct global_variable *globals, *globals_tail;
 	struct global_variable *arrays, *arrays_tail;
@@ -155,7 +155,7 @@ struct environment {
 
 /* Function declaration list. */
 struct function_declaration {
-	char *name;
+	char *name, *file;
 	int num_parameters, num_variables;
 	struct environment *env;
 	struct string_list *variable_decls, *variable_decls_tail;
@@ -240,7 +240,7 @@ static int parse_string( char *buffer, int idx, struct element *elem ) {
 }
 
 static char* new_string( char *source ) {
-	char *dest = malloc( sizeof( char ) * strlen( source ) + 1 );
+	char *dest = malloc( sizeof( char ) * ( strlen( source ) + 1 ) );
 	if( dest ) {
 		strcpy( dest, source );
 	}
@@ -499,6 +499,7 @@ static void dispose_function_declarations( struct function_declaration *function
 	while( function ) {
 		next = function->next;
 		free( function->name );
+		free( function->file );
 		dispose_string_list( function->variable_decls );
 		dispose_statements( function->statements );
 		free( function );
@@ -565,14 +566,18 @@ static struct array* new_array() {
 	return arr;
 }
 
-static int throw( struct variable *exception, int integer, char *string ) {
+static int throw( struct variable *exception, struct expression *source, int integer, char *string ) {
+	int len;
 	struct array *arr = NULL;
 	if( string ) {
+		len = strlen( string );
 		arr = new_array();
 		if( arr ) {
 			arr->reference_count = 1;
-			arr->data = new_string( string );
+			arr->data = malloc( sizeof( char ) * ( len + 64 ) );
 			if( arr->data ) {
+				strcpy( arr->data, string );
+				sprintf( &arr->data[ len ], " (on line %d of '%.32s')", source->line, source->function->file );
 				arr->length = strlen( arr->data );
 			}
 		}
@@ -905,13 +910,13 @@ static int execute_dim_statement( struct statement *this, struct variable *varia
 						arr.array_value->length = len.integer_value;
 						free( old );
 					} else {
-						ret = throw( exception, 0, NULL );
+						ret = throw( exception, NULL, 0, NULL );
 					}
 				} else {
-					ret = throw( exception, 0, "Negative array size." );
+					ret = throw( exception, this->source, 0, "Negative array size." );
 				}
 			} else {
-				ret = throw( exception, 0, "Not an array." );
+				ret = throw( exception, this->destination, 0, "Not an array." );
 			}
 			dispose_variable( &len );
 		}
@@ -933,10 +938,10 @@ static int execute_set_statement( struct statement *this, struct variable *varia
 					ret = this->source->evaluate( this->source, variables,
 						&arr.array_value->values[ idx.integer_value ], exception );
 				} else {
-					ret = throw( exception, idx.integer_value, "Array index out of bounds." );
+					ret = throw( exception, this->index, idx.integer_value, "Array index out of bounds." );
 				}
 			} else {
-				ret = throw( exception, 0, "Not an array." );
+				ret = throw( exception, this->destination, 0, "Not an array." );
 			}
 			dispose_variable( &idx );
 		}
@@ -948,7 +953,7 @@ static int execute_set_statement( struct statement *this, struct variable *varia
 struct expression *new_expression() {
 	struct expression *expr = malloc( sizeof( struct expression ) );
 	if( expr ) {
-		expr->oper = expr->local = 0;
+		expr->line = expr->index = 0;
 		expr->global = NULL;
 		expr->function = NULL;
 		expr->parameters = expr->next = NULL;
@@ -959,7 +964,7 @@ struct expression *new_expression() {
 
 static int evaluate_local( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	assign_variable( &variables[ this->local ], result );
+	assign_variable( &variables[ this->index ], result );
 	return 1;
 }
 
@@ -1022,10 +1027,10 @@ static int evaluate_index_expression( struct expression *this, struct variable *
 				if( idx.integer_value >= 0 && idx.integer_value < arr.array_value->length ) {
 					assign_variable( &arr.array_value->values[ idx.integer_value ], result );
 				} else {
-					ret = throw( exception, idx.integer_value, "Array index out of bounds." );
+					ret = throw( exception, this, idx.integer_value, "Array index out of bounds." );
 				}
 			} else {
-				ret = throw( exception, 0, "Not an array." );
+				ret = throw( exception, this, 0, "Not an array." );
 			}
 			dispose_variable( &idx );
 		}
@@ -1034,12 +1039,15 @@ static int evaluate_index_expression( struct expression *this, struct variable *
 	return ret;
 }
 
-static struct function_declaration* new_function_declaration( char *name ) {
+static struct function_declaration* new_function_declaration( char *name, char *file ) {
 	struct function_declaration *func = malloc( sizeof( struct function_declaration ) );
 	if( func ) {
 		/*printf("Function '%s'\n", name);*/
 		func->name = new_string( name );
 		if( func->name ) {
+			func->file = new_string( file );
+		}
+		if( func->name && func->file ) {
 			func->num_parameters = func->num_variables = 0;
 			func->env = NULL;
 			func->variable_decls = func->variable_decls_tail = NULL;
@@ -1213,12 +1221,12 @@ static int evaluate_integer_expression( struct expression *this, struct variable
 		parameter = parameter->next;
 		ret = parameter->evaluate( parameter, variables, &rhs, exception );
 		if( ret ) {
-			switch( this->oper ) {
+			switch( this->index ) {
 				case '%':
 					if( rhs.integer_value != 0 ) {
 						value = lhs.integer_value % rhs.integer_value;
 					} else {
-						ret = throw( exception, 0, "Modulo division by zero." );
+						ret = throw( exception, this, 0, "Modulo division by zero." );
 					}
 					break;
 				case '&': value = lhs.integer_value  & rhs.integer_value; break;
@@ -1229,7 +1237,7 @@ static int evaluate_integer_expression( struct expression *this, struct variable
 					if( rhs.integer_value != 0 ) {
 						value = lhs.integer_value / rhs.integer_value;
 					} else {
-						ret = throw( exception, 0, "Integer division by zero." );
+						ret = throw( exception, this, 0, "Integer division by zero." );
 					}
 					break;
 				case '<': value = lhs.integer_value  < rhs.integer_value; break;
@@ -1242,7 +1250,7 @@ static int evaluate_integer_expression( struct expression *this, struct variable
 				case '|': value = lhs.integer_value  | rhs.integer_value; break;
 				default :
 					value = 0;
-					ret = throw( exception, 0, "Unhandled integer operator." );
+					ret = throw( exception, this, 0, "Unhandled integer operator." );
 					break;
 			}
 			if( ret ) {
@@ -1271,10 +1279,10 @@ static int evaluate_sint_expression( struct expression *this, struct variable *v
 				result->integer_value = val;
 				result->array_value = NULL;
 			} else {
-				ret = throw( exception, 0, "Unable to convert string to integer." );
+				ret = throw( exception, this, 0, "Unable to convert string to integer." );
 			}
 		} else {
-			ret = throw( exception, 0, "Not a string." );
+			ret = throw( exception, this, 0, "Not a string." );
 		}
 		dispose_variable( &str );
 	}
@@ -1303,7 +1311,7 @@ static int evaluate_sstr_expression( struct expression *this, struct variable *v
 					result->array_value = arr;
 				} else {
 					free( arr );
-					ret = throw( exception, 0, NULL );
+					ret = throw( exception, this, 0, NULL );
 				}
 			}
 		}
@@ -1332,7 +1340,7 @@ static int evaluate_sasc_expression( struct expression *this, struct variable *v
 				result->array_value = arr;
 			} else {
 				free( arr );
-				ret = throw( exception, 0, NULL );
+				ret = throw( exception, this, 0, NULL );
 			}
 		}
 		dispose_variable( &val );
@@ -1351,7 +1359,7 @@ static int evaluate_slen_expression( struct expression *this, struct variable *v
 			result->integer_value = len.array_value->length;
 			result->array_value = NULL;
 		} else {
-			ret = throw( exception, 0, "Not a string or array." );
+			ret = throw( exception, this, 0, "Not a string or array." );
 		}
 		dispose_variable( &len );
 	}
@@ -1403,20 +1411,20 @@ static int evaluate_sload_expression( struct expression *this, struct variable *
 							result->array_value = arr;
 						} else {
 							free( buf );
-							ret = throw( exception, 0, NULL );
+							ret = throw( exception, this, 0, NULL );
 						}
 					} else {
 						free( buf );
-						ret = throw( exception, 0, message );
+						ret = throw( exception, this, 0, message );
 					}
 				} else {
-					ret = throw( exception, 0, NULL );
+					ret = throw( exception, this, 0, NULL );
 				}
 			} else {
-				ret = throw( exception, 0, message );
+				ret = throw( exception, this, 0, message );
 			}
 		} else {
-			ret = throw( exception, 0, "Not a string." );
+			ret = throw( exception, this, 0, "Not a string." );
 		}
 		dispose_variable( &file );
 	}
@@ -1439,7 +1447,7 @@ static int evaluate_scmp_expression( struct expression *this, struct variable *v
 				result->integer_value = strcmp( str1.array_value->data, str2.array_value->data );
 				result->array_value = NULL;
 			} else {
-				ret = throw( exception, 0, "Not a string." );
+				ret = throw( exception, this, 0, "Not a string." );
 			}
 			dispose_variable( &str2 );
 		}
@@ -1477,13 +1485,13 @@ static int evaluate_scat_expression( struct expression *this, struct variable *v
 						result->array_value = arr;
 					} else {
 						free( arr );
-						ret = throw( exception, 0, NULL );
+						ret = throw( exception, this, 0, NULL );
 					}
 				} else {
-					ret = throw( exception, 0, NULL );
+					ret = throw( exception, this, 0, NULL );
 				}
 			} else {
-				ret = throw( exception, 0, "Not a string." );
+				ret = throw( exception, this, 0, "Not a string." );
 			}
 			dispose_variable( &str2 );
 		}
@@ -1508,10 +1516,10 @@ static int evaluate_schr_expression( struct expression *this, struct variable *v
 					result->integer_value = str.array_value->data[ idx.integer_value ];
 					result->array_value = NULL;
 				} else {
-					ret = throw( exception, idx.integer_value, "String index out of bounds." );
+					ret = throw( exception, this, idx.integer_value, "String index out of bounds." );
 				}
 			} else {
-				ret = throw( exception, 0, "Not a string." );
+				ret = throw( exception, this, 0, "Not a string." );
 			}
 			dispose_variable( &idx );
 		}
@@ -1551,16 +1559,16 @@ static int evaluate_ssub_expression( struct expression *this, struct variable *v
 								result->array_value = arr;
 							} else {
 								free( arr );
-								ret = throw( exception, 0, NULL );
+								ret = throw( exception, this, 0, NULL );
 							}
 						} else {
-							ret = throw( exception, 0, NULL );
+							ret = throw( exception, this, 0, NULL );
 						}
 					} else {
-						ret = throw( exception, idx.integer_value, "String index out of bounds." );
+						ret = throw( exception, this, idx.integer_value, "String index out of bounds." );
 					}
 				} else {
-					ret = throw( exception, 0, "Not a string." );
+					ret = throw( exception, this, 0, "Not a string." );
 				}	
 				dispose_variable( &len );
 			}
@@ -1599,13 +1607,13 @@ static int evaluate_sargv_expression( struct expression *this, struct variable *
 					result->array_value = arr;
 				} else {
 					free( arr );
-					ret = throw( exception, 0, NULL );
+					ret = throw( exception, this, 0, NULL );
 				}
 			} else {
-				ret = throw( exception, 0, NULL );
+				ret = throw( exception, this, 0, NULL );
 			}
 		} else {
-			ret = throw( exception, idx.integer_value, "Command-line argument index out of bounds." );
+			ret = throw( exception, this, idx.integer_value, "Command-line argument index out of bounds." );
 		}
 		dispose_variable( &idx );
 	}
@@ -1659,8 +1667,7 @@ static struct element* parse_operator_expression( struct element *elem, struct e
 	int num_operands;
 	struct operator *oper = get_operator( elem->value );
 	if( oper->name ) {
-		expr->oper = oper->oper;
-		expr->function = func;
+		expr->index = oper->oper;
 		expr->evaluate = oper->evaluate;
 		if( oper->num_operands > 0 ) {
 			if( next && next->value[ 0 ] == '(' ) {
@@ -1729,6 +1736,8 @@ static struct element* parse_expression( struct element *elem, struct environmen
 	struct function_declaration *decl;
 	struct expression *expr = new_expression();
 	if( expr ) {
+		expr->line = elem->line;
+		expr->function = func;
 		if( value[ 0 ] == '"' || ( value[ 0 ] >= '0' && value[ 0 ] <= '9' )
 			|| ( value[ 0 ] == '-' && ( value[ 1 ] >= '0' && value[ 1 ] <= '9' ) ) ) {
 			/* Constant. */
@@ -1746,7 +1755,7 @@ static struct element* parse_expression( struct element *elem, struct environmen
 			local = get_string_list_index( func->variable_decls, value );
 			if( local >= 0 ) {
 				/* Local variable reference.*/
-				expr->local = local;
+				expr->index = local;
 				expr->evaluate = &evaluate_local;
 			} else {
 				global = get_global_variable( env->constants, value );
@@ -2231,7 +2240,7 @@ static struct element* parse_function_declaration( struct element *elem, struct 
 	struct statement stmt;
 	struct element *next = elem->next;
 	if( validate_decl( next, env, message ) ) {
-		decl = new_function_declaration( next->value );
+		decl = new_function_declaration( next->value, env->file );
 		if( decl ) {
 			if( env->functions ) {
 				env->functions_tail->next = decl;
@@ -2409,7 +2418,7 @@ static int parse_tt_program( char *program, struct environment *env, char *messa
 
 static int parse_tt_file( char *file_name, struct environment *env, char *message ) {
 	int file_length, success = 0;
-	char *program_buffer, error[ 128 ] = "";
+	char *program_buffer, error[ 128 ] = "", *prev_file;
 	/* Load program file into string.*/
 	file_length = load_file( file_name, NULL, message );
 	if( file_length > 0 ) {
@@ -2419,7 +2428,10 @@ static int parse_tt_file( char *file_name, struct environment *env, char *messag
 		if( file_length > 0 ) {
 			program_buffer[ file_length ] = 0;
 			/* Parse program structure.*/
+			prev_file = env->file;
+			env->file = file_name;
 			success = parse_tt_program( program_buffer, env, message );
+			env->file = prev_file;
 			free( program_buffer );
 		}
 	}
