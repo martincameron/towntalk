@@ -13,7 +13,7 @@
 	Strings have value-semantics and are immutable, can be used as byte arrays.
 	Arrays are held in separate global variables to avoid reference cycles.
 	When a '#' character is encountered, the rest of the line is ignored.
-	Variable/Function/Array names must match "[A-Za-Z][A-Za-z0-9$:]*".
+	Variable/Function/Array names must match "[A-Za-Z][A-Za-z0-9_:]*".
 	Commas within name and argument lists are optional.
 
 	Example:
@@ -2317,17 +2317,15 @@ static struct keyword declarations[] = {
 };
 
 static int validate_name( char *name ) {
-	int chr, idx, result = 1;
-	chr = name[ 0 ];
+	int chr, idx = 0, result = 1;
+	chr = name[ idx++ ];
 	if( ( chr >= 'A' && chr <= 'Z') || ( chr >= 'a' && chr <= 'z' ) ) {
 		/* First character must be alphabetical.*/
-		idx = 1;
-		chr = name[ idx ];
 		while( chr ) {
 			if( chr == '_' || chr == ':' || ( chr >= '0' && chr <= '9' )
 			|| ( chr >= 'A' && chr <= 'Z' ) || ( chr >= 'a' && chr <= 'z' ) ) {
 				/* Subsequent characters must be alphanumerical, underscore or colon. */
-				chr = name[ ++idx ];
+				chr = name[ idx++ ];
 			} else {
 				result = chr = 0;
 			}
