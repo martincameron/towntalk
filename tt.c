@@ -2324,12 +2324,12 @@ static int validate_name( char *name ) {
 		idx = 1;
 		chr = name[ idx ];
 		while( chr ) {
-			if( chr == '$' || chr == ':' || ( chr >= '0' && chr <= '9' )
+			if( chr == '_' || chr == ':' || ( chr >= '0' && chr <= '9' )
 			|| ( chr >= 'A' && chr <= 'Z' ) || ( chr >= 'a' && chr <= 'z' ) ) {
-				/* Subsequent characters must be alphanumerical, dollar or colon. */
+				/* Subsequent characters must be alphanumerical, underscore or colon. */
 				chr = name[ ++idx ];
 			} else {
-				result = 0;
+				result = chr = 0;
 			}
 		}
 	} else {
