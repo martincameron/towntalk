@@ -889,20 +889,24 @@ static int execute_dim_statement( struct statement *this, struct variable *varia
 			if( arr.array_value && arr.array_value->values ) {
 				old = arr.array_value->values;
 				if( len.integer_value >= 0 ) {
-					new = calloc( len.integer_value, sizeof( struct variable ) );
-					count = arr.array_value->length;
-					if( count > len.integer_value ) {
-						memcpy( new, old, len.integer_value * sizeof( struct variable ) );
-						idx = len.integer_value;
-						while( idx < count ) {
-							dispose_variable( &old[ idx++ ] );
+					new = calloc( len.integer_value + 1, sizeof( struct variable ) );
+					if( new ) {
+						count = arr.array_value->length;
+						if( count > len.integer_value ) {
+							memcpy( new, old, len.integer_value * sizeof( struct variable ) );
+							idx = len.integer_value;
+							while( idx < count ) {
+								dispose_variable( &old[ idx++ ] );
+							}
+						} else {
+							memcpy( new, old, count * sizeof( struct variable ) );
 						}
+						arr.array_value->values = new;
+						arr.array_value->length = len.integer_value;
+						free( old );
 					} else {
-						memcpy( new, old, count * sizeof( struct variable ) );
+						ret = throw( exception, 0, NULL );
 					}
-					arr.array_value->values = new;
-					arr.array_value->length = len.integer_value;
-					free( old );
 				} else {
 					ret = throw( exception, 0, "Negative array size." );
 				}
