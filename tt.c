@@ -738,7 +738,7 @@ static int execute_write_statement( struct statement *this, struct variable *var
 	struct variable value = { 0, NULL };
 	if( this->source->evaluate( this->source, variables, &value, exception ) ) {
 		if( value.array_value && value.array_value->data ) {
-			fputs( value.array_value->data, stdout );
+			fwrite( value.array_value->data, 1, value.array_value->length, stdout );
 		} else {
 			printf( "%d", value.integer_value );
 		}
@@ -1477,8 +1477,8 @@ static int evaluate_scat_expression( struct expression *this, struct variable *v
 					arr->data = malloc( sizeof( char ) * len1 + len2 + 1 );
 					if( arr->data ) {
 						arr->length = len1 + len2;
-						strcpy( arr->data, str1.array_value->data );
-						strcpy( &arr->data[ len1 ], str2.array_value->data );
+						memcpy( arr->data, str1.array_value->data, len1 );
+						memcpy( &arr->data[ len1 ], str2.array_value->data, len2 );
 						arr->data[ arr->length ] = 0;
 						dispose_variable( result );
 						result->integer_value = 0;
