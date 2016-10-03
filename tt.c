@@ -84,9 +84,9 @@
 		^(int int)               Logical XOR (for NOT use ^(int -1)).
 		!(int)                   Evaluates to 1 if non-zero, else 0.
 		[arr idx]                Array element.
-		$str(int)                Integer to string.
+		$str(str int ...)        Integer to string and string concatenation.
 		$cmp(str str)            String comparison, returns 0 if equal.
-		$cat(str str)            String concatenation.
+		$cat(str str ...)        String concatenation (same as $str).
 		$chr(str idx)            Character at idx as integer.
 		$sub(str off len)        Substring.
 		$asc(int)                Character code to string.
@@ -245,6 +245,20 @@ static char* new_string( char *source ) {
 		strcpy( dest, source );
 	}
 	return dest;
+}
+
+static char* cat_string( char *left, int llen, char *right, int rlen ) {
+	char *str = malloc( sizeof( char ) * ( llen + rlen + 1 ) );
+	if( str ) {
+		if( left ) {
+			memcpy( str, left, llen );
+		}
+		if( right ) {
+			memcpy( &str[ llen ], right, rlen );
+		}
+		str[ llen + rlen ] = 0;
+	}
+	return str;
 }
 
 static char* unquote_string( char *value ) {
@@ -1291,31 +1305,45 @@ static int evaluate_sint_expression( struct expression *this, struct variable *v
 
 static int evaluate_sstr_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	int ret;
-	struct array *arr;
+	int ret = 1, len = 0, vallen;
+	char num[ 24 ], *str = NULL, *new;
+	struct expression *parameter = this->parameters;
 	struct variable val = { 0, NULL };
-	ret = this->parameters->evaluate( this->parameters, variables, &val, exception );
-	if( ret ) {
-		if( val.array_value && val.array_value->data ) {
-			assign_variable( &val, result );
-		} else {
-			arr = new_array();
-			if( arr ) {
-				arr->reference_count = 1;
-				arr->data = malloc( sizeof( char ) * 24 );
-				if( arr->data ) {
-					sprintf( arr->data, "%d", val.integer_value );
-					arr->length = strlen( arr->data );
-					dispose_variable( result );
-					result->integer_value = 0;
-					result->array_value = arr;
-				} else {
-					free( arr );
-					ret = throw( exception, this, 0, NULL );
-				}
+	struct array *arr;
+	while( parameter && ret ) {
+		ret = parameter->evaluate( parameter, variables, &val, exception );
+		if( ret ) {
+			if( val.array_value && val.array_value->data ) {
+				vallen = val.array_value->length;
+				new = cat_string( str, len, val.array_value->data, vallen );
+			} else {
+				sprintf( num, "%d", val.integer_value );
+				vallen = strlen( num );
+				new = cat_string( str, len, num, vallen );
 			}
+			free( str );
+			str = new;
+			len += vallen;
+			dispose_variable( &val );
+			parameter = parameter->next;
 		}
-		dispose_variable( &val );
+	}
+	if( ret ) {
+		arr = new_array();
+		if( arr && str ) {
+			arr->reference_count = 1;
+			arr->data = str;
+			arr->length = len;
+			dispose_variable( result );
+			result->integer_value = 0;
+			result->array_value = arr;
+		} else {
+			free( arr );
+			free( str );
+			ret = throw( exception, this, 0, NULL );
+		}
+	} else {
+		free( str );
 	}
 	return ret;
 }
@@ -1323,25 +1351,26 @@ static int evaluate_sstr_expression( struct expression *this, struct variable *v
 static int evaluate_sasc_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	int ret;
+	char *str;
 	struct array *arr;
 	struct variable val = { 0, NULL };
 	ret = this->parameters->evaluate( this->parameters, variables, &val, exception );
 	if( ret ) {
 		arr = new_array();
-		if( arr ) {
+		str = malloc( sizeof( char ) * 2 );
+		if( arr && str ) {
 			arr->reference_count = 1;
-			arr->data = malloc( sizeof( char ) * 2 );
-			if( arr->data ) {
-				arr->length = 2;
-				arr->data[ 0 ] = val.integer_value;
-				arr->data[ 1 ] = 0;
-				dispose_variable( result );
-				result->integer_value = 0;
-				result->array_value = arr;
-			} else {
-				free( arr );
-				ret = throw( exception, this, 0, NULL );
-			}
+			arr->length = 2;
+			arr->data = str;
+			arr->data[ 0 ] = val.integer_value;
+			arr->data[ 1 ] = 0;
+			dispose_variable( result );
+			result->integer_value = 0;
+			result->array_value = arr;
+		} else {
+			free( arr );
+			free( str );
+			ret = throw( exception, this, 0, NULL );
 		}
 		dispose_variable( &val );
 	}
@@ -1446,50 +1475,6 @@ static int evaluate_scmp_expression( struct expression *this, struct variable *v
 				dispose_variable( result );
 				result->integer_value = strcmp( str1.array_value->data, str2.array_value->data );
 				result->array_value = NULL;
-			} else {
-				ret = throw( exception, this, 0, "Not a string." );
-			}
-			dispose_variable( &str2 );
-		}
-		dispose_variable( &str1 );
-	}
-	return ret;
-}
-
-static int evaluate_scat_expression( struct expression *this, struct variable *variables,
-	struct variable *result, struct variable *exception ) {
-	int ret, len1, len2;
-	struct array *arr;
-	struct expression *parameter = this->parameters;
-	struct variable str1 = { 0, NULL }, str2 = { 0, NULL };
-	ret = parameter->evaluate( parameter, variables, &str1, exception );
-	if( ret ) {
-		parameter = parameter->next;
-		ret = parameter->evaluate( parameter, variables, &str2, exception );
-		if( ret ) {
-			if( str1.array_value && str1.array_value->data
-				&& str2.array_value && str2.array_value->data ) {
-				arr = new_array();
-				if( arr ) {
-					arr->reference_count = 1;
-					len1 = str1.array_value->length;
-					len2 = str2.array_value->length;
-					arr->data = malloc( sizeof( char ) * len1 + len2 + 1 );
-					if( arr->data ) {
-						arr->length = len1 + len2;
-						memcpy( arr->data, str1.array_value->data, len1 );
-						memcpy( &arr->data[ len1 ], str2.array_value->data, len2 );
-						arr->data[ arr->length ] = 0;
-						dispose_variable( result );
-						result->integer_value = 0;
-						result->array_value = arr;
-					} else {
-						free( arr );
-						ret = throw( exception, this, 0, NULL );
-					}
-				} else {
-					ret = throw( exception, this, 0, NULL );
-				}
 			} else {
 				ret = throw( exception, this, 0, "Not a string." );
 			}
@@ -1637,11 +1622,11 @@ static struct operator operators[] = {
 	{ "=", '=', 2, &evaluate_integer_expression },
 	{ "|", '|', 2, &evaluate_integer_expression },
 	{ "$int", '$', 1, &evaluate_sint_expression },
-	{ "$str", '$', 1, &evaluate_sstr_expression },
+	{ "$str", '$',-1, &evaluate_sstr_expression },
 	{ "$len", '$', 1, &evaluate_slen_expression },
 	{ "$asc", '$', 1, &evaluate_sasc_expression },
 	{ "$cmp", '$', 2, &evaluate_scmp_expression },
-	{ "$cat", '$', 2, &evaluate_scat_expression },
+	{ "$cat", '$',-1, &evaluate_sstr_expression },
 	{ "$chr", '$', 2, &evaluate_schr_expression },
 	{ "$tup", '$', 2, &evaluate_stup_expression },
 	{ "$sub", '$', 3, &evaluate_ssub_expression },
@@ -1669,13 +1654,14 @@ static struct element* parse_operator_expression( struct element *elem, struct e
 	if( oper->name ) {
 		expr->index = oper->oper;
 		expr->evaluate = oper->evaluate;
-		if( oper->num_operands > 0 ) {
+		if( oper->num_operands != 0 ) {
 			if( next && next->value[ 0 ] == '(' ) {
 				prev.next = NULL;
 				num_operands = parse_expressions( next->child, env, func, &prev, message );
 				expr->parameters = prev.next;
 				if( message[ 0 ] == 0 ) {
-					if( num_operands == oper->num_operands ) {
+					if( num_operands == oper->num_operands
+						|| ( oper->num_operands < 0 && num_operands > 0 ) ) {
 						next = next->next;
 					} else {
 						sprintf( message, "Wrong number of arguments to '%.16s()' on line %d.", oper->name, next->line );

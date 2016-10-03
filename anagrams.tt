@@ -116,7 +116,7 @@ function list_anagrams( wordidx ) {
 }
 
 program anagrams {
-	var anaidx;
+	var wordcount, anaidx;
 	if <( $argc 2 ) {
 		error "Usage: tt anagrams.tt words.txt";
 	} else {
@@ -125,7 +125,8 @@ program anagrams {
 		dim [keys MAX_WORDS];
 		dim [index 0x10000];
 		dim [chain MAX_WORDS];
-		let anaidx = find_anagram( parse_words( $load( $argv( 1 ) ) ) );
+		let wordcount = parse_words( $load( $argv( 1 ) ) );
+		let anaidx = find_anagram( wordcount );
 		call list_anagrams( anaidx );
 	}
 }
