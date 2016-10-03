@@ -88,7 +88,7 @@
 		$cmp(str str)            String comparison, returns 0 if equal.
 		$cat(str str ...)        String concatenation (same as $str).
 		$chr(str idx)            Character at idx as integer.
-		$sub(str off len)        Substring.
+		$sub(str off len)        Substring (or array of chars to string).
 		$asc(int)                Character code to string.
 		$int(str)                String to integer.
 		$len(str)                String/Array length.
@@ -1513,10 +1513,11 @@ static int evaluate_schr_expression( struct expression *this, struct variable *v
 
 static int evaluate_ssub_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	int ret;
+	char *data;
+	int ret, offset;
 	struct array *arr;
 	struct expression *parameter = this->parameters;
-	struct variable str = { 0, NULL }, idx = { 0, NULL }, len = { 0, NULL };
+	struct variable str = { 0, NULL }, idx = { 0, NULL }, len = { 0, NULL }, *var;
 	ret = parameter->evaluate( parameter, variables, &str, exception );
 	if( ret ) {
 		parameter = parameter->next;
@@ -1534,8 +1535,18 @@ static int evaluate_ssub_expression( struct expression *this, struct variable *v
 							arr->data = malloc( sizeof( char ) * len.integer_value + 1 );
 							if( arr->data ) {
 								arr->length = len.integer_value;
-								memcpy( arr->data, &str.array_value->data[ idx.integer_value ],
-									sizeof( char ) * len.integer_value );
+								if( str.array_value->values ) {
+									data = arr->data;
+									var = str.array_value->values;
+									offset = 0;
+									while( offset < len.integer_value ) {
+										data[ offset ] = var[ offset + idx.integer_value ].integer_value;
+										offset++;
+									}
+								} else {
+									memcpy( arr->data, &str.array_value->data[ idx.integer_value ],
+										sizeof( char ) * len.integer_value );
+								}
 								arr->data[ len.integer_value ] = 0;
 								dispose_variable( result );
 								result->integer_value = 0;
@@ -1548,10 +1559,10 @@ static int evaluate_ssub_expression( struct expression *this, struct variable *v
 							ret = throw( exception, this, 0, NULL );
 						}
 					} else {
-						ret = throw( exception, this, idx.integer_value, "String index out of bounds." );
+						ret = throw( exception, this, idx.integer_value, "Range out of bounds." );
 					}
 				} else {
-					ret = throw( exception, this, 0, "Not a string." );
+					ret = throw( exception, this, 0, "Not a string or array." );
 				}	
 				dispose_variable( &len );
 			}
@@ -1929,6 +1940,9 @@ static struct element* parse_dim_statement( struct element *elem, struct environ
 		child = parse_expression( child, env, func, &expr, message );
 		if( expr.next ) {
 			stmt->destination = expr.next;
+			if( child->value[ 0 ] == ',' ) {
+				child = child->next;
+			}
 			expr.next = NULL;
 			child = parse_expression( child, env, func, &expr, message );
 			if( expr.next ) {
@@ -1952,6 +1966,9 @@ static struct element* parse_set_statement( struct element *elem, struct environ
 		child = parse_expression( child, env, func, &expr, message );
 		if( expr.next ) {
 			stmt->destination = expr.next;
+			if( child->value[ 0 ] == ',' ) {
+				child = child->next;
+			}
 			expr.next = NULL;
 			child = parse_expression( child, env, func, &expr, message );
 			if( expr.next ) {
@@ -2073,7 +2090,10 @@ static int validate_syntax( char *syntax, struct element *elem, struct element *
 			}
 		} else if( chr == 'x' ) {
 			/* Expression. */
-			if( elem && strchr( ";({", elem->value[ 0 ] ) == NULL ) {
+			if( elem && elem->value[ 0 ] == ',' ) {
+				elem = elem->next;
+			}
+			if( elem && strchr( ",;({", elem->value[ 0 ] ) == NULL ) {
 				if( elem->next && elem->next->value[ 0 ] == '(' ) {
 					elem = elem->next;
 				}
