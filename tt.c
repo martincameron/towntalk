@@ -581,17 +581,15 @@ static struct array* new_array() {
 }
 
 static int throw( struct variable *exception, struct expression *source, int integer, char *string ) {
-	int len;
 	struct array *arr = NULL;
 	if( string ) {
-		len = strlen( string );
 		arr = new_array();
 		if( arr ) {
 			arr->reference_count = 1;
-			arr->data = malloc( sizeof( char ) * ( len + 64 ) );
+			arr->data = malloc( sizeof( char ) * ( strlen( string ) + 64 ) );
 			if( arr->data ) {
-				strcpy( arr->data, string );
-				sprintf( &arr->data[ len ], " (on line %d of '%.32s')", source->line, source->function->file );
+				sprintf( arr->data, "%s (on line %d of '%.32s')",
+					string, source->line, source->function->file );
 				arr->length = strlen( arr->data );
 			}
 		}
