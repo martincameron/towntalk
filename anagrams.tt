@@ -3,39 +3,43 @@ rem {
 	List the word with the most anagrams in the specified word-file.
 }
 
-const MAX_WORDS = 0x20000;
+const MAX_WORDS = 0x80000;
 
 global wordfile;
 
-array words, stats, keys, index, chain;
+array words, stat, stats, keys, index, chain;
 
-function calculate_stats( idx ) {
-	var word, wlen, widx, sidx, send, hash;
+function calculate_stats( wordidx ) {
+	var word, widx, wlen, sidx, hash;
 	# Calculate character distribution.
-	let word = [ words idx ];
+	let word = [ words wordidx ];
 	let widx = 0;
 	let wlen = $len( word );
 	while <( widx wlen ) {
-		let sidx = +( *( idx 32 ) &( $chr( word widx ) 31 ) );
-		set [ stats sidx ] = +( [ stats sidx ] 1 );
+		let sidx = &( $chr( word widx ) 31 );
+		set [ stat sidx ] = +( [ stat sidx ] 1 );
 		let widx = +( widx 1 );
 	}
+	# Convert stat array to string.
+	let word = $sub( stat 0 32 );
+	set [ stats wordidx ] = word;
 	# Calculate hash key.
-	let sidx = *(  idx 32 );
-	let send = +( sidx 32 );
-	while <( sidx send ) {
-		let hash = +( *( hash 3 ) [ stats sidx ] );
-		let sidx = +( sidx 1 );
+	let widx = 0;
+	while <( widx 32 ) {
+		let hash = +( *( hash 3 ) $chr( word widx ) );
+		set [ stat widx ] = 0;
+		let widx = +( widx 1 );
 	}
 	let hash = &( hash 0xFFFF );
-	set [ keys idx ] = hash;
+	set [ keys wordidx ] = hash;
 	# Link word into chain indexed by the hash.
-	set [ chain idx ] = [ index hash ];
-	set [ index hash ] = idx;
+	set [ chain wordidx ] = [ index hash ];
+	set [ index hash ] = wordidx;
 }
 
 function parse_words( file ) {
 	var idx, wordcount, filelen, offset;
+	let wordcount = 1;
 	let idx = 0;
 	let filelen = $len( file );
 	while <( idx filelen ) {
@@ -54,30 +58,16 @@ function parse_words( file ) {
 
 function find_anagram( wordcount ) {
 	# Find the longest word with the most anagrams.
-	var wordidx, anaidx, anacount, hash, count;
-	var chainidx, statsidx, statsidx2, match, idx;
+	var wordstat, wordidx, anaidx, anacount, count, chainidx;
+	let anaidx = 1;
+	let wordidx = 1;
 	while <( wordidx wordcount ) {
 		# Calculate number of anagrams of current word.
-		let hash = [ keys wordidx ];
 		let count = 0;
-		let chainidx = [ index hash ];
-		let statsidx = *( wordidx 32 );
+		let chainidx = [ index [ keys wordidx ] ];
+		let wordstat = [ stats wordidx ];
 		while >( chainidx 0 ) {
-			let statsidx2 = *( chainidx 32 );
-			let match = 1;
-			if !( =( chainidx wordidx ) ) {
-				let idx = 0;
-				while <( idx 32 ) {
-					if !( =( [ stats +( statsidx idx ) ] [ stats +( statsidx2 idx ) ] ) ) {
-						let match = 0;
-						break;
-					}
-					let idx = +( idx 1 );
-				}
-			}
-			if >( match 0 ) {
-				let count = +( count 1 );
-			}
+			let count = +( count !( $cmp( wordstat [ stats chainidx ] ) ) );
 			let chainidx = [ chain chainidx ];
 		}
 		# If more anagrams or word is longer then update.
@@ -92,23 +82,12 @@ function find_anagram( wordcount ) {
 }
 
 function list_anagrams( wordidx ) {
-	var hash, chainidx, statsidx, statsidx2, match, idx;
+	var wordstat, chainidx;
 	# List the anagrams of the specified word index.
-	let hash = [ keys wordidx ];
-	let chainidx = [ index hash ];
-	let statsidx = *( wordidx 32 );
+	let wordstat = [ stats wordidx ];
+	let chainidx = [ index [ keys wordidx ] ];
 	while >( chainidx 0 ) {
-		let statsidx2 = *( chainidx 32 );
-		let match = 1;
-		let idx = 0;
-		while <( idx 32 ) {
-			if !( =( [ stats +( statsidx idx ) ] [ stats +( statsidx2 idx ) ] ) ) {
-				let match = 0;
-				break;
-			}
-			let idx = +( idx 1 );
-		}
-		if >( match 0 ) {
+		if !( $cmp( wordstat [ stats chainidx ] ) ) {
 			print [ words chainidx ];
 		}
 		let chainidx = [ chain chainidx ];
@@ -120,11 +99,12 @@ program anagrams {
 	if <( $argc 2 ) {
 		error "Usage: tt anagrams.tt words.txt";
 	} else {
-		dim [words MAX_WORDS];
-		dim [stats *( MAX_WORDS 32 ) ];
-		dim [keys MAX_WORDS];
-		dim [index 0x10000];
-		dim [chain MAX_WORDS];
+		dim [ words MAX_WORDS ];
+		dim [ stat 32 ];
+		dim [ stats MAX_WORDS ];
+		dim [ keys MAX_WORDS ];
+		dim [ index 0x10000 ];
+		dim [ chain MAX_WORDS ];
 		let wordcount = parse_words( $load( $argv( 1 ) ) );
 		let anaidx = find_anagram( wordcount );
 		call list_anagrams( anaidx );

@@ -88,7 +88,7 @@
 		$cmp(str str)            String comparison, returns 0 if equal.
 		$cat(str str ...)        String concatenation (same as $str).
 		$chr(str idx)            Character at idx as integer.
-		$sub(str off len)        Substring (or array of chars to string).
+		$sub(str off len)        Substring (or byte array to string).
 		$asc(int)                Character code to string.
 		$int(str)                String to integer.
 		$len(str)                String/Array length.
@@ -1461,6 +1461,7 @@ static int evaluate_sload_expression( struct expression *this, struct variable *
 static int evaluate_scmp_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	int ret;
+	struct array *arr1, *arr2;
 	struct expression *parameter = this->parameters;
 	struct variable str1 = { 0, NULL }, str2 = { 0, NULL };
 	ret = parameter->evaluate( parameter, variables, &str1, exception );
@@ -1468,10 +1469,17 @@ static int evaluate_scmp_expression( struct expression *this, struct variable *v
 		parameter = parameter->next;
 		ret = parameter->evaluate( parameter, variables, &str2, exception );
 		if( ret ) {
-			if( str1.array_value && str1.array_value->data
-				&& str2.array_value && str2.array_value->data ) {
+			arr1 = str1.array_value;
+			arr2 = str2.array_value;
+			if( arr1 && arr1->data && arr2 && arr2->data ) {
 				dispose_variable( result );
-				result->integer_value = strcmp( str1.array_value->data, str2.array_value->data );
+				if( arr1->length == arr2->length ) {
+					result->integer_value = memcmp( arr1->data, arr2->data, arr1->length );
+				} else if( arr1->length > arr2->length ){
+					result->integer_value = 1;
+				} else {
+					result->integer_value = -1;
+				}
 				result->array_value = NULL;
 			} else {
 				ret = throw( exception, this, 0, "Not a string." );
