@@ -13,7 +13,7 @@
 	Strings have value-semantics and are immutable, can be used as byte arrays.
 	Arrays are held in separate global variables to avoid reference cycles.
 	When a '#' character is encountered, the rest of the line is ignored.
-	Variable/Function/Array names must match "[A-Za-Z][A-Za-z0-9_:]*".
+	Variable/Function/Array names must match "[A-Za-Z][A-Za-z0-9_]*".
 	Commas within name and argument lists are optional.
 
 	Example:
@@ -68,6 +68,7 @@
 		"String"                 String literal.
 		name                     Value of named local or global variable.
 		name(expr, expr)         Call named function with specified args.
+		'(expr operator ...)     Infix operator, eg '( 1 + 2 ).
 		+(int int)               Addition.
 		-(int int)               Subtraction.
 		*(int int)               Multiplication.
@@ -79,10 +80,10 @@
 		<e(int int)              Less than or equal.
 		>(int int)               Greater than.
 		>e(int int)              Greater than or equal.
-		&(int int)               Logical AND.
-		|(int int)               Logical OR.
-		^(int int)               Logical XOR (for NOT use ^(int -1)).
-		!(int)                   Evaluates to 1 if non-zero, else 0.
+		&(int int)               Bitwise AND.
+		|(int int)               Bitwise OR.
+		^(int int)               Bitwise XOR (for NOT use ^(int -1)).
+		!(int)                   Evaluates to 1 if zero, else 0.
 		[arr idx]                Array element.
 		$str(str int ...)        Integer to string and string concatenation.
 		$cmp(str str)            String comparison, returns 0 if equal.
@@ -193,6 +194,8 @@ static int validate_decl( struct element *elem, struct environment *env, char *m
 static int parse_tt_file( char *file_name, struct environment *env, char *message );
 static struct element* parse_decl_list( struct element *elem, struct environment *env,
 	int (*add)( struct environment *env, struct element *elem, char *message ), char *message );
+static struct element* parse_expression( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct expression *prev, char *message );
 static int parse_expressions( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct expression *prev, char *message );
 static struct element* parse_if_statement( struct element *elem, struct environment *env,
@@ -1662,6 +1665,48 @@ static struct operator* get_operator( char *name ) {
 	return oper;
 }
 
+static struct element* parse_infix_expression( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct expression *expr, char *message ) {
+	struct element *next = elem->next;
+	struct element *child = next->child;
+	struct expression prev;
+	struct operator *oper;
+	int num_operands;
+	if( child ) {	
+		prev.next = NULL;
+		child = parse_expression( child, env, func, &prev, message );
+		expr->parameters = prev.next;
+		if( message[ 0 ] == 0 ) {
+			if( child ) {
+				oper = get_operator( child->value );
+				if( oper->name ) {
+					expr->index = oper->oper;
+					expr->evaluate = oper->evaluate;
+					if( oper->num_operands > 0 ) {
+						num_operands = parse_expressions( child->next, env, func, expr->parameters, message ) + 1;
+						if( message[ 0 ] == 0 ) {
+							if( num_operands == oper->num_operands ) {
+								next = next->next;
+							} else {
+								sprintf( message, "Wrong number of arguments to '%.16s()' on line %d.", oper->name, child->line );
+							}
+						}
+					} else {
+						sprintf( message, "Wrong number of arguments to '%.16s()' on line %d.", oper->name, child->line );
+					}
+				} else {
+					sprintf( message, "Unhandled operator '%.16s' on line %d.", child->value, child->line );
+				}
+			} else {
+				sprintf( message, "Expected operator after '( on line %d.", elem->line );
+			}
+		} 
+	} else {
+		sprintf( message, "Expected expression after '( on line %d.", elem->line );
+	}
+	return next;
+}
+
 static struct element* parse_operator_expression( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct expression *expr, char *message ) {
 	struct element *next = elem->next;
@@ -1751,6 +1796,9 @@ static struct element* parse_expression( struct element *elem, struct environmen
 				expr->global = constant;
 				expr->evaluate = &evaluate_global;
 			}
+		} else if( value[ 0 ] == '\'' ) {
+			/* Infix operator.*/
+			next = parse_infix_expression( elem, env, func, expr, message );
 		} else if( value[ 0 ] == '[' ) {
 			/* Array index operator. */
 			next = parse_index_expression( elem, env, func, expr, message );
@@ -1778,7 +1826,7 @@ static struct element* parse_expression( struct element *elem, struct environmen
 						/* Function.*/
 						next = parse_function_expression( elem, env, func, decl, expr, message );
 					} else {
-						/* Operator. */
+						/* Prefix Operator. */
 						next = parse_operator_expression( elem, env, func, expr, message );
 					}
 				}
@@ -2334,9 +2382,9 @@ static int validate_name( char *name ) {
 	if( ( chr >= 'A' && chr <= 'Z') || ( chr >= 'a' && chr <= 'z' ) ) {
 		/* First character must be alphabetical.*/
 		while( chr ) {
-			if( chr == '_' || chr == ':' || ( chr >= '0' && chr <= '9' )
+			if( chr == '_' || ( chr >= '0' && chr <= '9' )
 			|| ( chr >= 'A' && chr <= 'Z' ) || ( chr >= 'a' && chr <= 'z' ) ) {
-				/* Subsequent characters must be alphanumerical, underscore or colon. */
+				/* Subsequent characters must be alphanumerical, or underscore. */
 				chr = name[ idx++ ];
 			} else {
 				result = chr = 0;

@@ -66,13 +66,13 @@ function find_anagram( wordcount ) {
 		let count = 0;
 		let chainidx = [ index [ keys wordidx ] ];
 		let wordstat = [ stats wordidx ];
-		while >( chainidx 0 ) {
+		while '( chainidx > 0 ) {
 			let count = +( count !( $cmp( wordstat [ stats chainidx ] ) ) );
 			let chainidx = [ chain chainidx ];
 		}
 		# If more anagrams or word is longer then update.
-		if |( >( count anacount )
-		   &( =( count anacount ) >( $len( [ words wordidx ] ) $len( [ words anaidx ] ) ) ) ) {
+		if '( '( count > anacount )
+		 | '( '( count = anacount) & '( $len( [ words wordidx ] ) > $len( [ words anaidx ] ) ) ) ) { 
 			let anaidx = wordidx;
 			let anacount = count;
 		}
