@@ -56,7 +56,7 @@ function parse_words( file ) {
 	return wordcount;
 }
 
-function find_anagrams( wordcount ) {
+function find_most_anagrams( wordcount ) {
 	# Returns the longest word with the most anagrams.
 	var wordstat, wordidx, anaidx, anacount, count, chainidx;
 	let anaidx = 1;
@@ -104,7 +104,6 @@ program anagrams {
 		dim [ stats MAX_WORDS ];
 		dim [ index 0x10000 ];
 		let wordcount = parse_words( $load( $argv( 1 ) ) );
-		let anaidx = find_anagrams( wordcount );
 		if '( $argc > 2 ) {
 			let word = $argv( 2 );
 			let anaidx = 1;
@@ -114,11 +113,13 @@ program anagrams {
 				}
 				let anaidx = '( anaidx + 1 );
 			}
-		}
-		if '( anaidx < wordcount ) {
-			call list_anagrams( anaidx );
+			if '( anaidx < wordcount ) {
+				call list_anagrams( anaidx );
+			} else {
+				error $str( "Word '" word "' not found in wordlist." );
+			}
 		} else {
-			error $str( "Word '" word "' not found in wordlist." );
+			call list_anagrams( find_most_anagrams( wordcount ) );
 		}
 	}
 }
