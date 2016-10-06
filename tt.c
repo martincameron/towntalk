@@ -965,6 +965,11 @@ static int execute_set_statement( struct statement *this, struct variable *varia
 	return ret;
 }
 
+static int execute_switch_statement( struct statement *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	return throw( exception, this->source, 0, "Switch statement not supported." );
+}
+
 struct expression *new_expression() {
 	struct expression *expr = malloc( sizeof( struct expression ) );
 	if( expr ) {
@@ -2042,6 +2047,40 @@ static struct element* parse_set_statement( struct element *elem, struct environ
 	return next;
 }
 
+static struct element* parse_case_statement( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct statement *prev, char *message ) {
+	return elem->next->next->next;
+}
+
+static struct element* parse_default_statement( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct statement *prev, char *message ) {
+	return elem->next->next;
+}
+
+static struct keyword switch_stmts[] = {
+	{ "case", "v{", &parse_case_statement },
+	{ "default", "{", &parse_default_statement },
+	{ NULL, NULL, NULL }
+};
+
+static struct element* parse_switch_statement( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct statement *prev, char *message ) {
+	struct expression expr;
+	struct element *next = elem->next;
+	struct statement *stmt = new_statement( message );
+	if( stmt ) {
+		prev->next = stmt;
+		expr.next = NULL;
+		next = parse_expression( next, env, func, &expr, message );
+		if( expr.next ) {
+			stmt->source = expr.next;
+			next = next->next;
+			stmt->execute = &execute_switch_statement;
+		}
+	}
+	return next;
+}
+
 static struct keyword statements[] = {
 	{ "rem", "{", &parse_comment },
 	{ "var", "l;", &parse_local_declaration },
@@ -2060,7 +2099,8 @@ static struct keyword statements[] = {
 	{ "try", "{cn{", &parse_try_statement },
 	{ "dim", "[;", &parse_dim_statement },
 	{ "set", "[=x;", &parse_set_statement },
-	{ NULL, NULL }
+	{ "switch", "x{", &parse_switch_statement },
+	{ NULL, NULL, NULL }
 };
 
 static int is_keyword( struct keyword *keywords, char *value ) {
