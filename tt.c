@@ -56,9 +56,9 @@
 		if expr {statements}     Execute statements if expr is non-zero.
 		   else {statements}     Optional, execute if expr is zero.
 		switch expr {            Selection statement for integers or strings.
-			case  1 {statements} Execute statements if expr equals 1.
-			case "a"{statements} Execute statements if expr equals "a".
-			default {statements} Execute statements if no valid cases. 
+		   case  1 {statements}  Execute statements if expr equals 1.
+		   case "a"{statements}  Execute statements if expr equals "a".
+		   default {statements}  Execute statements if no valid cases. 
 		}
 		try {statements}         Execute statements unless exception thrown.
 		   catch a {statements}  Assign exception to local var and execute.
