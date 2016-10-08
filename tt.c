@@ -192,6 +192,8 @@ static void dispose_variable( struct variable *var );
 static int validate_name( char *name );
 static int validate_decl( struct element *elem, struct environment *env, char *message );
 static int parse_tt_file( char *file_name, struct environment *env, char *message );
+static void parse_keywords( struct keyword *keywords, struct element *elem,
+	struct environment *env, struct function_declaration *func, struct statement *stmt, char *message );
 static struct element* parse_decl_list( struct element *elem, struct environment *env,
 	int (*add)( struct environment *env, struct element *elem, char *message ), char *message );
 static struct element* parse_expression( struct element *elem, struct environment *env,
@@ -203,6 +205,10 @@ static struct element* parse_if_statement( struct element *elem, struct environm
 static struct element* parse_while_statement( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message );
 static struct element* parse_try_statement( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct statement *prev, char *message );
+static struct element* parse_case_statement( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct statement *prev, char *message );
+static struct element* parse_default_statement( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message );
 
 static void print_element( struct element *elem, int indent ) {
@@ -980,7 +986,7 @@ static int execute_switch_statement( struct statement *this, struct variable *va
 					break;
 				}
 			} else if( switch_value.integer_value == case_value->integer_value ) {
-				ret = stmt->execute( stmt, variables, result, exception );	
+				ret = stmt->execute( stmt, variables, result, exception );
 				break;
 			}
 			stmt = stmt->next;
@@ -989,6 +995,21 @@ static int execute_switch_statement( struct statement *this, struct variable *va
 			ret = this->else_block->execute( this->else_block, variables, result, exception );
 		}
 		dispose_variable( &switch_value );
+	}
+	return ret;
+}
+
+static int execute_case_statement( struct statement *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	struct statement *stmt = this->if_block;
+	int ret = 1;
+	while( stmt ) {
+		ret = stmt->execute( stmt, variables, result, exception );
+		if( ret == 1 ) {
+			stmt = stmt->next;
+		} else {
+			break;
+		}
 	}
 	return ret;
 }
@@ -1041,10 +1062,13 @@ static int evaluate_function_expression( struct expression *this, struct variabl
 		stmt = function->statements;
 		while( stmt ) {
 			ret = stmt->execute( stmt, locals, result, exception );
-			if( ret == 1 || ret > 2 ) {
+			if( ret == 1 ) {
 				stmt = stmt->next;
 			} else {
-				ret = ( ret == 2 );
+				if( ret > 2 ) {
+					ret = throw( exception, this, ret, "Unhandled 'break' or 'continue'." );
+				}
+				ret = ( ret > 0 );
 				break;
 			}
 		}
@@ -2070,17 +2094,8 @@ static struct element* parse_set_statement( struct element *elem, struct environ
 	return next;
 }
 
-static struct element* parse_case_statement( struct element *elem, struct environment *env,
-	struct function_declaration *func, struct statement *prev, char *message ) {
-	return elem->next->next->next;
-}
-
-static struct element* parse_default_statement( struct element *elem, struct environment *env,
-	struct function_declaration *func, struct statement *prev, char *message ) {
-	return elem->next->next;
-}
-
 static struct keyword switch_stmts[] = {
+	{ "rem", "{", &parse_comment },
 	{ "case", "v{", &parse_case_statement },
 	{ "default", "{", &parse_default_statement },
 	{ NULL, NULL, NULL }
@@ -2090,15 +2105,42 @@ static struct element* parse_switch_statement( struct element *elem, struct envi
 	struct function_declaration *func, struct statement *prev, char *message ) {
 	struct expression expr;
 	struct element *next = elem->next;
-	struct statement *stmt = new_statement( message );
+	struct statement *stmt = new_statement( message ), block, *cas, *def;
 	if( stmt ) {
 		prev->next = stmt;
 		expr.next = NULL;
 		next = parse_expression( next, env, func, &expr, message );
 		if( expr.next ) {
 			stmt->source = expr.next;
-			next = next->next;
-			stmt->execute = &execute_switch_statement;
+			block.next = NULL;
+			parse_keywords( switch_stmts, next->child, env, func, &block, message );
+			stmt->if_block = block.next;
+			if( message[ 0 ] == 0 ) {
+				stmt->if_block = cas = def = NULL;
+				while( block.next ) {
+					if( block.next->global ) {
+						if( cas ) {
+							cas->next = block.next;
+							cas = cas->next;
+						} else {
+							stmt->if_block = cas = block.next;
+						}
+						block.next = block.next->next;
+						cas->next = NULL;
+					} else {
+						if( def ) {
+							def->next = block.next;
+							def = def->next;
+						} else {
+							stmt->else_block = def = block.next;
+						}
+						block.next = block.next->next;
+						def->next = NULL;
+					}
+				}
+				next = next->next;
+				stmt->execute = &execute_switch_statement;
+			}
 		}
 	}
 	return next;
@@ -2125,6 +2167,48 @@ static struct keyword statements[] = {
 	{ "switch", "x{", &parse_switch_statement },
 	{ NULL, NULL, NULL }
 };
+
+static struct element* parse_case_statement( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct statement *prev, char *message ) {
+	struct element *next = elem->next;
+	struct statement block, *stmt = new_statement( message );
+	struct global_variable *constant;
+	if( stmt ) {
+		prev->next = stmt;
+		constant = new_global_variable( "#Const#", next->value, next->line, message );
+		if( constant ) {
+			constant->next = env->constants;
+			env->constants = constant;
+			stmt->global = &constant->value;
+			next = next->next;
+			block.next = NULL;
+			parse_keywords( statements, next->child, env, func, &block, message );
+			stmt->if_block = block.next;
+			if( message[ 0 ] == 0 ) {
+				stmt->execute = &execute_case_statement;
+				next = next->next;
+			}
+		}
+	}
+	return next;
+}
+
+static struct element* parse_default_statement( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct statement *prev, char *message ) {
+	struct element *next = elem->next;
+	struct statement block, *stmt = new_statement( message );
+	if( stmt ) {
+		prev->next = stmt;
+		block.next = NULL;
+		parse_keywords( statements, next->child, env, func, &block, message );
+		stmt->if_block = block.next;
+		if( message[ 0 ] == 0 ) {
+			stmt->execute = &execute_case_statement;
+			next = next->next;
+		}
+	}
+	return elem->next->next;
+}
 
 static int is_keyword( struct keyword *keywords, char *value ) {
 	while( keywords->name ) {
@@ -2587,6 +2671,7 @@ int main( int argc, char **argv ) {
 				/* Evaluate entry-point function. */
 				result.integer_value = except.integer_value = 0;
 				result.array_value = except.array_value = NULL;
+				expr.line = 0;
 				expr.function = env->entry_point;
 				expr.parameters = NULL;
 				expr.evaluate = &evaluate_function_expression;
