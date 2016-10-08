@@ -889,9 +889,8 @@ static int execute_while_statement( struct statement *this, struct variable *var
 
 static int execute_call_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	int ret;
 	struct variable var = { 0, NULL };
-	ret = this->source->evaluate( this->source, variables, &var, exception );
+	int ret = this->source->evaluate( this->source, variables, &var, exception );
 	if( ret ) {
 		dispose_variable( &var );
 	}
@@ -942,9 +941,8 @@ static int execute_dim_statement( struct statement *this, struct variable *varia
 
 static int execute_set_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	int ret;
 	struct variable arr = { 0, NULL }, idx = { 0, NULL };
-	ret = this->destination->evaluate( this->destination, variables, &arr, exception );
+	int ret = this->destination->evaluate( this->destination, variables, &arr, exception );
 	if( ret ) {
 		ret = this->index->evaluate( this->index, variables, &idx, exception );
 		if( ret ) {
@@ -967,7 +965,32 @@ static int execute_set_statement( struct statement *this, struct variable *varia
 
 static int execute_switch_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	return throw( exception, this->source, 0, "Switch statement not supported." );
+	struct statement *stmt = this->if_block;
+	struct variable switch_value = { 0, NULL }, *case_value;
+	int ret = this->source->evaluate( this->source, variables, &switch_value, exception );
+	if( ret ) {
+		ret = 1;
+		while( stmt ) {
+			case_value = stmt->global;
+			if( case_value->array_value ) {
+				if( switch_value.array_value
+				&& switch_value.array_value->length == case_value->array_value->length
+				&& !strcmp( switch_value.array_value->data, case_value->array_value->data ) ) {
+					ret = stmt->execute( stmt, variables, result, exception );	
+					break;
+				}
+			} else if( switch_value.integer_value == case_value->integer_value ) {
+				ret = stmt->execute( stmt, variables, result, exception );	
+				break;
+			}
+			stmt = stmt->next;
+		}
+		if( stmt == NULL && this->else_block ) {
+			ret = this->else_block->execute( this->else_block, variables, result, exception );
+		}
+		dispose_variable( &switch_value );
+	}
+	return ret;
 }
 
 struct expression *new_expression() {
