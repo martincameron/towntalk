@@ -1019,6 +1019,17 @@ static int execute_case_statement( struct statement *this, struct variable *vari
 	return ret;
 }
 
+static int execute_increment_statement( struct statement *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	struct variable *local = &variables[ this->local ];
+	if( local->array_value ) {
+		return throw( exception, this->source, 0, "Not an integer." );
+	} else {
+		local->integer_value++;
+	}
+	return 1;
+}
+
 struct expression *new_expression() {
 	struct expression *expr = malloc( sizeof( struct expression ) );
 	if( expr ) {
@@ -1333,6 +1344,61 @@ static int evaluate_integer_expression( struct expression *this, struct variable
 			dispose_variable( &rhs );
 		}
 		dispose_variable( &lhs );
+	}
+	return ret;
+}
+
+static int evaluate_fast_integer( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	int value, lhs, rhs, ret = 1;
+	struct expression *parameter = this->parameters;
+	if( parameter->global ) {
+		lhs = parameter->global->value.integer_value;
+	} else {
+		lhs = variables[ parameter->index ].integer_value;
+	}
+	parameter = parameter->next;
+	if( parameter->global ) {
+		rhs = parameter->global->value.integer_value;
+	} else {
+		rhs = variables[ parameter->index ].integer_value;
+	}
+	switch( this->index ) {
+		case '%':
+			if( rhs != 0 ) {
+				value = lhs % rhs;
+			} else {
+				ret = throw( exception, this, 0, "Modulo division by zero." );
+			}
+			break;
+		case '&': value = lhs  & rhs; break;
+		case '*': value = lhs  * rhs; break;
+		case '+': value = lhs  + rhs; break;
+		case '-': value = lhs  - rhs; break;
+		case '/':
+			if( rhs != 0 ) {
+				value = lhs / rhs;
+			} else {
+				ret = throw( exception, this, 0, "Integer division by zero." );
+			}
+			break;
+		case '<': value = lhs  < rhs; break;
+		case '>': value = lhs  > rhs; break;
+		case 'A': value = lhs >> rhs; break;
+		case 'G': value = lhs >= rhs; break;
+		case 'L': value = lhs <= rhs; break;
+		case '^': value = lhs  ^ rhs; break;
+		case '=': value = lhs == rhs; break;
+		case '|': value = lhs  | rhs; break;
+		default :
+			value = 0;
+			ret = throw( exception, this, 0, "Unhandled integer operator." );
+			break;
+	}
+	if( ret ) {
+		dispose_variable( result );
+		result->integer_value = value;
+		result->array_value = NULL;
 	}
 	return ret;
 }
@@ -1779,8 +1845,14 @@ static struct element* parse_operator_expression( struct element *elem, struct e
 				num_operands = parse_expressions( next->child, env, func, &prev, message );
 				expr->parameters = prev.next;
 				if( message[ 0 ] == 0 ) {
-					if( num_operands == oper->num_operands
-						|| ( oper->num_operands < 0 && num_operands > 0 ) ) {
+					if( num_operands == oper->num_operands || ( oper->num_operands < 0 && num_operands > 0 ) ) {
+						if( expr->evaluate == &evaluate_integer_expression ) {
+							if( ( prev.next->evaluate == &evaluate_local || prev.next->evaluate == &evaluate_global )
+							&& ( prev.next->next->evaluate == &evaluate_local || prev.next->next->evaluate == &evaluate_global ) ) {
+								/* Optimization for local/global/constant operands. */
+								expr->evaluate = &evaluate_fast_integer;
+							}
+						}
 						next = next->next;
 					} else {
 						sprintf( message, "Wrong number of arguments to '%.16s()' on line %d.", oper->name, next->line );
@@ -1923,6 +1995,33 @@ static int parse_expressions( struct element *elem, struct environment *env,
 		}
 	}
 	return count;
+}
+
+static struct element* parse_increment_statement( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct statement *prev, char *message ) {
+	int local;
+	struct statement *stmt;
+	struct element *next = elem->next;
+	local = get_string_list_index( func->variable_decls, next->value );
+	if( local >= 0 ) {
+		stmt = new_statement( message );
+		if( stmt ) {
+			stmt->source = new_expression();
+			if( stmt->source ) {
+				stmt->local = local;
+				stmt->source->line = next->line;
+				stmt->source->function = func;
+				stmt->execute = &execute_increment_statement;
+				prev->next = stmt;
+				next = next->next->next;
+			} else {
+				strcpy( message, "Out of memory." );
+			}
+		}
+	} else {
+		sprintf( message, "Undeclared local variable '%.8s' on line %d.", next->value, next->line );
+	}
+	return next;
 }
 
 static struct element* parse_assignment_statement( struct element *elem, struct environment *env,
@@ -2170,6 +2269,7 @@ static struct keyword statements[] = {
 	{ "dim", "[;", &parse_dim_statement },
 	{ "set", "[=x;", &parse_set_statement },
 	{ "switch", "x{", &parse_switch_statement },
+	{ "inc", "n;", &parse_increment_statement },
 	{ NULL, NULL, NULL }
 };
 
