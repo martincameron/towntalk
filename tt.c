@@ -73,6 +73,7 @@
 		"String"                 String literal.
 		name                     Value of named local or global variable.
 		name(expr, expr)         Call named function with specified args.
+		[arr idx]                Array element.
 		'(expr operator ...)     Infix operator, eg '( 1 + 2 ).
 		+(int int)               Addition.
 		-(int int)               Subtraction.
@@ -89,7 +90,6 @@
 		|(int int)               Bitwise OR.
 		^(int int)               Bitwise XOR (for NOT use ^(int -1)).
 		!(int)                   Evaluates to 1 if zero, else 0.
-		[arr idx]                Array element.
 		$str(str int ...)        Integer to string and string concatenation.
 		$cmp(str str)            String comparison, returns 0 if equal.
 		$cat(str str ...)        String concatenation (same as $str).
