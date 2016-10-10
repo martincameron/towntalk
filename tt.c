@@ -811,7 +811,7 @@ static int execute_continue_statement( struct statement *this, struct variable *
 
 static int execute_try_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	int ret;
+	int ret = 1;
 	struct variable *exc = &variables[ this->local ];
 	struct statement *stmt = this->if_block;
 	while( stmt ) {
@@ -843,10 +843,9 @@ static int execute_try_statement( struct statement *this, struct variable *varia
 
 static int execute_if_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	int ret;
 	struct variable condition = { 0, NULL };
 	struct statement *stmt = this->if_block;
-	ret = this->source->evaluate( this->source, variables, &condition, exception );
+	int ret = this->source->evaluate( this->source, variables, &condition, exception );
 	if( ret ) {
 		if( !condition.integer_value ) {
 			stmt = this->else_block;
@@ -1292,6 +1291,7 @@ static int calculate_integer_operation( struct expression *expr,
 			if( rhs != 0 ) {
 				value = lhs % rhs;
 			} else {
+				value = 0;
 				ret = throw( exception, expr, 0, "Modulo division by zero." );
 			}
 			break;
@@ -1303,6 +1303,7 @@ static int calculate_integer_operation( struct expression *expr,
 			if( rhs != 0 ) {
 				value = lhs / rhs;
 			} else {
+				value = 0;
 				ret = throw( exception, expr, 0, "Integer division by zero." );
 			}
 			break;
