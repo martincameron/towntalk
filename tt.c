@@ -37,7 +37,7 @@
 		const name = value;      Integer or string constant.
 		global a,b,c;            Global variables.
 		array a,b,c;             Global arrays.
-		function(a){statements}  Function, no forward declarations.
+		function(a) {statements} Function declaration.
 		program {statements}     Entry point function (no arguments).
 
 	Statements:
@@ -58,13 +58,13 @@
 		switch expr {            Selection statement for integers or strings.
 		   case  1 {statements}  Execute statements if expr equals 1.
 		   case "a"{statements}  Execute statements if expr equals "a".
-		   default {statements}  Execute statements if no valid cases. 
-		}
+		   default {statements}} Execute statements if no valid cases.
 		try {statements}         Execute statements unless exception thrown.
 		   catch a {statements}  Assign exception to local var and execute.
 		call expr;               Evaluate expression and discard result.
 		dim [arr len];           Resize specified array.
 		set [arr idx] = expr;    Assign expression to array at index.
+		inc a;                   Increment local variable.
 
 	Expressions:
 		-123                     Decimal integer literal.
@@ -153,20 +153,8 @@ struct statement {
 struct environment {
 	int argc;
 	char **argv, *file;
-	struct global_variable *constants;
-	struct global_variable *globals, *globals_tail;
-	struct global_variable *arrays, *arrays_tail;
-	struct function_declaration *functions, *functions_tail, *entry_point;
-};
-
-/* Function declaration list. */
-struct function_declaration {
-	char *name, *file;
-	int num_parameters, num_variables;
-	struct environment *env;
-	struct string_list *variable_decls, *variable_decls_tail;
-	struct statement *statements, *statements_tail;
-	struct function_declaration *next;
+	struct global_variable *constants, *globals, *arrays;
+	struct function_declaration *functions, *entry_point;
 };
 
 /* Parser element. */
@@ -190,6 +178,17 @@ struct operator {
 	int num_operands;
 	int ( *evaluate )( struct expression *this, struct variable *variables,
 		struct variable *result, struct variable *exception );
+};
+
+/* Function declaration list. */
+struct function_declaration {
+	char *name, *file;
+	int line, num_parameters, num_variables;
+	struct element *elem;
+	struct environment *env;
+	struct string_list *variable_decls, *variable_decls_tail;
+	struct statement *statements, *statements_tail;
+	struct function_declaration *next;
 };
 
 /* Forward declarations. */
@@ -540,10 +539,8 @@ static struct environment* new_environment() {
 	if( env ) {
 		env->argc = 0;
 		env->argv = NULL;
-		env->constants = NULL;
-		env->globals = env->globals_tail = NULL;
-		env->arrays = env->arrays_tail = NULL;
-		env->functions = env->functions_tail = env->entry_point = NULL;
+		env->constants = env->globals = env->arrays = NULL;
+		env->functions = env->entry_point = NULL;
 	}
 	return env;
 }
@@ -1131,7 +1128,8 @@ static struct function_declaration* new_function_declaration( char *name, char *
 			func->file = new_string( file );
 		}
 		if( func->name && func->file ) {
-			func->num_parameters = func->num_variables = 0;
+			func->line = func->num_parameters = func->num_variables = 0;
+			func->elem = NULL;
 			func->env = NULL;
 			func->variable_decls = func->variable_decls_tail = NULL;
 			func->statements = func->statements_tail = NULL;
@@ -1162,12 +1160,8 @@ static int add_global_variable( struct environment *env, struct element *elem, c
 	char *name = elem->value;
 	struct global_variable *global = new_global_variable( name, NULL, elem->line, message );
 	if( global ) {
-		if( env->globals ) {
-			env->globals_tail->next = global;
-		} else {
-			env->globals = global;
-		}
-		env->globals_tail = global;
+		global->next = env->globals;
+		env->globals = global;
 	}
 	return message[ 0 ] == 0;
 }
@@ -1176,12 +1170,8 @@ static int add_array_variable( struct environment *env, struct element *elem, ch
 	char *name = elem->value;
 	struct global_variable *arr = new_array_variable( name );
 	if( arr ) {
-		if( env->arrays ) {
-			env->arrays_tail->next = arr;
-		} else {
-			env->arrays = arr;
-		}
-		env->arrays_tail = arr;
+		arr->next = env->arrays;
+		env->arrays = arr;
 	} else {
 		strcpy( message, "Out of memory." );
 	}
@@ -1190,7 +1180,7 @@ static int add_array_variable( struct environment *env, struct element *elem, ch
 
 static int add_function_parameter( struct environment *env, struct element *elem, char *message ) {
 	char *name = elem->value;
-	struct function_declaration *func = env->functions_tail;
+	struct function_declaration *func = env->functions;
 	struct string_list *param = new_string_list( name );
 	if( param ) {
 		/*printf("Function parameter '%s'\n", name);*/
@@ -1214,7 +1204,7 @@ static int add_function_parameter( struct environment *env, struct element *elem
 
 static int add_local_variable( struct environment *env, struct element *elem, char *message ) {
 	char *name = elem->value;
-	struct function_declaration *func = env->functions_tail;
+	struct function_declaration *func = env->entry_point;
 	struct string_list *param = new_string_list( name );
 	if( param ) {
 		/*printf("Local variable '%s'\n", name);*/
@@ -2518,31 +2508,21 @@ static struct element* parse_try_statement( struct element *elem, struct environ
 
 static struct element* parse_function_declaration( struct element *elem, struct environment *env,
 	struct function_declaration *decl, struct statement *prev, char *message ) {
-	struct statement stmt;
 	struct element *next = elem->next;
 	if( validate_decl( next, env, message ) ) {
 		decl = new_function_declaration( next->value, env->file );
 		if( decl ) {
-			if( env->functions ) {
-				env->functions_tail->next = decl;
-			} else {
-				env->functions = decl;
-			}
-			env->functions_tail = decl;
+			decl->next = env->functions;
+			env->functions = decl;
+			decl->line = elem->line;
+			decl->elem = elem;
 			decl->env = env;
 			next = next->next;
-			if( strcmp( next->value, "(" ) == 0 ) {
+			if( next->value[ 0 ] == '(' ) {
 				parse_decl_list( next->child, env, add_function_parameter, message );
 				next = next->next;
 			}
-			if( strcmp( message, "" ) == 0 ) {
-				if( next->child ) {
-					stmt.next = NULL;
-					parse_keywords( statements, next->child, env, decl, &stmt, message );
-					decl->statements = stmt.next;
-				}
-				next = next->next;
-			}
+			next = next->next;
 		} else {
 			strcpy( message, "Out of memory." );
 		}
@@ -2553,7 +2533,7 @@ static struct element* parse_function_declaration( struct element *elem, struct 
 static struct element* parse_program_declaration( struct element *elem, struct environment *env,
 	struct function_declaration *decl, struct statement *prev, char *message ) {
 	struct element *next = parse_function_declaration( elem, env, decl, prev, message );
-	env->entry_point = env->functions_tail;
+	env->entry_point = env->functions;
 	return next;
 }
 
@@ -2684,12 +2664,33 @@ static struct element* parse_decl_list( struct element *elem, struct environment
 }
 
 static int parse_tt_program( char *program, struct environment *env, char *message ) {
-	struct element *elem;
+	struct statement stmt;
+	struct element *elem, *next;
+	struct function_declaration *func, *entry;
 	elem = parse_element( program, message );
 	if( elem ) {
 		/*print_element( elem, 0 );*/
 		/* Populate execution environment.*/
 		parse_keywords( declarations, elem, env, NULL, NULL, message );
+		/* Parse function bodies. */
+		func = env->functions;
+		while( func && func->elem && message[ 0 ] == 0 ) {
+			next = func->elem->next->next;
+			if( next->value[ 0 ] == '(' ) {
+				next = next->next;
+			}
+			if( next->child ) {
+				entry = env->entry_point;
+				env->entry_point = func;
+				stmt.next = NULL;
+				parse_keywords( statements, next->child, env, func, &stmt, message );
+				func->statements = stmt.next;
+				env->entry_point = entry;
+			}
+			next = next->next;
+			func->elem = NULL;
+			func = func->next;
+		}
 		dispose_element( elem );
 	}
 	return message[ 0 ] == 0;
@@ -2745,7 +2746,7 @@ int main( int argc, char **argv ) {
 				/* Evaluate entry-point function. */
 				result.integer_value = except.integer_value = 0;
 				result.array_value = except.array_value = NULL;
-				expr.line = 0;
+				expr.line = env->entry_point->line;
 				expr.function = env->entry_point;
 				expr.parameters = NULL;
 				expr.evaluate = &evaluate_function_expression;
