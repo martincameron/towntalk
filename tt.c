@@ -64,6 +64,7 @@
 		call expr;               Evaluate expression and discard result.
 		dim [arr len];           Resize specified array.
 		set [arr idx] = expr;    Assign expression to array at index.
+		aset arr = { 0, "a" };   Assign array literal.
 		inc a;                   Increment local variable.
 
 	Expressions:
@@ -966,6 +967,42 @@ static int execute_set_statement( struct statement *this, struct variable *varia
 			dispose_variable( &idx );
 		}
 		dispose_variable( &arr );
+	}
+	return ret;
+}
+
+static int execute_aset_statement( struct statement *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	int ret, idx, length, newlen;
+	struct variable dest = { 0, NULL }, *values, *newvar;
+	ret = this->destination->evaluate( this->destination, variables, &dest, exception );
+	if( ret ) {
+		if( dest.array_value && dest.array_value->values ) {
+			newlen = this->global->array_value->length;
+			newvar = calloc( newlen + 1, sizeof( struct variable ) );
+			if( newvar ) {
+				idx = 0;
+				length = dest.array_value->length;
+				values = dest.array_value->values;
+				while( idx < length ) {
+					dispose_variable( &values[ idx++ ] );
+				}
+				free( values );
+				dest.array_value->length = newlen;
+				dest.array_value->values = newvar;
+				idx = 0;
+				values = this->global->array_value->values;
+				while( idx < newlen ) {
+					assign_variable( &values[ idx ], &newvar[ idx ] );
+					idx++;
+				}
+			} else {
+				ret = throw( exception, NULL, 0, NULL );
+			}
+		} else {
+			ret = throw( exception, this->destination, 0, "Not an array." );
+		}
+		dispose_variable( &dest );
 	}
 	return ret;
 }
@@ -2158,6 +2195,71 @@ static struct element* parse_set_statement( struct element *elem, struct environ
 	return next;
 }
 
+static int parse_constant_list( struct element *elem, struct global_variable *prev, char *message ) {
+	int count = 0;
+	while( elem && message[ 0 ] == 0 ) {
+		prev->next = new_global_variable( "#Const#", elem->value, elem->line, message );
+		if( prev->next ) {
+			count++;
+			prev = prev->next;
+			elem = elem->next;
+			if( elem && elem->value[ 0 ] == ',' ) {
+				elem = elem->next;
+			}
+		}
+	}
+	return count;
+}
+
+static struct element* parse_aset_statement( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct statement *prev, char *message ) {
+	int idx, count;
+	struct array *arr;
+	struct expression expr;
+	struct global_variable values, *constant;
+	struct element *next = elem->next;
+	struct statement *stmt = new_statement( message );
+	if( stmt ) {
+		prev->next = stmt;
+		expr.next = NULL;
+		next = parse_expression( next, env, func, &expr, message );
+		if( expr.next ) {
+			stmt->destination = expr.next;
+			constant = new_array_variable( "#Const@" );
+			if( constant ) {
+				constant->next = env->constants;
+				env->constants = constant;
+				stmt->global = &constant->value;
+				next = next->next;
+				values.next = NULL;
+				count = parse_constant_list( next->child, &values, message );
+				if( message[ 0 ] == 0 ) {
+					arr = constant->value.array_value;
+					free( arr->values );
+					arr->length = count;
+					arr->values = calloc( count + 1, sizeof( struct variable ) );
+					if( arr->values ) {
+						idx = 0;
+						constant = values.next;
+						while( idx < count ) {
+							assign_variable( &constant->value, &arr->values[ idx++ ] );
+							constant = constant->next;
+						}
+						stmt->execute = &execute_aset_statement;
+						next = next->next->next;
+					} else {
+						strcpy( message, "Out of memory." );
+					}
+				}
+				dispose_global_variables( values.next );
+			} else {
+				strcpy( message, "Out of memory." );
+			}
+		}
+	}
+	return next;
+}
+
 static struct keyword switch_stmts[] = {
 	{ "rem", "{", &parse_comment },
 	{ "case", "v{", &parse_case_statement },
@@ -2228,6 +2330,7 @@ static struct keyword statements[] = {
 	{ "try", "{cn{", &parse_try_statement },
 	{ "dim", "[;", &parse_dim_statement },
 	{ "set", "[=x;", &parse_set_statement },
+	{ "aset", "x={;", &parse_aset_statement },
 	{ "switch", "x{", &parse_switch_statement },
 	{ "inc", "n;", &parse_increment_statement },
 	{ NULL, NULL, NULL }
