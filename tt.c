@@ -4,6 +4,7 @@
 #include "stdio.h"
 #include "stdlib.h"
 #include "string.h"
+#include "time.h"
 
 /*
 	Towntalk (c)2016 Martin Cameron.
@@ -103,6 +104,8 @@
 		$load("abc.bin")         Load raw bytes into string.
 		$argc                    Number of command-line arguments.
 		$argv(idx)               Command-line argument as string.
+		$time                    Current time in seconds as octal string.
+		$date($time)             Convert time string to human-readable date.
 */
 
 /* Array or string. */
@@ -641,7 +644,7 @@ static struct global_variable* new_global_variable( char *name, char *value, int
 					}
 				} else {
 					/* Integer constant. */
-					global->value.integer_value = strtol( value, &end, 0 );
+					global->value.integer_value = ( int ) strtol( value, &end, 0 );
 					if( end[ 0 ] != 0 ) {
 						sprintf( message, "Invalid integer constant '%.16s' at line %d.", value, line );
 					}
@@ -1408,7 +1411,7 @@ static int evaluate_sint_expression( struct expression *this, struct variable *v
 	ret = this->parameters->evaluate( this->parameters, variables, &str, exception );
 	if( ret ) {
 		if( str.array_value && str.array_value->data ) {
-			val = strtol( str.array_value->data, &end, 0 );
+			val = ( int ) strtol( str.array_value->data, &end, 0 );
 			if( end[ 0 ] == 0 && str.array_value->data != end ) {
 				dispose_variable( result );
 				result->integer_value = val;
@@ -1745,6 +1748,81 @@ static int evaluate_sargv_expression( struct expression *this, struct variable *
 	return ret;
 }
 
+static int evaluate_stime_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	int idx, ret = 1;
+	char value[ 24 ];
+	time_t seconds = time( NULL );
+	struct array *arr = new_array();
+	if( arr ) {
+		idx = 22;
+		value[ 23 ] = 0;
+		while( idx > 0 ) {
+			value[ idx-- ] = '0' + ( seconds & 0x7 );
+			seconds = seconds >> 3;
+		}
+		value[ 0 ] = '0';
+		arr->reference_count = 1;
+		arr->data = new_string( value );
+		if( arr->data ) {
+			arr->length = strlen( arr->data );
+			dispose_variable( result );
+			result->integer_value = 0;
+			result->array_value = arr;
+		} else {
+			free( arr );
+			ret = throw( exception, this, 0, NULL );
+		}
+	} else {
+		ret = throw( exception, this, 0, NULL );
+	}
+	return ret;
+}
+
+static int evaluate_sdate_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	int ret, idx;
+	char *value, chr;
+	time_t seconds;
+	struct array *arr;
+	struct expression *parameter = this->parameters;
+	struct variable input = { 0, NULL };
+	ret = parameter->evaluate( parameter, variables, &input, exception );
+	if( ret ) {
+		if( input.array_value && input.array_value->data ) {
+			value = input.array_value->data;
+			chr = value[ 0 ];
+			seconds = 0;
+			idx = 0;
+			while( chr ) {
+				seconds = ( seconds << 3 ) | ( ( chr - '0' ) & 0x7 );
+				chr = value[ idx++ ];
+			}
+			arr = new_array();
+			if( arr ) {
+				arr->reference_count = 1;
+				arr->data = new_string( ctime( &seconds ) );
+				if( arr->data ) {
+					arr->length = strlen( arr->data );
+					arr->data[ arr->length - 1 ] = 0;
+					dispose_variable( result );
+					result->integer_value = 0;
+					result->array_value = arr;
+				} else {
+					free( arr );
+					ret = throw( exception, this, 0, NULL );
+				}
+			} else {
+				ret = throw( exception, this, 0, NULL );
+			}
+		} else {
+			ret = throw( exception, this, 0, "Not a string." );
+		}
+		dispose_variable( &input );
+	}
+	return ret;
+}
+
 static struct operator operators[] = {
 	{ "!", '!', 1, &evaluate_int_not_expression },
 	{ "%", '%', 2, &evaluate_integer_expression },
@@ -1773,6 +1851,8 @@ static struct operator operators[] = {
 	{ "$load",'$', 1, &evaluate_sload_expression },
 	{ "$argc",'$', 0, &evaluate_sargc_expression },
 	{ "$argv",'$', 1, &evaluate_sargv_expression },
+	{ "$time",'$', 0, &evaluate_stime_expression },
+	{ "$date",'$', 1, &evaluate_sdate_expression },
 	{ NULL, 0, 0, NULL }
 };
 
