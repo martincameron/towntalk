@@ -105,7 +105,8 @@
 		$argc                    Number of command-line arguments.
 		$argv(idx)               Command-line argument as string.
 		$time                    Current time in seconds as octal string.
-		$date($time)             Convert time string to human-readable date.
+		$date(time)              Convert time string to human-readable date.
+		$secs(time2 time1)       Difference between time strings as integer.
 */
 
 /* Array or string. */
@@ -254,6 +255,32 @@ static int parse_string( char *buffer, int idx, struct element *elem ) {
 		return -1;
 	}
 	return idx;
+}
+
+static int is_time_string( char *str ) {
+	int idx = 0;
+	char chr = str[ idx++ ];
+	if( chr == '-' || chr == '0' ) {
+		chr = str[ idx++ ];
+		while( chr >= '0' && chr <= '7' ) {
+			chr = str[ idx++ ];
+		}
+	}
+	return ( idx > 1 && chr == 0 );
+}
+
+static time_t parse_time_string( char *str ) {
+	int idx = 1;
+	time_t seconds = 0;
+	char chr = str[ idx++ ];
+	while( chr ) {
+		seconds = ( seconds << 3 ) | ( ( chr - '0' ) & 0x7 );
+		chr = str[ idx++ ];
+	}
+	if( str[ 0 ] == '-' ) {
+		seconds = -seconds;
+	}
+	return seconds;
 }
 
 static char* new_string( char *source ) {
@@ -1751,12 +1778,12 @@ static int evaluate_sargv_expression( struct expression *this, struct variable *
 static int evaluate_stime_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	int idx, ret = 1;
-	char value[ 24 ];
+	char value[ 16 ];
 	time_t seconds = time( NULL );
 	struct array *arr = new_array();
 	if( arr ) {
-		idx = 22;
-		value[ 23 ] = 0;
+		idx = 14;
+		value[ 15 ] = 0;
 		while( idx > 0 ) {
 			value[ idx-- ] = '0' + ( seconds & 0x7 );
 			seconds = seconds >> 3;
@@ -1781,23 +1808,14 @@ static int evaluate_stime_expression( struct expression *this, struct variable *
 
 static int evaluate_sdate_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	int ret, idx;
-	char *value, chr;
 	time_t seconds;
 	struct array *arr;
 	struct expression *parameter = this->parameters;
 	struct variable input = { 0, NULL };
-	ret = parameter->evaluate( parameter, variables, &input, exception );
+	int ret = parameter->evaluate( parameter, variables, &input, exception );
 	if( ret ) {
-		if( input.array_value && input.array_value->data ) {
-			value = input.array_value->data;
-			chr = value[ 0 ];
-			seconds = 0;
-			idx = 0;
-			while( chr ) {
-				seconds = ( seconds << 3 ) | ( ( chr - '0' ) & 0x7 );
-				chr = value[ idx++ ];
-			}
+		if( input.array_value && input.array_value->data && is_time_string( input.array_value->data ) ) {
+			seconds = parse_time_string( input.array_value->data );
 			arr = new_array();
 			if( arr ) {
 				arr->reference_count = 1;
@@ -1816,9 +1834,38 @@ static int evaluate_sdate_expression( struct expression *this, struct variable *
 				ret = throw( exception, this, 0, NULL );
 			}
 		} else {
-			ret = throw( exception, this, 0, "Not a string." );
+			ret = throw( exception, this, 0, "Not a valid time string." );
 		}
 		dispose_variable( &input );
+	}
+	return ret;
+}
+
+static int evaluate_ssecs_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	time_t seconds;
+	struct array *arr1, *arr2;
+	struct expression *parameter = this->parameters;
+	struct variable time1 = { 0, NULL }, time2 = { 0, NULL };
+	int ret = parameter->evaluate( parameter, variables, &time1, exception );
+	if( ret ) {
+		parameter = parameter->next;
+		ret = parameter->evaluate( parameter, variables, &time2, exception );
+		if( ret ) {
+			arr1 = time1.array_value;
+			arr2 = time2.array_value;
+			if( arr1 && arr1->data && is_time_string( arr1->data )
+			&&  arr2 && arr2->data && is_time_string( arr2->data ) ) {
+				seconds = parse_time_string( arr1->data ) - parse_time_string( arr2->data );
+				dispose_variable( result );
+				result->integer_value = ( int ) seconds;
+				result->array_value = NULL;
+			} else {
+				ret = throw( exception, this, 0, "Not a valid time string." );
+			}
+			dispose_variable( &time2 );
+		}
+		dispose_variable( &time1 );
 	}
 	return ret;
 }
@@ -1853,6 +1900,7 @@ static struct operator operators[] = {
 	{ "$argv",'$', 1, &evaluate_sargv_expression },
 	{ "$time",'$', 0, &evaluate_stime_expression },
 	{ "$date",'$', 1, &evaluate_sdate_expression },
+	{ "$secs",'$', 2, &evaluate_ssecs_expression },
 	{ NULL, 0, 0, NULL }
 };
 
