@@ -102,6 +102,7 @@
 		$len(str)                String/Array length.
 		$tup(str int)            String/Integer tuple.
 		$load("abc.bin")         Load raw bytes into string.
+		$save(str "abc.bin")     Save bytes to file, returns length.
 		$argc                    Number of command-line arguments.
 		$argv(idx)               Command-line argument as string.
 		$time                    Current time in seconds as octal string.
@@ -479,6 +480,20 @@ static int load_file( char *file_name, char *buffer, char *message ) {
 		message[ 63 ] = 0;
 	}
 	return file_length;
+}
+
+static int save_file( char *file_name, char *buffer, int length, char *message ) {
+	int count = -1;
+	FILE *output_file = fopen( file_name, "wb" );
+	if( output_file != NULL ) {
+		count = fwrite( buffer, 1, length, output_file );
+		fclose( output_file );
+	}
+	if( count < length ) {
+		strncpy( message, strerror( errno ), 63 );
+		message[ 63 ] = 0;
+	}
+	return count;
 }
 
 static void dispose_string_list( struct string_list *str ) {
@@ -1611,6 +1626,39 @@ static int evaluate_sload_expression( struct expression *this, struct variable *
 	return ret;
 }
 
+static int evaluate_ssave_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	int ret, count;
+	char message[ 64 ];
+	struct array *sarr, *farr;
+	struct expression *parameter = this->parameters;
+	struct variable str = { 0, NULL }, file = { 0, NULL };
+	ret = parameter->evaluate( parameter, variables, &str, exception );
+	if( ret ) {
+		parameter = parameter->next;
+		ret = parameter->evaluate( parameter, variables, &file, exception );
+		if( ret ) {
+			sarr = str.array_value;
+			farr = file.array_value;
+			if( sarr && sarr->data && farr && farr->data ) {
+				count = save_file( farr->data, sarr->data, sarr->length, message );
+				if( count == sarr->length ) {
+					dispose_variable( result );
+					result->integer_value = count;
+					result->array_value = NULL;
+				} else {
+					ret = throw( exception, this, 0, message );
+				}
+			} else {
+				ret = throw( exception, this, 0, "Not a string." );
+			}
+			dispose_variable( &file );
+		}
+		dispose_variable( &str );
+	}
+	return ret;
+}
+
 static int evaluate_scmp_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	int ret;
@@ -1896,6 +1944,7 @@ static struct operator operators[] = {
 	{ "$tup", '$', 2, &evaluate_stup_expression },
 	{ "$sub", '$', 3, &evaluate_ssub_expression },
 	{ "$load",'$', 1, &evaluate_sload_expression },
+	{ "$save",'$', 2, &evaluate_ssave_expression },
 	{ "$argc",'$', 0, &evaluate_sargc_expression },
 	{ "$argv",'$', 1, &evaluate_sargv_expression },
 	{ "$time",'$', 0, &evaluate_stime_expression },
