@@ -1052,6 +1052,85 @@ static int execute_aset_statement( struct statement *this, struct variable *vari
 	return ret;
 }
 
+static int parse_constant_list( struct element *elem, struct global_variable *prev, char *message ) {
+	int count = 0;
+	while( elem && message[ 0 ] == 0 ) {
+		prev->next = new_global_variable( "#Const#", elem->value, elem->line, message );
+		if( prev->next ) {
+			count++;
+			prev = prev->next;
+			elem = elem->next;
+			if( elem && elem->value[ 0 ] == ',' ) {
+				elem = elem->next;
+			}
+		}
+	}
+	return count;
+}
+
+static int execute_astr_statement( struct statement *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	int ret, idx, length, newlen;
+	char msg[ 128 ] = "";
+	struct element *elem = NULL;
+	struct global_variable inputs, *input;
+	struct variable dest = { 0, NULL }, src = { 0, NULL }, *values, *newvar;
+	ret = this->destination->evaluate( this->destination, variables, &dest, exception );
+	if( ret ) {
+		if( dest.array_value && dest.array_value->values ) {
+			ret = this->source->evaluate( this->source, variables, &src, exception );
+			if( ret ) {
+				if( src.array_value ) {
+					elem = parse_element( src.array_value->data, msg );
+					if( elem ) {
+						if( elem->value[ 0 ] == '{' ) {
+							inputs.next = NULL;
+							newlen = parse_constant_list( elem->child, &inputs, msg );
+							if( msg[ 0 ] == 0 ) {
+								newvar = calloc( newlen + 1, sizeof( struct variable ) );
+								if( newvar ) {
+									idx = 0;
+									length = dest.array_value->length;
+									values = dest.array_value->values;
+									while( idx < length ) {
+										dispose_variable( &values[ idx++ ] );
+									}
+									free( values );
+									dest.array_value->length = newlen;
+									dest.array_value->values = newvar;
+									idx = 0;
+									input = inputs.next;
+									while( idx < newlen ) {
+										assign_variable( &input->value, &newvar[ idx++ ] );
+										input = input->next;
+									}
+								} else {
+									ret = throw( exception, NULL, 0, NULL );
+								}
+							} else {
+								ret = throw( exception, this->source, 0, msg );
+							}
+							dispose_global_variables( inputs.next );
+						} else {
+							ret = throw( exception, this->source, 0, "Invalid array string." );
+						}
+						dispose_element( elem );
+					} else {
+						ret = throw( exception, this->source, 0, msg );
+					}
+				} else {
+					ret = throw( exception, this->source, 0, "Not an string." );
+				}
+				dispose_variable( &src );
+			}
+		} else {
+			ret = throw( exception, this->destination, 0, "Not an array." );
+		}
+		dispose_variable( &dest );
+	}
+	return ret;
+}
+
 static int execute_switch_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct statement *stmt = this->if_block;
@@ -2372,22 +2451,6 @@ static struct element* parse_set_statement( struct element *elem, struct environ
 	return next;
 }
 
-static int parse_constant_list( struct element *elem, struct global_variable *prev, char *message ) {
-	int count = 0;
-	while( elem && message[ 0 ] == 0 ) {
-		prev->next = new_global_variable( "#Const#", elem->value, elem->line, message );
-		if( prev->next ) {
-			count++;
-			prev = prev->next;
-			elem = elem->next;
-			if( elem && elem->value[ 0 ] == ',' ) {
-				elem = elem->next;
-			}
-		}
-	}
-	return count;
-}
-
 static struct element* parse_aset_statement( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message ) {
 	int idx, count;
@@ -2431,6 +2494,30 @@ static struct element* parse_aset_statement( struct element *elem, struct enviro
 				dispose_global_variables( values.next );
 			} else {
 				strcpy( message, "Out of memory." );
+			}
+		}
+	}
+	return next;
+}
+
+static struct element* parse_astr_statement( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct statement *prev, char *message ) {
+	struct expression expr;
+	struct element *next = elem->next;
+	struct statement *stmt = new_statement( message );
+	if( stmt ) {
+		prev->next = stmt;
+		expr.next = NULL;
+		next = parse_expression( next, env, func, &expr, message );
+		if( expr.next ) {
+			stmt->destination = expr.next;
+			next = next->next;
+			expr.next = NULL;
+			next = parse_expression( next, env, func, &expr, message );
+			if( expr.next ) {
+				stmt->source = expr.next;
+				stmt->execute = &execute_astr_statement;
+				next = next->next;
 			}
 		}
 	}
@@ -2508,6 +2595,7 @@ static struct keyword statements[] = {
 	{ "dim", "[;", &parse_dim_statement },
 	{ "set", "[=x;", &parse_set_statement },
 	{ "aset", "x={;", &parse_aset_statement },
+	{ "astr", "x=x;", &parse_astr_statement },
 	{ "switch", "x{", &parse_switch_statement },
 	{ "inc", "n;", &parse_increment_statement },
 	{ NULL, NULL, NULL }
