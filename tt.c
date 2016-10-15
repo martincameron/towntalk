@@ -323,7 +323,17 @@ static int unquote_string( char *value ) {
 		chr = value[ offset++ ];
 		while( chr ) {
 			if( chr == '\\' && value[ offset ] ) {
-				value[ length++ ] = value[ offset++ ];
+				chr = value[ offset++ ];
+				if( chr >= '0' && chr <= '7' ) {
+					chr = chr - '0';
+					if( value[ offset ] >= '0' && value[ offset ] <= '7' ) {
+						chr = ( chr << 3 ) | ( value[ offset++ ] - '0' );
+						if( value[ offset ] >= '0' && value[ offset ] <= '7' ) {
+							chr = ( chr << 3 ) | ( value[ offset++ ] - '0' );
+						}
+					}
+				}
+				value[ length++ ] = chr;
 			} else if( chr != '"' ) {
 				value[ length++ ] = chr;
 			}
