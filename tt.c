@@ -65,7 +65,7 @@
 		call expr;               Evaluate expression and discard result.
 		dim [arr len];           Resize specified array.
 		set [arr idx] = expr;    Assign expression to array at index.
-		aset arr = { 0, "a" };   Assign array literal.
+		aset arr = "{ 0, 1 }";   Initialize array from string.
 		inc a;                   Increment local variable.
 
 	Expressions:
@@ -75,6 +75,7 @@
 		"String"                 String literal.
 		name                     Value of named local or global variable.
 		name(expr, expr)         Call named function with specified args.
+		{1,2,"three"}            Element list as string (use with aset).
 		[arr idx]                Array element.
 		'(expr operator ...)     Infix operator, eg '( 1 + 2 ).
 		+(int int)               Addition.
@@ -316,20 +317,21 @@ static char* cat_string( char *left, int llen, char *right, int rlen ) {
 	return str;
 }
 
-static char* unquote_string( char *value ) {
-	int offset = 0, length = 0, chr = 1;
+static int unquote_string( char *value ) {
+	int chr, offset = 0, length = 0;
 	if( value ) {
+		chr = value[ offset++ ];
 		while( chr ) {
-			chr = value[ offset++ ];
-			if( chr == '\\' ) {
-				chr = value[ offset++ ];
-				value[ length++ ] = chr;
+			if( chr == '\\' && value[ offset ] ) {
+				value[ length++ ] = value[ offset++ ];
 			} else if( chr != '"' ) {
 				value[ length++ ] = chr;
 			}
+			chr = value[ offset++ ];
 		}
+		value[ length ] = 0;
 	}
-	return value;
+	return length;
 }
 
 static int parse_child_element( char *buffer, int idx, struct element *parent, char *message ) {
@@ -664,9 +666,49 @@ static int throw( struct variable *exception, struct expression *source, int int
 	return 0;
 }
 
-static struct global_variable* new_global_variable( char *name, char *value, int line, char *message ) {
-	char *end = NULL;
+static int write_element( struct element *elem, char *output ) {
+	int chr, length = 0;
+	while( elem ) {
+		chr = elem->value[ 0 ];
+		if( output ) {
+			if( chr != ',' && chr != ';') {
+				output[ length++ ] = '\n';
+			}
+			strcpy( &output[ length ], elem->value );
+			length += strlen( elem->value );
+			if( elem->child ) {
+				length += write_element( elem->child, &output[ length ] );
+				output[ length++ ] = '\n';
+			}
+			if( chr == '(' ) {
+				output[ length++ ] = ')';
+			} else if( chr == '[' ) {
+				output[ length++ ] = ']';
+			} else if( chr == '{' ) {
+				output[ length++ ] = '}';
+			}
+		} else {
+			if( chr != ',' && chr != ';') {
+				length++;
+			}
+			length += strlen( elem->value );
+			if( elem->child ) {
+				length += write_element( elem->child, NULL ) + 1;
+			}
+			if( strchr( "([{", elem->value[ 0 ] ) ) {
+				length++;
+			}
+		}
+		elem = elem->next;
+	}
+	return length;
+}
+
+static struct global_variable* new_global_variable( char *name, struct element *elem, char *message ) {
+	int length;
+	char *end = NULL, *value;
 	struct array *arr;
+	struct element parent;
 	struct global_variable *global = malloc( sizeof( struct global_variable ) );
 	if( global ) {
 		/*printf("Global '%s'\n", name);*/
@@ -675,16 +717,34 @@ static struct global_variable* new_global_variable( char *name, char *value, int
 			global->value.integer_value = 0;
 			global->value.array_value = NULL;
 			global->next = NULL;
-			if( value ) {
-				if( value[ 0 ] == '"' ) {
+			if( elem && elem->value ) {
+				value = elem->value;
+				if( value[ 0 ] == '"' || value[ 0 ] == '{' ) {
 					/* String constant. */
 					arr = new_array();
 					if( arr ) {
 						global->value.array_value = arr;
-						arr->data = unquote_string( new_string( value ) );
-						if( arr->data ) {
+						if( value[ 0 ] == '"' ) {
+							value = new_string( value );
+							if( value ) {
+								length = unquote_string( value );
+							}
+						} else {
+							parent.line = elem->line;
+							parent.value = "{";
+							parent.child = elem->child;
+							parent.next = NULL;
+							length = write_element( &parent, NULL );
+							value = malloc( sizeof( char ) * length + 1 );
+							if( value ) {
+								write_element( &parent, value );
+								value[ length ] = 0;
+							}
+						}
+						if( value ) {
 							arr->reference_count = 1;
-							arr->length = strlen( arr->data );
+							arr->length = length;
+							arr->data = value;
 						} else {
 							strcpy( message, "Out of memory." );
 						}
@@ -695,7 +755,7 @@ static struct global_variable* new_global_variable( char *name, char *value, int
 					/* Integer constant. */
 					global->value.integer_value = ( int ) strtol( value, &end, 0 );
 					if( end[ 0 ] != 0 ) {
-						sprintf( message, "Invalid integer constant '%.16s' at line %d.", value, line );
+						sprintf( message, "Invalid integer constant '%.16s' at line %d.", value, elem->line );
 					}
 				}
 			}
@@ -1023,46 +1083,10 @@ static int execute_set_statement( struct statement *this, struct variable *varia
 	return ret;
 }
 
-static int execute_aset_statement( struct statement *this, struct variable *variables,
-	struct variable *result, struct variable *exception ) {
-	int ret, idx, length, newlen;
-	struct variable dest = { 0, NULL }, *values, *newvar;
-	ret = this->destination->evaluate( this->destination, variables, &dest, exception );
-	if( ret ) {
-		if( dest.array_value && dest.array_value->values ) {
-			newlen = this->global->array_value->length;
-			newvar = calloc( newlen + 1, sizeof( struct variable ) );
-			if( newvar ) {
-				idx = 0;
-				length = dest.array_value->length;
-				values = dest.array_value->values;
-				while( idx < length ) {
-					dispose_variable( &values[ idx++ ] );
-				}
-				free( values );
-				dest.array_value->length = newlen;
-				dest.array_value->values = newvar;
-				idx = 0;
-				values = this->global->array_value->values;
-				while( idx < newlen ) {
-					assign_variable( &values[ idx ], &newvar[ idx ] );
-					idx++;
-				}
-			} else {
-				ret = throw( exception, NULL, 0, NULL );
-			}
-		} else {
-			ret = throw( exception, this->destination, 0, "Not an array." );
-		}
-		dispose_variable( &dest );
-	}
-	return ret;
-}
-
 static int parse_constant_list( struct element *elem, struct global_variable *prev, char *message ) {
 	int count = 0;
 	while( elem && message[ 0 ] == 0 ) {
-		prev->next = new_global_variable( "#Const#", elem->value, elem->line, message );
+		prev->next = new_global_variable( "#Const#", elem, message );
 		if( prev->next ) {
 			count++;
 			prev = prev->next;
@@ -1075,7 +1099,7 @@ static int parse_constant_list( struct element *elem, struct global_variable *pr
 	return count;
 }
 
-static int execute_astr_statement( struct statement *this, struct variable *variables,
+static int execute_aset_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	int ret, idx, length, newlen;
 	char msg[ 128 ] = "";
@@ -1324,8 +1348,12 @@ static struct global_variable* get_global_variable( struct global_variable *glob
 }
 
 static int add_global_variable( struct environment *env, struct element *elem, char *message ) {
-	char *name = elem->value;
-	struct global_variable *global = new_global_variable( name, NULL, elem->line, message );
+	struct global_variable *global;
+	struct element value;
+	value.line = elem->line;
+	value.value = NULL;
+	value.child = value.next = NULL;
+	global = new_global_variable( elem->value, &value, message );
 	if( global ) {
 		global->next = env->globals;
 		env->globals = global;
@@ -1409,7 +1437,7 @@ static struct element* parse_const_declaration( struct element *elem, struct env
 	struct global_variable *constant;
 	char *name = next->value;
 	next = next->next->next;
-	constant = new_global_variable( name, next->value, next->line, message );
+	constant = new_global_variable( name, next, message );
 	if( constant ) {
 		constant->next = env->constants;
 		env->constants = constant;
@@ -2176,9 +2204,10 @@ static struct element* parse_expression( struct element *elem, struct environmen
 		expr->line = elem->line;
 		expr->function = func;
 		if( value[ 0 ] == '"' || ( value[ 0 ] >= '0' && value[ 0 ] <= '9' )
-			|| ( value[ 0 ] == '-' && ( value[ 1 ] >= '0' && value[ 1 ] <= '9' ) ) ) {
+			|| ( value[ 0 ] == '-' && ( value[ 1 ] >= '0' && value[ 1 ] <= '9' ) )
+			|| value[ 0 ] == '{' ) {
 			/* Constant. */
-			constant = new_global_variable( "#Const#", value, elem->line, message );
+			constant = new_global_variable( "#Const#", elem, message );
 			if( constant ) {
 				constant->next = env->constants;
 				env->constants = constant;
@@ -2460,55 +2489,6 @@ static struct element* parse_set_statement( struct element *elem, struct environ
 
 static struct element* parse_aset_statement( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message ) {
-	int idx, count;
-	struct array *arr;
-	struct expression expr;
-	struct global_variable values, *constant;
-	struct element *next = elem->next;
-	struct statement *stmt = new_statement( message );
-	if( stmt ) {
-		prev->next = stmt;
-		expr.next = NULL;
-		next = parse_expression( next, env, func, &expr, message );
-		if( expr.next ) {
-			stmt->destination = expr.next;
-			constant = new_array_variable( "#Const@" );
-			if( constant ) {
-				constant->next = env->constants;
-				env->constants = constant;
-				stmt->global = &constant->value;
-				next = next->next;
-				values.next = NULL;
-				count = parse_constant_list( next->child, &values, message );
-				if( message[ 0 ] == 0 ) {
-					arr = constant->value.array_value;
-					free( arr->values );
-					arr->length = count;
-					arr->values = calloc( count + 1, sizeof( struct variable ) );
-					if( arr->values ) {
-						idx = 0;
-						constant = values.next;
-						while( idx < count ) {
-							assign_variable( &constant->value, &arr->values[ idx++ ] );
-							constant = constant->next;
-						}
-						stmt->execute = &execute_aset_statement;
-						next = next->next->next;
-					} else {
-						strcpy( message, "Out of memory." );
-					}
-				}
-				dispose_global_variables( values.next );
-			} else {
-				strcpy( message, "Out of memory." );
-			}
-		}
-	}
-	return next;
-}
-
-static struct element* parse_astr_statement( struct element *elem, struct environment *env,
-	struct function_declaration *func, struct statement *prev, char *message ) {
 	struct expression expr;
 	struct element *next = elem->next;
 	struct statement *stmt = new_statement( message );
@@ -2523,7 +2503,7 @@ static struct element* parse_astr_statement( struct element *elem, struct enviro
 			next = parse_expression( next, env, func, &expr, message );
 			if( expr.next ) {
 				stmt->source = expr.next;
-				stmt->execute = &execute_astr_statement;
+				stmt->execute = &execute_aset_statement;
 				next = next->next;
 			}
 		}
@@ -2601,8 +2581,7 @@ static struct keyword statements[] = {
 	{ "try", "{cn{", &parse_try_statement },
 	{ "dim", "[;", &parse_dim_statement },
 	{ "set", "[=x;", &parse_set_statement },
-	{ "aset", "x={;", &parse_aset_statement },
-	{ "astr", "x=x;", &parse_astr_statement },
+	{ "aset", "x=x;", &parse_aset_statement },
 	{ "switch", "x{", &parse_switch_statement },
 	{ "inc", "n;", &parse_increment_statement },
 	{ NULL, NULL, NULL }
@@ -2615,7 +2594,7 @@ static struct element* parse_case_statement( struct element *elem, struct enviro
 	struct global_variable *constant;
 	if( stmt ) {
 		prev->next = stmt;
-		constant = new_global_variable( "#Const#", next->value, next->line, message );
+		constant = new_global_variable( "#Const#", next, message );
 		if( constant ) {
 			constant->next = env->constants;
 			env->constants = constant;
@@ -2736,7 +2715,7 @@ static int validate_syntax( char *syntax, struct element *elem, struct element *
 			if( elem && elem->value[ 0 ] == ',' ) {
 				elem = elem->next;
 			}
-			if( elem && strchr( ",;({", elem->value[ 0 ] ) == NULL ) {
+			if( elem && strchr( ",;(", elem->value[ 0 ] ) == NULL ) {
 				if( elem->next && elem->next->value[ 0 ] == '(' ) {
 					elem = elem->next;
 				}
@@ -2922,7 +2901,8 @@ static struct element* parse_include( struct element *elem, struct environment *
 	if( next && strcmp( next->value, ";" ) ) {
 		file_name = new_string( next->value );
 		if( file_name ) {
-			success = parse_tt_file( unquote_string( file_name ), env, message );
+			unquote_string( file_name );
+			success = parse_tt_file( file_name, env, message );
 			if( success ) {
 				next = next->next;
 				if( next && strcmp( next->value, ";" ) == 0 ) {
