@@ -235,25 +235,35 @@ static void print_element( struct element *elem, int indent ) {
 	}
 }
 
-static int parse_string( char *buffer, int idx, struct element *elem ) {
-	int offset = idx, length = 0;
-	char chr = '"';
-	while( chr >= 32 ) {
-		chr = buffer[ idx++ ];
-		if( chr == '\\' ) {
+static int parse_string( char *buffer, int idx, struct element *elem, char *message ) {
+	int length, offset = idx;
+	char chr = buffer[ idx++ ];
+	if( chr == '"' ) {
+		while( chr >= 32 ) {
 			chr = buffer[ idx++ ];
-		} else if( chr == '"' ) {
-			break;
+			if( chr == '\\' ) {
+				chr = buffer[ idx++ ];
+			} else if( chr == '"' ) {
+				break;
+			}
 		}
-	}
-	length = idx - offset + 1;
-	elem->value = malloc( sizeof( char ) * length + 1 );
-	if( elem->value ) {
-		elem->value[ 0 ] = '"';
-		memcpy( &elem->value[ 1 ], &buffer[ offset ], length );
-		elem->value[ length ] = 0;
+		if( chr == '"' ) {
+			length = idx - offset;
+			elem->value = malloc( sizeof( char ) * length + 1 );
+			if( elem->value ) {
+				memcpy( &elem->value[ 0 ], &buffer[ offset ], length );
+				elem->value[ length ] = 0;
+			} else {
+				strcpy( message, "Out of memory." );
+				idx = -1;
+			}
+		} else {
+			sprintf( message, "Unclosed string on line %d.", elem->line );
+			idx = -3;
+		}
 	} else {
-		return -1;
+		sprintf( message, "Expected '\"' on line %d.", elem->line );
+		idx = -3;
 	}
 	return idx;
 }
@@ -371,15 +381,12 @@ static int parse_child_element( char *buffer, int idx, struct element *parent, c
 				}
 				if( elem ) {
 					elem->line = line;
+					elem->value = NULL;
 					elem->child = elem->next = NULL;
 					if( chr == '"' ) {
-						idx = parse_string( buffer, idx, elem );
+						idx = parse_string( buffer, idx - 1, elem, message );
 						if( idx < 0 ) {
 							return idx;
-						}
-						if( buffer[ idx - 1 ] != '"' ) {
-							sprintf( message, "Unclosed string on line %d.", line );
-							return -3;
 						}
 					} else {
 						elem->value = malloc( sizeof( char ) * 2 );
