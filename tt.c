@@ -1639,8 +1639,7 @@ static int evaluate_sasc_expression( struct expression *this, struct variable *v
 		arr = new_array();
 		str = malloc( sizeof( char ) * 2 );
 		if( arr && str ) {
-			arr->reference_count = 1;
-			arr->length = 2;
+			arr->reference_count = arr->length = 1;
 			arr->data = str;
 			arr->data[ 0 ] = val.integer_value;
 			arr->data[ 1 ] = 0;
