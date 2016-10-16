@@ -1228,7 +1228,7 @@ static int execute_increment_statement( struct statement *this, struct variable 
 	return 1;
 }
 
-struct expression *new_expression() {
+static struct expression *new_expression() {
 	struct expression *expr = malloc( sizeof( struct expression ) );
 	if( expr ) {
 		expr->line = expr->index = 0;
@@ -2304,13 +2304,13 @@ static struct element* parse_increment_statement( struct element *elem, struct e
 	if( local >= 0 ) {
 		stmt = new_statement( message );
 		if( stmt ) {
+			prev->next = stmt;
 			stmt->source = new_expression();
 			if( stmt->source ) {
 				stmt->local = local;
 				stmt->source->line = next->line;
 				stmt->source->function = func;
 				stmt->execute = &execute_increment_statement;
-				prev->next = stmt;
 				next = next->next->next;
 			} else {
 				strcpy( message, "Out of memory." );
