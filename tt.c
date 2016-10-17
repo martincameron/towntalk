@@ -35,7 +35,7 @@
 	Declarations:
 		rem {}                   Comment (all brackets must be balanced).
 		include "file.tt";       Include declarations from specified file.
-		const name = value;      Integer or string constant.
+		const name = value;      Integer, string or tuple constant.
 		global a,b,c;            Global variables.
 		array a,b,c;             Global arrays.
 		function(a) {statements} Function declaration.
@@ -75,7 +75,7 @@
 		"String"                 String literal.
 		name                     Value of named local or global variable.
 		name(expr, expr)         Call named function with specified args.
-		{1,2,"three"}            Element list as string (use with aset).
+		{1,"2",$tup("3",4)}      Element list as string (use with aset).
 		[arr idx]                Array element.
 		'(expr operator ...)     Infix operator, eg '( 1 + 2 ).
 		+(int int)               Addition.
@@ -600,14 +600,7 @@ static void dispose_function_declarations( struct function_declaration *function
 }
 
 static struct environment* new_environment() {
-	struct environment *env = malloc( sizeof( struct environment ) );
-	if( env ) {
-		env->argc = 0;
-		env->argv = NULL;
-		env->constants = env->globals = env->arrays = NULL;
-		env->functions = env->entry_point = NULL;
-	}
-	return env;
+	return calloc( 1, sizeof( struct environment ) );
 }
 
 static void dispose_environment( struct environment *env ) {
@@ -647,13 +640,7 @@ static int get_string_list_index( struct string_list *list, char *value ) {
 }
 
 static struct array* new_array() {
-	struct array *arr = malloc( sizeof( struct array ) );
-	if( arr ) {
-		arr->data = NULL;
-		arr->reference_count = arr->length = 0;
-		arr->values = NULL;
-	}
-	return arr;
+	return calloc( 1, sizeof( struct array ) );
 }
 
 static int throw( struct variable *exception, struct expression *source, int integer, char *string ) {
@@ -714,70 +701,103 @@ static int write_element( struct element *elem, char *output ) {
 	return length;
 }
 
-static struct global_variable* new_global_variable( char *name, struct element *elem, char *message ) {
-	int length;
-	char *end = NULL, *value;
-	struct array *arr;
-	struct element parent;
-	struct global_variable *global = malloc( sizeof( struct global_variable ) );
-	if( global ) {
-		/*printf("Global '%s'\n", name);*/
-		global->name = new_string( name );
-		if( global->name ) {
-			global->value.integer_value = 0;
-			global->value.array_value = NULL;
-			global->next = NULL;
-			if( elem && elem->value ) {
-				value = elem->value;
-				if( value[ 0 ] == '"' || value[ 0 ] == '{' ) {
-					/* String constant. */
-					arr = new_array();
-					if( arr ) {
-						global->value.array_value = arr;
-						if( value[ 0 ] == '"' ) {
-							value = new_string( value );
-							if( value ) {
-								length = unquote_string( value );
-							}
-						} else {
-							parent.line = elem->line;
-							parent.value = "{";
-							parent.child = elem->child;
-							parent.next = NULL;
-							length = write_element( &parent, NULL );
-							value = malloc( sizeof( char ) * length + 1 );
-							if( value ) {
-								write_element( &parent, value );
-								value[ length ] = 0;
-							}
-						}
-						if( value ) {
-							arr->reference_count = 1;
-							arr->length = length;
-							arr->data = value;
-						} else {
-							strcpy( message, "Out of memory." );
-						}
-					} else {
-						strcpy( message, "Out of memory." );
-					}
-				} else {
-					/* Integer constant. */
-					global->value.integer_value = ( int ) strtol( value, &end, 0 );
-					if( end[ 0 ] != 0 ) {
-						sprintf( message, "Invalid integer constant '%.16s' at line %d.", value, elem->line );
-					}
-				}
-			}
+static struct element* parse_constant( struct element *elem, struct variable *constant, char *message ) {
+	int length = 0, integer_value = 0;
+	struct array *array_value = NULL;
+	struct element parent, *child, *next = elem->next;
+	char *end = NULL, *string = NULL;
+	if( elem->value[ 0 ] == '"' ) {
+		/* String literal. */
+		string = new_string( elem->value );
+		if( string ) {
+			length = unquote_string( string );
 		} else {
 			strcpy( message, "Out of memory." );
 		}
+	} else if( elem->value[ 0 ] == '{' ) {
+		/* Element string. */
+		parent.line = elem->line;
+		parent.value = "{";
+		parent.child = elem->child;
+		parent.next = NULL;
+		length = write_element( &parent, NULL );
+		string = malloc( sizeof( char ) * length + 1 );
+		if( string ) {
+			write_element( &parent, string );
+			string[ length ] = 0;
+		} else {
+			strcpy( message, "Out of memory." );
+		}
+	} else if( strcmp( elem->value, "$tup" ) == 0 ) {
+		/* Tuple constant. */
+		if( next && next->value[ 0 ] == '(' ) {
+			child = next->child;
+			if( child && child->value[ 0 ] == '"' ) {
+				string = new_string( child->value );
+				if( string ) {
+					length = unquote_string( string );
+					child = child->next;
+					if( child && child->value[ 0 ] == ',' ) {
+						child = child->next;
+					}
+					if( child && child->next == NULL ) {
+						integer_value = ( int ) strtol( child->value, &end, 0 );
+						if( end[ 0 ] == 0 ) {
+							next = next->next;
+						} else {
+							free( string );
+							string = NULL;
+							sprintf( message, "Invalid tuple integer on line %d.", next->line );
+						}
+					} else {
+						free( string );
+						string = NULL;
+						sprintf( message, "Invalid tuple constant on line %d.", next->line );
+					}
+				} else {
+					strcpy( message, "Out of memory." );
+				}
+			} else {
+				sprintf( message, "Invalid tuple string on line %d.", next->line );
+			}
+		} else {
+			sprintf( message, "Expected '(' after '$tup' on line %d.", elem->line );
+		}
 	} else {
-		strcpy( message, "Out of memory." );
+		/* Integer constant. */
+		integer_value = ( int ) strtol( elem->value, &end, 0 );
+		if( end[ 0 ] != 0 ) {
+			sprintf( message, "Invalid integer constant '%.16s' at line %d.", elem->value, elem->line );
+		}
 	}
-	if( global && message[ 0 ] != 0 ) {
-		dispose_global_variables( global );
-		global = NULL;
+	if( string ) {
+		array_value = new_array();
+		if( array_value ) {
+			array_value->reference_count = 1;
+			array_value->length = length;
+			array_value->data = string;
+		} else {
+			free( string );
+			strcpy( message, "Out of memory." );
+		}
+	}
+	constant->integer_value = integer_value;
+	constant->array_value = array_value;
+	return next;
+}
+
+static struct global_variable* new_global_variable( char *name, char *message ) {
+	struct global_variable *global = calloc( 1, sizeof( struct global_variable ) );
+	if( global ) {
+		/*printf("Global '%s'\n", name);*/
+		global->name = new_string( name );
+		if( global->name == NULL ) {
+			free( global );
+			global = NULL;
+		}
+	}
+	if( global == NULL ) {
+		strcpy( message, "Out of memory." );
 	}
 	return global;
 }
@@ -823,14 +843,8 @@ static struct global_variable* new_array_variable( char *name ) {
 }
 
 static struct statement* new_statement( char *message ) {
-	struct statement *stmt = malloc( sizeof( struct statement ) );
-	if( stmt ) {
-		stmt->local = 0;
-		stmt->global = NULL;
-		stmt->source = stmt->destination = stmt->index = NULL;
-		stmt->if_block = stmt->else_block = stmt->next = NULL;
-		stmt->execute = NULL;
-	} else {
+	struct statement *stmt = calloc( 1, sizeof( struct statement ) );
+	if( stmt == NULL ) {
 		strcpy( message, "Out of memory." );
 	}
 	return stmt;
@@ -1096,11 +1110,11 @@ static int execute_set_statement( struct statement *this, struct variable *varia
 static int parse_constant_list( struct element *elem, struct global_variable *prev, char *message ) {
 	int count = 0;
 	while( elem && message[ 0 ] == 0 ) {
-		prev->next = new_global_variable( "#Const#", elem, message );
+		prev->next = new_global_variable( "#Const#", message );
 		if( prev->next ) {
 			count++;
 			prev = prev->next;
-			elem = elem->next;
+			elem = parse_constant( elem, &prev->value, message );
 			if( elem && elem->value[ 0 ] == ',' ) {
 				elem = elem->next;
 			}
@@ -1184,11 +1198,13 @@ static int execute_switch_statement( struct statement *this, struct variable *va
 			if( case_value->array_value ) {
 				if( switch_value.array_value
 				&& switch_value.array_value->length == case_value->array_value->length
-				&& !strcmp( switch_value.array_value->data, case_value->array_value->data ) ) {
+				&& !strcmp( switch_value.array_value->data, case_value->array_value->data )
+				&& switch_value.integer_value == case_value->integer_value ) {
 					ret = stmt->execute( stmt, variables, result, exception );	
 					break;
 				}
-			} else if( switch_value.integer_value == case_value->integer_value ) {
+			} else if( switch_value.array_value == NULL
+				&& switch_value.integer_value == case_value->integer_value ) {
 				ret = stmt->execute( stmt, variables, result, exception );
 				break;
 			}
@@ -1229,15 +1245,7 @@ static int execute_increment_statement( struct statement *this, struct variable 
 }
 
 static struct expression *new_expression() {
-	struct expression *expr = malloc( sizeof( struct expression ) );
-	if( expr ) {
-		expr->line = expr->index = 0;
-		expr->global = NULL;
-		expr->function = NULL;
-		expr->parameters = expr->next = NULL;
-		expr->evaluate = NULL;
-	}
-	return expr;
+	return calloc( 1, sizeof( struct expression ) );
 }
 
 static int evaluate_local( struct expression *this, struct variable *variables,
@@ -1359,11 +1367,7 @@ static struct global_variable* get_global_variable( struct global_variable *glob
 
 static int add_global_variable( struct environment *env, struct element *elem, char *message ) {
 	struct global_variable *global;
-	struct element value;
-	value.line = elem->line;
-	value.value = NULL;
-	value.child = value.next = NULL;
-	global = new_global_variable( elem->value, &value, message );
+	global = new_global_variable( elem->value, message );
 	if( global ) {
 		global->next = env->globals;
 		env->globals = global;
@@ -1447,12 +1451,13 @@ static struct element* parse_const_declaration( struct element *elem, struct env
 	struct global_variable *constant;
 	char *name = next->value;
 	next = next->next->next;
-	constant = new_global_variable( name, next, message );
+	constant = new_global_variable( name, message );
 	if( constant ) {
 		constant->next = env->constants;
 		env->constants = constant;
+		next = parse_constant( next, &constant->value, message );
 	}
-	return next->next->next;
+	return next->next;
 }
 
 static struct element* parse_comment( struct element *elem, struct environment *env,
@@ -2216,12 +2221,13 @@ static struct element* parse_expression( struct element *elem, struct environmen
 			|| ( value[ 0 ] == '-' && ( value[ 1 ] >= '0' && value[ 1 ] <= '9' ) )
 			|| value[ 0 ] == '{' ) {
 			/* Constant. */
-			constant = new_global_variable( "#Const#", elem, message );
+			constant = new_global_variable( "#Const#", message );
 			if( constant ) {
 				constant->next = env->constants;
 				env->constants = constant;
 				expr->global = constant;
 				expr->evaluate = &evaluate_global;
+				next = parse_constant( elem, &constant->value, message );
 			}
 		} else if( value[ 0 ] == '\'' ) {
 			/* Infix operator.*/
@@ -2603,18 +2609,20 @@ static struct element* parse_case_statement( struct element *elem, struct enviro
 	struct global_variable *constant;
 	if( stmt ) {
 		prev->next = stmt;
-		constant = new_global_variable( "#Const#", next, message );
+		constant = new_global_variable( "#Const#", message );
 		if( constant ) {
 			constant->next = env->constants;
 			env->constants = constant;
-			stmt->global = &constant->value;
-			next = next->next;
-			block.next = NULL;
-			parse_keywords( statements, next->child, env, func, &block, message );
-			stmt->if_block = block.next;
+			next = parse_constant( next, &constant->value, message );
 			if( message[ 0 ] == 0 ) {
-				stmt->execute = &execute_case_statement;
-				next = next->next;
+				stmt->global = &constant->value;
+				block.next = NULL;
+				parse_keywords( statements, next->child, env, func, &block, message );
+				stmt->if_block = block.next;
+				if( message[ 0 ] == 0 ) {
+					stmt->execute = &execute_case_statement;
+					next = next->next;
+				}
 			}
 		}
 	}
@@ -2715,9 +2723,14 @@ static int validate_syntax( char *syntax, struct element *elem, struct element *
 				}
 			}
 		} else if( chr == 'v' ) {
-			/* String or integer constant. */
-			if( elem == NULL || strchr( "\"-0123456789", elem->value[ 0 ] ) == NULL ) {
+			/* String, integer or tuple constant. */
+			if( elem == NULL || strchr( "\"$-0123456789{", elem->value[ 0 ] ) == NULL ) {
 				sprintf( message, "Expected constant after '%.16s' on line %d.", key->value, line );
+			} else if( strcmp( elem->value, "$tup" ) == 0 ) {
+				elem = elem->next;
+				if( elem == NULL || elem->value[ 0 ] != '(' ) {
+					sprintf( message, "Expected '(' after '$tup' on line %d.", line );
+				}
 			}
 		} else if( chr == 'x' ) {
 			/* Expression. */
