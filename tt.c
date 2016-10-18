@@ -94,7 +94,7 @@
 		^(int int)               Bitwise XOR (for NOT use ^(int -1)).
 		!(int)                   Evaluates to 1 if zero, else 0.
 		$str(str int ...)        Integer to string and string concatenation.
-		$cmp(str str)            String comparison, returns 0 if equal.
+		$cmp(str str)            String/Tuple comparison, returns 0 if equal.
 		$cat(str str ...)        String concatenation (same as $str).
 		$chr(str idx)            Character at idx as integer.
 		$sub(str off len)        Substring (or byte array to string).
@@ -1791,9 +1791,9 @@ static int evaluate_scmp_expression( struct expression *this, struct variable *v
 			arr2 = str2.array_value;
 			if( arr1 && arr1->data && arr2 && arr2->data ) {
 				dispose_variable( result );
-				if( arr1->length == arr2->length ) {
+				if( arr1->length == arr2->length && str1.integer_value == str2.integer_value ) {
 					result->integer_value = memcmp( arr1->data, arr2->data, arr1->length );
-				} else if( arr1->length > arr2->length ){
+				} else if( arr1->length > arr2->length || str1.integer_value > str2.integer_value ){
 					result->integer_value = 1;
 				} else {
 					result->integer_value = -1;
