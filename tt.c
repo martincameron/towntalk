@@ -1181,17 +1181,19 @@ static int execute_aset_statement( struct statement *this, struct variable *vari
 
 static int execute_switch_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
+	int ret, length;
 	struct statement *stmt = this->if_block;
 	struct variable switch_value = { 0, NULL }, *case_value;
-	int ret = this->source->evaluate( this->source, variables, &switch_value, exception );
+	ret = this->source->evaluate( this->source, variables, &switch_value, exception );
 	if( ret ) {
 		ret = 1;
 		while( stmt ) {
 			case_value = stmt->global;
 			if( case_value->array_value ) {
+				length = case_value->array_value->length;
 				if( switch_value.array_value
-				&& switch_value.array_value->length == case_value->array_value->length
-				&& !strcmp( switch_value.array_value->data, case_value->array_value->data )
+				&& switch_value.array_value->length == length
+				&& !memcmp( switch_value.array_value->data, case_value->array_value->data, length )
 				&& switch_value.integer_value == case_value->integer_value ) {
 					ret = stmt->execute( stmt, variables, result, exception );	
 					break;
