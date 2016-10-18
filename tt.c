@@ -65,7 +65,7 @@
 		call expr;               Evaluate expression and discard result.
 		dim [arr len];           Resize specified array.
 		set [arr idx] = expr;    Assign expression to array at index.
-		aset arr = "{ 0, 1 }";   Initialize array from string.
+		aset arr = ${0,"a"};     Initialize array from string.
 		inc a;                   Increment local variable.
 
 	Expressions:
@@ -75,7 +75,7 @@
 		"String"                 String literal.
 		name                     Value of named local or global variable.
 		name(expr, expr)         Call named function with specified args.
-		{1,"2",$tup("3",4)}      Element list as string (use with aset).
+		${0,"1",$tup("2",3)}     Element list as string (use with aset).
 		[arr idx]                Array element.
 		'(expr operator ...)     Infix operator, eg '( 1 + 2 ).
 		+(int int)               Addition.
@@ -599,10 +599,6 @@ static void dispose_function_declarations( struct function_declaration *function
 	}
 }
 
-static struct environment* new_environment() {
-	return calloc( 1, sizeof( struct environment ) );
-}
-
 static void dispose_environment( struct environment *env ) {
 	if( env ) {
 		dispose_global_variables( env->constants );
@@ -639,14 +635,10 @@ static int get_string_list_index( struct string_list *list, char *value ) {
 	return idx;
 }
 
-static struct array* new_array() {
-	return calloc( 1, sizeof( struct array ) );
-}
-
 static int throw( struct variable *exception, struct expression *source, int integer, char *string ) {
 	struct array *arr = NULL;
 	if( string ) {
-		arr = new_array();
+		arr = calloc( 1, sizeof( struct array ) );
 		if( arr ) {
 			arr->reference_count = 1;
 			arr->data = malloc( sizeof( char ) * ( strlen( string ) + 64 ) );
@@ -714,17 +706,18 @@ static struct element* parse_constant( struct element *elem, struct variable *co
 		} else {
 			strcpy( message, "Out of memory." );
 		}
-	} else if( elem->value[ 0 ] == '{' ) {
+	} else if( elem->value[ 0 ] == '$' && elem->value[ 1 ] == 0 ) {
 		/* Element string. */
-		parent.line = elem->line;
+		parent.line = next->line;
 		parent.value = "{";
-		parent.child = elem->child;
+		parent.child = next->child;
 		parent.next = NULL;
 		length = write_element( &parent, NULL );
 		string = malloc( sizeof( char ) * length + 1 );
 		if( string ) {
 			write_element( &parent, string );
 			string[ length ] = 0;
+			next = next->next;
 		} else {
 			strcpy( message, "Out of memory." );
 		}
@@ -771,7 +764,7 @@ static struct element* parse_constant( struct element *elem, struct variable *co
 		}
 	}
 	if( string ) {
-		array_value = new_array();
+		array_value = calloc( 1, sizeof( struct array ) );
 		if( array_value ) {
 			array_value->reference_count = 1;
 			array_value->length = length;
@@ -812,7 +805,7 @@ static struct global_variable* new_array_variable( char *name ) {
 			global->value.integer_value = 0;
 			global->value.array_value = NULL;
 			global->next = NULL;
-			arr = new_array();
+			arr = calloc( 1, sizeof( struct array ) );
 			if( arr ) {
 				global->value.array_value = arr;
 				arr->data = new_string( "#Array@" );
@@ -921,7 +914,7 @@ static int execute_exit_statement( struct statement *this, struct variable *vari
 	code = exception->integer_value;
 	dispose_variable( exception );
 	exception->integer_value = code;
-	exception->array_value = new_array();
+	exception->array_value = calloc( 1, sizeof( struct array ) );
 	if( exception->array_value ) {
 		exception->array_value->reference_count = 1;
 	}
@@ -1242,10 +1235,6 @@ static int execute_increment_statement( struct statement *this, struct variable 
 		local->integer_value++;
 	}
 	return 1;
-}
-
-static struct expression *new_expression() {
-	return calloc( 1, sizeof( struct expression ) );
 }
 
 static int evaluate_local( struct expression *this, struct variable *variables,
@@ -1624,7 +1613,7 @@ static int evaluate_sstr_expression( struct expression *this, struct variable *v
 		}
 	}
 	if( ret ) {
-		arr = new_array();
+		arr = calloc( 1, sizeof( struct array ) );
 		if( arr && str ) {
 			arr->reference_count = 1;
 			arr->data = str;
@@ -1651,7 +1640,7 @@ static int evaluate_sasc_expression( struct expression *this, struct variable *v
 	struct variable val = { 0, NULL };
 	ret = this->parameters->evaluate( this->parameters, variables, &val, exception );
 	if( ret ) {
-		arr = new_array();
+		arr = calloc( 1, sizeof( struct array ) );
 		str = malloc( sizeof( char ) * 2 );
 		if( arr && str ) {
 			arr->reference_count = arr->length = 1;
@@ -1724,7 +1713,7 @@ static int evaluate_sload_expression( struct expression *this, struct variable *
 					len = load_file( file.array_value->data, buf, message );
 					if( len >= 0 ) {
 						buf[ len ] = 0;
-						arr = new_array();
+						arr = calloc( 1, sizeof( struct array ) );
 						if( arr ) {
 							arr->reference_count = 1;
 							arr->length = len;
@@ -1866,7 +1855,7 @@ static int evaluate_ssub_expression( struct expression *this, struct variable *v
 				if( str.array_value && str.array_value->data ) {
 					if( idx.integer_value >= 0 && len.integer_value >= 0 
 						&& idx.integer_value + len.integer_value <= str.array_value->length ) {
-						arr = new_array();
+						arr = calloc( 1, sizeof( struct array ) );
 						if( arr ) {
 							arr->reference_count = 1;
 							arr->data = malloc( sizeof( char ) * len.integer_value + 1 );
@@ -1927,7 +1916,7 @@ static int evaluate_sargv_expression( struct expression *this, struct variable *
 	ret = parameter->evaluate( parameter, variables, &idx, exception );
 	if( ret ) {
 		if( idx.integer_value >= 0 && idx.integer_value < this->function->env->argc ) {
-			arr = new_array();
+			arr = calloc( 1, sizeof( struct array ) );
 			if( arr ) {
 				arr->reference_count = 1;
 				arr->data = new_string( this->function->env->argv[ idx.integer_value ] );
@@ -1956,7 +1945,7 @@ static int evaluate_stime_expression( struct expression *this, struct variable *
 	int idx, ret = 1;
 	char value[ 16 ];
 	time_t seconds = time( NULL );
-	struct array *arr = new_array();
+	struct array *arr = calloc( 1, sizeof( struct array ) );
 	if( arr ) {
 		idx = 14;
 		value[ 15 ] = 0;
@@ -1992,7 +1981,7 @@ static int evaluate_sdate_expression( struct expression *this, struct variable *
 	if( ret ) {
 		if( input.array_value && input.array_value->data && is_time_string( input.array_value->data ) ) {
 			seconds = parse_time_string( input.array_value->data );
-			arr = new_array();
+			arr = calloc( 1, sizeof( struct array ) );
 			if( arr ) {
 				arr->reference_count = 1;
 				arr->data = new_string( ctime( &seconds ) );
@@ -2213,13 +2202,13 @@ static struct element* parse_expression( struct element *elem, struct environmen
 	char *value = elem->value;
 	int local;
 	struct function_declaration *decl;
-	struct expression *expr = new_expression();
+	struct expression *expr = calloc( 1, sizeof( struct expression ) );
 	if( expr ) {
 		expr->line = elem->line;
 		expr->function = func;
 		if( value[ 0 ] == '"' || ( value[ 0 ] >= '0' && value[ 0 ] <= '9' )
 			|| ( value[ 0 ] == '-' && ( value[ 1 ] >= '0' && value[ 1 ] <= '9' ) )
-			|| value[ 0 ] == '{' ) {
+			|| ( value[ 0 ] == '$' && value[ 1 ] == 0 ) ) {
 			/* Constant. */
 			constant = new_global_variable( "#Const#", message );
 			if( constant ) {
@@ -2311,7 +2300,7 @@ static struct element* parse_increment_statement( struct element *elem, struct e
 		stmt = new_statement( message );
 		if( stmt ) {
 			prev->next = stmt;
-			stmt->source = new_expression();
+			stmt->source = calloc( 1, sizeof( struct expression ) );
 			if( stmt->source ) {
 				stmt->local = local;
 				stmt->source->line = next->line;
@@ -2724,8 +2713,13 @@ static int validate_syntax( char *syntax, struct element *elem, struct element *
 			}
 		} else if( chr == 'v' ) {
 			/* String, integer or tuple constant. */
-			if( elem == NULL || strchr( "\"$-0123456789{", elem->value[ 0 ] ) == NULL ) {
+			if( elem == NULL || strchr( "\"$-0123456789", elem->value[ 0 ] ) == NULL ) {
 				sprintf( message, "Expected constant after '%.16s' on line %d.", key->value, line );
+			} else if( elem->value[ 0 ] == '$' && elem->value[ 1 ] == 0 ) {
+				elem = elem->next;
+				if( elem == NULL || elem->value[ 0 ] != '{' ) {
+					sprintf( message, "Expected '{' after '$' on line %d.", line );
+				}
 			} else if( strcmp( elem->value, "$tup" ) == 0 ) {
 				elem = elem->next;
 				if( elem == NULL || elem->value[ 0 ] != '(' ) {
@@ -2737,8 +2731,13 @@ static int validate_syntax( char *syntax, struct element *elem, struct element *
 			if( elem && elem->value[ 0 ] == ',' ) {
 				elem = elem->next;
 			}
-			if( elem && strchr( ",;(", elem->value[ 0 ] ) == NULL ) {
-				if( elem->next && elem->next->value[ 0 ] == '(' ) {
+			if( elem && strchr( ",;({", elem->value[ 0 ] ) == NULL ) {
+				if( elem->value[ 0 ] == '$' && elem->value[ 1 ] == 0 ) {
+					elem = elem->next;
+					if( elem == NULL || elem->value[ 0 ] != '{' ) {
+						sprintf( message, "Expected '{' after '$' on line %d.", line );
+					}
+				} else if( elem->next && elem->next->value[ 0 ] == '(' ) {
 					elem = elem->next;
 				}
 			} else if( elem && elem->value[ 0 ] == '[' ) {
@@ -3114,7 +3113,7 @@ int main( int argc, char **argv ) {
 	}
 	file_name = argv[ 1 ];
 	/* Parse program file. */
-	env = new_environment();
+	env = calloc( 1, sizeof( struct environment ) );
 	if( env ) {
 		env->argc = argc - 1;
 		env->argv = &argv[ 1 ];
