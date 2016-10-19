@@ -102,6 +102,7 @@
 		$int(str)                String to integer.
 		$len(str)                String/Array length.
 		$tup(str int)            String/Integer tuple.
+		$arr(arr)                Array to string (for aset).
 		$load("abc.bin")         Load raw bytes into string.
 		$save(str "abc.bin")     Save bytes to file, returns length.
 		$argc                    Number of command-line arguments.
@@ -250,7 +251,7 @@ static int parse_string( char *buffer, int idx, struct element *elem, char *mess
 		}
 		if( chr == '"' ) {
 			length = idx - offset;
-			elem->value = malloc( sizeof( char ) * length + 1 );
+			elem->value = malloc( sizeof( char ) * ( length + 1 ) );
 			if( elem->value ) {
 				memcpy( &elem->value[ 0 ], &buffer[ offset ], length );
 				elem->value[ length ] = 0;
@@ -362,7 +363,7 @@ static int parse_child_element( char *buffer, int idx, struct element *parent, c
 				if( elem ) {
 					elem->line = line;
 					elem->child = elem->next = NULL;
-					elem->value = malloc( sizeof( char ) * length + 1 );
+					elem->value = malloc( sizeof( char ) * ( length + 1 ) );
 					if( elem->value ) {
 						memcpy( elem->value, &buffer[ offset ], length );
 						elem->value[ length ] = 0;
@@ -693,6 +694,38 @@ static int write_element( struct element *elem, char *output ) {
 	return length;
 }
 
+static int write_variable( struct variable *var, char *output ) {
+	int length;
+	char integer[ 32 ];
+	sprintf( integer, "%d", var->integer_value );
+	length = strlen( integer );
+	if( output ) {
+		memcpy( output, integer, length );
+	}
+	return length;
+}
+
+static int write_array( struct array *arr, char *output ) {
+	int idx = 0, length = 0, count = arr->length;
+	if( output ) {
+		output[ length++ ] = '{';
+		while( idx < count ) {
+			length += write_variable( &arr->values[ idx++ ], &output[ length ] );
+			output[ length++ ] = ',';
+			output[ length++ ] = '\n';
+		}
+		output[ length++ ] = '}';
+	} else {
+		length++;
+		while( idx < count ) {
+			length += write_variable( &arr->values[ idx++ ], NULL );
+			length += 2;
+		}
+		length++;
+	}
+	return length;
+}
+
 static struct element* parse_constant( struct element *elem, struct variable *constant, char *message ) {
 	int length = 0, integer_value = 0;
 	struct array *array_value = NULL;
@@ -713,7 +746,7 @@ static struct element* parse_constant( struct element *elem, struct variable *co
 		parent.child = next->child;
 		parent.next = NULL;
 		length = write_element( &parent, NULL );
-		string = malloc( sizeof( char ) * length + 1 );
+		string = malloc( sizeof( char ) * ( length + 1 ) );
 		if( string ) {
 			write_element( &parent, string );
 			string[ length ] = 0;
@@ -1049,13 +1082,13 @@ static int execute_dim_statement( struct statement *this, struct variable *varia
 					if( new ) {
 						count = arr.array_value->length;
 						if( count > len.integer_value ) {
-							memcpy( new, old, len.integer_value * sizeof( struct variable ) );
+							memcpy( new, old, sizeof( struct variable ) * len.integer_value );
 							idx = len.integer_value;
 							while( idx < count ) {
 								dispose_variable( &old[ idx++ ] );
 							}
 						} else {
-							memcpy( new, old, count * sizeof( struct variable ) );
+							memcpy( new, old, sizeof( struct variable ) * count );
 						}
 						arr.array_value->values = new;
 						arr.array_value->length = len.integer_value;
@@ -1860,7 +1893,7 @@ static int evaluate_ssub_expression( struct expression *this, struct variable *v
 						arr = calloc( 1, sizeof( struct array ) );
 						if( arr ) {
 							arr->reference_count = 1;
-							arr->data = malloc( sizeof( char ) * len.integer_value + 1 );
+							arr->data = malloc( sizeof( char ) * ( len.integer_value + 1 ) );
 							if( arr->data ) {
 								arr->length = len.integer_value;
 								if( str.array_value->values ) {
@@ -1897,6 +1930,39 @@ static int evaluate_ssub_expression( struct expression *this, struct variable *v
 			dispose_variable( &idx );
 		}
 		dispose_variable( &str );
+	}
+	return ret;
+}
+
+static int evaluate_sarr_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	struct array *arr;
+	struct expression *parameter = this->parameters;
+	struct variable input = { 0, NULL };
+	int ret = parameter->evaluate( parameter, variables, &input, exception );
+	if( ret ) {
+		if( input.array_value && input.array_value->values ) {
+			arr = calloc( 1, sizeof( struct array ) );
+			if( arr ) {
+				arr->reference_count = 1;
+				arr->data = malloc( sizeof( char ) * ( write_array( input.array_value, NULL ) + 1 ) );
+				if( arr->data ) {
+					arr->length = write_array( input.array_value, arr->data );
+					arr->data[ arr->length ] = 0;
+					dispose_variable( result );
+					result->integer_value = 0;
+					result->array_value = arr;
+				} else {
+					free( arr );
+					ret = throw( exception, this, 0, NULL );
+				}
+			} else {
+				ret = throw( exception, this, 0, NULL );
+			}
+		} else {
+			ret = throw( exception, this, 0, "Not an array." );
+		}
+		dispose_variable( &input );
 	}
 	return ret;
 }
@@ -2062,6 +2128,7 @@ static struct operator operators[] = {
 	{ "$chr", '$', 2, &evaluate_schr_expression },
 	{ "$tup", '$', 2, &evaluate_stup_expression },
 	{ "$sub", '$', 3, &evaluate_ssub_expression },
+	{ "$arr", '$', 1, &evaluate_sarr_expression },
 	{ "$load",'$', 1, &evaluate_sload_expression },
 	{ "$save",'$', 2, &evaluate_ssave_expression },
 	{ "$argc",'$', 0, &evaluate_sargc_expression },
