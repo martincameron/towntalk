@@ -705,9 +705,9 @@ static int write_byte_string( char *bytes, int count, char *output ) {
 				output[ length++ ] = chr;
 			} else if( ( chr & 0x7F ) < 32 || chr == 127 ) {
 				output[ length++ ] = '\\';
-				output[ length++ ] = '0' + ( ( chr & 0xC0 ) >> 6 );
-				output[ length++ ] = '0' + ( ( chr & 0x38 ) >> 3 );
-				output[ length++ ] = '0' +   ( chr & 0x07 );
+				output[ length++ ] = '0' + ( ( chr >> 6 ) & 0x3 );
+				output[ length++ ] = '0' + ( ( chr >> 3 ) & 0x7 );
+				output[ length++ ] = '0' + ( chr & 0x7 );
 			} else {
 				output[ length++ ] = chr;
 			}
