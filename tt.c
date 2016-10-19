@@ -694,13 +694,72 @@ static int write_element( struct element *elem, char *output ) {
 	return length;
 }
 
-static int write_variable( struct variable *var, char *output ) {
-	int length;
-	char integer[ 32 ];
-	sprintf( integer, "%d", var->integer_value );
-	length = strlen( integer );
+static int write_byte_string( char *bytes, int count, char *output ) {
+	int chr, idx = 0, length = 0;
 	if( output ) {
-		memcpy( output, integer, length );
+		output[ length++ ] = '"';
+		while( idx < count ) {
+			chr = bytes[ idx++ ];
+			if( ( chr & 0x7F ) < 32 || chr == 127 ) {
+				output[ length++ ] = '\\';
+				output[ length++ ] = '0' + ( ( chr & 0xC0 ) >> 6 );
+				output[ length++ ] = '0' + ( ( chr & 0x38 ) >> 3 );
+				output[ length++ ] = '0' +   ( chr & 0x07 );
+			} else {
+				output[ length++ ] = chr;
+			}
+		}
+		output[ length++ ] = '"';
+	} else {
+		length++;
+		while( idx < count ) {
+			chr = bytes[ idx++ ];
+			if( ( chr & 0x7F ) < 32 || chr == 127 ) {
+				length += 4;
+			} else {
+				length++;
+			}
+		}
+		length++;
+	}
+	return length;
+}
+
+static int write_variable( struct variable *var, char *output ) {
+	int count, length = 0;
+	char integer[ 32 ];
+	if( output ) {
+		if( var->array_value && var->array_value->data ) {
+			if( var->integer_value ) {
+				strcpy( output, "$tup(" );
+				length += 5;
+				length += write_byte_string( var->array_value->data, var->array_value->length, &output[ length ] );
+				output[ length++ ] = ',';
+				sprintf( integer, "%d", var->integer_value );
+				count = strlen( integer );
+				memcpy( &output[ length ], integer, count );
+				length += count;
+				output[ length++ ] = ')';				
+			} else {
+				length += write_byte_string( var->array_value->data, var->array_value->length, output );
+			}
+		} else {
+			sprintf( integer, "%d", var->integer_value );
+			count = strlen( integer );
+			memcpy( &output[ length ], integer, count );
+			length += count;
+		}
+	} else {
+		if( var->array_value && var->array_value->data ) {
+			if( var->integer_value ) {
+				sprintf( integer, "%d", var->integer_value );
+				length += strlen( integer ) + 7;
+			}
+			length += write_byte_string( var->array_value->data, var->array_value->length, NULL );
+		} else {
+			sprintf( integer, "%d", var->integer_value );
+			length += strlen( integer );
+		}
 	}
 	return length;
 }
