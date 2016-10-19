@@ -241,7 +241,7 @@ static int parse_string( char *buffer, int idx, struct element *elem, char *mess
 	int length, offset = idx;
 	char chr = buffer[ idx++ ];
 	if( chr == '"' ) {
-		while( chr >= 32 ) {
+		while( ( chr & 0x7F ) >= 32 ) {
 			chr = buffer[ idx++ ];
 			if( chr == '\\' ) {
 				chr = buffer[ idx++ ];
@@ -700,7 +700,10 @@ static int write_byte_string( char *bytes, int count, char *output ) {
 		output[ length++ ] = '"';
 		while( idx < count ) {
 			chr = bytes[ idx++ ];
-			if( ( chr & 0x7F ) < 32 || chr == 127 ) {
+			if( chr == '"' || chr == '\\' ) {
+				output[ length++ ] = '\\';
+				output[ length++ ] = chr;
+			} else if( ( chr & 0x7F ) < 32 || chr == 127 ) {
 				output[ length++ ] = '\\';
 				output[ length++ ] = '0' + ( ( chr & 0xC0 ) >> 6 );
 				output[ length++ ] = '0' + ( ( chr & 0x38 ) >> 3 );
@@ -714,7 +717,9 @@ static int write_byte_string( char *bytes, int count, char *output ) {
 		length++;
 		while( idx < count ) {
 			chr = bytes[ idx++ ];
-			if( ( chr & 0x7F ) < 32 || chr == 127 ) {
+			if( chr == '"' || chr == '\\' ) {
+				length += 2;
+			} else if( ( chr & 0x7F ) < 32 || chr == 127 ) {
 				length += 4;
 			} else {
 				length++;
