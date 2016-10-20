@@ -378,12 +378,10 @@ static int parse_child_element( char *buffer, int idx, struct element *parent, c
 				}
 			}
 			if( chr == '\n' || chr == '#' ) {
-				while( chr >= 32 ) {
+				while( chr != '\n' ) {
 					chr = buffer[ idx++ ];
 				}
-				if( chr == '\n' ) {
-					line++;
-				}
+				line++;
 			} else if( chr != 0 && strchr( "\"(,;=[{", chr ) ) {
 				if( elem == NULL ) {
 					elem = malloc( sizeof( struct element ) );
