@@ -435,16 +435,25 @@ static int parse_child_element( char *buffer, int idx, struct element *parent, c
 }
 
 static void dispose_element( struct element *elem ) {
-	if( elem->string ) {
+	int idx, len;
+	elem->reference_count--;
+	if( elem->reference_count == 0 ) {
 		free( elem->string );
+		if( elem->array ) {
+			idx = 0, len = elem->value;
+			while( idx < len ) {
+				dispose_variable( &elem->array[ idx++ ] );
+			}
+			free( elem->array );
+		}
+		if( elem->child ) {
+			dispose_element( elem->child );
+		}
+		if( elem->next ) {
+			dispose_element( elem->next );
+		}
+		free( elem );
 	}
-	if( elem->child ) {
-		dispose_element( elem->child );
-	}
-	if( elem->next ) {
-		dispose_element( elem->next );
-	}
-	free( elem );
 }
 
 static struct element* parse_element( char *buffer, char *message ) {
@@ -518,20 +527,10 @@ static void dispose_string_list( struct string_list *str ) {
 }
 
 static void dispose_variable( struct variable *var ) {
-	int idx, len;
-	struct element *arr = var->element_value;
-	if( arr && --arr->reference_count < 1 ) {
-		free( arr->string );
-		if( arr->array ) {
-			idx = 0, len = arr->value;
-			while( idx < len ) {
-				dispose_variable( &arr->array[ idx++ ] );
-			}
-			free( arr->array );
-		}
-		free( arr );
+	if( var->element_value ) {
+		dispose_element( var->element_value );
+		var->element_value = NULL;
 	}
-	var->element_value = NULL;
 }
 
 static void assign_variable( struct variable *src, struct variable *dest ) {
