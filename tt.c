@@ -372,11 +372,11 @@ static int parse_child_element( char *buffer, int idx, struct element *parent, c
 				}
 			}
 			if( chr == '\n' || chr == '#' ) {
-				while( chr != '\n' ) {
+				while( chr && chr != '\n' ) {
 					chr = buffer[ idx++ ];
 				}
 				line++;
-			} else if( chr != 0 && strchr( "\"(,;=[{", chr ) ) {
+			} else if( chr && strchr( "\"(,;=[{", chr ) ) {
 				if( elem == NULL ) {
 					elem = calloc( 1, sizeof( struct element ) );
 					parent->child = elem;
