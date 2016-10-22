@@ -2251,6 +2251,7 @@ static int evaluate_sparse_expression( struct expression *this, struct variable 
 		if( string.element_value ) {
 			elem = parse_element( string.element_value->string, message );
 			if( message[ 0 ] == 0 ) {
+				element_to_value( elem );
 				dispose_variable( result );
 				result->integer_value = 0;
 				result->element_value = elem;
