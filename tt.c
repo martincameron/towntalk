@@ -114,6 +114,8 @@
 		$parse(str)              Parse string into element list.
 		$next(elem)              Get the next element in the list or 0.
 		$child(elem)             Get the first child element or 0.
+		$quote(str)              Encode byte string with quotes and escapes.
+		$unquo(str)              Opposite of $quote.
 */
 
 /* Reference-counted type. */
@@ -806,7 +808,7 @@ static void element_to_value( struct element *elem ) {
 	}
 }
 
-static struct element* new_string_constant( char *value, char *message ) {
+static struct element* new_string_constant( char *value ) {
 	int length;
 	char *string;
 	struct element *elem;
@@ -818,7 +820,6 @@ static struct element* new_string_constant( char *value, char *message ) {
 		elem->length = unquote_string( value, string );
 		elem->string = string;
 	} else {
-		strcpy( message, "Out of memory." );
 		free( string );
 		free( elem );
 		elem = NULL;
@@ -833,7 +834,10 @@ static struct element* parse_constant( struct element *elem, struct variable *co
 	char *end = NULL, *string = NULL;
 	if( elem->string[ 0 ] == '"' ) {
 		/* String literal. */
-		element_value = new_string_constant( elem->string, message );
+		element_value = new_string_constant( elem->string );
+		if( element_value == NULL ) {
+			strcpy( message, "Out of memory." );
+		}
 	} else if( elem->string[ 0 ] == '$' && elem->string[ 1 ] == 0 ) {
 		/* Element string. */
 		parent.length = next->length;
@@ -862,7 +866,7 @@ static struct element* parse_constant( struct element *elem, struct variable *co
 		if( next && next->string[ 0 ] == '(' ) {
 			child = next->child;
 			if( child && child->string[ 0 ] == '"' ) {
-				element_value = new_string_constant( child->string, message );
+				element_value = new_string_constant( child->string );
 				if( element_value ) {
 					child = child->next;
 					if( child && child->string[ 0 ] == ',' ) {
@@ -878,6 +882,8 @@ static struct element* parse_constant( struct element *elem, struct variable *co
 					} else {
 						sprintf( message, "Invalid tuple constant on line %d.", next->length );
 					}
+				} else {
+					strcpy( message, "Out of memory." );
 				}
 			} else {
 				sprintf( message, "Invalid tuple string on line %d.", next->length );
@@ -2259,6 +2265,67 @@ static int evaluate_sparse_expression( struct expression *this, struct variable 
 	return ret;
 }
 
+static int evaluate_squote_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	int ret, length;
+	struct expression *parameter = this->parameters;
+	struct variable string = { 0, NULL };
+	struct element *elem;
+	ret = parameter->evaluate( parameter, variables, &string, exception );
+	if( ret ) {
+		if( string.element_value ) {
+			elem = calloc( 1, sizeof( struct element ) );
+			if( elem ) {
+				length = write_byte_string( string.element_value->string,
+					string.element_value->length, NULL );
+				elem->string = malloc( sizeof( char ) * ( length + 1 ) );
+				if( elem->string ) {
+					elem->reference_count = 1;
+					elem->length = write_byte_string( string.element_value->string,
+						string.element_value->length, elem->string );
+					elem->string[ length ] = 0;
+					dispose_variable( result );
+					result->integer_value = 0;
+					result->element_value = elem;
+				} else {
+					free( elem );
+					ret = throw( exception, this, 0, NULL );
+				}
+			} else {
+				ret = throw( exception, this, 0, NULL );
+			}
+		} else {
+			ret = throw( exception, this, 0, "Not a string." );
+		}
+		dispose_variable( &string );
+	}
+	return ret;
+}
+
+static int evaluate_sunquo_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	struct expression *parameter = this->parameters;
+	struct variable string = { 0, NULL };
+	struct element *elem;
+	int ret = parameter->evaluate( parameter, variables, &string, exception );
+	if( ret ) {
+		if( string.element_value ) {
+			elem = new_string_constant( string.element_value->string );
+			if( elem ) {
+				dispose_variable( result );
+				result->integer_value = 0;
+				result->element_value = elem;
+			} else {
+				ret = throw( exception, this, 0, NULL );
+			}
+		} else {
+			ret = throw( exception, this, 0, "Not a string." );
+		}
+		dispose_variable( &string );
+	}
+	return ret;
+}
+
 static struct operator operators[] = {
 	{ "!", '!', 1, &evaluate_int_not_expression },
 	{ "%", '%', 2, &evaluate_integer_expression },
@@ -2295,6 +2362,8 @@ static struct operator operators[] = {
 	{ "$next",'$', 1, &evaluate_snext_expression },
 	{ "$child",'$', 1, &evaluate_schild_expression },
 	{ "$parse",'$', 1, &evaluate_sparse_expression },
+	{ "$quote",'$', 1, &evaluate_squote_expression },
+	{ "$unquo",'$', 1, &evaluate_sunquo_expression },
 	{ NULL, 0, 0, NULL }
 };
 
