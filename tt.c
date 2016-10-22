@@ -10,8 +10,9 @@
 	Towntalk (c)2016 Martin Cameron.
 
 	A program file consists of a list of declarations.
-	Variables are integers, strings or array references.
+	Variables are integers, strings, elements or array references.
 	Strings have value-semantics and are immutable, can be used as byte arrays.
+	Elements are immutable trees of strings with next and child references.
 	Arrays are held in separate global variables to avoid reference cycles.
 	When a '#' character is encountered, the rest of the line is ignored.
 	Variable/Function/Array names must match "[A-Za-Z][A-Za-z0-9_]*".
@@ -110,6 +111,9 @@
 		$time                    Current time in seconds as octal string.
 		$date(time)              Convert time string to human-readable date.
 		$secs(time2 time1)       Difference between time strings as integer.
+		$parse(str)              Parse string into element list.
+		$next(elem)              Get the next element in the list or 0.
+		$child(elem)             Get the first child element or 0.
 */
 
 /* Reference-counted type. */
@@ -2184,6 +2188,77 @@ static int evaluate_ssecs_expression( struct expression *this, struct variable *
 	return ret;
 }
 
+static int evaluate_snext_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	struct expression *parameter = this->parameters;
+	struct variable prev = { 0, NULL };
+	struct element *next;
+	int ret = parameter->evaluate( parameter, variables, &prev, exception );
+	if( ret ) {
+		if( prev.element_value ) {
+			next = prev.element_value->next;
+			if( next ) {
+				next->reference_count++;
+			}
+			dispose_variable( result );
+			result->integer_value = 0;
+			result->element_value = next;
+		} else {
+			ret = throw( exception, this, 0, "Not an element." );
+		}
+		dispose_variable( &prev );
+	}
+	return ret;
+}
+
+static int evaluate_schild_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	struct expression *parameter = this->parameters;
+	struct variable parent = { 0, NULL };
+	struct element *child;
+	int ret = parameter->evaluate( parameter, variables, &parent, exception );
+	if( ret ) {
+		if( parent.element_value ) {
+			child = parent.element_value->child;
+			if( child ) {
+				child->reference_count++;
+			}
+			dispose_variable( result );
+			result->integer_value = 0;
+			result->element_value = child;
+		} else {
+			ret = throw( exception, this, 0, "Not an element." );
+		}
+		dispose_variable( &parent );
+	}
+	return ret;
+}
+
+static int evaluate_sparse_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	struct expression *parameter = this->parameters;
+	struct variable string = { 0, NULL };
+	struct element *elem;
+	char message[ 128 ] = "";
+	int ret = parameter->evaluate( parameter, variables, &string, exception );
+	if( ret ) {
+		if( string.element_value ) {
+			elem = parse_element( string.element_value->string, message );
+			if( message[ 0 ] == 0 ) {
+				dispose_variable( result );
+				result->integer_value = 0;
+				result->element_value = elem;
+			} else {
+				ret = throw( exception, this, 0, message );
+			}
+		} else {
+			ret = throw( exception, this, 0, "Not a string." );
+		}
+		dispose_variable( &string );
+	}
+	return ret;
+}
+
 static struct operator operators[] = {
 	{ "!", '!', 1, &evaluate_int_not_expression },
 	{ "%", '%', 2, &evaluate_integer_expression },
@@ -2217,6 +2292,9 @@ static struct operator operators[] = {
 	{ "$time",'$', 0, &evaluate_stime_expression },
 	{ "$date",'$', 1, &evaluate_sdate_expression },
 	{ "$secs",'$', 2, &evaluate_ssecs_expression },
+	{ "$next",'$', 1, &evaluate_snext_expression },
+	{ "$child",'$', 1, &evaluate_schild_expression },
+	{ "$parse",'$', 1, &evaluate_sparse_expression },
 	{ NULL, 0, 0, NULL }
 };
 
