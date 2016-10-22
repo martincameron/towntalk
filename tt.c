@@ -312,29 +312,39 @@ static char* cat_string( char *left, int llen, char *right, int rlen ) {
 	return str;
 }
 
-static int unquote_string( char *value ) {
+static int unquote_string( char *string, char *output ) {
 	int chr, offset = 0, length = 0;
-	if( value ) {
-		chr = value[ offset++ ];
+	if( string ) {
+		chr = string[ offset++ ];
 		while( chr ) {
-			if( chr == '\\' && value[ offset ] ) {
-				chr = value[ offset++ ];
+			if( chr == '\\' && string[ offset ] ) {
+				chr = string[ offset++ ];
 				if( chr >= '0' && chr <= '7' ) {
 					chr = chr - '0';
-					if( value[ offset ] >= '0' && value[ offset ] <= '7' ) {
-						chr = ( chr << 3 ) | ( value[ offset++ ] - '0' );
-						if( value[ offset ] >= '0' && value[ offset ] <= '7' ) {
-							chr = ( chr << 3 ) | ( value[ offset++ ] - '0' );
+					if( string[ offset ] >= '0' && string[ offset ] <= '7' ) {
+						chr = ( chr << 3 ) | ( string[ offset++ ] - '0' );
+						if( string[ offset ] >= '0' && string[ offset ] <= '7' ) {
+							chr = ( chr << 3 ) | ( string[ offset++ ] - '0' );
 						}
 					}
 				}
-				value[ length++ ] = chr;
+				if( output ) {
+					output[ length++ ] = chr;
+				} else {
+					length++;
+				}
 			} else if( chr != '"' ) {
-				value[ length++ ] = chr;
+				if( output ) {
+					output[ length++ ] = chr;
+				} else {
+					length++;
+				}
 			}
-			chr = value[ offset++ ];
+			chr = string[ offset++ ];
 		}
-		value[ length ] = 0;
+		if( output ) {
+			output[ length ] = 0;
+		}
 	}
 	return length;
 }
@@ -437,9 +447,9 @@ static int parse_child_element( char *buffer, int idx, struct element *parent, c
 static void dispose_element( struct element *elem ) {
 	int idx, len;
 	struct element *next;
-	elem->reference_count--;
-	if( elem->reference_count == 0 ) {
-		while( elem ) {
+	while( elem ) {
+		elem->reference_count--;
+		if( elem->reference_count == 0 ) {
 			free( elem->string );
 			if( elem->array ) {
 				idx = 0, len = elem->length;
@@ -454,6 +464,8 @@ static void dispose_element( struct element *elem ) {
 			next = elem->next;
 			free( elem );
 			elem = next;
+		} else {
+			elem = NULL;
 		}
 	}
 }
@@ -736,7 +748,7 @@ static int write_variable( struct variable *var, char *output ) {
 				count = strlen( integer );
 				memcpy( &output[ length ], integer, count );
 				length += count;
-				output[ length++ ] = ')';				
+				output[ length++ ] = ')';
 			} else {
 				length += write_byte_string( var->element_value->string, var->element_value->length, output );
 			}
@@ -782,6 +794,34 @@ static int write_array( struct element *arr, char *output ) {
 	return length;
 }
 
+static void element_to_value( struct element *elem ) {
+	while( elem ) {
+		elem->length = strlen( elem->string );
+		element_to_value( elem->child );
+		elem = elem->next;
+	}
+}
+
+static struct element* new_string_constant( char *value, char *message ) {
+	int length;
+	char *string;
+	struct element *elem;
+	length = unquote_string( value, NULL );
+	string = malloc( sizeof( char ) * ( length + 1 ) );
+	elem = calloc( 1, sizeof( struct element ) );
+	if( elem && string ) {
+		elem->reference_count = 1;
+		elem->length = unquote_string( value, string );
+		elem->string = string;
+	} else {
+		strcpy( message, "Out of memory." );
+		free( string );
+		free( elem );
+		elem = NULL;
+	}
+	return elem;
+}
+
 static struct element* parse_constant( struct element *elem, struct variable *constant, char *message ) {
 	int length = 0, integer_value = 0;
 	struct element *element_value = NULL;
@@ -789,12 +829,7 @@ static struct element* parse_constant( struct element *elem, struct variable *co
 	char *end = NULL, *string = NULL;
 	if( elem->string[ 0 ] == '"' ) {
 		/* String literal. */
-		string = new_string( elem->string );
-		if( string ) {
-			length = unquote_string( string );
-		} else {
-			strcpy( message, "Out of memory." );
-		}
+		element_value = new_string_constant( elem->string, message );
 	} else if( elem->string[ 0 ] == '$' && elem->string[ 1 ] == 0 ) {
 		/* Element string. */
 		parent.length = next->length;
@@ -804,8 +839,16 @@ static struct element* parse_constant( struct element *elem, struct variable *co
 		length = write_element( &parent, NULL );
 		string = malloc( sizeof( char ) * ( length + 1 ) );
 		if( string ) {
-			write_element( &parent, string );
-			string[ length ] = 0;
+			element_value = calloc( 1, sizeof( struct element ) );
+			if( element_value ) {
+				element_value->reference_count = 1;
+				element_value->length = length;
+				write_element( &parent, string );
+				string[ length ] = 0;
+				element_value->string = string;
+			} else {
+				strcpy( message, "Out of memory." );
+			}
 			next = next->next;
 		} else {
 			strcpy( message, "Out of memory." );
@@ -815,9 +858,8 @@ static struct element* parse_constant( struct element *elem, struct variable *co
 		if( next && next->string[ 0 ] == '(' ) {
 			child = next->child;
 			if( child && child->string[ 0 ] == '"' ) {
-				string = new_string( child->string );
-				if( string ) {
-					length = unquote_string( string );
+				element_value = new_string_constant( child->string, message );
+				if( element_value ) {
 					child = child->next;
 					if( child && child->string[ 0 ] == ',' ) {
 						child = child->next;
@@ -827,17 +869,11 @@ static struct element* parse_constant( struct element *elem, struct variable *co
 						if( end[ 0 ] == 0 ) {
 							next = next->next;
 						} else {
-							free( string );
-							string = NULL;
 							sprintf( message, "Invalid tuple integer on line %d.", next->length );
 						}
 					} else {
-						free( string );
-						string = NULL;
 						sprintf( message, "Invalid tuple constant on line %d.", next->length );
 					}
-				} else {
-					strcpy( message, "Out of memory." );
 				}
 			} else {
 				sprintf( message, "Invalid tuple string on line %d.", next->length );
@@ -850,17 +886,6 @@ static struct element* parse_constant( struct element *elem, struct variable *co
 		integer_value = ( int ) strtol( elem->string, &end, 0 );
 		if( end[ 0 ] != 0 ) {
 			sprintf( message, "Invalid integer constant '%.16s' at line %d.", elem->string, elem->length );
-		}
-	}
-	if( string ) {
-		element_value = calloc( 1, sizeof( struct element ) );
-		if( element_value ) {
-			element_value->reference_count = 1;
-			element_value->length = length;
-			element_value->string = string;
-		} else {
-			free( string );
-			strcpy( message, "Out of memory." );
 		}
 	}
 	constant->integer_value = integer_value;
@@ -3047,7 +3072,7 @@ static struct element* parse_include( struct element *elem, struct environment *
 	if( next && strcmp( next->string, ";" ) ) {
 		file_name = new_string( next->string );
 		if( file_name ) {
-			unquote_string( file_name );
+			unquote_string( file_name, file_name );
 			success = parse_tt_file( file_name, env, message );
 			if( success ) {
 				next = next->next;
