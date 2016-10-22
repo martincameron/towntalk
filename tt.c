@@ -436,23 +436,25 @@ static int parse_child_element( char *buffer, int idx, struct element *parent, c
 
 static void dispose_element( struct element *elem ) {
 	int idx, len;
+	struct element *next;
 	elem->reference_count--;
 	if( elem->reference_count == 0 ) {
-		free( elem->string );
-		if( elem->array ) {
-			idx = 0, len = elem->length;
-			while( idx < len ) {
-				dispose_variable( &elem->array[ idx++ ] );
+		while( elem ) {
+			free( elem->string );
+			if( elem->array ) {
+				idx = 0, len = elem->length;
+				while( idx < len ) {
+					dispose_variable( &elem->array[ idx++ ] );
+				}
+				free( elem->array );
 			}
-			free( elem->array );
+			if( elem->child ) {
+				dispose_element( elem->child );
+			}
+			next = elem->next;
+			free( elem );
+			elem = next;
 		}
-		if( elem->child ) {
-			dispose_element( elem->child );
-		}
-		if( elem->next ) {
-			dispose_element( elem->next );
-		}
-		free( elem );
 	}
 }
 
@@ -1061,11 +1063,11 @@ static int execute_try_statement( struct statement *this, struct variable *varia
 static int execute_if_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct variable condition = { 0, NULL };
-	struct statement *stmt = this->if_block;
+	struct statement *stmt = this->else_block;
 	int ret = this->source->evaluate( this->source, variables, &condition, exception );
 	if( ret ) {
-		if( !condition.integer_value ) {
-			stmt = this->else_block;
+		if( condition.integer_value || condition.element_value ) {
+			stmt = this->if_block;
 		}
 		dispose_variable( &condition );
 		while( stmt ) {
@@ -1086,7 +1088,7 @@ static int execute_while_statement( struct statement *this, struct variable *var
 	struct statement *stmt;
 	int ret;
 	while( this->source->evaluate( this->source, variables, &condition, exception ) ) {
-		if( condition.integer_value ) {
+		if( condition.integer_value || condition.element_value ) {
 			dispose_variable( &condition );
 			stmt = this->if_block;
 			while( stmt ) {
