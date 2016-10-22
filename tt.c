@@ -66,7 +66,7 @@
 		call expr;               Evaluate expression and discard result.
 		dim [arr len];           Resize specified array.
 		set [arr idx] = expr;    Assign expression to array at index.
-		aset arr = ${0,"a"};     Initialize array from string.
+		aset arr = ${0,"a"};     Initialize array from element.
 		inc a;                   Increment local variable.
 
 	Expressions:
@@ -74,9 +74,9 @@
 		0x100                    Hexadecimal integer literal.
 		0888                     Octal integer literal.
 		"String"                 String literal.
+		${0,"1",$tup("2",3)}     Element literal.
 		name                     Value of named local or global variable.
 		name(expr, expr)         Call named function with specified args.
-		${0,"1",$tup("2",3)}     Element list as string (use with aset).
 		[arr idx]                Array element.
 		'(expr operator ...)     Infix operator, eg '( 1 + 2 ).
 		+(int int)               Addition.
@@ -828,10 +828,9 @@ static struct element* new_string_constant( char *value ) {
 }
 
 static struct element* parse_constant( struct element *elem, struct variable *constant, char *message ) {
-	int length = 0, integer_value = 0;
-	struct element *element_value = NULL;
-	struct element parent, *child, *next = elem->next;
-	char *end = NULL, *string = NULL;
+	int integer_value = 0;
+	struct element *child, *next = elem->next, *element_value = NULL;
+	char *end = NULL;
 	if( elem->string[ 0 ] == '"' ) {
 		/* String literal. */
 		element_value = new_string_constant( elem->string );
@@ -839,27 +838,21 @@ static struct element* parse_constant( struct element *elem, struct variable *co
 			strcpy( message, "Out of memory." );
 		}
 	} else if( elem->string[ 0 ] == '$' && elem->string[ 1 ] == 0 ) {
-		/* Element string. */
-		parent.length = next->length;
-		parent.string = "{";
-		parent.child = next->child;
-		parent.next = NULL;
-		length = write_element( &parent, NULL );
-		string = malloc( sizeof( char ) * ( length + 1 ) );
-		if( string ) {
-			element_value = calloc( 1, sizeof( struct element ) );
+		/* Element. */
+		if( next && next->string[ 0 ] == '{' ) {
+			element_value = new_string_constant( "{" );
 			if( element_value ) {
-				element_value->reference_count = 1;
-				element_value->length = length;
-				write_element( &parent, string );
-				string[ length ] = 0;
-				element_value->string = string;
+				if( next->child ) {
+					element_to_value( next->child );
+					next->child->reference_count++;
+					element_value->child = next->child;
+				}
+				next = next->next;
 			} else {
 				strcpy( message, "Out of memory." );
 			}
-			next = next->next;
 		} else {
-			strcpy( message, "Out of memory." );
+			sprintf( message, "Expected '{' after '$' on line %d.", elem->length );
 		}
 	} else if( strcmp( elem->string, "$tup" ) == 0 ) {
 		/* Tuple constant. */
@@ -1244,7 +1237,6 @@ static int execute_aset_statement( struct statement *this, struct variable *vari
 	struct variable *result, struct variable *exception ) {
 	int ret, idx, length, newlen;
 	char msg[ 128 ] = "";
-	struct element *elem = NULL;
 	struct global_variable inputs, *input;
 	struct variable dest = { 0, NULL }, src = { 0, NULL }, *values, *newvar;
 	ret = this->destination->evaluate( this->destination, variables, &dest, exception );
@@ -1252,46 +1244,36 @@ static int execute_aset_statement( struct statement *this, struct variable *vari
 		if( dest.element_value && dest.element_value->array ) {
 			ret = this->source->evaluate( this->source, variables, &src, exception );
 			if( ret ) {
-				if( src.element_value ) {
-					elem = parse_element( src.element_value->string, msg );
-					if( elem ) {
-						if( elem->string[ 0 ] == '{' ) {
-							inputs.next = NULL;
-							newlen = parse_constant_list( elem->child, &inputs, msg );
-							if( msg[ 0 ] == 0 ) {
-								newvar = calloc( newlen + 1, sizeof( struct variable ) );
-								if( newvar ) {
-									idx = 0;
-									length = dest.element_value->length;
-									values = dest.element_value->array;
-									while( idx < length ) {
-										dispose_variable( &values[ idx++ ] );
-									}
-									free( values );
-									dest.element_value->length = newlen;
-									dest.element_value->array = newvar;
-									idx = 0;
-									input = inputs.next;
-									while( idx < newlen ) {
-										assign_variable( &input->value, &newvar[ idx++ ] );
-										input = input->next;
-									}
-								} else {
-									ret = throw( exception, NULL, 0, NULL );
-								}
-							} else {
-								ret = throw( exception, this->source, 0, msg );
+				if( src.element_value && src.element_value->string[ 0 ] == '{' ) {
+					inputs.next = NULL;
+					newlen = parse_constant_list( src.element_value->child, &inputs, msg );
+					if( msg[ 0 ] == 0 ) {
+						newvar = calloc( newlen + 1, sizeof( struct variable ) );
+						if( newvar ) {
+							idx = 0;
+							length = dest.element_value->length;
+							values = dest.element_value->array;
+							while( idx < length ) {
+								dispose_variable( &values[ idx++ ] );
 							}
-							dispose_global_variables( inputs.next );
+							free( values );
+							dest.element_value->length = newlen;
+							dest.element_value->array = newvar;
+							idx = 0;
+							input = inputs.next;
+							while( idx < newlen ) {
+								assign_variable( &input->value, &newvar[ idx++ ] );
+								input = input->next;
+							}
 						} else {
-							ret = throw( exception, this->source, 0, "Invalid array string." );
+							ret = throw( exception, NULL, 0, NULL );
 						}
-						dispose_element( elem );
 					} else {
 						ret = throw( exception, this->source, 0, msg );
 					}
+					dispose_global_variables( inputs.next );
 				} else {
-					ret = throw( exception, this->source, 0, "Not an string." );
+					ret = throw( exception, this->source, 0, "Invalid array element." );
 				}
 				dispose_variable( &src );
 			}
