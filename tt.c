@@ -68,6 +68,8 @@
 		set [arr idx] = expr;    Assign expression to array at index.
 		aset arr = ${0,"a"};     Initialize array from element.
 		inc a;                   Increment local variable.
+		save str, "file";        Save bytes from string to file.
+		append str, "file";      Append bytes to the end of file.
 
 	Expressions:
 		-123                     Decimal integer literal.
@@ -105,7 +107,7 @@
 		$tup(str int)            String/Integer tuple.
 		$arr(arr)                Array to string (for aset).
 		$load("abc.bin")         Load raw bytes into string.
-		$save(str "abc.bin")     Save bytes to file, returns length.
+		$flen("file")            Get the length of a file.
 		$argc                    Number of command-line arguments.
 		$argv(idx)               Command-line argument as string.
 		$time                    Current time in seconds as octal string.
@@ -522,9 +524,9 @@ static int load_file( char *file_name, char *buffer, char *message ) {
 	return file_length;
 }
 
-static int save_file( char *file_name, char *buffer, int length, char *message ) {
+static int save_file( char *file_name, char *buffer, int length, int append, char *message ) {
 	int count = -1;
-	FILE *output_file = fopen( file_name, "wb" );
+	FILE *output_file = fopen( file_name, append ? "ab" : "wb" );
 	if( output_file != NULL ) {
 		count = fwrite( buffer, 1, length, output_file );
 		fclose( output_file );
@@ -1345,6 +1347,33 @@ static int execute_increment_statement( struct statement *this, struct variable 
 	return 1;
 }
 
+static int execute_save_statement( struct statement *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	int ret, count;
+	char message[ 64 ];
+	struct element *sval, *fval;
+	struct variable string = { 0, NULL }, file = { 0, NULL };
+	ret = this->source->evaluate( this->source, variables, &string, exception );
+	if( ret ) {
+		ret = this->destination->evaluate( this->destination, variables, &file, exception );
+		if( ret ) {
+			sval = string.element_value;
+			fval = file.element_value;
+			if( sval && sval->string && fval && fval->string ) {
+				count = save_file( fval->string, sval->string, sval->length, this->local, message );
+				if( count != sval->length ) {
+					ret = throw( exception, this->source, 0, message );
+				}
+			} else {
+				ret = throw( exception, this->source, 0, "Not a string." );
+			}
+			dispose_variable( &file );
+		}
+		dispose_variable( &string );
+	}
+	return ret;
+}
+
 static int evaluate_local( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	assign_variable( &variables[ this->index ], result );
@@ -1851,35 +1880,26 @@ static int evaluate_sload_expression( struct expression *this, struct variable *
 	return ret;
 }
 
-static int evaluate_ssave_expression( struct expression *this, struct variable *variables,
+static int evaluate_sflen_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	int ret, count;
+	int ret, len;
 	char message[ 64 ];
-	struct element *sarr, *farr;
-	struct expression *parameter = this->parameters;
-	struct variable str = { 0, NULL }, file = { 0, NULL };
-	ret = parameter->evaluate( parameter, variables, &str, exception );
+	struct variable file = { 0, NULL };
+	ret = this->parameters->evaluate( this->parameters, variables, &file, exception );
 	if( ret ) {
-		parameter = parameter->next;
-		ret = parameter->evaluate( parameter, variables, &file, exception );
-		if( ret ) {
-			sarr = str.element_value;
-			farr = file.element_value;
-			if( sarr && sarr->string && farr && farr->string ) {
-				count = save_file( farr->string, sarr->string, sarr->length, message );
-				if( count == sarr->length ) {
-					dispose_variable( result );
-					result->integer_value = count;
-					result->element_value = NULL;
-				} else {
-					ret = throw( exception, this, 0, message );
-				}
+		if( file.element_value && file.element_value->string ) {
+			len = load_file( file.element_value->string, NULL, message );
+			if( len >= 0 ) {
+				dispose_variable( result );
+				result->integer_value = len;
+				result->element_value = NULL;
 			} else {
-				ret = throw( exception, this, 0, "Not a string." );
+				ret = throw( exception, this, 0, message );
 			}
-			dispose_variable( &file );
+		} else {
+			ret = throw( exception, this, 0, "Not a string." );
 		}
-		dispose_variable( &str );
+		dispose_variable( &file );
 	}
 	return ret;
 }
@@ -2336,7 +2356,7 @@ static struct operator operators[] = {
 	{ "$sub", '$', 3, &evaluate_ssub_expression },
 	{ "$arr", '$', 1, &evaluate_sarr_expression },
 	{ "$load",'$', 1, &evaluate_sload_expression },
-	{ "$save",'$', 2, &evaluate_ssave_expression },
+	{ "$flen",'$', 1, &evaluate_sflen_expression },
 	{ "$argc",'$', 0, &evaluate_sargc_expression },
 	{ "$argv",'$', 1, &evaluate_sargv_expression },
 	{ "$time",'$', 0, &evaluate_stime_expression },
@@ -2593,6 +2613,41 @@ static struct element* parse_increment_statement( struct element *elem, struct e
 		}
 	} else {
 		sprintf( message, "Undeclared local variable '%.8s' on line %d.", next->string, next->length );
+	}
+	return next;
+}
+
+static struct element* parse_save_statement( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct statement *prev, char *message ) {
+	struct expression expr;
+	struct element *next = elem->next;
+	struct statement *stmt = new_statement( message );
+	if( stmt ) {
+		prev->next = stmt;
+		expr.next = NULL;
+		next = parse_expression( next, env, func, &expr, message );
+		if( expr.next ) {
+			stmt->source = expr.next;
+			if( next->string[ 0 ] == ',' ) {
+				next = next->next;
+			}
+			expr.next = NULL;
+			next = parse_expression( next, env, func, &expr, message );
+			if( expr.next ) {
+				stmt->destination = expr.next;
+				stmt->execute = &execute_save_statement;
+				next = next->next;
+			}
+		}
+	}
+	return next;
+}
+
+static struct element* parse_append_statement( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct statement *prev, char *message ) {
+	struct element *next = parse_save_statement( elem, env, func, prev, message );
+	if( prev->next && message[ 0 ] == 0 ) {
+		prev->next->local = 1;
 	}
 	return next;
 }
@@ -2868,6 +2923,8 @@ static struct keyword statements[] = {
 	{ "aset", "x=x;", &parse_aset_statement },
 	{ "switch", "x{", &parse_switch_statement },
 	{ "inc", "n;", &parse_increment_statement },
+	{ "save", "xx;", &parse_save_statement },
+	{ "append", "xx;", &parse_append_statement },
 	{ NULL, NULL, NULL }
 };
 
