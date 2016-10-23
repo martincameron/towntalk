@@ -225,20 +225,6 @@ static struct element* parse_case_statement( struct element *elem, struct enviro
 static struct element* parse_default_statement( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message );
 
-static void print_element( struct element *elem, int indent ) {
-	int i;
-	while( elem ) {
-		for( i = 0; i < indent; i++ ) {
-			printf( " " );
-		}
-		printf( "%s\n", elem->string );
-		if( elem->child ) {
-			print_element( elem->child, indent + 2 );
-		}
-		elem = elem->next;
-	}
-}
-
 static int parse_string( char *buffer, int idx, struct element *elem, char *message ) {
 	int length, offset = idx;
 	char chr = buffer[ idx++ ];
@@ -666,44 +652,6 @@ static int throw( struct variable *exception, struct expression *source, int int
 	exception->integer_value = integer;
 	exception->element_value = arr;
 	return 0;
-}
-
-static int write_element( struct element *elem, char *output ) {
-	int chr, length = 0;
-	while( elem ) {
-		chr = elem->string[ 0 ];
-		if( output ) {
-			if( chr != ',' && chr != ';') {
-				output[ length++ ] = '\n';
-			}
-			strcpy( &output[ length ], elem->string );
-			length += strlen( elem->string );
-			if( elem->child ) {
-				length += write_element( elem->child, &output[ length ] );
-				output[ length++ ] = '\n';
-			}
-			if( chr == '(' ) {
-				output[ length++ ] = ')';
-			} else if( chr == '[' ) {
-				output[ length++ ] = ']';
-			} else if( chr == '{' ) {
-				output[ length++ ] = '}';
-			}
-		} else {
-			if( chr != ',' && chr != ';') {
-				length++;
-			}
-			length += strlen( elem->string );
-			if( elem->child ) {
-				length += write_element( elem->child, NULL ) + 1;
-			}
-			if( strchr( "([{", elem->string[ 0 ] ) ) {
-				length++;
-			}
-		}
-		elem = elem->next;
-	}
-	return length;
 }
 
 static int write_byte_string( char *bytes, int count, char *output ) {
@@ -2593,13 +2541,12 @@ static int parse_expressions( struct element *elem, struct environment *env,
 static struct element* parse_increment_statement( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message ) {
 	int local;
-	struct statement *stmt;
 	struct element *next = elem->next;
-	local = get_string_list_index( func->variable_decls, next->string );
-	if( local >= 0 ) {
-		stmt = new_statement( message );
-		if( stmt ) {
-			prev->next = stmt;
+	struct statement *stmt = new_statement( message );
+	if( stmt ) {
+		prev->next = stmt;
+		local = get_string_list_index( func->variable_decls, next->string );
+		if( local >= 0 ) {
 			stmt->source = calloc( 1, sizeof( struct expression ) );
 			if( stmt->source ) {
 				stmt->local = local;
@@ -2610,9 +2557,9 @@ static struct element* parse_increment_statement( struct element *elem, struct e
 			} else {
 				strcpy( message, "Out of memory." );
 			}
+		} else {
+			sprintf( message, "Undeclared local variable '%.8s' on line %d.", next->string, next->length );
 		}
-	} else {
-		sprintf( message, "Undeclared local variable '%.8s' on line %d.", next->string, next->length );
 	}
 	return next;
 }
@@ -2655,20 +2602,20 @@ static struct element* parse_append_statement( struct element *elem, struct envi
 static struct element* parse_assignment_statement( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message ) {
 	int local;
-	struct statement *stmt;
 	struct expression expr;
 	struct global_variable *global = NULL;
 	struct element *next = elem->next;
-	local = get_string_list_index( func->variable_decls, next->string );
-	if( local < 0 ) {
-		global = get_global_variable( env->globals, next->string );
-	}
-	if( local >= 0 || global ) {
-		expr.next = NULL;
-		next = parse_expression( next->next->next, env, func, &expr, message );
-		if( expr.next ) {
-			stmt = new_statement( message );
-			if( stmt ) {
+	struct statement *stmt = new_statement( message );
+	if( stmt ) {
+		prev->next = stmt;
+		local = get_string_list_index( func->variable_decls, next->string );
+		if( local < 0 ) {
+			global = get_global_variable( env->globals, next->string );
+		}
+		if( local >= 0 || global ) {
+			expr.next = NULL;
+			next = parse_expression( next->next->next, env, func, &expr, message );
+			if( expr.next ) {
 				stmt->source = expr.next;
 				if( global ) {
 					stmt->global = &global->value;
@@ -2677,7 +2624,6 @@ static struct element* parse_assignment_statement( struct element *elem, struct 
 					stmt->local = local;
 					stmt->execute = &execute_local_assignment;
 				}
-				prev->next = stmt;
 				next = next->next;
 			}
 		}
@@ -2692,16 +2638,15 @@ static struct element* parse_single_expr_statement( struct element *elem, struct
 	int ( *execute )( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ), char *message ) {
 	struct expression expr;
-	struct statement *stmt;
 	struct element *next = elem->next;
-	expr.next = NULL;
-	next = parse_expression( next, env, func, &expr, message );
-	if( expr.next ) {
-		stmt = new_statement( message );
-		if( stmt ) {
+	struct statement *stmt = new_statement( message );
+	if( stmt ) {
+		prev->next = stmt;
+		expr.next = NULL;
+		next = parse_expression( next, env, func, &expr, message );
+		if( expr.next ) {
 			stmt->source = expr.next;
 			stmt->execute = execute;
-			prev->next = stmt;
 			next = next->next;
 		}
 	}
@@ -2740,9 +2685,8 @@ static struct element* parse_exit_statement( struct element *elem, struct enviro
 
 static struct element* parse_break_statement( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message ) {
-	struct statement *stmt;
 	struct element *next = elem->next;
-	stmt = new_statement( message );
+	struct statement *stmt = new_statement( message );
 	if( stmt ) {
 		stmt->execute = &execute_break_statement;
 		prev->next = stmt;
@@ -2753,9 +2697,8 @@ static struct element* parse_break_statement( struct element *elem, struct envir
 
 static struct element* parse_continue_statement( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message ) {
-	struct statement *stmt;
 	struct element *next = elem->next;
-	stmt = new_statement( message );
+	struct statement *stmt = new_statement( message );
 	if( stmt ) {
 		stmt->execute = &execute_continue_statement;
 		prev->next = stmt;
@@ -3121,14 +3064,15 @@ static void parse_keywords( struct keyword *keywords, struct element *elem,
 static struct element* parse_if_statement( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message ) {
 	struct expression expr;
-	struct statement block, *stmt;
 	struct element *next = elem->next;
-	expr.next = NULL;
-	next = parse_expression( next, env, func, &expr, message );
-	if( expr.next ) {
-		stmt = new_statement( message );
-		if( stmt ) {
+	struct statement block, *stmt = new_statement( message );
+	if( stmt ) {
+		prev->next = stmt;
+		expr.next = NULL;
+		next = parse_expression( next, env, func, &expr, message );
+		if( expr.next ) {
 			stmt->source = expr.next;
+			stmt->execute = &execute_if_statement;
 			if( next->child ) {
 				block.next = NULL;
 				parse_keywords( statements, next->child, env, func, &block, message );
@@ -3152,8 +3096,6 @@ static struct element* parse_if_statement( struct element *elem, struct environm
 					}
 				}
 			}
-			stmt->execute = &execute_if_statement;
-			prev->next = stmt;
 		}
 	}
 	return next;
@@ -3162,13 +3104,13 @@ static struct element* parse_if_statement( struct element *elem, struct environm
 static struct element* parse_while_statement( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message ) {
 	struct expression expr;
-	struct statement block, *stmt;
 	struct element *next = elem->next;
-	expr.next = NULL;
-	next = parse_expression( next, env, func, &expr, message );
-	if( expr.next ) {
-		stmt = new_statement( message );
-		if( stmt ) {
+	struct statement block, *stmt = new_statement( message );
+	if( stmt ) {
+		prev->next = stmt;
+		expr.next = NULL;
+		next = parse_expression( next, env, func, &expr, message );
+		if( expr.next ) {
 			stmt->source = expr.next;
 			if( next->child ) {
 				block.next = NULL;
@@ -3179,7 +3121,6 @@ static struct element* parse_while_statement( struct element *elem, struct envir
 				next = next->next;
 			}
 			stmt->execute = &execute_while_statement;
-			prev->next = stmt;
 		}
 	}
 	return next;
@@ -3383,7 +3324,6 @@ static int parse_tt_program( char *program, struct environment *env, char *messa
 	struct function_declaration *func, *entry;
 	elem = parse_element( program, message );
 	if( elem ) {
-		/*print_element( elem, 0 );*/
 		/* Populate execution environment.*/
 		parse_keywords( declarations, elem, env, NULL, NULL, message );
 		/* Parse function bodies. */
