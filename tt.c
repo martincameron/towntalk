@@ -2626,9 +2626,9 @@ static struct element* parse_assignment_statement( struct element *elem, struct 
 				}
 				next = next->next;
 			}
+		} else {
+			sprintf( message, "Undeclared variable '%.8s' on line %d.", next->string, next->length );
 		}
-	} else {
-		sprintf( message, "Undeclared variable '%.8s' on line %d.", next->string, next->length );
 	}
 	return next;
 }
