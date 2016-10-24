@@ -11,12 +11,16 @@
 
 	A program file consists of a list of declarations.
 	Variables are integers, strings, elements or array references.
-	Strings have value-semantics and are immutable, can be used as byte arrays.
-	Elements are immutable trees of strings with next and child references.
 	Arrays are held in separate global variables to avoid reference cycles.
 	When a '#' character is encountered, the rest of the line is ignored.
 	Variable/Function/Array names must match "[A-Za-Z][A-Za-z0-9_]*".
+	Strings have value-semantics and are immutable, can be used as byte arrays.
 	Commas within name and argument lists are optional.
+	Elements are immutable trees of strings with next and child references.
+	Element strings use the same syntax as program files.
+	Elements are separated by whitespace, commas, ';' or '='.
+	Elements may contain spaces and separators by enclosing them in quotes.
+	Child elements are enclosed in parentheses, square brackets or braces.
 
 	Example:
 		rem { Test }
@@ -117,7 +121,7 @@
 		$next(elem)              Get the next element in the list or 0.
 		$child(elem)             Get the first child element or 0.
 		$quote(str)              Encode byte string with quotes and escapes.
-		$unquo(str)              Opposite of $quote.
+		$unquote(str)            Decode quoted-string into byte string.
 */
 
 /* Reference-counted type. */
@@ -2253,7 +2257,7 @@ static int evaluate_squote_expression( struct expression *this, struct variable 
 	return ret;
 }
 
-static int evaluate_sunquo_expression( struct expression *this, struct variable *variables,
+static int evaluate_sunquote_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct expression *parameter = this->parameters;
 	struct variable string = { 0, NULL };
@@ -2314,7 +2318,7 @@ static struct operator operators[] = {
 	{ "$child",'$', 1, &evaluate_schild_expression },
 	{ "$parse",'$', 1, &evaluate_sparse_expression },
 	{ "$quote",'$', 1, &evaluate_squote_expression },
-	{ "$unquo",'$', 1, &evaluate_sunquo_expression },
+	{ "$unquote",'$', 1, &evaluate_sunquote_expression },
 	{ NULL, 0, 0, NULL }
 };
 
