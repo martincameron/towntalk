@@ -1558,14 +1558,14 @@ static struct element* parse_local_declaration( struct element *elem, struct env
 	return parse_variable_declaration( elem, env, add_local_variable, message);
 }
 
-static int evaluate_int_not_expression( struct expression *this, struct variable *variables,
+static int evaluate_not_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	int ret;
 	struct variable var = { 0, NULL };
 	ret = this->parameters->evaluate( this->parameters, variables, &var, exception );
 	if( ret ) {
 		dispose_variable( result );
-		result->integer_value = !var.integer_value;
+		result->integer_value = !( var.integer_value || var.element_value );
 		result->element_value = NULL;
 		dispose_variable( &var );
 	}
@@ -2282,7 +2282,7 @@ static int evaluate_sunquote_expression( struct expression *this, struct variabl
 }
 
 static struct operator operators[] = {
-	{ "!", '!', 1, &evaluate_int_not_expression },
+	{ "!", '!', 1, &evaluate_not_expression },
 	{ "%", '%', 2, &evaluate_integer_expression },
 	{ "&", '&', 2, &evaluate_integer_expression },
 	{ "*", '*', 2, &evaluate_integer_expression },
