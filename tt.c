@@ -15,6 +15,7 @@
 	When a '#' character is encountered, the rest of the line is ignored.
 	Variable/Function/Array names must match "[A-Za-Z][A-Za-z0-9_]*".
 	Strings have value-semantics and are immutable, can be used as byte arrays.
+	Strings are non-null, but evaluate to zero in integer expressions.
 	Commas within name and argument lists are optional.
 	Elements are immutable trees of strings with next and child references.
 	Element strings use the same syntax as program files.
@@ -56,11 +57,11 @@
 		return expr;             Return from the current function.
 		throw expr;              Return to the nearest catch statement.
 		exit expr;               Terminate program with specified exit code.
-		while expr {statements}  Repeat statements until expr is zero.
+		while expr {statements}  Repeat statements until expr is null.
 		break;                   Exit current while statement.
 		continue;                Stop current iteration of while statement.
-		if expr {statements}     Execute statements if expr is non-zero.
-		   else {statements}     Optional, execute if expr is zero.
+		if expr {statements}     Execute statements if expr is non-null.
+		   else {statements}     Optional, execute if expr is null.
 		switch expr {            Selection statement for integers or strings.
 		   case  1 {statements}  Execute statements if expr equals 1.
 		   case "a"{statements}  Execute statements if expr equals "a".
@@ -98,8 +99,11 @@
 		>e(int int)              Greater than or equal.
 		&(int int)               Bitwise AND.
 		|(int int)               Bitwise OR.
-		^(int int)               Bitwise XOR (for NOT use ^(int -1)).
-		!(int)                   Evaluates to 1 if zero, else 0.
+		^(int int)               Bitwise XOR.
+		~(int)                   Bitwise NOT.
+		!(expr)                  Evaluates to 1 if argument is null.
+		&&(expr)                 Evaluates to 1 if both arguments are non-null.
+		||(expr)                 Evaluates to 1 if either argument is non-null.
 		$str(str int ...)        Integer to string and string concatenation.
 		$cmp(str str)            String/Tuple comparison, returns 0 if equal.
 		$cat(str str ...)        String concatenation (same as $str).
@@ -1558,16 +1562,44 @@ static struct element* parse_local_declaration( struct element *elem, struct env
 	return parse_variable_declaration( elem, env, add_local_variable, message);
 }
 
-static int evaluate_not_expression( struct expression *this, struct variable *variables,
+static int evaluate_int_not_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	int ret;
 	struct variable var = { 0, NULL };
-	ret = this->parameters->evaluate( this->parameters, variables, &var, exception );
+	int ret = this->parameters->evaluate( this->parameters, variables, &var, exception );
 	if( ret ) {
 		dispose_variable( result );
-		result->integer_value = !( var.integer_value || var.element_value );
+		result->integer_value = ~var.integer_value;
 		result->element_value = NULL;
 		dispose_variable( &var );
+	}
+	return ret;
+}
+
+static int evaluate_logical_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	struct variable lhs = { 0, NULL }, rhs = { 0, NULL };
+	struct expression *parameter = this->parameters;
+	int value, ret = parameter->evaluate( parameter, variables, &lhs, exception );
+	if( ret ) {
+		value = lhs.integer_value || lhs.element_value;
+		if( this->index == '!' ) {
+			value = !value;
+		} else {
+			parameter = parameter->next;
+			ret = parameter->evaluate( parameter, variables, &rhs, exception );
+			if( ret ) {
+				if( this->index == '&' ) {
+					value = value && ( rhs.integer_value || rhs.element_value );
+				} else {
+					value = value || ( rhs.integer_value || rhs.element_value );
+				}
+				dispose_variable( &rhs );
+			}
+		}
+		dispose_variable( result );
+		result->integer_value = value;
+		result->element_value = NULL;
+		dispose_variable( &lhs );
 	}
 	return ret;
 }
@@ -2282,7 +2314,6 @@ static int evaluate_sunquote_expression( struct expression *this, struct variabl
 }
 
 static struct operator operators[] = {
-	{ "!", '!', 1, &evaluate_not_expression },
 	{ "%", '%', 2, &evaluate_integer_expression },
 	{ "&", '&', 2, &evaluate_integer_expression },
 	{ "*", '*', 2, &evaluate_integer_expression },
@@ -2297,6 +2328,10 @@ static struct operator operators[] = {
 	{ "^", '^', 2, &evaluate_integer_expression },
 	{ "=", '=', 2, &evaluate_integer_expression },
 	{ "|", '|', 2, &evaluate_integer_expression },
+	{ "~", '~', 1, &evaluate_int_not_expression },
+	{ "!", '!', 1, &evaluate_logical_expression },
+	{ "&&",'&', 2, &evaluate_logical_expression },
+	{ "||",'|', 2, &evaluate_logical_expression },
 	{ "$int", '$', 1, &evaluate_sint_expression },
 	{ "$str", '$',-1, &evaluate_sstr_expression },
 	{ "$len", '$', 1, &evaluate_slen_expression },
