@@ -178,6 +178,8 @@ struct statement {
 struct environment {
 	int argc;
 	char **argv, *file;
+	struct keyword *statements;
+	struct operator *operators;
 	struct global_variable *constants, *globals, *arrays;
 	struct function_declaration *functions, *entry_point;
 };
@@ -188,6 +190,7 @@ struct keyword {
 	/* Parse the current declaration into env, or statement into prev->next. */
 	struct element* (*parse)( struct element *elem, struct environment *env,
 		struct function_declaration *func, struct statement *prev, char *message );
+	struct keyword *next;
 };
 
 /* Parser operator. */
@@ -196,6 +199,7 @@ struct operator {
 	int num_operands;
 	int ( *evaluate )( struct expression *this, struct variable *variables,
 		struct variable *result, struct variable *exception );
+	struct operator *next;
 };
 
 /* Function declaration list. */
@@ -211,7 +215,7 @@ struct function_declaration {
 
 /* Forward declarations. */
 static void dispose_variable( struct variable *var );
-static int validate_name( char *name );
+static int validate_name( char *name, struct environment *env );
 static int validate_decl( struct element *elem, struct environment *env, char *message );
 static int parse_tt_file( char *file_name, struct environment *env, char *message );
 static void parse_keywords( struct keyword *keywords, struct element *elem,
@@ -2314,54 +2318,53 @@ static int evaluate_sunquote_expression( struct expression *this, struct variabl
 }
 
 static struct operator operators[] = {
-	{ "%", '%', 2, &evaluate_integer_expression },
-	{ "&", '&', 2, &evaluate_integer_expression },
-	{ "*", '*', 2, &evaluate_integer_expression },
-	{ "+", '+', 2, &evaluate_integer_expression },
-	{ "-", '-', 2, &evaluate_integer_expression },
-	{ "/", '/', 2, &evaluate_integer_expression },
-	{ "<", '<', 2, &evaluate_integer_expression },
-	{ "<e",'L', 2, &evaluate_integer_expression },
-	{ ">", '>', 2, &evaluate_integer_expression },
-	{ ">e",'G', 2, &evaluate_integer_expression },
-	{ ">>",'A', 2, &evaluate_integer_expression },
-	{ "^", '^', 2, &evaluate_integer_expression },
-	{ "=", '=', 2, &evaluate_integer_expression },
-	{ "|", '|', 2, &evaluate_integer_expression },
-	{ "~", '~', 1, &evaluate_int_not_expression },
-	{ "!", '!', 1, &evaluate_logical_expression },
-	{ "&&",'&', 2, &evaluate_logical_expression },
-	{ "||",'|', 2, &evaluate_logical_expression },
-	{ "$int", '$', 1, &evaluate_sint_expression },
-	{ "$str", '$',-1, &evaluate_sstr_expression },
-	{ "$len", '$', 1, &evaluate_slen_expression },
-	{ "$asc", '$', 1, &evaluate_sasc_expression },
-	{ "$cmp", '$', 2, &evaluate_scmp_expression },
-	{ "$cat", '$',-1, &evaluate_sstr_expression },
-	{ "$chr", '$', 2, &evaluate_schr_expression },
-	{ "$tup", '$', 2, &evaluate_stup_expression },
-	{ "$sub", '$', 3, &evaluate_ssub_expression },
-	{ "$arr", '$', 1, &evaluate_sarr_expression },
-	{ "$load",'$', 1, &evaluate_sload_expression },
-	{ "$flen",'$', 1, &evaluate_sflen_expression },
-	{ "$argc",'$', 0, &evaluate_sargc_expression },
-	{ "$argv",'$', 1, &evaluate_sargv_expression },
-	{ "$time",'$', 0, &evaluate_stime_expression },
-	{ "$date",'$', 1, &evaluate_sdate_expression },
-	{ "$secs",'$', 2, &evaluate_ssecs_expression },
-	{ "$next",'$', 1, &evaluate_snext_expression },
-	{ "$child",'$', 1, &evaluate_schild_expression },
-	{ "$parse",'$', 1, &evaluate_sparse_expression },
-	{ "$quote",'$', 1, &evaluate_squote_expression },
-	{ "$unquote",'$', 1, &evaluate_sunquote_expression },
-	{ NULL, 0, 0, NULL }
+	{ "%", '%', 2, &evaluate_integer_expression, &operators[ 1 ] },
+	{ "&", '&', 2, &evaluate_integer_expression, &operators[ 2 ] },
+	{ "*", '*', 2, &evaluate_integer_expression, &operators[ 3 ] },
+	{ "+", '+', 2, &evaluate_integer_expression, &operators[ 4 ] },
+	{ "-", '-', 2, &evaluate_integer_expression, &operators[ 5 ] },
+	{ "/", '/', 2, &evaluate_integer_expression, &operators[ 6 ] },
+	{ "<", '<', 2, &evaluate_integer_expression, &operators[ 7 ] },
+	{ "<e",'L', 2, &evaluate_integer_expression, &operators[ 8 ] },
+	{ ">", '>', 2, &evaluate_integer_expression, &operators[ 9 ] },
+	{ ">e",'G', 2, &evaluate_integer_expression, &operators[ 10 ] },
+	{ ">>",'A', 2, &evaluate_integer_expression, &operators[ 11 ] },
+	{ "^", '^', 2, &evaluate_integer_expression, &operators[ 12 ] },
+	{ "=", '=', 2, &evaluate_integer_expression, &operators[ 13 ] },
+	{ "|", '|', 2, &evaluate_integer_expression, &operators[ 14 ] },
+	{ "~", '~', 1, &evaluate_int_not_expression, &operators[ 15 ] },
+	{ "!", '!', 1, &evaluate_logical_expression, &operators[ 16 ] },
+	{ "&&",'&', 2, &evaluate_logical_expression, &operators[ 17 ] },
+	{ "||",'|', 2, &evaluate_logical_expression, &operators[ 18 ] },
+	{ "$int", '$', 1, &evaluate_sint_expression, &operators[ 19 ] },
+	{ "$str", '$',-1, &evaluate_sstr_expression, &operators[ 20 ] },
+	{ "$len", '$', 1, &evaluate_slen_expression, &operators[ 21 ] },
+	{ "$asc", '$', 1, &evaluate_sasc_expression, &operators[ 22 ] },
+	{ "$cmp", '$', 2, &evaluate_scmp_expression, &operators[ 23 ] },
+	{ "$cat", '$',-1, &evaluate_sstr_expression, &operators[ 24 ] },
+	{ "$chr", '$', 2, &evaluate_schr_expression, &operators[ 25 ] },
+	{ "$tup", '$', 2, &evaluate_stup_expression, &operators[ 26 ] },
+	{ "$sub", '$', 3, &evaluate_ssub_expression, &operators[ 27 ] },
+	{ "$arr", '$', 1, &evaluate_sarr_expression, &operators[ 28 ] },
+	{ "$load",'$', 1, &evaluate_sload_expression, &operators[ 29 ] },
+	{ "$flen",'$', 1, &evaluate_sflen_expression, &operators[ 30 ] },
+	{ "$argc",'$', 0, &evaluate_sargc_expression, &operators[ 31 ] },
+	{ "$argv",'$', 1, &evaluate_sargv_expression, &operators[ 32 ] },
+	{ "$time",'$', 0, &evaluate_stime_expression, &operators[ 33 ] },
+	{ "$date",'$', 1, &evaluate_sdate_expression, &operators[ 34 ] },
+	{ "$secs",'$', 2, &evaluate_ssecs_expression, &operators[ 35 ] },
+	{ "$next",'$', 1, &evaluate_snext_expression, &operators[ 36 ] },
+	{ "$child",'$', 1, &evaluate_schild_expression, &operators[ 37 ] },
+	{ "$parse",'$', 1, &evaluate_sparse_expression, &operators[ 38 ] },
+	{ "$quote",'$', 1, &evaluate_squote_expression, &operators[ 39 ] },
+	{ "$unquote",'$', 1, &evaluate_sunquote_expression, NULL },
+	{ NULL }
 };
 
-static struct operator* get_operator( char *name ) {
-	int idx = 1;
-	struct operator *oper = operators;
-	while( oper->name && strcmp( oper->name, name ) ) {
-		oper = &operators[ idx++ ];
+static struct operator* get_operator( char *name, struct environment *env ) {
+	struct operator *oper = env->operators;
+	while( oper && strcmp( oper->name, name ) ) {
+		oper = oper->next;
 	}
 	return oper;
 }
@@ -2379,7 +2382,7 @@ static struct element* parse_infix_expression( struct element *elem, struct envi
 		expr->parameters = prev.next;
 		if( message[ 0 ] == 0 ) {
 			if( child ) {
-				oper = get_operator( child->string );
+				oper = get_operator( child->string, env );
 				if( oper->name ) {
 					expr->index = oper->oper;
 					expr->evaluate = oper->evaluate;
@@ -2413,7 +2416,7 @@ static struct element* parse_operator_expression( struct element *elem, struct e
 	struct element *next = elem->next;
 	struct expression prev;
 	int num_operands;
-	struct operator *oper = get_operator( elem->string );
+	struct operator *oper = get_operator( elem->string, env );
 	if( oper->name ) {
 		expr->index = oper->oper;
 		expr->evaluate = oper->evaluate;
@@ -2833,10 +2836,10 @@ static struct element* parse_aset_statement( struct element *elem, struct enviro
 }
 
 static struct keyword switch_stmts[] = {
-	{ "rem", "{", &parse_comment },
-	{ "case", "v{", &parse_case_statement },
-	{ "default", "{", &parse_default_statement },
-	{ NULL, NULL, NULL }
+	{ "rem", "{", &parse_comment, &switch_stmts[ 1 ] },
+	{ "case", "v{", &parse_case_statement, &switch_stmts[ 2 ] },
+	{ "default", "{", &parse_default_statement, NULL },
+	{ NULL }
 };
 
 static struct element* parse_switch_statement( struct element *elem, struct environment *env,
@@ -2885,29 +2888,28 @@ static struct element* parse_switch_statement( struct element *elem, struct envi
 }
 
 static struct keyword statements[] = {
-	{ "rem", "{", &parse_comment },
-	{ "var", "l;", &parse_local_declaration },
-	{ "let", "n=x;", &parse_assignment_statement },
-	{ "print", "x;", &parse_print_statement },
-	{ "write", "x;", &parse_write_statement },
-	{ "error", "x;", &parse_error_statement },
-	{ "throw", "x;", &parse_throw_statement },
-	{ "return", "x;", &parse_return_statement },
-	{ "exit", "x;", &parse_exit_statement },
-	{ "break", ";", &parse_break_statement },
-	{ "continue", ";", &parse_continue_statement },
-	{ "if", "x{", &parse_if_statement },
-	{ "while", "x{", &parse_while_statement },
-	{ "call", "x;", &parse_call_statement },
-	{ "try", "{cn{", &parse_try_statement },
-	{ "dim", "[;", &parse_dim_statement },
-	{ "set", "[=x;", &parse_set_statement },
-	{ "aset", "x=x;", &parse_aset_statement },
-	{ "switch", "x{", &parse_switch_statement },
-	{ "inc", "n;", &parse_increment_statement },
-	{ "save", "xx;", &parse_save_statement },
-	{ "append", "xx;", &parse_append_statement },
-	{ NULL, NULL, NULL }
+	{ "rem", "{", &parse_comment, &statements[ 1 ] },
+	{ "var", "l;", &parse_local_declaration, &statements[ 2 ] },
+	{ "let", "n=x;", &parse_assignment_statement, &statements[ 3 ] },
+	{ "print", "x;", &parse_print_statement, &statements[ 4 ] },
+	{ "write", "x;", &parse_write_statement, &statements[ 5 ] },
+	{ "error", "x;", &parse_error_statement, &statements[ 6 ] },
+	{ "throw", "x;", &parse_throw_statement, &statements[ 7 ] },
+	{ "return", "x;", &parse_return_statement, &statements[ 8 ] },
+	{ "exit", "x;", &parse_exit_statement, &statements[ 9 ] },
+	{ "break", ";", &parse_break_statement, &statements[ 10 ] },
+	{ "continue", ";", &parse_continue_statement, &statements[ 11 ] },
+	{ "if", "x{", &parse_if_statement, &statements[ 12 ] },
+	{ "while", "x{", &parse_while_statement, &statements[ 13 ] },
+	{ "call", "x;", &parse_call_statement, &statements[ 14 ] },
+	{ "try", "{cn{", &parse_try_statement, &statements[ 15 ] },
+	{ "dim", "[;", &parse_dim_statement, &statements[ 16 ] },
+	{ "set", "[=x;", &parse_set_statement, &statements[ 17 ] },
+	{ "aset", "x=x;", &parse_aset_statement, &statements[ 18 ] },
+	{ "switch", "x{", &parse_switch_statement, &statements[ 19 ] },
+	{ "inc", "n;", &parse_increment_statement, &statements[ 20 ] },
+	{ "save", "xx;", &parse_save_statement, &statements[ 21 ] },
+	{ "append", "xx;", &parse_append_statement, NULL }
 };
 
 static struct element* parse_case_statement( struct element *elem, struct environment *env,
@@ -2925,7 +2927,7 @@ static struct element* parse_case_statement( struct element *elem, struct enviro
 			if( message[ 0 ] == 0 ) {
 				stmt->global = &constant->value;
 				block.next = NULL;
-				parse_keywords( statements, next->child, env, func, &block, message );
+				parse_keywords( env->statements, next->child, env, func, &block, message );
 				stmt->if_block = block.next;
 				if( message[ 0 ] == 0 ) {
 					stmt->execute = &execute_case_statement;
@@ -2944,7 +2946,7 @@ static struct element* parse_default_statement( struct element *elem, struct env
 	if( stmt ) {
 		prev->next = stmt;
 		block.next = NULL;
-		parse_keywords( statements, next->child, env, func, &block, message );
+		parse_keywords( env->statements, next->child, env, func, &block, message );
 		stmt->if_block = block.next;
 		if( message[ 0 ] == 0 ) {
 			stmt->execute = &execute_case_statement;
@@ -2955,16 +2957,14 @@ static struct element* parse_default_statement( struct element *elem, struct env
 }
 
 static int is_keyword( struct keyword *keywords, char *value ) {
-	while( keywords->name ) {
-		if( strcmp( keywords->name, value ) == 0 ) {
-			return 1;
-		}
-		keywords++;
+	while( keywords && strcmp( keywords->name, value ) ) {
+		keywords = keywords->next;
 	}
-	return 0;
+	return keywords != NULL;
 }
 
-static int validate_syntax( char *syntax, struct element *elem, struct element *key, char *message ) {
+static int validate_syntax( char *syntax, struct element *elem,
+	struct element *key, struct environment *env, char *message ) {
 	int idx = 1, chr = syntax[ 0 ], line = key->length;
 	while( chr && message[ 0 ] == 0 ) {
 		if( elem ) {
@@ -2984,7 +2984,7 @@ static int validate_syntax( char *syntax, struct element *elem, struct element *
 			/* Bracketed name list. */
 			if( elem && elem->string[ 0 ] == '(' ) {
 				if( elem->child ) {
-					validate_syntax( "l0", elem->child, elem, message );
+					validate_syntax( "l0", elem->child, elem, env, message );
 				}
 			} else {
 				sprintf( message, "Expected '(' after '%.16s' on line %d.", key->string, line );
@@ -2993,7 +2993,7 @@ static int validate_syntax( char *syntax, struct element *elem, struct element *
 			/* Index expression. */
 			if( elem && elem->string[ 0 ] == '[' ) {
 				if( elem->child ) {
-					validate_syntax( "xx0", elem->child, key, message );
+					validate_syntax( "xx0", elem->child, key, env, message );
 				} else {
 					sprintf( message, "Expected '[' after '%.16s' on line %d.", key->string, line );
 				}
@@ -3009,25 +3009,19 @@ static int validate_syntax( char *syntax, struct element *elem, struct element *
 			/* Name. */
 			if( elem == NULL || elem->string[ 0 ] == ';' ) {
 				sprintf( message, "Expected name after '%.16s' on line %d.", key->string, line );
-			} else if( !validate_name( elem->string ) ) {
+			} else if( !validate_name( elem->string, env ) ) {
 				sprintf( message, "Invalid name '%.16s' on line %d.", elem->string, line );
 			}
 		} else if( chr == 'l' ) {
 			/* Name list. */
-			if( validate_syntax( "n", elem, key, message ) ) {
+			if( validate_syntax( "n", elem, key, env, message ) ) {
 				while( elem->next && elem->next->string[ 0 ] != ';' && message[ 0 ] == 0 ) {
 					elem = elem->next;
 					line = elem->length;
 					if( elem->string[ 0 ] == ',' ) {
-						if( elem->next && validate_name( elem->next->string ) ) {
-							elem = elem->next;
-							line = elem->length;
-						} else {
-							sprintf( message, "Expected name after ',' on line %d.", line );							
-						}
-					} else if( !validate_name( elem->string ) ) {
-						sprintf( message, "Invalid name '%.16s' on line %d.", elem->string, line );
+						elem = elem->next;
 					}
+					validate_syntax( "n", elem, key, env, message );
 				}
 			}
 		} else if( chr == 'v' ) {
@@ -3060,7 +3054,7 @@ static int validate_syntax( char *syntax, struct element *elem, struct element *
 					elem = elem->next;
 				}
 			} else if( elem && elem->string[ 0 ] == '[' ) {
-				validate_syntax( "[", elem, key, message );
+				validate_syntax( "[", elem, key, env, message );
 			} else {
 				sprintf( message, "Expected expression after '%.16s' on line %d.", key->string, line );
 			}
@@ -3079,16 +3073,14 @@ static int validate_syntax( char *syntax, struct element *elem, struct element *
 static void parse_keywords( struct keyword *keywords, struct element *elem,
 	struct environment *env, struct function_declaration *func,
 	struct statement *stmt, char *message ) {
-	int idx;
 	struct keyword *key;
 	while( elem && message[ 0 ] == 0 ) {
-		idx = 1;
 		key = keywords;
-		while( key->name != NULL && strcmp( key->name, elem->string ) ) {
-			key = &keywords[ idx++ ];
+		while( key && strcmp( key->name, elem->string ) ) {
+			key = key->next;
 		}
-		if( key->name != NULL ) {
-			if( validate_syntax( key->syntax, elem->next, elem, message ) ) {
+		if( key ) {
+			if( validate_syntax( key->syntax, elem->next, elem, env, message ) ) {
 				elem = key->parse( elem, env, func, stmt, message );
 				if( stmt && stmt->next ) {
 					stmt = stmt->next;
@@ -3114,7 +3106,7 @@ static struct element* parse_if_statement( struct element *elem, struct environm
 			stmt->execute = &execute_if_statement;
 			if( next->child ) {
 				block.next = NULL;
-				parse_keywords( statements, next->child, env, func, &block, message );
+				parse_keywords( env->statements, next->child, env, func, &block, message );
 				stmt->if_block = block.next;
 			}
 			if( message[ 0 ] == 0 ) {
@@ -3124,7 +3116,7 @@ static struct element* parse_if_statement( struct element *elem, struct environm
 						next = next->next;
 						if( next->child ) {
 							block.next = NULL;
-							parse_keywords( statements, next->child, env, func, &block, message );
+							parse_keywords( env->statements, next->child, env, func, &block, message );
 							stmt->else_block = block.next;
 						}
 						if( message[ 0 ] == 0 ) {
@@ -3153,7 +3145,7 @@ static struct element* parse_while_statement( struct element *elem, struct envir
 			stmt->source = expr.next;
 			if( next->child ) {
 				block.next = NULL;
-				parse_keywords( statements, next->child, env, func, &block, message );
+				parse_keywords( env->statements, next->child, env, func, &block, message );
 				stmt->if_block = block.next;
 			}
 			if( message[ 0 ] == 0 ) {
@@ -3173,7 +3165,7 @@ static struct element* parse_try_statement( struct element *elem, struct environ
 	if( stmt ) {
 		if( next->child ) {
 			block.next = NULL;
-			parse_keywords( statements, next->child, env, func, &block, message );
+			parse_keywords( env->statements, next->child, env, func, &block, message );
 			stmt->if_block = block.next;
 		}
 		if( message[ 0 ] == 0 ) {
@@ -3183,7 +3175,7 @@ static struct element* parse_try_statement( struct element *elem, struct environ
 				next = next->next;
 				if( next->child ) {
 					block.next = NULL;
-					parse_keywords( statements, next->child, env, func, &block, message );
+					parse_keywords( env->statements, next->child, env, func, &block, message );
 					stmt->else_block = block.next;
 				}
 				if( message[ 0 ] == 0 ) {
@@ -3261,17 +3253,16 @@ static struct element* parse_include( struct element *elem, struct environment *
 }
 
 static struct keyword declarations[] = {
-	{ "rem", "{", &parse_comment },
-	{ "include", "\";", &parse_include },
-	{ "function", "n({", &parse_function_declaration },
-	{ "program", "n{",&parse_program_declaration },
-	{ "global", "l;", &parse_global_declaration },
-	{ "array", "l;", &parse_array_declaration },
-	{ "const", "n=v;", &parse_const_declaration },	
-	{ NULL, NULL }
+	{ "rem", "{", &parse_comment, &declarations[ 1 ] },
+	{ "include", "\";", &parse_include, &declarations[ 2 ] },
+	{ "function", "n({", &parse_function_declaration, &declarations[ 3 ] },
+	{ "program", "n{",&parse_program_declaration, &declarations[ 4 ] },
+	{ "global", "l;", &parse_global_declaration, &declarations[ 5 ] },
+	{ "array", "l;", &parse_array_declaration, &declarations[ 6 ] },
+	{ "const", "n=v;", &parse_const_declaration, NULL }
 };
 
-static int validate_name( char *name ) {
+static int validate_name( char *name, struct environment *env ) {
 	int chr, idx = 0, result = 1;
 	chr = name[ idx++ ];
 	if( ( chr >= 'A' && chr <= 'Z') || ( chr >= 'a' && chr <= 'z' ) ) {
@@ -3294,11 +3285,11 @@ static int validate_name( char *name ) {
 	}
 	if( result ) {
 		/* Statement keywords not permitted. */
-		result = !is_keyword( statements, name );
+		result = !is_keyword( env->statements, name );
 	}
 	if( result ) {
 		/* Operator name not permitted. */
-		result = ( get_operator( name )->name == NULL );
+		result = ( get_operator( name, env ) == NULL );
 	}
 	return result;
 }
@@ -3376,7 +3367,7 @@ static int parse_tt_program( char *program, struct environment *env, char *messa
 				entry = env->entry_point;
 				env->entry_point = func;
 				stmt.next = NULL;
-				parse_keywords( statements, next->child, env, func, &stmt, message );
+				parse_keywords( env->statements, next->child, env, func, &stmt, message );
 				func->statements = stmt.next;
 				env->entry_point = entry;
 			}
@@ -3433,6 +3424,8 @@ int main( int argc, char **argv ) {
 	if( env ) {
 		env->argc = argc - 1;
 		env->argv = &argv[ 1 ];
+		env->statements = statements;
+		env->operators = operators;
 		success = parse_tt_file( file_name, env, message );
 		if( success ) {
 			if( env->entry_point ) {
