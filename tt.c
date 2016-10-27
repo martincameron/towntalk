@@ -122,8 +122,8 @@
 		$date(time)              Convert time string to human-readable date.
 		$secs(time2 time1)       Difference between time strings as integer.
 		$parse(str)              Parse string into element list.
-		$next(elem)              Get the next element in the list or 0.
-		$child(elem)             Get the first child element or 0.
+		$next(elem)              Get the next element in the list or null.
+		$child(elem)             Get the first child element or null.
 		$quote(str)              Encode byte string with quotes and escapes.
 		$unquote(str)            Decode quoted-string into byte string.
 */
@@ -3224,30 +3224,16 @@ static struct element* parse_program_declaration( struct element *elem, struct e
 
 static struct element* parse_include( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message ) {
-	int success;
-	char *file_name;
-	struct element *next;
-	next = elem->next;
-	if( next && strcmp( next->string, ";" ) ) {
-		file_name = new_string( next->string );
-		if( file_name ) {
-			unquote_string( file_name, file_name );
-			success = parse_tt_file( file_name, env, message );
-			if( success ) {
-				next = next->next;
-				if( next && strcmp( next->string, ";" ) == 0 ) {
-					next = next->next;
-				} else {
-					sprintf( message, "Expected ';' after 'include' statement on line %d.", elem->length );
-				}
-			}
-			free( file_name );
-		} else {
-			strcpy( message, "Out of memory." );
-			return next;
+	struct element *next = elem->next;
+	char *file_name = new_string( next->string );
+	if( file_name ) {
+		unquote_string( file_name, file_name );
+		if( parse_tt_file( file_name, env, message ) ) {
+			next = next->next->next;
 		}
+		free( file_name );
 	} else {
-		sprintf( message, "Expected file name after 'include' statement on line %d.", elem->length );
+		strcpy( message, "Out of memory." );
 	}
 	return next;
 }
