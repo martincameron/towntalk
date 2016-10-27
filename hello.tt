@@ -1,0 +1,5 @@
+
+rem { Hello, World! }
+program hello {
+	print "Hello, World!";
+}
