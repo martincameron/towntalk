@@ -8,7 +8,7 @@ rem {
 	When offset is positive, length bytes are to be copied from the output.
 }
 
-array index, chain, output;
+array index, chain, buffer;
 
 function encode( input ) {
 	var inputIdx, inputLen, outputIdx;
@@ -17,7 +17,7 @@ function encode( input ) {
 	dim [ index 65536 ];
 	dim [ chain 65536 ];
 	let inputLen = $len( input );
-	dim [ output inputLen ];
+	dim [ buffer inputLen ];
 	while '( inputIdx < inputLen ) {
 		let matchOffset = 0;
 		let matchLength = 1;
@@ -55,6 +55,9 @@ function encode( input ) {
 			}
 			let idx = inputIdx;
 			let end = '( inputIdx + matchLength );
+			if '( '( end + 2 ) > inputLen ) {
+				let end = '( inputLen - 2 );
+			}
 			while '( idx < end ) {
 				# Update the index for each byte of the input to be encoded.
 				let key = '(       '(    $chr( input    idx )       & 0xFF ) * 256 );
@@ -72,11 +75,11 @@ function encode( input ) {
 		if '( literals > 0 ) {
 			# Flush literals if match found, end of input, or longest encodable run.
 			if '( '( '( matchOffset > 0 ) || '( inputIdx = inputLen ) ) || '( literals = 127 ) ) {
-				set [ output outputIdx ] = literals;
+				set [ buffer outputIdx ] = literals;
 				inc outputIdx;
 				let literalIdx = '( inputIdx - literals );
 				while '( literalIdx < inputIdx ) {
-					set [ output outputIdx ] = $chr( input literalIdx );
+					set [ buffer outputIdx ] = $chr( input literalIdx );
 					inc literalIdx;
 					inc outputIdx;
 				}
@@ -85,66 +88,62 @@ function encode( input ) {
 		}
 		if '( matchOffset > 0 ) {
 			#print $str( "Offset "  matchOffset  " Length "  matchLength );
-			set [ output outputIdx ] = '( 0x80 | matchLength );
+			set [ buffer outputIdx ] = '( 0x80 | matchLength );
 			inc outputIdx;
-			set [ output outputIdx ] = '( matchOffset >> 8 );
+			set [ buffer outputIdx ] = '( matchOffset >> 8 );
 			inc outputIdx;
-			set [ output outputIdx ] = matchOffset;
+			set [ buffer outputIdx ] = matchOffset;
 			inc outputIdx;
 			let inputIdx = '( inputIdx + matchLength );
 		}
 	}
-	return $sub( output 0 outputIdx );
+	return $sub( buffer 0 outputIdx );
 }
 
 function decode( input ) {
-	var inputIdx, inputLen, outputIdx, outputEnd, matchOffset, matchLength;
+	var inputIdx, inputLen, outputIdx, outputEnd, matchOffset, matchLength, output;
 	let inputLen = $len( input );
-	while '( inputIdx < inputLen ) {
-		let matchOffset = 0;
-		let matchLength = '( $chr( input inputIdx ) & 0xFF );
-		inc inputIdx;
-		if '( matchLength > 127 ) {
-			let matchLength = '( matchLength & 0x7F );
-			let matchOffset = '( $chr( input inputIdx ) & 0xFF );
+	while '( output = 0 ) {
+		let inputIdx = 0;
+		while '( inputIdx < inputLen ) {
+			let matchOffset = 0;
+			let matchLength = '( $chr( input inputIdx ) & 0xFF );
 			inc inputIdx;
-			let matchOffset = '( '( matchOffset * 256 ) | '( $chr( input inputIdx ) & 0xFF ) );
-			inc inputIdx;
-		}
-		let outputIdx = '( outputIdx + matchLength );
-		if '( matchOffset = 0 ) {
-			let inputIdx = '( inputIdx + matchLength );
-		}
-	}
-	dim [ output outputIdx ];
-	let inputIdx = 0;
-	let outputIdx = 0;
-	while '( inputIdx < inputLen ) {
-		let matchOffset = 0;
-		let matchLength = '( $chr( input inputIdx ) & 0xFF );
-		inc inputIdx;
-		if '( matchLength > 127 ) {
-			let matchLength = '( matchLength & 0x7F );
-			let matchOffset = '( $chr( input inputIdx ) & 0xFF );
-			inc inputIdx;
-			let matchOffset = '( '( matchOffset * 256 ) | '( $chr( input inputIdx ) & 0xFF ) );
-			inc inputIdx;
-		}
-		let outputEnd = '( outputIdx + matchLength );
-		if '( matchOffset = 0 ) {
-			while '( outputIdx < outputEnd ) {
-				set [ output outputIdx ] = $chr( input inputIdx );
+			if '( matchLength > 127 ) {
+				let matchLength = '( matchLength & 0x7F );
+				let matchOffset = '( $chr( input inputIdx ) & 0xFF );
 				inc inputIdx;
-				inc outputIdx;
+				let matchOffset = '( '( matchOffset * 256 ) | '( $chr( input inputIdx ) & 0xFF ) );
+				inc inputIdx;
 			}
-		} else {
-			while '( outputIdx < outputEnd ) {
-				set [ output outputIdx ] = [ output '( outputIdx - matchOffset ) ];
-				inc outputIdx;
+			if '( $len( buffer ) = 0 ) {
+				let outputIdx = '( outputIdx + matchLength );
+				if '( matchOffset = 0 ) {
+					let inputIdx = '( inputIdx + matchLength );
+				}
+			} else {
+				let outputEnd = '( outputIdx + matchLength );
+				if '( matchOffset = 0 ) {
+					while '( outputIdx < outputEnd ) {
+						set [ buffer outputIdx ] = $chr( input inputIdx );
+						inc inputIdx;
+						inc outputIdx;
+					}
+				} else {
+					while '( outputIdx < outputEnd ) {
+						set [ buffer outputIdx ] = [ buffer '( outputIdx - matchOffset ) ];
+						inc outputIdx;
+					}
+				}
 			}
 		}
+		if '( $len( buffer ) = 0 ) {
+			dim [ buffer outputIdx ];
+		} else {
+			let output = $sub( buffer 0, outputIdx );
+		}
 	}
-	return $sub( output 0, outputIdx );
+	return output;
 }
 
 program lz77x {
