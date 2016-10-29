@@ -2600,7 +2600,7 @@ static struct element* parse_increment_statement( struct element *elem, struct e
 				strcpy( message, "Out of memory." );
 			}
 		} else {
-			sprintf( message, "Undeclared local variable '%.8s' on line %d.", next->string, next->length );
+			sprintf( message, "Undeclared local variable '%.16s' on line %d.", next->string, next->length );
 		}
 	}
 	return next;
@@ -2669,7 +2669,7 @@ static struct element* parse_assignment_statement( struct element *elem, struct 
 				next = next->next;
 			}
 		} else {
-			sprintf( message, "Undeclared variable '%.8s' on line %d.", next->string, next->length );
+			sprintf( message, "Undeclared variable '%.16s' on line %d.", next->string, next->length );
 		}
 	}
 	return next;
