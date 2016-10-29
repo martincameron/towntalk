@@ -103,8 +103,10 @@ function encode( input ) {
 function decode( input ) {
 	var inputIdx, inputLen, outputIdx, outputEnd, matchOffset, matchLength, output;
 	let inputLen = $len( input );
-	while '( output = 0 ) {
+	dim [ buffer 0 ];
+	while !( output ) {
 		let inputIdx = 0;
+		let outputIdx = 0;
 		while '( inputIdx < inputLen ) {
 			let matchOffset = 0;
 			let matchLength = '( $chr( input inputIdx ) & 0xFF );
