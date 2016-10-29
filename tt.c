@@ -2383,7 +2383,7 @@ static struct element* parse_infix_expression( struct element *elem, struct envi
 		if( message[ 0 ] == 0 ) {
 			if( child ) {
 				oper = get_operator( child->string, env );
-				if( oper->name ) {
+				if( oper ) {
 					expr->index = oper->oper;
 					expr->evaluate = oper->evaluate;
 					if( oper->num_operands > 0 ) {
@@ -2417,7 +2417,7 @@ static struct element* parse_operator_expression( struct element *elem, struct e
 	struct expression prev;
 	int num_operands;
 	struct operator *oper = get_operator( elem->string, env );
-	if( oper->name ) {
+	if( oper ) {
 		expr->index = oper->oper;
 		expr->evaluate = oper->evaluate;
 		if( oper->num_operands != 0 ) {
