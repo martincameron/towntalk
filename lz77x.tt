@@ -21,11 +21,12 @@ function encode( input ) {
 	while '( inputIdx < inputLen ) {
 		let matchOffset = 0;
 		let matchLength = 1;
-		if '( '( inputIdx + 2 ) < inputLen ) {
-			let key = '(       '(    $chr( input    inputIdx )       & 0xFF ) * 256 );
-			let key = '( key ^ '( '( $chr( input '( inputIdx + 1 ) ) & 0xFF ) * 16 ) );
-			let key = '( key ^ '(    $chr( input '( inputIdx + 2 ) ) & 0xFF ) );
-			let searchIdx = '( [ index key ] - 1 );
+		if '( '( inputIdx + 3 ) < inputLen ) {
+			let key = '( $chr( input inputIdx ) & 0xFF );
+			let key = '( '( key * 33 ) + '( $chr( input '( inputIdx + 1 ) ) & 0xFF ) );
+			let key = '( '( key * 33 ) + '( $chr( input '( inputIdx + 2 ) ) & 0xFF ) );
+			let key = '( '( key * 33 ) + '( $chr( input '( inputIdx + 3 ) ) & 0xFF ) );
+			let searchIdx = '( [ index '( key & 0xFFFF ) ] - 1 );
 			while '( '( '( inputIdx - searchIdx ) < 65536 ) && '( searchIdx > 0 ) ) {
 				if '( '( inputIdx + matchLength ) < inputLen ) {
 					if '( $chr( input '( inputIdx + matchLength ) ) = $chr( input '( searchIdx + matchLength ) ) ) {
@@ -55,16 +56,17 @@ function encode( input ) {
 			}
 			let idx = inputIdx;
 			let end = '( inputIdx + matchLength );
-			if '( '( end + 2 ) > inputLen ) {
-				let end = '( inputLen - 2 );
+			if '( '( end + 3 ) > inputLen ) {
+				let end = '( inputLen - 3 );
 			}
 			while '( idx < end ) {
 				# Update the index for each byte of the input to be encoded.
-				let key = '(       '(    $chr( input    idx )       & 0xFF ) * 256 );
-				let key = '( key ^ '( '( $chr( input '( idx + 1 ) ) & 0xFF ) * 16 ) );
-				let key = '( key ^ '(    $chr( input '( idx + 2 ) ) & 0xFF ) );
-				set [ chain '( idx & 0xFFFF ) ] = [ index key ];
-				set [ index key ] = '( idx + 1 );
+				let key = '( $chr( input idx ) & 0xFF );
+				let key = '( '( key * 33 ) + '( $chr( input '( idx + 1 ) ) & 0xFF ) );
+				let key = '( '( key * 33 ) + '( $chr( input '( idx + 2 ) ) & 0xFF ) );
+				let key = '( '( key * 33 ) + '( $chr( input '( idx + 3 ) ) & 0xFF ) );
+				set [ chain '( idx & 0xFFFF ) ] = [ index '( key & 0xFFFF ) ];
+				set [ index '( key & 0xFFFF ) ] = '( idx + 1 );
 				inc idx;
 			}
 		}
