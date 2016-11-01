@@ -28,19 +28,18 @@ function encode( input ) {
 			let key = '( '( key * 33 ) + '( $chr( input '( inputIdx + 3 ) ) & 0xFF ) );
 			let searchIdx = '( [ index '( key & 0xFFFF ) ] - 1 );
 			while '( '( '( inputIdx - searchIdx ) < 65536 ) && '( searchIdx >e 0 ) ) {
-				if '( '( inputIdx + matchLength ) < inputLen ) {
-					if '( $chr( input '( inputIdx + matchLength ) ) = $chr( input '( searchIdx + matchLength ) ) ) {
-						let len = 0;
-						while '( '( '( '( inputIdx + len ) < inputLen ) && '( len < 127 ) )
-						&& '( $chr( input '( searchIdx + len ) ) = $chr( input '( inputIdx + len ) ) ) ) {
-							inc len;
-						}
-						if '( len > matchLength ) {
-							let matchOffset = '( inputIdx - searchIdx );
-							let matchLength = len;
-							if '( len >e 127 ) {
-								break;
-							}
+				if '( '( '( inputIdx + matchLength ) < inputLen )
+				&& '( $chr( input '( inputIdx + matchLength ) ) = $chr( input '( searchIdx + matchLength ) ) ) ) {
+					let len = 0;
+					while '( '( '( '( inputIdx + len ) < inputLen ) && '( len < 127 ) )
+					&& '( $chr( input '( searchIdx + len ) ) = $chr( input '( inputIdx + len ) ) ) ) {
+						inc len;
+					}
+					if '( len > matchLength ) {
+						let matchOffset = '( inputIdx - searchIdx );
+						let matchLength = len;
+						if '( len >e 127 ) {
+							break;
 						}
 					}
 				}
