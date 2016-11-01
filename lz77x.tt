@@ -27,20 +27,20 @@ function encode( input ) {
 			let key = '( '( key * 33 ) + '( $chr( input '( inputIdx + 2 ) ) & 0xFF ) );
 			let key = '( '( key * 33 ) + '( $chr( input '( inputIdx + 3 ) ) & 0xFF ) );
 			let searchIdx = '( [ index '( key & 0xFFFF ) ] - 1 );
-			while '( '( '( inputIdx - searchIdx ) < 65536 ) && '( searchIdx > 0 ) ) {
+			while '( '( '( inputIdx - searchIdx ) < 65536 ) && '( searchIdx >e 0 ) ) {
 				if '( '( inputIdx + matchLength ) < inputLen ) {
 					if '( $chr( input '( inputIdx + matchLength ) ) = $chr( input '( searchIdx + matchLength ) ) ) {
 						let len = 0;
-						while '( '( inputIdx + len ) < inputLen ) {
-							if '( $chr( input '( searchIdx + len ) ) = $chr( input '( inputIdx + len ) ) ) {
-								inc len;
-							} else {
-								break;
-							}
+						while '( '( '( '( inputIdx + len ) < inputLen ) && '( len < 127 ) )
+						&& '( $chr( input '( searchIdx + len ) ) = $chr( input '( inputIdx + len ) ) ) ) {
+							inc len;
 						}
 						if '( len > matchLength ) {
 							let matchOffset = '( inputIdx - searchIdx );
 							let matchLength = len;
+							if '( len >e 127 ) {
+								break;
+							}
 						}
 					}
 				}
@@ -49,10 +49,6 @@ function encode( input ) {
 			if '( matchLength < 4 ) {
 				let matchOffset = 0;
 				let matchLength = 1;
-			} else {
-				if '( matchLength > 127 ) {
-					let matchLength = 127;
-				}
 			}
 			let idx = inputIdx;
 			let end = '( inputIdx + matchLength );
