@@ -1581,29 +1581,46 @@ static int evaluate_int_not_expression( struct expression *this, struct variable
 
 static int evaluate_logical_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	struct variable lhs = { 0, NULL }, rhs = { 0, NULL };
+	struct variable var = { 0, NULL };
 	struct expression *parameter = this->parameters;
-	int value, ret = parameter->evaluate( parameter, variables, &lhs, exception );
+	int value, ret = parameter->evaluate( parameter, variables, &var, exception );
 	if( ret ) {
-		value = lhs.integer_value || lhs.element_value;
+		parameter = parameter->next;
+		value = var.integer_value || var.element_value;
+		dispose_variable( &var );
 		if( this->index == '!' ) {
-			value = !value;
-		} else {
-			parameter = parameter->next;
-			ret = parameter->evaluate( parameter, variables, &rhs, exception );
-			if( ret ) {
-				if( this->index == '&' ) {
-					value = value && ( rhs.integer_value || rhs.element_value );
-				} else {
-					value = value || ( rhs.integer_value || rhs.element_value );
+			dispose_variable( result );
+			result->integer_value = !value;
+			result->element_value = NULL;
+		} else if( this->index == '&' ) {
+			if( value ) {
+				ret = parameter->evaluate( parameter, variables, &var, exception );
+				if( ret ) {
+					dispose_variable( result );
+					result->integer_value = var.integer_value || var.element_value;
+					result->element_value = NULL;
+					dispose_variable( &var );
 				}
-				dispose_variable( &rhs );
+			} else {
+				dispose_variable( result );
+				result->integer_value = value;
+				result->element_value = NULL;
+			}
+		} else {
+			if( value ) {
+				dispose_variable( result );
+				result->integer_value = value;
+				result->element_value = NULL;
+			} else {
+				ret = parameter->evaluate( parameter, variables, &var, exception );
+				if( ret ) {
+					dispose_variable( result );
+					result->integer_value = var.integer_value || var.element_value;
+					result->element_value = NULL;
+					dispose_variable( &var );
+				}
 			}
 		}
-		dispose_variable( result );
-		result->integer_value = value;
-		result->element_value = NULL;
-		dispose_variable( &lhs );
 	}
 	return ret;
 }
