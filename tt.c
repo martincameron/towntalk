@@ -130,7 +130,8 @@
 
 /* Reference-counted type. */
 struct element {
-	int reference_count, length;
+	size_t reference_count;
+	int length, line;
 	char *string;
 	struct variable *array;
 	struct element *child, *next;
@@ -255,16 +256,17 @@ static int parse_string( char *buffer, int idx, struct element *elem, char *mess
 			if( elem->string ) {
 				memcpy( &elem->string[ 0 ], &buffer[ offset ], length );
 				elem->string[ length ] = 0;
+				elem->length = length;
 			} else {
 				strcpy( message, "Out of memory." );
 				idx = -1;
 			}
 		} else {
-			sprintf( message, "Unclosed string on line %d.", elem->length );
+			sprintf( message, "Unclosed string on line %d.", elem->line );
 			idx = -3;
 		}
 	} else {
-		sprintf( message, "Expected '\"' on line %d.", elem->length );
+		sprintf( message, "Expected '\"' on line %d.", elem->line );
 		idx = -3;
 	}
 	return idx;
@@ -357,7 +359,7 @@ static int unquote_string( char *string, char *output ) {
 
 static int parse_child_element( char *buffer, int idx, struct element *parent, char *message ) {
 	struct element *elem = NULL;
-	int offset = idx, length = 0, line = parent->length;
+	int offset = idx, length = 0, line = parent->line;
 	char chr = '\n';
 	while( chr ) {
 		chr = buffer[ idx++ ];
@@ -372,11 +374,12 @@ static int parse_child_element( char *buffer, int idx, struct element *parent, c
 				}
 				if( elem ) {
 					elem->reference_count = 1;
-					elem->length = line;
+					elem->line = line;
 					elem->string = malloc( sizeof( char ) * ( length + 1 ) );
 					if( elem->string ) {
 						memcpy( elem->string, &buffer[ offset ], length );
 						elem->string[ length ] = 0;
+						elem->length = length;
 						/*printf("%d %d %c :%s\n",offset,length,chr,elem->string);*/
 					} else {
 						strcpy( message, "Out of memory." );
@@ -402,7 +405,7 @@ static int parse_child_element( char *buffer, int idx, struct element *parent, c
 				}
 				if( elem ) {
 					elem->reference_count = 1;
-					elem->length = line;
+					elem->line = line;
 					if( chr == '"' ) {
 						idx = parse_string( buffer, idx - 1, elem, message );
 						if( idx < 0 ) {
@@ -413,12 +416,14 @@ static int parse_child_element( char *buffer, int idx, struct element *parent, c
 						if( elem->string ) {
 							elem->string[ 0 ] = chr;
 							elem->string[ 1 ] = 0;
+							elem->length = 1;
 							if( chr != ',' && chr != ';' && chr != '=' ) {
 								idx = parse_child_element( buffer, idx, elem, message );
 								if( idx > 0 ) {
-									line = elem->length - line;
-									elem->length = elem->length - line;
-									line = elem->length + line;
+									/* Exchange line and elem->line. */
+									line = elem->line - line;
+									elem->line = elem->line - line;
+									line = elem->line + line;
 									offset = buffer[ idx - 1 ] - chr;
 									if( offset < 1 || offset > 2 ) {
 										sprintf( message, "Unclosed element on line %d.", line );
@@ -438,7 +443,7 @@ static int parse_child_element( char *buffer, int idx, struct element *parent, c
 					return -1;
 				}
 			} else if( chr == ')' || chr == ']' || chr == '}' ) {
-				parent->length = line;
+				parent->line = line;
 				return idx;
 			}
 			offset = idx;
@@ -479,13 +484,13 @@ static void dispose_element( struct element *elem ) {
 static struct element* parse_element( char *buffer, char *message ) {
 	int idx;
 	struct element elem;
-	elem.length = 1;
+	elem.line = 1;
 	elem.string = NULL;
 	elem.child = elem.next = NULL;
 	idx = parse_child_element( buffer, 0, &elem, message );
 	if( idx > 0 ) {
 		if( buffer[ idx - 1 ] != 0 ) {
-			sprintf( message, "Unexpected closing bracket '%c' on line %d.", buffer[ idx - 1 ], elem.length );
+			sprintf( message, "Unexpected closing bracket '%c' on line %d.", buffer[ idx - 1 ], elem.line );
 			idx = -4;
 		}
 	}
@@ -762,14 +767,6 @@ static int write_array( struct element *arr, char *output ) {
 	return length;
 }
 
-static void element_to_value( struct element *elem ) {
-	while( elem ) {
-		elem->length = strlen( elem->string );
-		element_to_value( elem->child );
-		elem = elem->next;
-	}
-}
-
 static struct element* new_string_constant( char *value ) {
 	int length;
 	char *string;
@@ -805,7 +802,6 @@ static struct element* parse_constant( struct element *elem, struct variable *co
 			element_value = new_string_constant( "{" );
 			if( element_value ) {
 				if( next->child ) {
-					element_to_value( next->child );
 					next->child->reference_count++;
 					element_value->child = next->child;
 				}
@@ -814,7 +810,7 @@ static struct element* parse_constant( struct element *elem, struct variable *co
 				strcpy( message, "Out of memory." );
 			}
 		} else {
-			sprintf( message, "Expected '{' after '$' on line %d.", elem->length );
+			sprintf( message, "Expected '{' after '$' on line %d.", elem->line );
 		}
 	} else if( strcmp( elem->string, "$tup" ) == 0 ) {
 		/* Tuple constant. */
@@ -832,25 +828,25 @@ static struct element* parse_constant( struct element *elem, struct variable *co
 						if( end[ 0 ] == 0 ) {
 							next = next->next;
 						} else {
-							sprintf( message, "Invalid tuple integer on line %d.", next->length );
+							sprintf( message, "Invalid tuple integer on line %d.", next->line );
 						}
 					} else {
-						sprintf( message, "Invalid tuple constant on line %d.", next->length );
+						sprintf( message, "Invalid tuple constant on line %d.", next->line );
 					}
 				} else {
 					strcpy( message, "Out of memory." );
 				}
 			} else {
-				sprintf( message, "Invalid tuple string on line %d.", next->length );
+				sprintf( message, "Invalid tuple string on line %d.", next->line );
 			}
 		} else {
-			sprintf( message, "Expected '(' after '$tup' on line %d.", elem->length );
+			sprintf( message, "Expected '(' after '$tup' on line %d.", elem->line );
 		}
 	} else {
 		/* Integer constant. */
 		integer_value = ( int ) strtol( elem->string, &end, 0 );
 		if( end[ 0 ] != 0 ) {
-			sprintf( message, "Invalid integer constant '%.16s' at line %d.", elem->string, elem->length );
+			sprintf( message, "Invalid integer constant '%.16s' at line %d.", elem->string, elem->line );
 		}
 	}
 	constant->integer_value = integer_value;
@@ -1489,7 +1485,7 @@ static int add_function_parameter( struct environment *env, struct element *elem
 			func->variable_decls_tail = param;
 		} else {
 			dispose_string_list( param );
-			sprintf( message, "Parameter '%.16s' already defined on line %d.", name, elem->length );
+			sprintf( message, "Parameter '%.16s' already defined on line %d.", name, elem->line );
 		}
 	} else {
 		strcpy( message, "Out of memory." );
@@ -1513,7 +1509,7 @@ static int add_local_variable( struct environment *env, struct element *elem, ch
 			func->variable_decls_tail = param;
 		} else {
 			dispose_string_list( param );
-			sprintf( message, "Local variable '%.8s' already defined on line %d.", name, elem->length );
+			sprintf( message, "Local variable '%.8s' already defined on line %d.", name, elem->line );
 		}
 	} else {
 		strcpy( message, "Out of memory." );
@@ -2258,7 +2254,6 @@ static int evaluate_sparse_expression( struct expression *this, struct variable 
 		if( string.element_value ) {
 			elem = parse_element( string.element_value->string, message );
 			if( message[ 0 ] == 0 ) {
-				element_to_value( elem );
 				dispose_variable( result );
 				result->integer_value = 0;
 				result->element_value = elem;
@@ -2409,21 +2404,21 @@ static struct element* parse_infix_expression( struct element *elem, struct envi
 							if( num_operands == oper->num_operands ) {
 								next = next->next;
 							} else {
-								sprintf( message, "Wrong number of arguments to '%.16s()' on line %d.", oper->name, child->length );
+								sprintf( message, "Wrong number of arguments to '%.16s()' on line %d.", oper->name, child->line );
 							}
 						}
 					} else {
-						sprintf( message, "Wrong number of arguments to '%.16s()' on line %d.", oper->name, child->length );
+						sprintf( message, "Wrong number of arguments to '%.16s()' on line %d.", oper->name, child->line );
 					}
 				} else {
-					sprintf( message, "Unhandled operator '%.16s' on line %d.", child->string, child->length );
+					sprintf( message, "Unhandled operator '%.16s' on line %d.", child->string, child->line );
 				}
 			} else {
-				sprintf( message, "Expected operator after '( on line %d.", elem->length );
+				sprintf( message, "Expected operator after '( on line %d.", elem->line );
 			}
 		} 
 	} else {
-		sprintf( message, "Expected expression after '( on line %d.", elem->length );
+		sprintf( message, "Expected expression after '( on line %d.", elem->line );
 	}
 	return next;
 }
@@ -2453,15 +2448,15 @@ static struct element* parse_operator_expression( struct element *elem, struct e
 						}
 						next = next->next;
 					} else {
-						sprintf( message, "Wrong number of arguments to '%.16s()' on line %d.", oper->name, next->length );
+						sprintf( message, "Wrong number of arguments to '%.16s()' on line %d.", oper->name, next->line );
 					}
 				}
 			} else {
-				sprintf( message, "Expected '(' after '%.16s' on line %d.", oper->name, elem->length );
+				sprintf( message, "Expected '(' after '%.16s' on line %d.", oper->name, elem->line );
 			}
 		}
 	} else {
-		sprintf( message, "Unhandled expression '%.16s' on line %d.", elem->string, elem->length );
+		sprintf( message, "Unhandled expression '%.16s' on line %d.", elem->string, elem->line );
 	}
 	return next;
 }
@@ -2481,11 +2476,11 @@ static struct element* parse_function_expression( struct element *elem, struct e
 			if( num_params == expr->function->num_parameters ) {
 				next = next->next;
 			} else {
-				sprintf( message, "Wrong number of arguments to '%.16s()' on line %d.", elem->string, next->length );
+				sprintf( message, "Wrong number of arguments to '%.16s()' on line %d.", elem->string, next->line );
 			}
 		}
 	} else {
-		sprintf( message, "Expected '(' after function name on line %d.", next->length );
+		sprintf( message, "Expected '(' after function name on line %d.", next->line );
 	}
 	return next;
 }
@@ -2511,7 +2506,7 @@ static struct element* parse_expression( struct element *elem, struct environmen
 	struct function_declaration *decl;
 	struct expression *expr = calloc( 1, sizeof( struct expression ) );
 	if( expr ) {
-		expr->line = elem->length;
+		expr->line = elem->line;
 		expr->function = func;
 		if( value[ 0 ] == '"' || ( value[ 0 ] >= '0' && value[ 0 ] <= '9' )
 			|| ( value[ 0 ] == '-' && ( value[ 1 ] >= '0' && value[ 1 ] <= '9' ) )
@@ -2562,7 +2557,7 @@ static struct element* parse_expression( struct element *elem, struct environmen
 			}
 		}
 		if( message[ 0 ] == 0 && next && next->string[ 0 ] == '(' ) {
-			sprintf( message, "Unexpected '(' after expression on line %d.", next->length );
+			sprintf( message, "Unexpected '(' after expression on line %d.", next->line );
 		}
 		if( message[ 0 ] == 0 ) {
 			prev->next = expr;
@@ -2583,7 +2578,7 @@ static int parse_expressions( struct element *elem, struct environment *env,
 		prev = prev->next;
 		count++;
 		while( elem && message[ 0 ] == 0 && elem->string[ 0 ] == ',' ) {
-			line = elem->length;
+			line = elem->line;
 			elem = elem->next;
 			if( elem && elem->string[ 0 ] != ',' ) {
 				elem = parse_expression( elem, env, func, prev, message );
@@ -2609,7 +2604,7 @@ static struct element* parse_increment_statement( struct element *elem, struct e
 			stmt->source = calloc( 1, sizeof( struct expression ) );
 			if( stmt->source ) {
 				stmt->local = local;
-				stmt->source->line = next->length;
+				stmt->source->line = next->line;
 				stmt->source->function = func;
 				stmt->execute = &execute_increment_statement;
 				next = next->next->next;
@@ -2617,7 +2612,7 @@ static struct element* parse_increment_statement( struct element *elem, struct e
 				strcpy( message, "Out of memory." );
 			}
 		} else {
-			sprintf( message, "Undeclared local variable '%.16s' on line %d.", next->string, next->length );
+			sprintf( message, "Undeclared local variable '%.16s' on line %d.", next->string, next->line );
 		}
 	}
 	return next;
@@ -2686,7 +2681,7 @@ static struct element* parse_assignment_statement( struct element *elem, struct 
 				next = next->next;
 			}
 		} else {
-			sprintf( message, "Undeclared variable '%.16s' on line %d.", next->string, next->length );
+			sprintf( message, "Undeclared variable '%.16s' on line %d.", next->string, next->line );
 		}
 	}
 	return next;
@@ -2982,10 +2977,10 @@ static int is_keyword( struct keyword *keywords, char *value ) {
 
 static int validate_syntax( char *syntax, struct element *elem,
 	struct element *key, struct environment *env, char *message ) {
-	int idx = 1, chr = syntax[ 0 ], line = key->length;
+	int idx = 1, chr = syntax[ 0 ], line = key->line;
 	while( chr && message[ 0 ] == 0 ) {
 		if( elem ) {
-			line = elem->length;
+			line = elem->line;
 		}
 		if( chr == '0' ) {
 			/* List end. */
@@ -3034,7 +3029,7 @@ static int validate_syntax( char *syntax, struct element *elem,
 			if( validate_syntax( "n", elem, key, env, message ) ) {
 				while( elem->next && elem->next->string[ 0 ] != ';' && message[ 0 ] == 0 ) {
 					elem = elem->next;
-					line = elem->length;
+					line = elem->line;
 					if( elem->string[ 0 ] == ',' ) {
 						elem = elem->next;
 					}
@@ -3104,7 +3099,7 @@ static void parse_keywords( struct keyword *keywords, struct element *elem,
 				}
 			}
 		} else {
-			sprintf( message, "Unrecognized keyword '%.16s' on line %d.", elem->string, elem->length );
+			sprintf( message, "Unrecognized keyword '%.16s' on line %d.", elem->string, elem->line );
 		}
 	}
 }
@@ -3140,7 +3135,7 @@ static struct element* parse_if_statement( struct element *elem, struct environm
 							next = next->next;
 						}
 					} else {
-						sprintf( message, "Expected '{' after 'else' on line %d.", next->length );
+						sprintf( message, "Expected '{' after 'else' on line %d.", next->line );
 					}
 				}
 			}
@@ -3200,7 +3195,7 @@ static struct element* parse_try_statement( struct element *elem, struct environ
 				}
 				stmt->execute = &execute_try_statement;
 			} else {
-				sprintf( message, "Undeclared local variable '%.16s' on line %d.", next->string, next->length );
+				sprintf( message, "Undeclared local variable '%.16s' on line %d.", next->string, next->line );
 			}
 		}
 		prev->next = stmt;
@@ -3216,7 +3211,7 @@ static struct element* parse_function_declaration( struct element *elem, struct 
 		if( decl ) {
 			decl->next = env->functions;
 			env->functions = decl;
-			decl->line = elem->length;
+			decl->line = elem->line;
 			decl->elem = elem;
 			decl->env = env;
 			next = next->next;
@@ -3331,7 +3326,7 @@ static int validate_decl( struct element *elem, struct environment *env, char *m
 		}
 	}
 	if( !result ) {
-		sprintf( message, "Name '%.16s' already defined on line %d.", elem->string, elem->length );
+		sprintf( message, "Name '%.16s' already defined on line %d.", elem->string, elem->line );
 	}
 	return result;
 }
