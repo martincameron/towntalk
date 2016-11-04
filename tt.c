@@ -674,7 +674,7 @@ static int throw( struct variable *exception, struct expression *source, int int
 }
 
 static int write_byte_string( char *bytes, int count, char *output ) {
-	int chr, idx = 0, length = 0;
+	int chr, size, idx = 0, length = 0;
 	if( output ) {
 		output[ length++ ] = '"';
 		while( idx < count ) {
@@ -693,24 +693,28 @@ static int write_byte_string( char *bytes, int count, char *output ) {
 		}
 		output[ length++ ] = '"';
 	} else {
-		length++;
-		while( idx < count ) {
+		length = 2;
+		while( idx < count && length > 0 ) {
 			chr = bytes[ idx++ ];
 			if( chr == '"' || chr == '\\' ) {
-				length += 2;
+				size = 2;
 			} else if( ( chr & 0x7F ) < 32 || chr == 127 ) {
-				length += 4;
+				size = 4;
 			} else {
-				length++;
+				size = 1;
+			}
+			if( MAX_INTEGER - length > size ) {
+				length += size;
+			} else {
+				length = -1;
 			}
 		}
-		length++;
 	}
 	return length;
 }
 
 static int write_variable( struct variable *var, char *output ) {
-	int count, length = 0;
+	int count, size, length = 0;
 	char integer[ 32 ];
 	if( output ) {
 		if( var->element_value && var->element_value->string ) {
@@ -739,7 +743,12 @@ static int write_variable( struct variable *var, char *output ) {
 				sprintf( integer, "%d", var->integer_value );
 				length += strlen( integer ) + 7;
 			}
-			length += write_byte_string( var->element_value->string, var->element_value->length, NULL );
+			size = write_byte_string( var->element_value->string, var->element_value->length, NULL );
+			if( size >= 0 && MAX_INTEGER - length > size ) {
+				length += size;
+			} else {
+				length = -1;
+			}
 		} else {
 			sprintf( integer, "%d", var->integer_value );
 			length += strlen( integer );
@@ -749,7 +758,7 @@ static int write_variable( struct variable *var, char *output ) {
 }
 
 static int write_array( struct element *arr, char *output ) {
-	int idx = 0, length = 0, count = arr->length;
+	int idx = 0, length = 0, count = arr->length, size;
 	if( output ) {
 		output[ length++ ] = '{';
 		while( idx < count ) {
@@ -759,12 +768,16 @@ static int write_array( struct element *arr, char *output ) {
 		}
 		output[ length++ ] = '}';
 	} else {
-		length++;
-		while( idx < count ) {
-			length += write_variable( &arr->array[ idx++ ], NULL );
-			length += 2;
+		length = 2;
+		while( idx < count && length > 0 ) {
+			size = write_variable( &arr->array[ idx++ ], NULL );
+			if( size >= 0 && MAX_INTEGER - length - 2 > size ) {
+				length += size;
+				length += 2;
+			} else {
+				length = -1;
+			}
 		}
-		length++;
 	}
 	return length;
 }
@@ -2049,25 +2062,30 @@ static int evaluate_sarr_expression( struct expression *this, struct variable *v
 	struct element *arr;
 	struct expression *parameter = this->parameters;
 	struct variable input = { 0, NULL };
-	int ret = parameter->evaluate( parameter, variables, &input, exception );
+	int len, ret = parameter->evaluate( parameter, variables, &input, exception );
 	if( ret ) {
 		if( input.element_value && input.element_value->array ) {
-			arr = calloc( 1, sizeof( struct element ) );
-			if( arr ) {
-				arr->reference_count = 1;
-				arr->string = malloc( sizeof( char ) * ( write_array( input.element_value, NULL ) + 1 ) );
-				if( arr->string ) {
-					arr->length = write_array( input.element_value, arr->string );
-					arr->string[ arr->length ] = 0;
-					dispose_variable( result );
-					result->integer_value = 0;
-					result->element_value = arr;
+			len = write_array( input.element_value, NULL );
+			if( len >= 0 ) {
+				arr = calloc( 1, sizeof( struct element ) );
+				if( arr ) {
+					arr->reference_count = 1;
+					arr->string = malloc( sizeof( char ) * ( len + 1 ) );
+					if( arr->string ) {
+						arr->length = write_array( input.element_value, arr->string );
+						arr->string[ arr->length ] = 0;
+						dispose_variable( result );
+						result->integer_value = 0;
+						result->element_value = arr;
+					} else {
+						free( arr );
+						ret = throw( exception, this, 0, NULL );
+					}
 				} else {
-					free( arr );
 					ret = throw( exception, this, 0, NULL );
 				}
 			} else {
-				ret = throw( exception, this, 0, NULL );
+				ret = throw( exception, this, 0, "String too large." );
 			}
 		} else {
 			ret = throw( exception, this, 0, "Not an array." );
