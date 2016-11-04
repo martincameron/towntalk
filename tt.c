@@ -128,6 +128,8 @@
 		$unquote(str)            Decode quoted-string into byte string.
 */
 
+static const int MAX_INTEGER = 0x7FFFFFFF;
+
 /* Reference-counted type. */
 struct element {
 	size_t reference_count;
@@ -502,12 +504,12 @@ static struct element* parse_element( char *buffer, char *message ) {
 }
 
 static int load_file( char *file_name, char *buffer, char *message ) {
-	int file_length = -1, bytes_read;
+	long file_length = -1, bytes_read;
 	FILE *input_file = fopen( file_name, "rb" );
 	if( input_file != NULL ) {
 		if( fseek( input_file, 0L, SEEK_END ) == 0 ) {
 			file_length = ftell( input_file );
-			if( file_length >= 0 && buffer ) {
+			if( file_length >= 0 && file_length < MAX_INTEGER && buffer ) {
 				if( fseek( input_file, 0L, SEEK_SET ) == 0 ) {
 					bytes_read = fread( buffer, 1, file_length, input_file ); 
 					if( bytes_read != file_length ) {
@@ -523,6 +525,9 @@ static int load_file( char *file_name, char *buffer, char *message ) {
 	if( file_length < 0 ) {
 		strncpy( message, strerror( errno ), 63 );
 		message[ 63 ] = 0;
+	} else if( file_length >= MAX_INTEGER ) {
+		strcpy( message, "File too large." );
+		file_length = -1;
 	}
 	return file_length;
 }
@@ -1737,15 +1742,20 @@ static int evaluate_sstr_expression( struct expression *this, struct variable *v
 		if( ret ) {
 			if( val.element_value && val.element_value->string ) {
 				vallen = val.element_value->length;
-				new = cat_string( str, len, val.element_value->string, vallen );
+				new = val.element_value->string;
 			} else {
 				sprintf( num, "%d", val.integer_value );
 				vallen = strlen( num );
-				new = cat_string( str, len, num, vallen );
+				new = num;
 			}
-			free( str );
-			str = new;
-			len += vallen;
+			if( MAX_INTEGER - vallen > len ) {
+				new = cat_string( str, len, new, vallen );
+				free( str );
+				str = new;
+				len += vallen;
+			} else {
+				ret = throw( exception, this, len, "String too large." );
+			}
 			dispose_variable( &val );
 			parameter = parameter->next;
 		}
@@ -1982,7 +1992,8 @@ static int evaluate_ssub_expression( struct expression *this, struct variable *v
 			ret = parameter->evaluate( parameter, variables, &len, exception );
 			if( ret ) {
 				if( str.element_value && str.element_value->string ) {
-					if( idx.integer_value >= 0 && len.integer_value >= 0 
+					if( idx.integer_value >= 0 && len.integer_value >= 0
+						&& MAX_INTEGER - len.integer_value >= idx.integer_value
 						&& idx.integer_value + len.integer_value <= str.element_value->length ) {
 						arr = calloc( 1, sizeof( struct element ) );
 						if( arr ) {
