@@ -503,13 +503,13 @@ static struct element* parse_element( char *buffer, char *message ) {
 	return elem.child;
 }
 
-static int load_file( char *file_name, char *buffer, char *message ) {
+static long load_file( char *file_name, char *buffer, char *message ) {
 	long file_length = -1, bytes_read;
 	FILE *input_file = fopen( file_name, "rb" );
 	if( input_file != NULL ) {
 		if( fseek( input_file, 0L, SEEK_END ) == 0 ) {
 			file_length = ftell( input_file );
-			if( file_length >= 0 && file_length < MAX_INTEGER && buffer ) {
+			if( file_length >= 0 && buffer ) {
 				if( fseek( input_file, 0L, SEEK_SET ) == 0 ) {
 					bytes_read = fread( buffer, 1, file_length, input_file ); 
 					if( bytes_read != file_length ) {
@@ -525,9 +525,6 @@ static int load_file( char *file_name, char *buffer, char *message ) {
 	if( file_length < 0 ) {
 		strncpy( message, strerror( errno ), 63 );
 		message[ 63 ] = 0;
-	} else if( file_length >= MAX_INTEGER ) {
-		strcpy( message, "File too large." );
-		file_length = -1;
 	}
 	return file_length;
 }
@@ -1847,38 +1844,42 @@ static int evaluate_stup_expression( struct expression *this, struct variable *v
 
 static int evaluate_sload_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	int ret, len;
+	long len;
 	char message[ 64 ], *buf;
 	struct element *arr;
 	struct variable file = { 0, NULL };
-	ret = this->parameters->evaluate( this->parameters, variables, &file, exception );
+	int ret = this->parameters->evaluate( this->parameters, variables, &file, exception );
 	if( ret ) {
 		if( file.element_value && file.element_value->string ) {
 			len = load_file( file.element_value->string, NULL, message );
 			if( len >= 0 ) {
-				buf = malloc( len + 1 );
-				if( buf ) {
-					len = load_file( file.element_value->string, buf, message );
-					if( len >= 0 ) {
-						buf[ len ] = 0;
-						arr = calloc( 1, sizeof( struct element ) );
-						if( arr ) {
-							arr->reference_count = 1;
-							arr->length = len;
-							arr->string = buf;
-							dispose_variable( result );
-							result->integer_value = 0;
-							result->element_value = arr;
+				if( len < MAX_INTEGER ) {
+					buf = malloc( len + 1 );
+					if( buf ) {
+						len = load_file( file.element_value->string, buf, message );
+						if( len >= 0 ) {
+							buf[ len ] = 0;
+							arr = calloc( 1, sizeof( struct element ) );
+							if( arr ) {
+								arr->reference_count = 1;
+								arr->length = len;
+								arr->string = buf;
+								dispose_variable( result );
+								result->integer_value = 0;
+								result->element_value = arr;
+							} else {
+								free( buf );
+								ret = throw( exception, this, 0, NULL );
+							}
 						} else {
 							free( buf );
-							ret = throw( exception, this, 0, NULL );
+							ret = throw( exception, this, 0, message );
 						}
 					} else {
-						free( buf );
-						ret = throw( exception, this, 0, message );
+						ret = throw( exception, this, 0, NULL );
 					}
 				} else {
-					ret = throw( exception, this, 0, NULL );
+					ret = throw( exception, this, 0, "File too large." );
 				}
 			} else {
 				ret = throw( exception, this, 0, message );
@@ -1893,17 +1894,21 @@ static int evaluate_sload_expression( struct expression *this, struct variable *
 
 static int evaluate_sflen_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	int ret, len;
+	long len;
 	char message[ 64 ];
 	struct variable file = { 0, NULL };
-	ret = this->parameters->evaluate( this->parameters, variables, &file, exception );
+	int ret = this->parameters->evaluate( this->parameters, variables, &file, exception );
 	if( ret ) {
 		if( file.element_value && file.element_value->string ) {
 			len = load_file( file.element_value->string, NULL, message );
 			if( len >= 0 ) {
-				dispose_variable( result );
-				result->integer_value = len;
-				result->element_value = NULL;
+				if( len < MAX_INTEGER ) {
+					dispose_variable( result );
+					result->integer_value = len;
+					result->element_value = NULL;
+				} else {
+					ret = throw( exception, this, 0, "File too large." );
+				}
 			} else {
 				ret = throw( exception, this, 0, message );
 			}
@@ -3390,22 +3395,26 @@ static int parse_tt_program( char *program, struct environment *env, char *messa
 }
 
 static int parse_tt_file( char *file_name, struct environment *env, char *message ) {
-	int file_length, success = 0;
+	long file_length, success = 0;
 	char *program_buffer, error[ 128 ] = "", *prev_file;
 	/* Load program file into string.*/
 	file_length = load_file( file_name, NULL, message );
 	if( file_length > 0 ) {
-		/*printf( "Parsing '%s'. Length %d\n", file_name, file_length );*/
-		program_buffer = malloc( file_length + 1 );
-		file_length = load_file( file_name, program_buffer, message );
-		if( file_length > 0 ) {
-			program_buffer[ file_length ] = 0;
-			/* Parse program structure.*/
-			prev_file = env->file;
-			env->file = file_name;
-			success = parse_tt_program( program_buffer, env, message );
-			env->file = prev_file;
-			free( program_buffer );
+		if( file_length < MAX_INTEGER ) {
+			/*printf( "Parsing '%s'. Length %d\n", file_name, file_length );*/
+			program_buffer = malloc( file_length + 1 );
+			file_length = load_file( file_name, program_buffer, message );
+			if( file_length > 0 ) {
+				program_buffer[ file_length ] = 0;
+				/* Parse program structure.*/
+				prev_file = env->file;
+				env->file = file_name;
+				success = parse_tt_program( program_buffer, env, message );
+				env->file = prev_file;
+				free( program_buffer );
+			}
+		} else {
+			strcpy( message, "File too large." );
 		}
 	}
 	if( !success && strncmp( message, "Unable to parse", 15 ) ) {
