@@ -362,7 +362,7 @@ static int unquote_string( char *string, char *output ) {
 static int parse_child_element( char *buffer, int idx, struct element *parent, char *message ) {
 	struct element *elem = NULL;
 	int offset = idx, length = 0, line = parent->line;
-	char chr = '\n';
+	char *bracket, chr = '\n';
 	while( chr ) {
 		chr = buffer[ idx++ ];
 		if( chr <= 32 || strchr( "\"#(),;=[]{}", chr ) ) {
@@ -414,12 +414,14 @@ static int parse_child_element( char *buffer, int idx, struct element *parent, c
 							return idx;
 						}
 					} else {
-						elem->string = malloc( sizeof( char ) * 2 );
+						elem->string = malloc( sizeof( char ) * 3 );
 						if( elem->string ) {
-							elem->string[ 0 ] = chr;
-							elem->string[ 1 ] = 0;
-							elem->length = 1;
-							if( chr != ',' && chr != ';' && chr != '=' ) {
+							bracket = strchr( "()[]{}", chr );
+							if( bracket ) {
+								elem->string[ 0 ] = bracket[ 0 ];
+								elem->string[ 1 ] = bracket[ 1 ];
+								elem->string[ 2 ] = 0;
+								elem->length = 2;
 								idx = parse_child_element( buffer, idx, elem, message );
 								if( idx > 0 ) {
 									/* Exchange line and elem->line. */
@@ -434,6 +436,10 @@ static int parse_child_element( char *buffer, int idx, struct element *parent, c
 								} else {
 									return idx;
 								}
+							} else {
+								elem->string[ 0 ] = chr;
+								elem->string[ 1 ] = 0;
+								elem->length = 1;
 							}
 						} else {
 							strcpy( message, "Out of memory." );
@@ -814,7 +820,7 @@ static struct element* parse_constant( struct element *elem, struct variable *co
 	} else if( elem->string[ 0 ] == '$' && elem->string[ 1 ] == 0 ) {
 		/* Element. */
 		if( next && next->string[ 0 ] == '{' ) {
-			element_value = new_string_constant( "{" );
+			element_value = new_string_constant( "{}" );
 			if( element_value ) {
 				if( next->child ) {
 					next->child->reference_count++;
@@ -2311,25 +2317,29 @@ static int evaluate_squote_expression( struct expression *this, struct variable 
 	ret = parameter->evaluate( parameter, variables, &string, exception );
 	if( ret ) {
 		if( string.element_value ) {
-			elem = calloc( 1, sizeof( struct element ) );
-			if( elem ) {
-				length = write_byte_string( string.element_value->string,
-					string.element_value->length, NULL );
-				elem->string = malloc( sizeof( char ) * ( length + 1 ) );
-				if( elem->string ) {
-					elem->reference_count = 1;
-					elem->length = write_byte_string( string.element_value->string,
-						string.element_value->length, elem->string );
-					elem->string[ length ] = 0;
-					dispose_variable( result );
-					result->integer_value = 0;
-					result->element_value = elem;
+			length = write_byte_string( string.element_value->string,
+				string.element_value->length, NULL );
+			if( length >= 0 ) {
+				elem = calloc( 1, sizeof( struct element ) );
+				if( elem ) {
+					elem->string = malloc( sizeof( char ) * ( length + 1 ) );
+					if( elem->string ) {
+						elem->reference_count = 1;
+						elem->length = write_byte_string( string.element_value->string,
+							string.element_value->length, elem->string );
+						elem->string[ length ] = 0;
+						dispose_variable( result );
+						result->integer_value = 0;
+						result->element_value = elem;
+					} else {
+						free( elem );
+						ret = throw( exception, this, 0, NULL );
+					}
 				} else {
-					free( elem );
 					ret = throw( exception, this, 0, NULL );
 				}
 			} else {
-				ret = throw( exception, this, 0, NULL );
+				ret = throw( exception, this, 0, "String too large." );
 			}
 		} else {
 			ret = throw( exception, this, 0, "Not a string." );
@@ -2500,7 +2510,7 @@ static struct element* parse_function_expression( struct element *elem, struct e
 	struct element *next = elem->next;
 	struct expression prev;
 	int num_params;
-	if( next && strcmp( next->string, "(" ) == 0 ) {
+	if( next && next->string[ 0 ] == '(' ) {
 		expr->function = decl;
 		expr->evaluate = &evaluate_function_expression;
 		prev.next = NULL;
