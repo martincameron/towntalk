@@ -719,37 +719,87 @@ static int write_byte_string( char *bytes, int count, char *output ) {
 	return length;
 }
 
+static int write_element( struct element *elem, char *output ) {
+	int size, length = 0;
+	if( output ) {
+		while( elem ) {
+			if( elem->child ) {
+				output[ length++ ] = elem->string[ 0 ];
+				length += write_element( elem->child, &output[ length ] );
+				output[ length++ ] = elem->string[ 1 ];
+			} else {
+				memcpy( &output[ length ], elem->string, elem->length );
+				length += elem->length;
+				output[ length++ ] = '\n';
+			}
+			elem = elem->next;
+		}
+	} else {
+		while( elem && length >= 0 ) {
+			if( elem->child ) {
+				size = write_element( elem->child, NULL );
+				if( size >= 0 && MAX_INTEGER - length - 2 > size ) {
+					length += size + 2;
+				} else {
+					length = -1;
+				}
+			} else {
+				size = elem->length;
+				if( MAX_INTEGER - length - 1 > size ) {
+					length += size + 1;
+				} else {
+					length = -1;
+				}
+			}
+			elem = elem->next;
+		}
+	}
+	return length;
+}
+
 static int write_variable( struct variable *var, char *output ) {
-	int count, size, length = 0;
+	struct element *elem = var->element_value;
+	int length = 0, size = 0;
 	char integer[ 32 ];
 	if( output ) {
-		if( var->element_value && var->element_value->string ) {
-			if( var->integer_value ) {
-				strcpy( output, "$tup(" );
-				length += 5;
-				length += write_byte_string( var->element_value->string, var->element_value->length, &output[ length ] );
-				output[ length++ ] = ',';
-				sprintf( integer, "%d", var->integer_value );
-				count = strlen( integer );
-				memcpy( &output[ length ], integer, count );
-				length += count;
-				output[ length++ ] = ')';
-			} else {
-				length += write_byte_string( var->element_value->string, var->element_value->length, output );
+		if( elem ) {
+			if( elem->child || elem->next ) {
+				output[ length++ ] = '$';
+				output[ length++ ] = '{';
+				length += write_element( elem, &output[ length ] );
+				output[ length++ ] = '}';
+			} else if( elem->string ) {
+				if( var->integer_value ) {
+					strcpy( output, "$tup(" );
+					length = 5;
+					length += write_byte_string( elem->string, elem->length, &output[ length ] );
+					output[ length++ ] = ',';
+					sprintf( integer, "%d", var->integer_value );
+					size = strlen( integer );
+					memcpy( &output[ length ], integer, size );
+					length += size;
+					output[ length++ ] = ')';
+				} else {
+					length = write_byte_string( elem->string, elem->length, output );
+				}
 			}
 		} else {
 			sprintf( integer, "%d", var->integer_value );
-			count = strlen( integer );
-			memcpy( &output[ length ], integer, count );
-			length += count;
+			length = strlen( integer );
+			memcpy( output, integer, length );
 		}
 	} else {
-		if( var->element_value && var->element_value->string ) {
-			if( var->integer_value ) {
-				sprintf( integer, "%d", var->integer_value );
-				length += strlen( integer ) + 7;
+		if( elem ) {
+			if( elem->child || elem->next ) {
+				length = 3;
+				size = write_element( elem, NULL );
+			} else if( elem->string ) {
+				if( var->integer_value ) {
+					sprintf( integer, "%d", var->integer_value );
+					length = strlen( integer ) + 7;
+				}
+				size = write_byte_string( elem->string, elem->length, NULL );
 			}
-			size = write_byte_string( var->element_value->string, var->element_value->length, NULL );
 			if( size >= 0 && MAX_INTEGER - length > size ) {
 				length += size;
 			} else {
@@ -757,7 +807,7 @@ static int write_variable( struct variable *var, char *output ) {
 			}
 		} else {
 			sprintf( integer, "%d", var->integer_value );
-			length += strlen( integer );
+			length = strlen( integer );
 		}
 	}
 	return length;
@@ -766,20 +816,15 @@ static int write_variable( struct variable *var, char *output ) {
 static int write_array( struct element *arr, char *output ) {
 	int idx = 0, length = 0, count = arr->length, size;
 	if( output ) {
-		output[ length++ ] = '{';
 		while( idx < count ) {
 			length += write_variable( &arr->array[ idx++ ], &output[ length ] );
-			output[ length++ ] = ',';
 			output[ length++ ] = '\n';
 		}
-		output[ length++ ] = '}';
 	} else {
-		length = 2;
-		while( idx < count && length > 0 ) {
+		while( idx < count && length >= 0 ) {
 			size = write_variable( &arr->array[ idx++ ], NULL );
-			if( size >= 0 && MAX_INTEGER - length - 2 > size ) {
-				length += size;
-				length += 2;
+			if( size >= 0 && MAX_INTEGER - length - 1 > size ) {
+				length += size + 1;
 			} else {
 				length = -1;
 			}
@@ -820,16 +865,11 @@ static struct element* parse_constant( struct element *elem, struct variable *co
 	} else if( elem->string[ 0 ] == '$' && elem->string[ 1 ] == 0 ) {
 		/* Element. */
 		if( next && next->string[ 0 ] == '{' ) {
-			element_value = new_string_constant( "{}" );
-			if( element_value ) {
-				if( next->child ) {
-					next->child->reference_count++;
-					element_value->child = next->child;
-				}
-				next = next->next;
-			} else {
-				strcpy( message, "Out of memory." );
+			if( next->child ) {
+				next->child->reference_count++;
+				element_value = next->child;
 			}
+			next = next->next;
 		} else {
 			sprintf( message, "Expected '{' after '$' on line %d.", elem->line );
 		}
@@ -1223,37 +1263,33 @@ static int execute_aset_statement( struct statement *this, struct variable *vari
 		if( dest.element_value && dest.element_value->array ) {
 			ret = this->source->evaluate( this->source, variables, &src, exception );
 			if( ret ) {
-				if( src.element_value && src.element_value->string[ 0 ] == '{' ) {
-					inputs.next = NULL;
-					newlen = parse_constant_list( src.element_value->child, &inputs, msg );
-					if( msg[ 0 ] == 0 ) {
-						newvar = calloc( newlen + 1, sizeof( struct variable ) );
-						if( newvar ) {
-							idx = 0;
-							length = dest.element_value->length;
-							values = dest.element_value->array;
-							while( idx < length ) {
-								dispose_variable( &values[ idx++ ] );
-							}
-							free( values );
-							dest.element_value->length = newlen;
-							dest.element_value->array = newvar;
-							idx = 0;
-							input = inputs.next;
-							while( idx < newlen ) {
-								assign_variable( &input->value, &newvar[ idx++ ] );
-								input = input->next;
-							}
-						} else {
-							ret = throw( exception, NULL, 0, NULL );
+				inputs.next = NULL;
+				newlen = parse_constant_list( src.element_value, &inputs, msg );
+				if( msg[ 0 ] == 0 ) {
+					newvar = calloc( newlen + 1, sizeof( struct variable ) );
+					if( newvar ) {
+						idx = 0;
+						length = dest.element_value->length;
+						values = dest.element_value->array;
+						while( idx < length ) {
+							dispose_variable( &values[ idx++ ] );
+						}
+						free( values );
+						dest.element_value->length = newlen;
+						dest.element_value->array = newvar;
+						idx = 0;
+						input = inputs.next;
+						while( idx < newlen ) {
+							assign_variable( &input->value, &newvar[ idx++ ] );
+							input = input->next;
 						}
 					} else {
-						ret = throw( exception, this->source, 0, msg );
+						ret = throw( exception, NULL, 0, NULL );
 					}
-					dispose_global_variables( inputs.next );
 				} else {
-					ret = throw( exception, this->source, 0, "Invalid array element." );
+					ret = throw( exception, this->source, 0, msg );
 				}
+				dispose_global_variables( inputs.next );
 				dispose_variable( &src );
 			}
 		} else {
