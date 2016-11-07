@@ -3471,19 +3471,23 @@ static int parse_tt_file( char *file_name, struct environment *env, char *messag
 	char *program_buffer, error[ 128 ] = "", *prev_file;
 	/* Load program file into string.*/
 	file_length = load_file( file_name, NULL, message );
-	if( file_length > 0 ) {
+	if( file_length >= 0 ) {
 		if( file_length < MAX_INTEGER ) {
 			/*printf( "Parsing '%s'. Length %d\n", file_name, file_length );*/
 			program_buffer = malloc( file_length + 1 );
-			file_length = load_file( file_name, program_buffer, message );
-			if( file_length > 0 ) {
-				program_buffer[ file_length ] = 0;
-				/* Parse program structure.*/
-				prev_file = env->file;
-				env->file = file_name;
-				success = parse_tt_program( program_buffer, env, message );
-				env->file = prev_file;
+			if( program_buffer ) {
+				file_length = load_file( file_name, program_buffer, message );
+				if( file_length >= 0 ) {
+					program_buffer[ file_length ] = 0;
+					/* Parse program structure.*/
+					prev_file = env->file;
+					env->file = file_name;
+					success = parse_tt_program( program_buffer, env, message );
+					env->file = prev_file;
+				}
 				free( program_buffer );
+			} else {
+				strcpy( message, OUT_OF_MEMORY );
 			}
 		} else {
 			strcpy( message, "File too large." );
@@ -3492,7 +3496,10 @@ static int parse_tt_file( char *file_name, struct environment *env, char *messag
 	if( !success && strncmp( message, "Unable to parse", 15 ) ) {
 		strncpy( error, message, 127 );
 		error[ 127 ] = 0;
-		sprintf( message, "Unable to parse '%.16s'.\n%s", file_name, error );
+		if( sprintf( message, "Unable to parse '%.16s'.\n%s", file_name, error ) < 0 ) {
+			strcpy( message, "Unable to parse. " );
+			strcat( message, error );
+		}
 	}
 	return success;
 }
