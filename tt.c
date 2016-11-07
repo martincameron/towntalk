@@ -129,10 +129,11 @@
 */
 
 static const int MAX_INTEGER = 0x7FFFFFFF;
+static const char *OUT_OF_MEMORY = "Out of memory.";
 
 /* Reference-counted type. */
 struct element {
-	size_t reference_count;
+	long reference_count;
 	int length, line;
 	char *string;
 	struct variable *array;
@@ -260,7 +261,7 @@ static int parse_string( char *buffer, int idx, struct element *elem, char *mess
 				elem->string[ length ] = 0;
 				elem->length = length;
 			} else {
-				strcpy( message, "Out of memory." );
+				strcpy( message, OUT_OF_MEMORY );
 				idx = -1;
 			}
 		} else {
@@ -384,11 +385,11 @@ static int parse_child_element( char *buffer, int idx, struct element *parent, c
 						elem->length = length;
 						/*printf("%d %d %c :%s\n",offset,length,chr,elem->string);*/
 					} else {
-						strcpy( message, "Out of memory." );
+						strcpy( message, OUT_OF_MEMORY );
 						return -1;
 					}
 				} else {
-					strcpy( message, "Out of memory." );
+					strcpy( message, OUT_OF_MEMORY );
 					return -1;
 				}
 			}
@@ -442,12 +443,12 @@ static int parse_child_element( char *buffer, int idx, struct element *parent, c
 								elem->length = 1;
 							}
 						} else {
-							strcpy( message, "Out of memory." );
+							strcpy( message, OUT_OF_MEMORY );
 							return -1;
 						}
 					}
 				} else {
-					strcpy( message, "Out of memory." );
+					strcpy( message, OUT_OF_MEMORY );
 					return -1;
 				}
 			} else if( chr == ')' || chr == ']' || chr == '}' ) {
@@ -659,7 +660,7 @@ static int get_string_list_index( struct string_list *list, char *value ) {
 	return idx;
 }
 
-static int throw( struct variable *exception, struct expression *source, int integer, char *string ) {
+static int throw( struct variable *exception, struct expression *source, int integer, const char *string ) {
 	struct element *arr = NULL;
 	if( string ) {
 		arr = calloc( 1, sizeof( struct element ) );
@@ -667,9 +668,14 @@ static int throw( struct variable *exception, struct expression *source, int int
 			arr->reference_count = 1;
 			arr->string = malloc( sizeof( char ) * ( strlen( string ) + 64 ) );
 			if( arr->string ) {
-				sprintf( arr->string, "%s (on line %d of '%.32s')",
-					string, source->line, source->function->file );
+				if( sprintf( arr->string, "%s (on line %d of '%.32s')",
+					string, source->line, source->function->file ) < 0 ) {
+					strcpy( arr->string, string );
+				}
 				arr->length = strlen( arr->string );
+			} else {
+				free( arr );
+				arr = NULL;
 			}
 		}
 	}
@@ -860,7 +866,7 @@ static struct element* parse_constant( struct element *elem, struct variable *co
 		/* String literal. */
 		element_value = new_string_constant( elem->string );
 		if( element_value == NULL ) {
-			strcpy( message, "Out of memory." );
+			strcpy( message, OUT_OF_MEMORY );
 		}
 	} else if( elem->string[ 0 ] == '$' && elem->string[ 1 ] == 0 ) {
 		/* Element. */
@@ -895,7 +901,7 @@ static struct element* parse_constant( struct element *elem, struct variable *co
 						sprintf( message, "Invalid tuple constant on line %d.", next->line );
 					}
 				} else {
-					strcpy( message, "Out of memory." );
+					strcpy( message, OUT_OF_MEMORY );
 				}
 			} else {
 				sprintf( message, "Invalid tuple string on line %d.", next->line );
@@ -926,7 +932,7 @@ static struct global_variable* new_global_variable( char *name, char *message ) 
 		}
 	}
 	if( global == NULL ) {
-		strcpy( message, "Out of memory." );
+		strcpy( message, OUT_OF_MEMORY );
 	}
 	return global;
 }
@@ -974,7 +980,7 @@ static struct global_variable* new_array_variable( char *name ) {
 static struct statement* new_statement( char *message ) {
 	struct statement *stmt = calloc( 1, sizeof( struct statement ) );
 	if( stmt == NULL ) {
-		strcpy( message, "Out of memory." );
+		strcpy( message, OUT_OF_MEMORY );
 	}
 	return stmt;
 }
@@ -1197,7 +1203,7 @@ static int execute_dim_statement( struct statement *this, struct variable *varia
 						arr.element_value->length = len.integer_value;
 						free( old );
 					} else {
-						ret = throw( exception, NULL, 0, NULL );
+						ret = throw( exception, this->source, 0, OUT_OF_MEMORY );
 					}
 				} else {
 					ret = throw( exception, this->source, 0, "Negative array size." );
@@ -1284,7 +1290,7 @@ static int execute_aset_statement( struct statement *this, struct variable *vari
 							input = input->next;
 						}
 					} else {
-						ret = throw( exception, NULL, 0, NULL );
+						ret = throw( exception, this->source, 0, OUT_OF_MEMORY );
 					}
 				} else {
 					ret = throw( exception, this->source, 0, msg );
@@ -1521,7 +1527,7 @@ static int add_array_variable( struct environment *env, struct element *elem, ch
 		arr->next = env->arrays;
 		env->arrays = arr;
 	} else {
-		strcpy( message, "Out of memory." );
+		strcpy( message, OUT_OF_MEMORY );
 	}
 	return message[ 0 ] == 0;
 }
@@ -1545,7 +1551,7 @@ static int add_function_parameter( struct environment *env, struct element *elem
 			sprintf( message, "Parameter '%.16s' already defined on line %d.", name, elem->line );
 		}
 	} else {
-		strcpy( message, "Out of memory." );
+		strcpy( message, OUT_OF_MEMORY );
 	}
 	return message[ 0 ] == 0;
 }
@@ -1569,7 +1575,7 @@ static int add_local_variable( struct environment *env, struct element *elem, ch
 			sprintf( message, "Local variable '%.8s' already defined on line %d.", name, elem->line );
 		}
 	} else {
-		strcpy( message, "Out of memory." );
+		strcpy( message, OUT_OF_MEMORY );
 	}
 	return message[ 0 ] == 0;
 }
@@ -1804,7 +1810,11 @@ static int evaluate_sstr_expression( struct expression *this, struct variable *v
 				new = cat_string( str, len, new, vallen );
 				free( str );
 				str = new;
-				len += vallen;
+				if( str ) {
+					len += vallen;
+				} else {
+					ret = throw( exception, this, 0, OUT_OF_MEMORY );
+				}
 			} else {
 				ret = throw( exception, this, len, "String too large." );
 			}
@@ -1814,7 +1824,7 @@ static int evaluate_sstr_expression( struct expression *this, struct variable *v
 	}
 	if( ret ) {
 		arr = calloc( 1, sizeof( struct element ) );
-		if( arr && str ) {
+		if( arr ) {
 			arr->reference_count = 1;
 			arr->string = str;
 			arr->length = len;
@@ -1822,9 +1832,7 @@ static int evaluate_sstr_expression( struct expression *this, struct variable *v
 			result->integer_value = 0;
 			result->element_value = arr;
 		} else {
-			free( arr );
-			free( str );
-			ret = throw( exception, this, 0, NULL );
+			ret = throw( exception, this, 0, OUT_OF_MEMORY );
 		}
 	} else {
 		free( str );
@@ -1853,7 +1861,7 @@ static int evaluate_sasc_expression( struct expression *this, struct variable *v
 		} else {
 			free( arr );
 			free( str );
-			ret = throw( exception, this, 0, NULL );
+			ret = throw( exception, this, 0, OUT_OF_MEMORY );
 		}
 		dispose_variable( &val );
 	}
@@ -1924,14 +1932,14 @@ static int evaluate_sload_expression( struct expression *this, struct variable *
 								result->element_value = arr;
 							} else {
 								free( buf );
-								ret = throw( exception, this, 0, NULL );
+								ret = throw( exception, this, 0, OUT_OF_MEMORY );
 							}
 						} else {
 							free( buf );
 							ret = throw( exception, this, 0, message );
 						}
 					} else {
-						ret = throw( exception, this, 0, NULL );
+						ret = throw( exception, this, 0, OUT_OF_MEMORY );
 					}
 				} else {
 					ret = throw( exception, this, 0, "File too large." );
@@ -2079,10 +2087,10 @@ static int evaluate_ssub_expression( struct expression *this, struct variable *v
 								result->element_value = arr;
 							} else {
 								free( arr );
-								ret = throw( exception, this, 0, NULL );
+								ret = throw( exception, this, 0, OUT_OF_MEMORY );
 							}
 						} else {
-							ret = throw( exception, this, 0, NULL );
+							ret = throw( exception, this, 0, OUT_OF_MEMORY );
 						}
 					} else {
 						ret = throw( exception, this, idx.integer_value, "Range out of bounds." );
@@ -2121,10 +2129,10 @@ static int evaluate_sarr_expression( struct expression *this, struct variable *v
 						result->element_value = arr;
 					} else {
 						free( arr );
-						ret = throw( exception, this, 0, NULL );
+						ret = throw( exception, this, 0, OUT_OF_MEMORY );
 					}
 				} else {
-					ret = throw( exception, this, 0, NULL );
+					ret = throw( exception, this, 0, OUT_OF_MEMORY );
 				}
 			} else {
 				ret = throw( exception, this, 0, "String too large." );
@@ -2165,10 +2173,10 @@ static int evaluate_sargv_expression( struct expression *this, struct variable *
 					result->element_value = arr;
 				} else {
 					free( arr );
-					ret = throw( exception, this, 0, NULL );
+					ret = throw( exception, this, 0, OUT_OF_MEMORY );
 				}
 			} else {
-				ret = throw( exception, this, 0, NULL );
+				ret = throw( exception, this, 0, OUT_OF_MEMORY );
 			}
 		} else {
 			ret = throw( exception, this, idx.integer_value, "Command-line argument index out of bounds." );
@@ -2201,10 +2209,10 @@ static int evaluate_stime_expression( struct expression *this, struct variable *
 			result->element_value = arr;
 		} else {
 			free( arr );
-			ret = throw( exception, this, 0, NULL );
+			ret = throw( exception, this, 0, OUT_OF_MEMORY );
 		}
 	} else {
-		ret = throw( exception, this, 0, NULL );
+		ret = throw( exception, this, 0, OUT_OF_MEMORY );
 	}
 	return ret;
 }
@@ -2231,10 +2239,10 @@ static int evaluate_sdate_expression( struct expression *this, struct variable *
 					result->element_value = arr;
 				} else {
 					free( arr );
-					ret = throw( exception, this, 0, NULL );
+					ret = throw( exception, this, 0, OUT_OF_MEMORY );
 				}
 			} else {
-				ret = throw( exception, this, 0, NULL );
+				ret = throw( exception, this, 0, OUT_OF_MEMORY );
 			}
 		} else {
 			ret = throw( exception, this, 0, "Not a valid time string." );
@@ -2369,10 +2377,10 @@ static int evaluate_squote_expression( struct expression *this, struct variable 
 						result->element_value = elem;
 					} else {
 						free( elem );
-						ret = throw( exception, this, 0, NULL );
+						ret = throw( exception, this, 0, OUT_OF_MEMORY );
 					}
 				} else {
-					ret = throw( exception, this, 0, NULL );
+					ret = throw( exception, this, 0, OUT_OF_MEMORY );
 				}
 			} else {
 				ret = throw( exception, this, 0, "String too large." );
@@ -2399,7 +2407,7 @@ static int evaluate_sunquote_expression( struct expression *this, struct variabl
 				result->integer_value = 0;
 				result->element_value = elem;
 			} else {
-				ret = throw( exception, this, 0, NULL );
+				ret = throw( exception, this, 0, OUT_OF_MEMORY );
 			}
 		} else {
 			ret = throw( exception, this, 0, "Not a string." );
@@ -2645,7 +2653,7 @@ static struct element* parse_expression( struct element *elem, struct environmen
 			dispose_expressions( expr );
 		}
 	} else {
-		strcpy( message, "Out of memory." );
+		strcpy( message, OUT_OF_MEMORY );
 	}
 	return next;
 }
@@ -2689,7 +2697,7 @@ static struct element* parse_increment_statement( struct element *elem, struct e
 				stmt->execute = &execute_increment_statement;
 				next = next->next->next;
 			} else {
-				strcpy( message, "Out of memory." );
+				strcpy( message, OUT_OF_MEMORY );
 			}
 		} else {
 			sprintf( message, "Undeclared local variable '%.16s' on line %d.", next->string, next->line );
@@ -3301,7 +3309,7 @@ static struct element* parse_function_declaration( struct element *elem, struct 
 			}
 			next = next->next;
 		} else {
-			strcpy( message, "Out of memory." );
+			strcpy( message, OUT_OF_MEMORY );
 		}
 	}
 	return next;
@@ -3325,7 +3333,7 @@ static struct element* parse_include( struct element *elem, struct environment *
 		}
 		free( file_name );
 	} else {
-		strcpy( message, "Out of memory." );
+		strcpy( message, OUT_OF_MEMORY );
 	}
 	return next;
 }
