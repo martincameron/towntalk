@@ -118,9 +118,8 @@
 		$flen("file")            Get the length of a file.
 		$argc                    Number of command-line arguments.
 		$argv(idx)               Command-line argument as string.
-		$time                    Current time in seconds as octal string.
-		$date(time)              Convert time string to human-readable date.
-		$secs(time2 time1)       Difference between time strings as integer.
+		$time                    Current time as integer (in units of 2 seconds).
+		$date(time)              Convert time integer to human-readable string.
 		$parse(str)              Parse string into element list.
 		$next(elem)              Get the next element in the list or null.
 		$child(elem)             Get the first child element or null.
@@ -273,32 +272,6 @@ static int parse_string( char *buffer, int idx, struct element *elem, char *mess
 		idx = -3;
 	}
 	return idx;
-}
-
-static int is_time_string( char *str ) {
-	int idx = 0;
-	char chr = str[ idx++ ];
-	if( chr == '-' || chr == '0' ) {
-		chr = str[ idx++ ];
-		while( chr >= '0' && chr <= '7' ) {
-			chr = str[ idx++ ];
-		}
-	}
-	return ( idx > 1 && chr == 0 );
-}
-
-static time_t parse_time_string( char *str ) {
-	int idx = 1;
-	time_t seconds = 0;
-	char chr = str[ idx++ ];
-	while( chr ) {
-		seconds = ( seconds << 3 ) | ( ( chr - '0' ) & 0x7 );
-		chr = str[ idx++ ];
-	}
-	if( str[ 0 ] == '-' ) {
-		seconds = -seconds;
-	}
-	return seconds;
 }
 
 static char* new_string( char *source ) {
@@ -2188,31 +2161,13 @@ static int evaluate_sargv_expression( struct expression *this, struct variable *
 
 static int evaluate_stime_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	int idx, ret = 1;
-	char value[ 16 ];
-	time_t seconds = time( NULL );
-	struct element *arr = calloc( 1, sizeof( struct element ) );
-	if( arr ) {
-		idx = 14;
-		value[ 15 ] = 0;
-		while( idx > 0 ) {
-			value[ idx-- ] = '0' + ( seconds & 0x7 );
-			seconds = seconds >> 3;
-		}
-		value[ 0 ] = '0';
-		arr->reference_count = 1;
-		arr->string = new_string( value );
-		if( arr->string ) {
-			arr->length = strlen( arr->string );
-			dispose_variable( result );
-			result->integer_value = 0;
-			result->element_value = arr;
-		} else {
-			free( arr );
-			ret = throw( exception, this, 0, OUT_OF_MEMORY );
-		}
+	int ret = 1, seconds = time( NULL ) >> 1;
+	if( seconds > 0 ) {
+		dispose_variable( result );
+		result->integer_value = seconds;
+		result->element_value = NULL;
 	} else {
-		ret = throw( exception, this, 0, OUT_OF_MEMORY );
+		ret = throw( exception, this, seconds, "Invalid system time." );
 	}
 	return ret;
 }
@@ -2225,8 +2180,8 @@ static int evaluate_sdate_expression( struct expression *this, struct variable *
 	struct variable input = { 0, NULL };
 	int ret = parameter->evaluate( parameter, variables, &input, exception );
 	if( ret ) {
-		if( input.element_value && input.element_value->string && is_time_string( input.element_value->string ) ) {
-			seconds = parse_time_string( input.element_value->string );
+		seconds = ( ( time_t ) input.integer_value ) << 1;
+		if( ( seconds >> 1 ) == input.integer_value ) {
 			arr = calloc( 1, sizeof( struct element ) );
 			if( arr ) {
 				arr->reference_count = 1;
@@ -2245,38 +2200,9 @@ static int evaluate_sdate_expression( struct expression *this, struct variable *
 				ret = throw( exception, this, 0, OUT_OF_MEMORY );
 			}
 		} else {
-			ret = throw( exception, this, 0, "Not a valid time string." );
+			ret = throw( exception, this, seconds, "Time overflow." );
 		}
 		dispose_variable( &input );
-	}
-	return ret;
-}
-
-static int evaluate_ssecs_expression( struct expression *this, struct variable *variables,
-	struct variable *result, struct variable *exception ) {
-	time_t seconds;
-	struct element *arr1, *arr2;
-	struct expression *parameter = this->parameters;
-	struct variable time1 = { 0, NULL }, time2 = { 0, NULL };
-	int ret = parameter->evaluate( parameter, variables, &time1, exception );
-	if( ret ) {
-		parameter = parameter->next;
-		ret = parameter->evaluate( parameter, variables, &time2, exception );
-		if( ret ) {
-			arr1 = time1.element_value;
-			arr2 = time2.element_value;
-			if( arr1 && arr1->string && is_time_string( arr1->string )
-			&&  arr2 && arr2->string && is_time_string( arr2->string ) ) {
-				seconds = parse_time_string( arr1->string ) - parse_time_string( arr2->string );
-				dispose_variable( result );
-				result->integer_value = ( int ) seconds;
-				result->element_value = NULL;
-			} else {
-				ret = throw( exception, this, 0, "Not a valid time string." );
-			}
-			dispose_variable( &time2 );
-		}
-		dispose_variable( &time1 );
 	}
 	return ret;
 }
@@ -2452,11 +2378,10 @@ static struct operator operators[] = {
 	{ "$argv",'$', 1, &evaluate_sargv_expression, &operators[ 32 ] },
 	{ "$time",'$', 0, &evaluate_stime_expression, &operators[ 33 ] },
 	{ "$date",'$', 1, &evaluate_sdate_expression, &operators[ 34 ] },
-	{ "$secs",'$', 2, &evaluate_ssecs_expression, &operators[ 35 ] },
-	{ "$next",'$', 1, &evaluate_snext_expression, &operators[ 36 ] },
-	{ "$child",'$', 1, &evaluate_schild_expression, &operators[ 37 ] },
-	{ "$parse",'$', 1, &evaluate_sparse_expression, &operators[ 38 ] },
-	{ "$quote",'$', 1, &evaluate_squote_expression, &operators[ 39 ] },
+	{ "$next",'$', 1, &evaluate_snext_expression, &operators[ 35 ] },
+	{ "$child",'$', 1, &evaluate_schild_expression, &operators[ 36 ] },
+	{ "$parse",'$', 1, &evaluate_sparse_expression, &operators[ 37 ] },
+	{ "$quote",'$', 1, &evaluate_squote_expression, &operators[ 38 ] },
 	{ "$unquote",'$', 1, &evaluate_sunquote_expression, NULL },
 	{ NULL }
 };
