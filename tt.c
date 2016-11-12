@@ -15,6 +15,7 @@
 	When a '#' character is encountered, the rest of the line is ignored.
 	Variable/Function/Array names must match "[A-Za-Z][A-Za-z0-9_]*".
 	Strings have value-semantics and are immutable, can be used as byte arrays.
+	String literals support the escape sequences "\"", "\\", and octal "\nnn".
 	Strings are non-null, but evaluate to zero in integer expressions.
 	Commas within name and argument lists are optional.
 	Elements are immutable trees of strings with next and child references.
@@ -118,8 +119,7 @@
 		$flen("file")            Get the length of a file.
 		$argc                    Number of command-line arguments.
 		$argv(idx)               Command-line argument as string.
-		$time                    Current time as integer (in units of 2 seconds).
-		$date(time)              Convert time integer to human-readable string.
+		$time                    Current time as seconds/date tuple.
 		$parse(str)              Parse string into element list.
 		$next(elem)              Get the next element in the list or null.
 		$child(elem)             Get the first child element or null.
@@ -2161,48 +2161,24 @@ static int evaluate_sargv_expression( struct expression *this, struct variable *
 
 static int evaluate_stime_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	int ret = 1, seconds = time( NULL ) >> 1;
-	if( seconds > 0 ) {
-		dispose_variable( result );
-		result->integer_value = seconds;
-		result->element_value = NULL;
-	} else {
-		ret = throw( exception, this, seconds, "Invalid system time." );
-	}
-	return ret;
-}
-
-static int evaluate_sdate_expression( struct expression *this, struct variable *variables,
-	struct variable *result, struct variable *exception ) {
-	time_t seconds;
-	struct element *arr;
-	struct expression *parameter = this->parameters;
-	struct variable input = { 0, NULL };
-	int ret = parameter->evaluate( parameter, variables, &input, exception );
-	if( ret ) {
-		seconds = ( ( time_t ) input.integer_value ) << 1;
-		if( ( seconds >> 1 ) == input.integer_value ) {
-			arr = calloc( 1, sizeof( struct element ) );
-			if( arr ) {
-				arr->reference_count = 1;
-				arr->string = new_string( ctime( &seconds ) );
-				if( arr->string ) {
-					arr->length = strlen( arr->string );
-					arr->string[ arr->length - 1 ] = 0;
-					dispose_variable( result );
-					result->integer_value = 0;
-					result->element_value = arr;
-				} else {
-					free( arr );
-					ret = throw( exception, this, 0, OUT_OF_MEMORY );
-				}
-			} else {
-				ret = throw( exception, this, 0, OUT_OF_MEMORY );
-			}
+	int ret = 1;
+	time_t seconds = time( NULL );
+	struct element *arr = calloc( 1, sizeof( struct element ) );
+	if( arr ) {
+		arr->reference_count = 1;
+		arr->string = new_string( ctime( &seconds ) );
+		if( arr->string ) {
+			arr->length = strlen( arr->string );
+			arr->string[ arr->length - 1 ] = 0;
+			dispose_variable( result );
+			result->integer_value = seconds;
+			result->element_value = arr;
 		} else {
-			ret = throw( exception, this, seconds, "Time overflow." );
+			free( arr );
+			ret = throw( exception, this, 0, OUT_OF_MEMORY );
 		}
-		dispose_variable( &input );
+	} else {
+		ret = throw( exception, this, 0, OUT_OF_MEMORY );
 	}
 	return ret;
 }
@@ -2377,11 +2353,10 @@ static struct operator operators[] = {
 	{ "$argc",'$', 0, &evaluate_sargc_expression, &operators[ 31 ] },
 	{ "$argv",'$', 1, &evaluate_sargv_expression, &operators[ 32 ] },
 	{ "$time",'$', 0, &evaluate_stime_expression, &operators[ 33 ] },
-	{ "$date",'$', 1, &evaluate_sdate_expression, &operators[ 34 ] },
-	{ "$next",'$', 1, &evaluate_snext_expression, &operators[ 35 ] },
-	{ "$child",'$', 1, &evaluate_schild_expression, &operators[ 36 ] },
-	{ "$parse",'$', 1, &evaluate_sparse_expression, &operators[ 37 ] },
-	{ "$quote",'$', 1, &evaluate_squote_expression, &operators[ 38 ] },
+	{ "$next",'$', 1, &evaluate_snext_expression, &operators[ 34 ] },
+	{ "$child",'$', 1, &evaluate_schild_expression, &operators[ 35 ] },
+	{ "$parse",'$', 1, &evaluate_sparse_expression, &operators[ 36 ] },
+	{ "$quote",'$', 1, &evaluate_squote_expression, &operators[ 37 ] },
 	{ "$unquote",'$', 1, &evaluate_sunquote_expression, NULL },
 	{ NULL }
 };
