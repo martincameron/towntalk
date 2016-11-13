@@ -402,8 +402,7 @@ static int parse_child_element( char *buffer, int idx, struct element *parent, c
 									line = elem->line - line;
 									elem->line = elem->line - line;
 									line = elem->line + line;
-									offset = buffer[ idx - 1 ] - chr;
-									if( offset < 1 || offset > 2 ) {
+									if( buffer[ idx - 1 ] != bracket[ 1 ] ) {
 										sprintf( message, "Unclosed element on line %d.", line );
 										return -2;
 									}
