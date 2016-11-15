@@ -1,0 +1,13 @@
+
+program fxtest {
+	var t, x;
+	fxopen 640, 480;
+	let x = 0;
+	while <(x 640) {
+		fxrect "","","","","";
+		fxrect x, 0, 1, 480, t;
+		fxflip;
+		let t = +( t 65535 );
+		inc x;
+	}
+}
