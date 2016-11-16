@@ -1,13 +1,32 @@
 
+array image;
+
 program fxtest {
-	var t, x;
+	var c, x, y, w, h;
 	fxopen 640, 480;
+
+	let w = 320;
+	let h = 240;
+	dim [ image *( w h ) ];
+
+	let y = 0;
+	while <( y h ) {
+		let x = 0; 
+		while <( x w ) {
+			set [ image +( *( y w ) x ) ] = +( *( y 256 ) 0xFF );
+			inc x;
+		}
+		inc y;
+	}
+
+	fxsurf 0, w, h, image;
+
 	let x = 0;
 	while <(x 640) {
-		fxrect "","","","","";
-		fxrect x, 0, 1, 480, t;
+		fxrect x, 0, 1, 480, c;
+		fxblit 0, 0, 0, 320, 240, 160, 120;
 		fxflip;
-		let t = +( t 65535 );
+		let c = +( c 256 );
 		inc x;
 	}
 }

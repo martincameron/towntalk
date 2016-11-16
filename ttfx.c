@@ -1,7 +1,27 @@
 
 #include "towntalk.c"
 
-#include "SDL/SDL.h"
+#include "SDL.h"
+
+#define MAX_SURFACES 16
+
+struct fxenvironment {
+	struct environment env;
+	struct SDL_Surface *surfaces[ MAX_SURFACES ];
+};
+
+static void dispose_fxenvironment( struct fxenvironment *fxenv ) {
+	int idx = 0;
+	if( fxenv ) {
+		while( idx < MAX_SURFACES ) {
+			if( fxenv->surfaces[ idx ] ) {
+				SDL_FreeSurface( fxenv->surfaces[ idx ] );
+			}
+			idx++;
+		}
+		dispose_environment( ( struct environment * ) fxenv );
+	}
+}
 
 static int execute_fxopen_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
@@ -19,6 +39,114 @@ static int execute_fxopen_statement( struct statement *this, struct variable *va
 			dispose_variable( &height );
 		}
 		dispose_variable( &width );
+	}
+	return ret;
+}
+
+static int execute_fxsurf_statement( struct statement *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	int ret, surf, width, height, len, idx = 0;
+	struct variable params[ 4 ], *array;
+	Uint32 *pixels;
+	struct SDL_Surface *surface = NULL;
+	struct expression *expr = this->source;
+	struct fxenvironment *fxenv = ( struct fxenvironment * ) expr->function->env;
+	memset( params, 0, 4 * sizeof( struct variable ) );
+	ret = expr->evaluate( expr, variables, &params[ idx++ ], exception );
+	expr = expr->next;
+	while( ret && expr ) {
+		ret = expr->evaluate( expr, variables, &params[ idx++ ], exception );
+		expr = expr->next;
+	}
+	if( ret ) {
+		surf = params[ 0 ].integer_value;
+		if( surf >= 0 && surf < MAX_SURFACES ) {
+			width = params[ 1 ].integer_value;
+			height = params[ 2 ].integer_value;
+			if( width > 0 && height > 0 ) {
+				surface = SDL_CreateRGBSurface( SDL_HWSURFACE, width, height,
+					32, 0xFF000000, 0x00FF0000, 0x0000FF00, 0x000000FF );
+				if( surface ) {
+					if( params[ 3 ].element_value ) {
+						array = params[ 3 ].element_value->array;
+						if( array ) {
+							if( SDL_LockSurface( surface ) == 0 ) {
+								idx = 0;
+								len = params[ 3 ].element_value->length;
+								if( len > width * height ) {
+									len = width * height;
+								}
+								pixels = ( Uint32 * ) surface->pixels;
+								while( idx < len ) {
+									pixels[ idx ] = array[ idx ].integer_value;
+									idx++;
+								}
+								SDL_UnlockSurface( surface );
+							} else {
+								ret = throw( exception, this->source, 0, SDL_GetError() );
+							}
+						} else {
+							ret = throw( exception, this->source, 0, "Not an array." );
+						}
+					}
+					if( ret ) {
+						if( fxenv->surfaces[ surf ] ) {
+							SDL_FreeSurface( fxenv->surfaces[ surf ] );
+						}
+						fxenv->surfaces[ surf ] = surface;
+					} else {
+						SDL_FreeSurface( surface );
+					}
+				} else {
+					ret = throw( exception, this->source, 0, SDL_GetError() );
+				}
+			} else {
+				ret = throw( exception, this->source, 0, "Invalid surface dimensions." );
+			}
+		} else {
+			ret = throw( exception, this->source, surf, "Surface index out of bounds." );
+		}
+	}
+	idx = 0;
+	while( idx < 4 ) {
+		dispose_variable( &params[ idx++ ] );
+	}
+	return ret;
+}
+
+static int execute_fxblit_statement( struct statement *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	int ret, idx = 0;
+	struct SDL_Rect src, dest;
+	struct variable params[ 7 ];
+	struct expression *expr = this->source;
+	struct fxenvironment *fxenv = ( struct fxenvironment * ) expr->function->env;
+	memset( params, 0, 7 * sizeof( struct variable ) );
+	ret = expr->evaluate( expr, variables, &params[ idx++ ], exception );
+	expr = expr->next;
+	while( ret && expr ) {
+		ret = expr->evaluate( expr, variables, &params[ idx++ ], exception );
+		expr = expr->next;
+	}
+	if( ret ) {
+		idx = params[ 0 ].integer_value;
+		if( idx >= 0 && idx < MAX_SURFACES ) {
+			src.x = params[ 1 ].integer_value;
+			src.y = params[ 2 ].integer_value;
+			src.w = params[ 3 ].integer_value;
+			src.h = params[ 4 ].integer_value;
+			dest.x = params[ 5 ].integer_value;
+			dest.y = params[ 6 ].integer_value;
+			if( SDL_BlitSurface( fxenv->surfaces[ idx ], &src, SDL_GetVideoSurface(), &dest ) ) {
+				ret = throw( exception, this->source, 0, SDL_GetError() );
+			}
+		} else {
+			ret = throw( exception, this->source, idx, "Surface index out of bounds." );
+		}
+	}
+	idx = 0;
+	while( idx < 7 ) {
+		dispose_variable( &params[ idx++ ] );
 	}
 	return ret;
 }
@@ -78,6 +206,16 @@ static struct element* parse_fxflip_statement( struct element *elem, struct envi
 	return next;
 }
 
+static struct element* parse_fxsurf_statement( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct statement *prev, char *message ) {
+	return parse_expr_list_statement( elem, env, func, prev, &execute_fxsurf_statement, message );
+}
+
+static struct element* parse_fxblit_statement( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct statement *prev, char *message ) {
+	return parse_expr_list_statement( elem, env, func, prev, &execute_fxblit_statement, message );
+}
+
 static struct element* parse_fxrect_statement( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message ) {
 	return parse_expr_list_statement( elem, env, func, prev, &execute_fxrect_statement, message );
@@ -86,6 +224,8 @@ static struct element* parse_fxrect_statement( struct element *elem, struct envi
 static struct keyword fxstatements[] = {
 	{ "fxopen", "xx;", &parse_fxopen_statement, &fxstatements[ 1 ] },
 	{ "fxflip", ";", &parse_fxflip_statement, &fxstatements[ 2 ] },
+	{ "fxsurf", "xxxx;", &parse_fxsurf_statement, &fxstatements[ 3 ] },
+	{ "fxblit", "xxxxxxx;", &parse_fxblit_statement, &fxstatements[ 4 ] },
 	{ "fxrect", "xxxxx;", &parse_fxrect_statement, statements }
 };
 
@@ -102,7 +242,7 @@ int main( int argc, char **argv ) {
 	}
 	file_name = argv[ 1 ];
 	/* Parse program file. */
-	env = calloc( 1, sizeof( struct environment ) );
+	env = calloc( 1, sizeof( struct fxenvironment ) );
 	if( env ) {
 		env->argc = argc - 1;
 		env->argv = &argv[ 1 ];
@@ -143,7 +283,7 @@ int main( int argc, char **argv ) {
 		} else {
 			fprintf( stderr, "%s\n", message );
 		}
-		dispose_environment( env );
+		dispose_fxenvironment( ( struct fxenvironment * )env );
 	} else {
 		fputs( "Out of memory.\n", stderr );
 	}
