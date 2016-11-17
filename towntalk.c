@@ -2356,8 +2356,7 @@ static struct operator operators[] = {
 	{ "$child",'$', 1, &evaluate_schild_expression, &operators[ 35 ] },
 	{ "$parse",'$', 1, &evaluate_sparse_expression, &operators[ 36 ] },
 	{ "$quote",'$', 1, &evaluate_squote_expression, &operators[ 37 ] },
-	{ "$unquote",'$', 1, &evaluate_sunquote_expression, NULL },
-	{ NULL }
+	{ "$unquote",'$', 1, &evaluate_sunquote_expression, NULL }
 };
 
 static struct operator* get_operator( char *name, struct environment *env ) {
@@ -2845,8 +2844,7 @@ static struct element* parse_aset_statement( struct element *elem, struct enviro
 static struct keyword switch_stmts[] = {
 	{ "rem", "{", &parse_comment, &switch_stmts[ 1 ] },
 	{ "case", "v{", &parse_case_statement, &switch_stmts[ 2 ] },
-	{ "default", "{", &parse_default_statement, NULL },
-	{ NULL }
+	{ "default", "{", &parse_default_statement, NULL }
 };
 
 static struct element* parse_switch_statement( struct element *elem, struct environment *env,

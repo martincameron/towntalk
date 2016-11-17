@@ -2,6 +2,7 @@
 #include "towntalk.c"
 
 #include "SDL.h"
+#include "sys/time.h"
 
 #define MAX_SURFACES 16
 
@@ -26,15 +27,23 @@ static void dispose_fxenvironment( struct fxenvironment *fxenv ) {
 static int execute_fxopen_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	int ret;
-	struct variable width = { 0, NULL }, height = { 0, NULL };
+	struct variable width = { 0, NULL }, height = { 0, NULL }, caption = { 0, NULL };
 	struct expression *expr = this->source;
 	ret = expr->evaluate( expr, variables, &width, exception );
 	if( ret ) {
 		expr = expr->next;
 		ret = expr->evaluate( expr, variables, &height, exception );
 		if( ret ) {
-			if( SDL_SetVideoMode( width.integer_value, height.integer_value, 32, SDL_HWSURFACE ) == NULL ) {
-				ret = throw( exception, this->source, 0, SDL_GetError() );
+			expr = expr->next;
+			ret = expr->evaluate( expr, variables, &caption, exception );
+			if( ret ) {
+				if( caption.element_value->string ) {
+					SDL_WM_SetCaption( caption.element_value->string, "" );
+				}
+				if( SDL_SetVideoMode( width.integer_value, height.integer_value, 32, SDL_HWSURFACE ) == NULL ) {
+					ret = throw( exception, this->source, 0, SDL_GetError() );
+				}
+				dispose_variable( &caption );
 			}
 			dispose_variable( &height );
 		}
@@ -180,11 +189,18 @@ static int execute_fxrect_statement( struct statement *this, struct variable *va
 	return ret;
 }
 
-static int execute_fxflip_statement( struct statement *this, struct variable *variables,
+static int execute_fxshow_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	int ret = 1;
-	if( SDL_Flip( SDL_GetVideoSurface() ) ) {
-		ret = throw( exception, this->source, 0, SDL_GetError() );
+	SDL_UpdateRect( SDL_GetVideoSurface(), 0, 0, 0, 0 );
+	return 1;
+}
+
+static int execute_fxwait_statement( struct statement *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	struct variable millis = { 0, NULL };
+	int ret = this->source->evaluate( this->source, variables, &millis, exception );
+	if( ret && millis.integer_value > 0 ) {
+		SDL_Delay( millis.integer_value );
 	}
 	return ret;
 }
@@ -194,12 +210,12 @@ static struct element* parse_fxopen_statement( struct element *elem, struct envi
 	return parse_expr_list_statement( elem, env, func, prev, &execute_fxopen_statement, message );
 }
 
-static struct element* parse_fxflip_statement( struct element *elem, struct environment *env,
+static struct element* parse_fxshow_statement( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message ) {
 	struct element *next = elem->next;
 	struct statement *stmt = new_statement( message );
 	if( stmt ) {
-		stmt->execute = &execute_fxflip_statement;
+		stmt->execute = &execute_fxshow_statement;
 		prev->next = stmt;
 		next = next->next;
 	}
@@ -221,12 +237,37 @@ static struct element* parse_fxrect_statement( struct element *elem, struct envi
 	return parse_expr_list_statement( elem, env, func, prev, &execute_fxrect_statement, message );
 }
 
+static struct element* parse_fxwait_statement( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct statement *prev, char *message ) {
+	return parse_expr_list_statement( elem, env, func, prev, &execute_fxwait_statement, message );
+}
+
+static int evaluate_smillis_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	struct timeval time;
+	int millis, ret = 1;
+	if( gettimeofday( &time, NULL ) == 0 ) {
+		millis = time.tv_usec / 500;
+		dispose_variable( result );
+		result->integer_value = ( time.tv_sec * 1000 ) + ( millis >> 1 ) + ( millis & 1 );
+		result->element_value = NULL;
+	} else {
+		ret = throw( exception, this, errno, "Unable to get system time." );
+	}
+	return ret;
+}
+
+static struct operator fxoperators[] = {
+	{ "$millis",'$', 0, &evaluate_smillis_expression, operators }
+};
+
 static struct keyword fxstatements[] = {
-	{ "fxopen", "xx;", &parse_fxopen_statement, &fxstatements[ 1 ] },
-	{ "fxflip", ";", &parse_fxflip_statement, &fxstatements[ 2 ] },
+	{ "fxopen", "xxx;", &parse_fxopen_statement, &fxstatements[ 1 ] },
+	{ "fxshow", ";", &parse_fxshow_statement, &fxstatements[ 2 ] },
 	{ "fxsurf", "xxxx;", &parse_fxsurf_statement, &fxstatements[ 3 ] },
 	{ "fxblit", "xxxxxxx;", &parse_fxblit_statement, &fxstatements[ 4 ] },
-	{ "fxrect", "xxxxx;", &parse_fxrect_statement, statements }
+	{ "fxrect", "xxxxx;", &parse_fxrect_statement, &fxstatements[ 5 ] },
+	{ "fxwait", "x;", &parse_fxwait_statement, statements }
 };
 
 int main( int argc, char **argv ) {
@@ -247,7 +288,7 @@ int main( int argc, char **argv ) {
 		env->argc = argc - 1;
 		env->argv = &argv[ 1 ];
 		env->statements = fxstatements;
-		env->operators = operators;
+		env->operators = fxoperators;
 		success = parse_tt_file( file_name, env, message );
 		if( success ) {
 			if( env->entry_point ) {

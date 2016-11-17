@@ -2,8 +2,8 @@
 array image;
 
 program fxtest {
-	var c, x, y, w, h;
-	fxopen 640, 480;
+	var c, x, y, w, h, t;
+	fxopen 640, 480, "fxtest";
 
 	let w = 320;
 	let h = 240;
@@ -23,9 +23,12 @@ program fxtest {
 
 	let x = 0;
 	while <(x 640) {
+		let t = $millis;
 		fxrect x, 0, 1, 480, c;
 		fxblit 0, 0, 0, 320, 240, 160, 120;
-		fxflip;
+		fxshow;
+		fxwait 10;
+		#print -( $millis t );
 		let c = +( c 256 );
 		inc x;
 	}
