@@ -2,7 +2,7 @@
 array image;
 
 program fxtest {
-	var c, x, y, w, h, t;
+	var c, x, y, w, h, e;
 	fxopen 640, 480, "fxtest";
 
 	let w = 320;
@@ -19,17 +19,26 @@ program fxtest {
 		inc y;
 	}
 
-	fxsurf 0, w, h, image;
+	fxsurface 0, w, h, image;
+
+fxtimer 10;
 
 	let x = 0;
-	while <(x 640) {
-		let t = $millis;
-		fxrect x, 0, 1, 480, c;
-		fxblit 0, 0, 0, 320, 240, 160, 120;
-		fxshow;
-		fxwait 10;
-		#print -( $millis t );
-		let c = +( c 256 );
-		inc x;
+
+while 1 {
+	let e = $fxwait;
+#	print e;
+	if =( e 24 ) {
+		if <( x 640 ) {
+			fxrect x, 0, 4, 480, c;
+			fxblit 0, 0, 0, 320, 240, 160, 120;
+			fxshow;
+			let c = +( c 256 );
+			let x = +( x 4 );
+		} else {
+			fxtimer 0;
+		}
 	}
+}
+
 }

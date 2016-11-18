@@ -633,11 +633,10 @@ static int get_string_list_index( struct string_list *list, char *value ) {
 }
 
 static int throw( struct variable *exception, struct expression *source, int integer, const char *string ) {
-	struct element *arr = NULL;
-	if( string ) {
-		arr = calloc( 1, sizeof( struct element ) );
-		if( arr ) {
-			arr->reference_count = 1;
+	struct element *arr = calloc( 1, sizeof( struct element ) );
+	if( arr ) {
+		arr->reference_count = 1;
+		if( string ) {
 			arr->string = malloc( sizeof( char ) * ( strlen( string ) + 64 ) );
 			if( arr->string ) {
 				if( sprintf( arr->string, "%s (on line %d of '%.32s')",
@@ -1023,16 +1022,12 @@ static int execute_throw_statement( struct statement *this, struct variable *var
 
 static int execute_exit_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	int code;
-	this->source->evaluate( this->source, variables, exception, exception );
-	code = exception->integer_value;
-	dispose_variable( exception );
-	exception->integer_value = code;
-	exception->element_value = calloc( 1, sizeof( struct element ) );
-	if( exception->element_value ) {
-		exception->element_value->reference_count = 1;
+	struct variable exit_code = { 0, NULL };
+	int ret = this->source->evaluate( this->source, variables, &exit_code, exception );
+	if( ret ) {
+		ret = throw( exception, this->source, exit_code.integer_value, NULL );
 	}
-	return 0;
+	return ret;
 }
 
 static int execute_return_statement( struct statement *this, struct variable *variables,

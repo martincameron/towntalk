@@ -2,14 +2,24 @@
 #include "towntalk.c"
 
 #include "SDL.h"
-#include "sys/time.h"
 
 #define MAX_SURFACES 16
 
 struct fxenvironment {
 	struct environment env;
 	struct SDL_Surface *surfaces[ MAX_SURFACES ];
+	SDL_TimerID timer;
 };
+
+static Uint32 timer_callback( Uint32 interval, void *param ) {
+	struct fxenvironment *fxenv = ( struct fxenvironment * ) param;
+	SDL_Event event;
+	event.type = SDL_USEREVENT;
+	event.user.code = 0;
+	event.user.data1 = event.user.data2 = NULL;
+	SDL_PushEvent( &event );
+	return interval;
+}
 
 static void dispose_fxenvironment( struct fxenvironment *fxenv ) {
 	int idx = 0;
@@ -19,6 +29,9 @@ static void dispose_fxenvironment( struct fxenvironment *fxenv ) {
 				SDL_FreeSurface( fxenv->surfaces[ idx ] );
 			}
 			idx++;
+		}
+		if( fxenv->timer ) {
+			SDL_RemoveTimer( fxenv->timer );
 		}
 		dispose_environment( ( struct environment * ) fxenv );
 	}
@@ -52,7 +65,7 @@ static int execute_fxopen_statement( struct statement *this, struct variable *va
 	return ret;
 }
 
-static int execute_fxsurf_statement( struct statement *this, struct variable *variables,
+static int execute_fxsurface_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	int ret, surf, width, height, len, idx = 0;
 	struct variable params[ 4 ], *array;
@@ -195,12 +208,32 @@ static int execute_fxshow_statement( struct statement *this, struct variable *va
 	return 1;
 }
 
-static int execute_fxwait_statement( struct statement *this, struct variable *variables,
+static int execute_fxsleep_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct variable millis = { 0, NULL };
 	int ret = this->source->evaluate( this->source, variables, &millis, exception );
 	if( ret && millis.integer_value > 0 ) {
 		SDL_Delay( millis.integer_value );
+	}
+	return ret;
+}
+
+static int execute_fxtimer_statement( struct statement *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	struct variable millis = { 0, NULL };
+	struct fxenvironment *fxenv = ( struct fxenvironment * ) this->source->function->env;
+	int ret = this->source->evaluate( this->source, variables, &millis, exception );
+	if( ret ) {
+		if( millis.integer_value > 0 ) {
+			fxenv->timer = SDL_AddTimer( millis.integer_value, timer_callback, fxenv );
+			if( fxenv->timer == NULL ) {
+				ret = throw( exception, this->source, millis.integer_value, "Unable to start timer." );
+			}
+		} else {
+			if( SDL_RemoveTimer( fxenv->timer ) == 0 ) {
+				ret = throw( exception, this->source, millis.integer_value, "Unable to stop timer." );
+			}
+		}
 	}
 	return ret;
 }
@@ -222,9 +255,9 @@ static struct element* parse_fxshow_statement( struct element *elem, struct envi
 	return next;
 }
 
-static struct element* parse_fxsurf_statement( struct element *elem, struct environment *env,
+static struct element* parse_fxsurface_statement( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message ) {
-	return parse_expr_list_statement( elem, env, func, prev, &execute_fxsurf_statement, message );
+	return parse_expr_list_statement( elem, env, func, prev, &execute_fxsurface_statement, message );
 }
 
 static struct element* parse_fxblit_statement( struct element *elem, struct environment *env,
@@ -237,37 +270,52 @@ static struct element* parse_fxrect_statement( struct element *elem, struct envi
 	return parse_expr_list_statement( elem, env, func, prev, &execute_fxrect_statement, message );
 }
 
-static struct element* parse_fxwait_statement( struct element *elem, struct environment *env,
+static struct element* parse_fxsleep_statement( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message ) {
-	return parse_expr_list_statement( elem, env, func, prev, &execute_fxwait_statement, message );
+	return parse_expr_list_statement( elem, env, func, prev, &execute_fxsleep_statement, message );
+}
+
+static struct element* parse_fxtimer_statement( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct statement *prev, char *message ) {
+	return parse_expr_list_statement( elem, env, func, prev, &execute_fxtimer_statement, message );
 }
 
 static int evaluate_smillis_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	struct timeval time;
-	int millis, ret = 1;
-	if( gettimeofday( &time, NULL ) == 0 ) {
-		millis = time.tv_usec / 500;
-		dispose_variable( result );
-		result->integer_value = ( time.tv_sec * 1000 ) + ( millis >> 1 ) + ( millis & 1 );
-		result->element_value = NULL;
+	dispose_variable( result );
+	result->integer_value = SDL_GetTicks();
+	result->element_value = NULL;
+	return 1;
+}
+
+static int evaluate_sfxwait_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	int ret = 1;
+	SDL_Event event;
+	SDL_WaitEvent( &event );
+	if( event.type == SDL_QUIT ) {
+		ret = throw( exception, this, 0, NULL );
 	} else {
-		ret = throw( exception, this, errno, "Unable to get system time." );
+		dispose_variable( result );
+		result->integer_value = event.type;
+		result->element_value = NULL;
 	}
 	return ret;
 }
 
 static struct operator fxoperators[] = {
-	{ "$millis",'$', 0, &evaluate_smillis_expression, operators }
+	{ "$millis",'$', 0, &evaluate_smillis_expression, &fxoperators[ 1 ] },
+	{ "$fxwait",'$', 0, &evaluate_sfxwait_expression, operators }
 };
 
 static struct keyword fxstatements[] = {
 	{ "fxopen", "xxx;", &parse_fxopen_statement, &fxstatements[ 1 ] },
 	{ "fxshow", ";", &parse_fxshow_statement, &fxstatements[ 2 ] },
-	{ "fxsurf", "xxxx;", &parse_fxsurf_statement, &fxstatements[ 3 ] },
+	{ "fxsurface", "xxxx;", &parse_fxsurface_statement, &fxstatements[ 3 ] },
 	{ "fxblit", "xxxxxxx;", &parse_fxblit_statement, &fxstatements[ 4 ] },
 	{ "fxrect", "xxxxx;", &parse_fxrect_statement, &fxstatements[ 5 ] },
-	{ "fxwait", "x;", &parse_fxwait_statement, statements }
+	{ "fxsleep", "x;", &parse_fxsleep_statement, &fxstatements[ 6 ] },
+	{ "fxtimer", "x;", &parse_fxtimer_statement, statements }
 };
 
 int main( int argc, char **argv ) {
@@ -293,7 +341,7 @@ int main( int argc, char **argv ) {
 		if( success ) {
 			if( env->entry_point ) {
 				/* Initialize SDL. */
-				success = SDL_Init( SDL_INIT_VIDEO );
+				success = SDL_Init( SDL_INIT_VIDEO | SDL_INIT_TIMER );
 				if( success == 0 ) {
 					/* Evaluate entry-point function. */
 					result.integer_value = except.integer_value = 0;
