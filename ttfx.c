@@ -9,6 +9,7 @@ struct fxenvironment {
 	struct environment env;
 	struct SDL_Surface *surfaces[ MAX_SURFACES ];
 	SDL_TimerID timer;
+	SDLKey key;
 };
 
 static Uint32 timer_callback( Uint32 interval, void *param ) {
@@ -289,12 +290,16 @@ static int evaluate_smillis_expression( struct expression *this, struct variable
 
 static int evaluate_sfxwait_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
+	struct fxenvironment *fxenv = ( struct fxenvironment * ) this->function->env;
 	int ret = 1;
 	SDL_Event event;
 	SDL_WaitEvent( &event );
 	if( event.type == SDL_QUIT ) {
 		ret = throw( exception, this, 0, NULL );
 	} else {
+		if( event.type == SDL_KEYDOWN || event.type == SDL_KEYUP ) {
+			fxenv->key = event.key.keysym.sym;
+		}
 		dispose_variable( result );
 		result->integer_value = event.type;
 		result->element_value = NULL;
@@ -326,12 +331,30 @@ static int evaluate_smousekey_expression( struct expression *this, struct variab
 	return 1;
 }
 
+static int evaluate_skeyboard_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	dispose_variable( result );
+	result->integer_value = ( ( struct fxenvironment * ) this->function->env )->key;
+	result->element_value = NULL;
+	return 1;
+}
+
+static int evaluate_skeyshift_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	dispose_variable( result );
+	result->integer_value = SDL_GetModState();
+	result->element_value = NULL;
+	return 1;
+}
+
 static struct operator fxoperators[] = {
 	{ "$millis",'$', 0, &evaluate_smillis_expression, &fxoperators[ 1 ] },
 	{ "$fxwait",'$', 0, &evaluate_sfxwait_expression, &fxoperators[ 2 ] },
 	{ "$xmouse",'$', 0, &evaluate_sxmouse_expression, &fxoperators[ 3 ] },
 	{ "$ymouse",'$', 0, &evaluate_symouse_expression, &fxoperators[ 4 ] },
-	{ "$mousekey",'$', 0, &evaluate_smousekey_expression, operators }
+	{ "$mousekey",'$', 0, &evaluate_smousekey_expression, &fxoperators[ 5 ] },
+	{ "$keyboard",'$', 0, &evaluate_skeyboard_expression, &fxoperators[ 6 ] },
+	{ "$keyshift",'$', 0, &evaluate_skeyshift_expression, operators }
 };
 
 static struct keyword fxstatements[] = {

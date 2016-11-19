@@ -29,11 +29,15 @@ program fxtest {
 			case 24 {
 				if <( x 640 ) {
 					fxrect x, 0, 8, 480, *( c 256 );
+					fxrect 160, 120, 320, 240, 0xFFFFFF;
 					fxblit 0, 0, 0, 320, 240, 160, 120;
 					fxshow;
 					let c = +( c 3 );
 					let x = +( x 8 );
 				}
+			}
+			case 2 {
+				print $str( "asc = " $keyboard ", mod = " $keyshift );
 			}
 			default {
 				print $str( "x = " $xmouse ", y = " $ymouse ", but = " $mousekey );
