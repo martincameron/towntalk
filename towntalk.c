@@ -216,6 +216,18 @@ struct function_declaration {
 	struct function_declaration *next;
 };
 
+struct constant {
+	char *name;
+	int integer_value;
+	char *string_value;
+};
+
+static struct constant constants[] = {
+	{ "FALSE", 0, NULL },
+	{  "TRUE", 1, NULL },
+	{ NULL }
+};
+
 /* Forward declarations. */
 static void dispose_variable( struct variable *var );
 static int validate_name( char *name, struct environment *env );
@@ -956,6 +968,32 @@ static struct statement* new_statement( char *message ) {
 	return stmt;
 }
 
+static int add_constants( struct constant *constants, struct environment *env, char *message ) {
+	struct global_variable *global;
+	int idx = 0;
+	struct constant *con = &constants[ idx++ ];
+	while( con->name && message[ 0 ] == 0 ) {
+		global = new_global_variable( con->name, message );
+		if( global ) {
+			global->value.integer_value = con->integer_value;
+			if( con->string_value ) {
+				global->value.element_value = new_string_constant( con->string_value );
+				if( global->value.element_value ) {
+					global->next = env->globals;
+					env->globals = global;
+				} else {
+					strcpy( message, OUT_OF_MEMORY );
+				}
+			} else {
+				global->next = env->globals;
+				env->globals = global;
+			}
+		}
+		con = &constants[ idx++ ];
+	}
+	return message[ 0 ] == 0;
+}
+
 static int execute_global_assignment( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct variable *destination = this->global;
@@ -1277,27 +1315,31 @@ static int execute_switch_statement( struct statement *this, struct variable *va
 	struct variable *result, struct variable *exception ) {
 	int ret, length;
 	struct statement *stmt = this->if_block;
-	struct variable switch_value = { 0, NULL }, *case_value;
+	struct variable switch_value = { 0, NULL }, case_value = { 0, NULL };
 	ret = this->source->evaluate( this->source, variables, &switch_value, exception );
 	if( ret ) {
-		ret = 1;
-		while( stmt ) {
-			case_value = stmt->global;
-			if( case_value->element_value ) {
-				length = case_value->element_value->length;
-				if( switch_value.element_value
-				&& switch_value.element_value->length == length
-				&& !memcmp( switch_value.element_value->string, case_value->element_value->string, length )
-				&& switch_value.integer_value == case_value->integer_value ) {
-					ret = stmt->execute( stmt, variables, result, exception );	
+		while( stmt && ret ) {
+			ret = stmt->source->evaluate( stmt->source, variables, &case_value, exception );
+			if( ret ) {
+				if( case_value.element_value ) {
+					length = case_value.element_value->length;
+					if( switch_value.element_value
+					&& switch_value.element_value->length == length
+					&& !memcmp( switch_value.element_value->string, case_value.element_value->string, length )
+					&& switch_value.integer_value == case_value.integer_value ) {
+						dispose_variable( &case_value );
+						ret = stmt->execute( stmt, variables, result, exception );
+						break;
+					}
+				} else if( switch_value.element_value == NULL
+					&& switch_value.integer_value == case_value.integer_value ) {
+					dispose_variable( &case_value );
+					ret = stmt->execute( stmt, variables, result, exception );
 					break;
 				}
-			} else if( switch_value.element_value == NULL
-				&& switch_value.integer_value == case_value->integer_value ) {
-				ret = stmt->execute( stmt, variables, result, exception );
-				break;
+				dispose_variable( &case_value );
+				stmt = stmt->next;
 			}
-			stmt = stmt->next;
 		}
 		if( stmt == NULL && this->else_block ) {
 			ret = this->else_block->execute( this->else_block, variables, result, exception );
@@ -2838,7 +2880,7 @@ static struct element* parse_aset_statement( struct element *elem, struct enviro
 
 static struct keyword switch_stmts[] = {
 	{ "rem", "{", &parse_comment, &switch_stmts[ 1 ] },
-	{ "case", "v{", &parse_case_statement, &switch_stmts[ 2 ] },
+	{ "case", "x{", &parse_case_statement, &switch_stmts[ 2 ] },
 	{ "default", "{", &parse_default_statement, NULL }
 };
 
@@ -2859,7 +2901,7 @@ static struct element* parse_switch_statement( struct element *elem, struct envi
 			if( message[ 0 ] == 0 ) {
 				stmt->if_block = cas = def = NULL;
 				while( block.next ) {
-					if( block.next->global ) {
+					if( block.next->source ) {
 						if( cas ) {
 							cas->next = block.next;
 							cas = cas->next;
@@ -2914,25 +2956,21 @@ static struct keyword statements[] = {
 
 static struct element* parse_case_statement( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message ) {
+	struct expression expr;
 	struct element *next = elem->next;
 	struct statement block, *stmt = new_statement( message );
-	struct global_variable *constant;
 	if( stmt ) {
 		prev->next = stmt;
-		constant = new_global_variable( "#Const#", message );
-		if( constant ) {
-			constant->next = env->constants;
-			env->constants = constant;
-			next = parse_constant( next, &constant->value, message );
+		expr.next = NULL;
+		next = parse_expression( next, env, func, &expr, message );
+		if( message[ 0 ] == 0 ) {
+			stmt->source = expr.next;
+			block.next = NULL;
+			parse_keywords( env->statements, next->child, env, func, &block, message );
+			stmt->if_block = block.next;
 			if( message[ 0 ] == 0 ) {
-				stmt->global = &constant->value;
-				block.next = NULL;
-				parse_keywords( env->statements, next->child, env, func, &block, message );
-				stmt->if_block = block.next;
-				if( message[ 0 ] == 0 ) {
-					stmt->execute = &execute_case_statement;
-					next = next->next;
-				}
+				stmt->execute = &execute_case_statement;
+				next = next->next;
 			}
 		}
 	}

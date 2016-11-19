@@ -24,9 +24,9 @@ program fxtest {
 	fxtimer 20;
 
 	let x = 0;
-	while 1 {
+	while TRUE {
 		switch $fxwait {
-			case 24 {
+			case FX_TIMER {
 				if <( x 640 ) {
 					fxrect x, 0, 8, 480, *( c 256 );
 					fxrect 160, 120, 320, 240, 0xFFFFFF;
@@ -36,10 +36,10 @@ program fxtest {
 					let x = +( x 8 );
 				}
 			}
-			case 2 {
+			case FX_KEYDOWN {
 				print $str( "asc = " $keyboard ", mod = " $keyshift );
 			}
-			default {
+			case FX_MOUSEKEYDOWN {
 				print $str( "x = " $xmouse ", y = " $ymouse ", but = " $mousekey );
 			}
 		}

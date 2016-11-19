@@ -347,6 +347,16 @@ static int evaluate_skeyshift_expression( struct expression *this, struct variab
 	return 1;
 }
 
+static struct constant fxconstants[] = {
+	{ "FX_KEYDOWN", 2, NULL },
+	{ "FX_KEYUP", 3, NULL },
+	{ "FX_MOUSEMOTION", 4, NULL },
+	{ "FX_MOUSEKEYDOWN", 5, NULL },
+	{ "FX_MOUSEKEYUP", 6, NULL },
+	{ "FX_TIMER", 24, NULL },
+	{ NULL }
+};
+
 static struct operator fxoperators[] = {
 	{ "$millis",'$', 0, &evaluate_smillis_expression, &fxoperators[ 1 ] },
 	{ "$fxwait",'$', 0, &evaluate_sfxwait_expression, &fxoperators[ 2 ] },
@@ -368,7 +378,7 @@ static struct keyword fxstatements[] = {
 };
 
 int main( int argc, char **argv ) {
-	int success, exit_code = EXIT_FAILURE;
+	int exit_code = EXIT_FAILURE;
 	char *file_name, message[ 256 ] = "";
 	struct environment *env;
 	struct variable result, except;
@@ -384,42 +394,43 @@ int main( int argc, char **argv ) {
 	if( env ) {
 		env->argc = argc - 1;
 		env->argv = &argv[ 1 ];
-		env->statements = fxstatements;
-		env->operators = fxoperators;
-		success = parse_tt_file( file_name, env, message );
-		if( success ) {
-			if( env->entry_point ) {
-				/* Initialize SDL. */
-				success = SDL_Init( SDL_INIT_VIDEO | SDL_INIT_TIMER );
-				if( success == 0 ) {
-					/* Evaluate entry-point function. */
-					result.integer_value = except.integer_value = 0;
-					result.element_value = except.element_value = NULL;
-					expr.line = env->entry_point->line;
-					expr.function = env->entry_point;
-					expr.parameters = NULL;
-					expr.evaluate = &evaluate_function_expression;
-					if( expr.evaluate( &expr, NULL, &result, &except ) ) {
-						exit_code = EXIT_SUCCESS;
-					} else if( except.element_value && except.element_value->string == NULL ) {
-						exit_code = except.integer_value;
-					} else {
-						fprintf( stderr, "Unhandled exception %d.\n", except.integer_value );
-						if( except.element_value && except.element_value->string ) {
-							fprintf( stderr, "%s\n", except.element_value->string );
+		if( add_constants( fxconstants, env, message )
+		&& add_constants( constants, env, message )  ) {
+			env->statements = fxstatements;
+			env->operators = fxoperators;
+			if( parse_tt_file( file_name, env, message ) ) {
+				if( env->entry_point ) {
+					/* Initialize SDL. */
+					if( SDL_Init( SDL_INIT_VIDEO | SDL_INIT_TIMER ) == 0 ) {
+						/* Evaluate entry-point function. */
+						result.integer_value = except.integer_value = 0;
+						result.element_value = except.element_value = NULL;
+						expr.line = env->entry_point->line;
+						expr.function = env->entry_point;
+						expr.parameters = NULL;
+						expr.evaluate = &evaluate_function_expression;
+						if( expr.evaluate( &expr, NULL, &result, &except ) ) {
+							exit_code = EXIT_SUCCESS;
+						} else if( except.element_value && except.element_value->string == NULL ) {
+							exit_code = except.integer_value;
+						} else {
+							fprintf( stderr, "Unhandled exception %d.\n", except.integer_value );
+							if( except.element_value && except.element_value->string ) {
+								fprintf( stderr, "%s\n", except.element_value->string );
+							}
 						}
+						dispose_variable( &result );
+						dispose_variable( &except );
+						SDL_Quit();
+					} else {
+						fprintf( stderr, "Unable to initialise SDL: %s\n", SDL_GetError() );
 					}
-					dispose_variable( &result );
-					dispose_variable( &except );
-					SDL_Quit();
 				} else {
-					fprintf( stderr, "Unable to initialise SDL: %s\n", SDL_GetError() );
+					fprintf( stderr, "No programs found.\n" );
 				}
 			} else {
-				fprintf( stderr, "No programs found.\n" );
+				fprintf( stderr, "%s\n", message );
 			}
-		} else {
-			fprintf( stderr, "%s\n", message );
 		}
 		dispose_fxenvironment( ( struct fxenvironment * )env );
 	} else {
