@@ -2,7 +2,7 @@
 array image;
 
 program fxtest {
-	var c, x, y, w, h, e;
+	var c, x, y, w, h;
 	fxopen 640, 480, "fxtest";
 
 	let w = 320;
@@ -21,24 +21,23 @@ program fxtest {
 
 	fxsurface 0, w, h, image;
 
-fxtimer 10;
+	fxtimer 20;
 
 	let x = 0;
-
-while 1 {
-	let e = $fxwait;
-#	print e;
-	if =( e 24 ) {
-		if <( x 640 ) {
-			fxrect x, 0, 4, 480, c;
-			fxblit 0, 0, 0, 320, 240, 160, 120;
-			fxshow;
-			let c = +( c 256 );
-			let x = +( x 4 );
-		} else {
-			fxtimer 0;
+	while 1 {
+		switch $fxwait {
+			case 24 {
+				if <( x 640 ) {
+					fxrect x, 0, 8, 480, *( c 256 );
+					fxblit 0, 0, 0, 320, 240, 160, 120;
+					fxshow;
+					let c = +( c 3 );
+					let x = +( x 8 );
+				}
+			}
+			default {
+				print $str( "x = " $xmouse ", y = " $ymouse ", but = " $mousekey );
+			}
 		}
 	}
-}
-
 }

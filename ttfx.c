@@ -12,7 +12,6 @@ struct fxenvironment {
 };
 
 static Uint32 timer_callback( Uint32 interval, void *param ) {
-	struct fxenvironment *fxenv = ( struct fxenvironment * ) param;
 	SDL_Event event;
 	event.type = SDL_USEREVENT;
 	event.user.code = 0;
@@ -303,9 +302,36 @@ static int evaluate_sfxwait_expression( struct expression *this, struct variable
 	return ret;
 }
 
+static int evaluate_sxmouse_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	dispose_variable( result );
+	SDL_GetMouseState( &result->integer_value, NULL );
+	result->element_value = NULL;
+	return 1;
+}
+
+static int evaluate_symouse_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	dispose_variable( result );
+	SDL_GetMouseState( NULL, &result->integer_value );
+	result->element_value = NULL;
+	return 1;
+}
+
+static int evaluate_smousekey_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	dispose_variable( result );
+	result->integer_value = SDL_GetMouseState( NULL, NULL );
+	result->element_value = NULL;
+	return 1;
+}
+
 static struct operator fxoperators[] = {
 	{ "$millis",'$', 0, &evaluate_smillis_expression, &fxoperators[ 1 ] },
-	{ "$fxwait",'$', 0, &evaluate_sfxwait_expression, operators }
+	{ "$fxwait",'$', 0, &evaluate_sfxwait_expression, &fxoperators[ 2 ] },
+	{ "$xmouse",'$', 0, &evaluate_sxmouse_expression, &fxoperators[ 3 ] },
+	{ "$ymouse",'$', 0, &evaluate_symouse_expression, &fxoperators[ 4 ] },
+	{ "$mousekey",'$', 0, &evaluate_smousekey_expression, operators }
 };
 
 static struct keyword fxstatements[] = {
