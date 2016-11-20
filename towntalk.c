@@ -1313,35 +1313,33 @@ static int execute_aset_statement( struct statement *this, struct variable *vari
 
 static int execute_switch_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	int ret, length;
+	int ret, length, matched = 0;
 	struct statement *stmt = this->if_block;
 	struct variable switch_value = { 0, NULL }, case_value = { 0, NULL };
 	ret = this->source->evaluate( this->source, variables, &switch_value, exception );
 	if( ret ) {
-		while( stmt && ret ) {
+		while( stmt && ret && !matched ) {
 			ret = stmt->source->evaluate( stmt->source, variables, &case_value, exception );
 			if( ret ) {
 				if( case_value.element_value ) {
 					length = case_value.element_value->length;
-					if( switch_value.element_value
-					&& switch_value.element_value->length == length
-					&& !memcmp( switch_value.element_value->string, case_value.element_value->string, length )
-					&& switch_value.integer_value == case_value.integer_value ) {
-						dispose_variable( &case_value );
-						ret = stmt->execute( stmt, variables, result, exception );
-						break;
-					}
-				} else if( switch_value.element_value == NULL
-					&& switch_value.integer_value == case_value.integer_value ) {
-					dispose_variable( &case_value );
-					ret = stmt->execute( stmt, variables, result, exception );
-					break;
+					matched = switch_value.element_value
+						&& switch_value.element_value->length == length
+						&& !memcmp( switch_value.element_value->string,
+							case_value.element_value->string, length )
+						&& switch_value.integer_value == case_value.integer_value;
+				} else {
+					matched = ( switch_value.element_value == NULL )
+						&& switch_value.integer_value == case_value.integer_value;
 				}
 				dispose_variable( &case_value );
+				if( matched ) {
+					ret = stmt->execute( stmt, variables, result, exception );
+				}
 				stmt = stmt->next;
 			}
 		}
-		if( stmt == NULL && this->else_block ) {
+		if( ret && !matched && this->else_block ) {
 			ret = this->else_block->execute( this->else_block, variables, result, exception );
 		}
 		dispose_variable( &switch_value );
