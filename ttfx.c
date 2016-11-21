@@ -238,6 +238,30 @@ static int execute_fxtimer_statement( struct statement *this, struct variable *v
 	return ret;
 }
 
+static int execute_fxaudio_statement( struct statement *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	struct variable samples = { 0, NULL };
+	/*struct fxenvironment *fxenv = ( struct fxenvironment * ) this->source->function->env;*/
+	int ret = this->source->evaluate( this->source, variables, &samples, exception );
+	if( ret ) {
+		/* fxaudio ticklen; */
+		dispose_variable( &samples );
+	}
+	return ret;
+}
+
+static int execute_fxsample_statement( struct statement *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	/* fxsample channel sample$ loopstart looplen offset; */
+	return 1;
+}
+
+static int execute_fxmodulate_statement( struct statement *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	/* fxmodulate channel volume pan freq; */
+	return 1;
+}
+
 static struct element* parse_fxopen_statement( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message ) {
 	return parse_expr_list_statement( elem, env, func, prev, &execute_fxopen_statement, message );
@@ -280,6 +304,21 @@ static struct element* parse_fxtimer_statement( struct element *elem, struct env
 	return parse_expr_list_statement( elem, env, func, prev, &execute_fxtimer_statement, message );
 }
 
+static struct element* parse_fxaudio_statement( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct statement *prev, char *message ) {
+	return parse_expr_list_statement( elem, env, func, prev, &execute_fxaudio_statement, message );
+}
+
+static struct element* parse_fxsample_statement( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct statement *prev, char *message ) {
+	return parse_expr_list_statement( elem, env, func, prev, &execute_fxsample_statement, message );
+}
+
+static struct element* parse_fxmodulate_statement( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct statement *prev, char *message ) {
+	return parse_expr_list_statement( elem, env, func, prev, &execute_fxmodulate_statement, message );
+}
+
 static int evaluate_smillis_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	dispose_variable( result );
@@ -288,23 +327,36 @@ static int evaluate_smillis_expression( struct expression *this, struct variable
 	return 1;
 }
 
-static int evaluate_sfxwait_expression( struct expression *this, struct variable *variables,
+static int handle_event_expression( struct expression *this, SDL_Event *event,
 	struct variable *result, struct variable *exception ) {
 	struct fxenvironment *fxenv = ( struct fxenvironment * ) this->function->env;
 	int ret = 1;
-	SDL_Event event;
-	SDL_WaitEvent( &event );
-	if( event.type == SDL_QUIT ) {
+	if( event->type == SDL_QUIT ) {
 		ret = throw( exception, this, 0, NULL );
 	} else {
-		if( event.type == SDL_KEYDOWN || event.type == SDL_KEYUP ) {
-			fxenv->key = event.key.keysym.sym;
+		if( event->type == SDL_KEYDOWN || event->type == SDL_KEYUP ) {
+			fxenv->key = event->key.keysym.sym;
 		}
 		dispose_variable( result );
-		result->integer_value = event.type;
+		result->integer_value = event->type;
 		result->element_value = NULL;
 	}
 	return ret;
+}
+
+static int evaluate_sfxpoll_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	SDL_Event event;
+	event.type = SDL_NOEVENT;
+	SDL_PollEvent( &event );
+	return handle_event_expression( this, &event, result, exception );
+}
+
+static int evaluate_sfxwait_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	SDL_Event event;
+	SDL_WaitEvent( &event );
+	return handle_event_expression( this, &event, result, exception );
 }
 
 static int evaluate_sxmouse_expression( struct expression *this, struct variable *variables,
@@ -347,6 +399,15 @@ static int evaluate_skeyshift_expression( struct expression *this, struct variab
 	return 1;
 }
 
+static int evaluate_sfxtick_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	dispose_variable( result );
+	/* Get current audio tick. */
+	result->integer_value = 0;
+	result->element_value = NULL;
+	return 1;
+}
+
 static struct constant fxconstants[] = {
 	{ "FX_KEYDOWN", 2, NULL },
 	{ "FX_KEYUP", 3, NULL },
@@ -359,12 +420,14 @@ static struct constant fxconstants[] = {
 
 static struct operator fxoperators[] = {
 	{ "$millis",'$', 0, &evaluate_smillis_expression, &fxoperators[ 1 ] },
-	{ "$fxwait",'$', 0, &evaluate_sfxwait_expression, &fxoperators[ 2 ] },
-	{ "$xmouse",'$', 0, &evaluate_sxmouse_expression, &fxoperators[ 3 ] },
-	{ "$ymouse",'$', 0, &evaluate_symouse_expression, &fxoperators[ 4 ] },
-	{ "$mousekey",'$', 0, &evaluate_smousekey_expression, &fxoperators[ 5 ] },
-	{ "$keyboard",'$', 0, &evaluate_skeyboard_expression, &fxoperators[ 6 ] },
-	{ "$keyshift",'$', 0, &evaluate_skeyshift_expression, operators }
+	{ "$fxpoll",'$', 0, &evaluate_sfxpoll_expression, &fxoperators[ 2 ] },
+	{ "$fxwait",'$', 0, &evaluate_sfxwait_expression, &fxoperators[ 3 ] },
+	{ "$xmouse",'$', 0, &evaluate_sxmouse_expression, &fxoperators[ 4 ] },
+	{ "$ymouse",'$', 0, &evaluate_symouse_expression, &fxoperators[ 5 ] },
+	{ "$mousekey",'$', 0, &evaluate_smousekey_expression, &fxoperators[ 6 ] },
+	{ "$keyboard",'$', 0, &evaluate_skeyboard_expression, &fxoperators[ 7 ] },
+	{ "$keyshift",'$', 0, &evaluate_skeyshift_expression, &fxoperators[ 8 ] },
+	{ "$fxtick",'$', 0, &evaluate_sfxtick_expression, operators }
 };
 
 static struct keyword fxstatements[] = {
@@ -374,7 +437,10 @@ static struct keyword fxstatements[] = {
 	{ "fxblit", "xxxxxxx;", &parse_fxblit_statement, &fxstatements[ 4 ] },
 	{ "fxrect", "xxxxx;", &parse_fxrect_statement, &fxstatements[ 5 ] },
 	{ "fxsleep", "x;", &parse_fxsleep_statement, &fxstatements[ 6 ] },
-	{ "fxtimer", "x;", &parse_fxtimer_statement, statements }
+	{ "fxtimer", "x;", &parse_fxtimer_statement, &fxstatements[ 7 ] },
+	{ "fxaudio", "x;", &parse_fxaudio_statement, &fxstatements[ 8 ] },
+	{ "fxsample", "xxxxx;", &parse_fxsample_statement, &fxstatements[ 9 ] },
+	{ "fxmodulate", "xxxx;", &parse_fxmodulate_statement, statements }
 };
 
 int main( int argc, char **argv ) {
