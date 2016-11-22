@@ -52,6 +52,7 @@
 		rem {}                   Comment.
 		var a,b,c;               Local variable.
 		let a = expr;            Variable assignment.
+		let arr = ${0,"a"};      Initialize array from element.
 		print expr;              Write integer or string to standard output.
 		write expr;              Same as print, but do not add a newline.
 		error expr;              Same as print, but write to standard error.
@@ -72,7 +73,6 @@
 		call expr;               Evaluate expression and discard result.
 		dim [arr len];           Resize specified array.
 		set [arr idx] = expr;    Assign expression to array at index.
-		aset arr = ${0,"a"};     Initialize array from element.
 		inc a;                   Increment local variable.
 		save str, "file";        Save bytes from string to file.
 		append str, "file";      Append bytes to the end of file.
@@ -114,7 +114,7 @@
 		$int(str)                String to integer.
 		$len(str)                String/Array length.
 		$tup(str int)            String/Integer tuple.
-		$arr(arr)                Array to string (for aset).
+		$arr(arr)                Array to element string.
 		$load("abc.bin")         Load raw bytes into string.
 		$flen("file")            Get the length of a file.
 		$argc                    Number of command-line arguments.
@@ -909,55 +909,39 @@ static struct global_variable* new_global_variable( char *name, char *message ) 
 	if( global ) {
 		/*printf("Global '%s'\n", name);*/
 		global->name = new_string( name );
-		if( global->name == NULL ) {
-			free( global );
-			global = NULL;
-		}
 	}
-	if( global == NULL ) {
+	if( !( global && global->name ) ) {
+		dispose_global_variables( global );
 		strcpy( message, OUT_OF_MEMORY );
+		global = NULL;
 	}
 	return global;
 }
 
-static struct global_variable* new_array_variable( char *name ) {
-	struct element *arr;
-	struct global_variable *global = malloc( sizeof( struct global_variable ) );
-	if( global ) {
+static struct global_variable* new_array_variable( char *name, char *message ) {
+	struct element *elem;
+	struct global_variable *array = calloc( 1, sizeof( struct global_variable ) );
+	if( array ) {
 		/*printf("Array '%s'\n", name);*/
-		global->name = new_string( name );
-		if( global->name ) {
-			global->value.integer_value = 0;
-			global->value.element_value = NULL;
-			global->next = NULL;
-			arr = calloc( 1, sizeof( struct element ) );
-			if( arr ) {
-				global->value.element_value = arr;
-				arr->string = new_string( "#Array@" );
-				if( arr->string ) {
-					arr->reference_count = 1;
-					arr->array = malloc( sizeof( struct variable ) );
-					if( arr->array ) {
-						arr->array->integer_value = 0;
-						arr->array->element_value = NULL;
-					} else {
-						dispose_global_variables( global );
-						global = NULL;
-					}
-				} else {
-					dispose_global_variables( global );
-					global = NULL;
+		array->name = new_string( name );
+		if( array->name ) {
+			elem = calloc( 1, sizeof( struct element ) );
+			if( elem ) {
+				array->value.element_value = elem;
+				elem->string = new_string( "#Array#" );
+				if( elem->string ) {
+					elem->reference_count = 1;
+					elem->array = calloc( 1, sizeof( struct variable ) );
 				}
-			} else {
-				dispose_global_variables( global );
-				global = NULL;
 			}
-		} else {
-			free( global );
-			global = NULL;
+		}
+		if( !( array->name && elem && elem->string && elem->array ) ) {
+			dispose_global_variables( array );
+			strcpy( message, OUT_OF_MEMORY );
+			array = NULL;
 		}
 	}
-	return global;
+	return array;
 }
 
 static struct statement* new_statement( char *message ) {
@@ -1263,50 +1247,42 @@ static int parse_constant_list( struct element *elem, struct global_variable *pr
 	return count;
 }
 
-static int execute_aset_statement( struct statement *this, struct variable *variables,
+static int execute_array_assignment( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	int ret, idx, length, newlen;
 	char msg[ 128 ] = "";
 	struct global_variable inputs, *input;
-	struct variable dest = { 0, NULL }, src = { 0, NULL }, *values, *newvar;
-	ret = this->destination->evaluate( this->destination, variables, &dest, exception );
+	struct variable src = { 0, NULL }, *values, *newvar;
+	ret = this->source->evaluate( this->source, variables, &src, exception );
 	if( ret ) {
-		if( dest.element_value && dest.element_value->array ) {
-			ret = this->source->evaluate( this->source, variables, &src, exception );
-			if( ret ) {
-				inputs.next = NULL;
-				newlen = parse_constant_list( src.element_value, &inputs, msg );
-				if( msg[ 0 ] == 0 ) {
-					newvar = calloc( newlen + 1, sizeof( struct variable ) );
-					if( newvar ) {
-						idx = 0;
-						length = dest.element_value->length;
-						values = dest.element_value->array;
-						while( idx < length ) {
-							dispose_variable( &values[ idx++ ] );
-						}
-						free( values );
-						dest.element_value->length = newlen;
-						dest.element_value->array = newvar;
-						idx = 0;
-						input = inputs.next;
-						while( idx < newlen ) {
-							assign_variable( &input->value, &newvar[ idx++ ] );
-							input = input->next;
-						}
-					} else {
-						ret = throw( exception, this->source, 0, OUT_OF_MEMORY );
-					}
-				} else {
-					ret = throw( exception, this->source, 0, msg );
+		inputs.next = NULL;
+		newlen = parse_constant_list( src.element_value, &inputs, msg );
+		if( msg[ 0 ] == 0 ) {
+			newvar = calloc( newlen + 1, sizeof( struct variable ) );
+			if( newvar ) {
+				idx = 0;
+				length = this->global->element_value->length;
+				values = this->global->element_value->array;
+				while( idx < length ) {
+					dispose_variable( &values[ idx++ ] );
 				}
-				dispose_global_variables( inputs.next );
-				dispose_variable( &src );
+				free( values );
+				this->global->element_value->length = newlen;
+				this->global->element_value->array = newvar;
+				idx = 0;
+				input = inputs.next;
+				while( idx < newlen ) {
+					assign_variable( &input->value, &newvar[ idx++ ] );
+					input = input->next;
+				}
+			} else {
+				ret = throw( exception, this->source, 0, OUT_OF_MEMORY );
 			}
 		} else {
-			ret = throw( exception, this->destination, 0, "Not an array." );
+			ret = throw( exception, this->source, 0, msg );
 		}
-		dispose_variable( &dest );
+		dispose_global_variables( inputs.next );
+		dispose_variable( &src );
 	}
 	return ret;
 }
@@ -1529,12 +1505,10 @@ static int add_global_variable( struct environment *env, struct element *elem, c
 
 static int add_array_variable( struct environment *env, struct element *elem, char *message ) {
 	char *name = elem->string;
-	struct global_variable *arr = new_array_variable( name );
-	if( arr ) {
-		arr->next = env->arrays;
-		env->arrays = arr;
-	} else {
-		strcpy( message, OUT_OF_MEMORY );
+	struct global_variable *array = new_array_variable( name, message );
+	if( array ) {
+		array->next = env->arrays;
+		env->arrays = array;
 	}
 	return message[ 0 ] == 0;
 }
@@ -2678,7 +2652,7 @@ static struct element* parse_assignment_statement( struct element *elem, struct 
 	struct function_declaration *func, struct statement *prev, char *message ) {
 	int local;
 	struct expression expr;
-	struct global_variable *global = NULL;
+	struct global_variable *global = NULL, *array = NULL;
 	struct element *next = elem->next;
 	struct statement *stmt = new_statement( message );
 	if( stmt ) {
@@ -2686,13 +2660,17 @@ static struct element* parse_assignment_statement( struct element *elem, struct 
 		local = get_string_list_index( func->variable_decls, next->string );
 		if( local < 0 ) {
 			global = get_global_variable( env->globals, next->string );
+			array = get_global_variable( env->arrays, next->string );
 		}
-		if( local >= 0 || global ) {
+		if( local >= 0 || global || array ) {
 			expr.next = NULL;
 			next = parse_expression( next->next->next, env, func, &expr, message );
 			if( expr.next ) {
 				stmt->source = expr.next;
-				if( global ) {
+				if( array ) {
+					stmt->global = &array->value;
+					stmt->execute = &execute_array_assignment;
+				} else if( global ) {
 					stmt->global = &global->value;
 					stmt->execute = &execute_global_assignment;
 				} else {
@@ -2852,30 +2830,6 @@ static struct element* parse_set_statement( struct element *elem, struct environ
 	return next;
 }
 
-static struct element* parse_aset_statement( struct element *elem, struct environment *env,
-	struct function_declaration *func, struct statement *prev, char *message ) {
-	struct expression expr;
-	struct element *next = elem->next;
-	struct statement *stmt = new_statement( message );
-	if( stmt ) {
-		prev->next = stmt;
-		expr.next = NULL;
-		next = parse_expression( next, env, func, &expr, message );
-		if( expr.next ) {
-			stmt->destination = expr.next;
-			next = next->next;
-			expr.next = NULL;
-			next = parse_expression( next, env, func, &expr, message );
-			if( expr.next ) {
-				stmt->source = expr.next;
-				stmt->execute = &execute_aset_statement;
-				next = next->next;
-			}
-		}
-	}
-	return next;
-}
-
 static struct keyword switch_stmts[] = {
 	{ "rem", "{", &parse_comment, &switch_stmts[ 1 ] },
 	{ "case", "x{", &parse_case_statement, &switch_stmts[ 2 ] },
@@ -2945,10 +2899,9 @@ static struct keyword statements[] = {
 	{ "try", "{cn{", &parse_try_statement, &statements[ 15 ] },
 	{ "dim", "[;", &parse_dim_statement, &statements[ 16 ] },
 	{ "set", "[=x;", &parse_set_statement, &statements[ 17 ] },
-	{ "aset", "x=x;", &parse_aset_statement, &statements[ 18 ] },
-	{ "switch", "x{", &parse_switch_statement, &statements[ 19 ] },
-	{ "inc", "n;", &parse_increment_statement, &statements[ 20 ] },
-	{ "save", "xx;", &parse_save_statement, &statements[ 21 ] },
+	{ "switch", "x{", &parse_switch_statement, &statements[ 18 ] },
+	{ "inc", "n;", &parse_increment_statement, &statements[ 19 ] },
+	{ "save", "xx;", &parse_save_statement, &statements[ 20 ] },
 	{ "append", "xx;", &parse_append_statement, NULL }
 };
 
