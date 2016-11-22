@@ -904,16 +904,33 @@ static struct element* parse_constant( struct element *elem, struct variable *co
 	return next;
 }
 
+static struct function_declaration* new_function_declaration( char *name, char *file, char *message ) {
+	struct function_declaration *func = calloc( 1, sizeof( struct function_declaration ) );
+	if( func ) {
+		/*printf("Function '%s'\n", name);*/
+		func->name = new_string( name );
+		if( func->name ) {
+			func->file = new_string( file );
+		}
+		if( !( func->name && func->file ) ) {
+			dispose_function_declarations( func );
+			strcpy( message, OUT_OF_MEMORY );
+			func = NULL;
+		}
+	}
+	return func;
+}
+
 static struct global_variable* new_global_variable( char *name, char *message ) {
 	struct global_variable *global = calloc( 1, sizeof( struct global_variable ) );
 	if( global ) {
 		/*printf("Global '%s'\n", name);*/
 		global->name = new_string( name );
-	}
-	if( !( global && global->name ) ) {
-		dispose_global_variables( global );
-		strcpy( message, OUT_OF_MEMORY );
-		global = NULL;
+		if( global->name == NULL ) {
+			free( global );
+			strcpy( message, OUT_OF_MEMORY );
+			global = NULL;
+		}
 	}
 	return global;
 }
@@ -1456,29 +1473,6 @@ static int evaluate_index_expression( struct expression *this, struct variable *
 	return ret;
 }
 
-static struct function_declaration* new_function_declaration( char *name, char *file ) {
-	struct function_declaration *func = malloc( sizeof( struct function_declaration ) );
-	if( func ) {
-		/*printf("Function '%s'\n", name);*/
-		func->name = new_string( name );
-		if( func->name ) {
-			func->file = new_string( file );
-		}
-		if( func->name && func->file ) {
-			func->line = func->num_parameters = func->num_variables = 0;
-			func->elem = NULL;
-			func->env = NULL;
-			func->variable_decls = func->variable_decls_tail = NULL;
-			func->statements = func->statements_tail = NULL;
-			func->next = NULL;
-		} else {
-			free( func );
-			func = NULL;
-		}
-	}
-	return func;
-}
-
 static struct function_declaration* get_function_declaration( struct function_declaration *functions, char *name ) {
 	while( functions && strcmp( functions->name, name ) ) {
 		functions = functions->next;
@@ -1494,8 +1488,7 @@ static struct global_variable* get_global_variable( struct global_variable *glob
 }
 
 static int add_global_variable( struct environment *env, struct element *elem, char *message ) {
-	struct global_variable *global;
-	global = new_global_variable( elem->string, message );
+	struct global_variable *global = new_global_variable( elem->string, message );
 	if( global ) {
 		global->next = env->globals;
 		env->globals = global;
@@ -1504,8 +1497,7 @@ static int add_global_variable( struct environment *env, struct element *elem, c
 }
 
 static int add_array_variable( struct environment *env, struct element *elem, char *message ) {
-	char *name = elem->string;
-	struct global_variable *array = new_array_variable( name, message );
+	struct global_variable *array = new_array_variable( elem->string, message );
 	if( array ) {
 		array->next = env->arrays;
 		env->arrays = array;
@@ -3184,7 +3176,7 @@ static struct element* parse_function_declaration( struct element *elem, struct 
 	struct function_declaration *decl, struct statement *prev, char *message ) {
 	struct element *next = elem->next;
 	if( validate_decl( next, env, message ) ) {
-		decl = new_function_declaration( next->string, env->file );
+		decl = new_function_declaration( next->string, env->file, message );
 		if( decl ) {
 			decl->next = env->functions;
 			env->functions = decl;
@@ -3197,8 +3189,6 @@ static struct element* parse_function_declaration( struct element *elem, struct 
 				next = next->next;
 			}
 			next = next->next;
-		} else {
-			strcpy( message, OUT_OF_MEMORY );
 		}
 	}
 	return next;
