@@ -4,12 +4,18 @@
 #include "SDL.h"
 
 #define MAX_SURFACES 16
+#define MAX_SAMPLES 16
+#define MIN_TICK_LEN 512
+#define MAX_TICK_LEN 8192
 
 struct fxenvironment {
 	struct environment env;
 	struct SDL_Surface *surfaces[ MAX_SURFACES ];
 	SDL_TimerID timer;
 	SDLKey key;
+	int tick, tick_len;
+	int audio_idx, audio_end;
+	Sint16 audio[ MAX_TICK_LEN * 2 ];
 };
 
 static Uint32 timer_callback( Uint32 interval, void *param ) {
@@ -19,6 +25,37 @@ static Uint32 timer_callback( Uint32 interval, void *param ) {
 	event.user.data1 = event.user.data2 = NULL;
 	SDL_PushEvent( &event );
 	return interval;
+}
+
+static void audio_callback( void *userdata, Uint8 *stream, int len ) {
+	struct fxenvironment *fxenv = ( struct fxenvironment * ) userdata;
+	int samples = len >> 2;
+	int count, offset = 0;
+	while( offset < samples ) {
+		count = samples - offset;
+		if( fxenv->audio_idx + count > fxenv->audio_end ) {
+			count = fxenv->audio_end - fxenv->audio_idx;
+		}
+		memcpy( &stream[ offset << 2 ], &fxenv->audio[ fxenv->audio_idx << 1 ], count << 2 );
+		offset += count;
+		fxenv->audio_idx += count;
+		if( fxenv->audio_idx >= fxenv->audio_end ) {
+			fxenv->audio_idx = 0;
+			fxenv->audio_end = fxenv->tick_len;
+			/*
+			while( fxenv->audio_idx < fxenv->audio_end ) {
+				fxenv->audio[ fxenv->audio_idx * 2 ] = -32768 + ( fxenv->audio_idx * 65536 / fxenv->audio_end );
+				fxenv->audio[ fxenv->audio_idx * 2 + 1 ] = -32768;
+				if( fxenv->audio[ fxenv->audio_idx * 2 ] >= 0 ) {
+					fxenv->audio[ fxenv->audio_idx * 2 + 1 ] = 32767;
+				}
+				fxenv->audio_idx++;
+			}
+			fxenv->audio_idx = 0;
+			*/
+			fxenv->tick++;
+		}
+	}
 }
 
 static void dispose_fxenvironment( struct fxenvironment *fxenv ) {
@@ -240,25 +277,55 @@ static int execute_fxtimer_statement( struct statement *this, struct variable *v
 
 static int execute_fxaudio_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	struct variable samples = { 0, NULL };
-	/*struct fxenvironment *fxenv = ( struct fxenvironment * ) this->source->function->env;*/
-	int ret = this->source->evaluate( this->source, variables, &samples, exception );
+	struct variable ticklen = { 0, NULL };
+	struct fxenvironment *fxenv = ( struct fxenvironment * ) this->source->function->env;
+	SDL_AudioSpec audiospec = { 0 };
+	int ret = this->source->evaluate( this->source, variables, &ticklen, exception );
 	if( ret ) {
 		/* fxaudio ticklen; */
-		dispose_variable( &samples );
+		if( ticklen.integer_value > 0 ) {
+			if( ticklen.integer_value >= MIN_TICK_LEN
+			&&  ticklen.integer_value <= MAX_TICK_LEN ) {
+				fxenv->tick_len = ticklen.integer_value;
+				if( SDL_GetAudioStatus() == SDL_AUDIO_STOPPED ) {
+					audiospec.freq = 48000;
+					audiospec.format = AUDIO_S16SYS;
+					audiospec.channels = 2;
+					audiospec.samples = MIN_TICK_LEN;
+					audiospec.callback = audio_callback;
+					audiospec.userdata = fxenv;
+					if( SDL_OpenAudio( &audiospec, NULL ) >= 0 ) {
+						SDL_PauseAudio( 0 );
+					} else {
+						ret = throw( exception, this->source, 0, SDL_GetError() );
+					}
+				}
+			} else {
+				ret = throw( exception, this->source, ticklen.integer_value, "Invalid tick length." );
+			}
+		} else {
+			SDL_CloseAudio();
+		}
+		dispose_variable( &ticklen );
 	}
 	return ret;
 }
 
 static int execute_fxsample_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	/* fxsample channel sample$ loopstart looplen offset; */
+	/* fxsample index data$ loopstart looplen; */
 	return 1;
 }
 
-static int execute_fxmodulate_statement( struct statement *this, struct variable *variables,
+static int execute_fxplaysam_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	/* fxmodulate channel volume pan freq; */
+	/* fxplaysam channel sample offset freq vol pan tick; */
+	return 1;
+}
+
+static int execute_fxchannel_statement( struct statement *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	/* fxchannel channel volume pan freq; */
 	return 1;
 }
 
@@ -314,9 +381,14 @@ static struct element* parse_fxsample_statement( struct element *elem, struct en
 	return parse_expr_list_statement( elem, env, func, prev, &execute_fxsample_statement, message );
 }
 
-static struct element* parse_fxmodulate_statement( struct element *elem, struct environment *env,
+static struct element* parse_fxplaysam_statement( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message ) {
-	return parse_expr_list_statement( elem, env, func, prev, &execute_fxmodulate_statement, message );
+	return parse_expr_list_statement( elem, env, func, prev, &execute_fxplaysam_statement, message );
+}
+
+static struct element* parse_fxchannel_statement( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct statement *prev, char *message ) {
+	return parse_expr_list_statement( elem, env, func, prev, &execute_fxchannel_statement, message );
 }
 
 static int evaluate_smillis_expression( struct expression *this, struct variable *variables,
@@ -402,8 +474,7 @@ static int evaluate_skeyshift_expression( struct expression *this, struct variab
 static int evaluate_sfxtick_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	dispose_variable( result );
-	/* Get current audio tick. */
-	result->integer_value = 0;
+	result->integer_value = ( ( struct fxenvironment * ) this->function->env )->tick;
 	result->element_value = NULL;
 	return 1;
 }
@@ -439,8 +510,9 @@ static struct keyword fxstatements[] = {
 	{ "fxsleep", "x;", &parse_fxsleep_statement, &fxstatements[ 6 ] },
 	{ "fxtimer", "x;", &parse_fxtimer_statement, &fxstatements[ 7 ] },
 	{ "fxaudio", "x;", &parse_fxaudio_statement, &fxstatements[ 8 ] },
-	{ "fxsample", "xxxxx;", &parse_fxsample_statement, &fxstatements[ 9 ] },
-	{ "fxmodulate", "xxxx;", &parse_fxmodulate_statement, statements }
+	{ "fxsample", "xxxx;", &parse_fxsample_statement, &fxstatements[ 9 ] },
+	{ "fxplaysam", "xxxxxxx;", &parse_fxplaysam_statement, &fxstatements[ 10 ] },
+	{ "fxchannel", "xxxx;", &parse_fxchannel_statement, statements }
 };
 
 int main( int argc, char **argv ) {
