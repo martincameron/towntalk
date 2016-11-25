@@ -842,9 +842,9 @@ static struct element* new_string_constant( char *value ) {
 }
 
 static struct element* parse_constant( struct element *elem, struct variable *constant, char *message ) {
-	int integer_value = 0;
+	int len = 0, integer_value = 0;
 	struct element *child, *next = elem->next, *element_value = NULL;
-	char *end = NULL;
+	char *end, *str = NULL;
 	if( elem->string[ 0 ] == '"' ) {
 		/* String literal. */
 		element_value = new_string_constant( elem->string );
@@ -861,6 +861,42 @@ static struct element* parse_constant( struct element *elem, struct variable *co
 			next = next->next;
 		} else {
 			sprintf( message, "Expected '{' after '$' on line %d.", elem->line );
+		}
+	} else if( strcmp( elem->string, "$str" ) == 0 ) {
+		/* Concatenated string constant. */
+		if( next && next->string[ 0 ] == '(' ) {
+			child = next->child;
+			while( child && message[ 0 ] == 0 ) {
+				if( child->string[ 0 ] == '"' ) {
+					end = cat_string( str, len, child->string, child->length );
+					if( end ) {
+						len = len + child->length;
+						free( str );
+						str = end;
+					} else {
+						strcpy( message, OUT_OF_MEMORY );
+					}
+				} else {
+					sprintf( message, "Invalid string literal on line %d.", child->line );
+				}
+				if( child->next && child->next->string[ 0 ] == ',' ) {
+					child = child->next;
+				}
+				child = child->next;
+			}
+			if( str ) {
+				element_value = new_string_constant( str );
+				if( element_value ) {
+					next = next->next;
+				} else {
+					strcpy( message, OUT_OF_MEMORY );
+				}
+				free( str );
+			} else {
+				sprintf( message, "Invalid string literal on line %d.", next->line );
+			}
+		} else {
+			sprintf( message, "Expected '(' after '$str' on line %d.", elem->line );
 		}
 	} else if( strcmp( elem->string, "$tup" ) == 0 ) {
 		/* Tuple constant. */
@@ -3010,14 +3046,16 @@ static int validate_syntax( char *syntax, struct element *elem,
 			if( elem == NULL || strchr( "\"$-0123456789", elem->string[ 0 ] ) == NULL ) {
 				sprintf( message, "Expected constant after '%.16s' on line %d.", key->string, line );
 			} else if( elem->string[ 0 ] == '$' && elem->string[ 1 ] == 0 ) {
-				elem = elem->next;
-				if( elem == NULL || elem->string[ 0 ] != '{' ) {
+				if( elem->next && elem->next->string[ 0 ] == '{' ) {
+					elem = elem->next;
+				} else {
 					sprintf( message, "Expected '{' after '$' on line %d.", line );
 				}
-			} else if( strcmp( elem->string, "$tup" ) == 0 ) {
-				elem = elem->next;
-				if( elem == NULL || elem->string[ 0 ] != '(' ) {
-					sprintf( message, "Expected '(' after '$tup' on line %d.", line );
+			} else if( strcmp( elem->string, "$str" ) == 0 || strcmp( elem->string, "$tup" ) == 0 ) {
+				if( elem->next && elem->next->string[ 0 ] == '(' ) {
+					elem = elem->next;
+				} else {
+					sprintf( message, "Expected '(' after '%s' on line %d.", elem->string, line );
 				}
 			}
 		} else if( chr == 'x' ) {
