@@ -8,6 +8,7 @@
 #define NUM_SAMPLES 64
 #define MIN_TICK_LEN 512
 #define MAX_TICK_LEN 8192
+#define SAMPLE_RATE 48000
 
 struct fxsample {
 	int loop_start, loop_length;
@@ -51,7 +52,7 @@ static void mix_channel( struct fxchannel *channel, int *output, int count ) {
 		if( spos < lend || llen > 4096 ) {
 			lamp = channel->volume * ( 255 - channel->panning );
 			ramp = channel->volume * channel->panning;
-			step = ( channel->frequency << 12 ) / 48000;
+			step = ( channel->frequency << 12 ) / SAMPLE_RATE;
 			data = channel->sample->sample_data.element_value->string;
 			idx = 0;
 			end = count << 1;
@@ -355,7 +356,7 @@ static int execute_fxaudio_statement( struct statement *this, struct variable *v
 				fxenv->tick_len = ticklen.integer_value;
 				SDL_UnlockAudio();
 				if( SDL_GetAudioStatus() == SDL_AUDIO_STOPPED ) {
-					audiospec.freq = 48000;
+					audiospec.freq = SAMPLE_RATE;
 					audiospec.format = AUDIO_S16SYS;
 					audiospec.channels = 2;
 					audiospec.samples = MIN_TICK_LEN;
@@ -458,7 +459,7 @@ static int execute_fxtrigger_statement( struct statement *this, struct variable 
 								SDL_LockAudio();
 								fxenv->channels[ idx ].sample = &fxenv->samples[ sample ];
 								adjust = ( fxenv->tick - params[ 6 ].integer_value );
-								adjust = ( freq << 12 ) / 48000 * fxenv->tick_len * adjust;
+								adjust = ( freq << 12 ) / SAMPLE_RATE * fxenv->tick_len * adjust;
 								fxenv->channels[ idx ].sample_pos = ( offset << 12 ) + adjust;
 								fxenv->channels[ idx ].frequency = freq;
 								fxenv->channels[ idx ].volume = vol;
@@ -492,8 +493,50 @@ static int execute_fxtrigger_statement( struct statement *this, struct variable 
 
 static int execute_fxchannel_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	/* fxchannel channel volume pan freq; */
-	return 1;
+	/* fxchannel channel freq vol pan; */
+	int ret, freq, vol, pan, idx = 0;
+	struct variable params[ 4 ];
+	struct expression *expr = this->source;
+	struct fxenvironment *fxenv = ( struct fxenvironment * ) this->source->function->env;
+	memset( params, 0, 4 * sizeof( struct variable ) );
+	ret = expr->evaluate( expr, variables, &params[ idx++ ], exception );
+	expr = expr->next;
+	while( ret && expr ) {
+		ret = expr->evaluate( expr, variables, &params[ idx++ ], exception );
+		expr = expr->next;
+	}
+	if( ret ) {
+		idx = params[ 0 ].integer_value;
+		if( idx >= 0 && idx < NUM_CHANNELS ) {
+			freq = params[ 1 ].integer_value;
+			if( freq > 0 && freq < 524288 ) {
+				vol = params[ 2 ].integer_value;
+				if( vol >= 0 && vol <= 64 ) {
+					pan = params[ 3 ].integer_value;
+					if( pan >= 0 && pan <= 255 ) {
+						SDL_LockAudio();
+						fxenv->channels[ idx ].frequency = freq;
+						fxenv->channels[ idx ].volume = vol;
+						fxenv->channels[ idx ].panning = pan;
+						SDL_UnlockAudio();
+					} else {
+						ret = throw( exception, this->source, pan, "Panning out of range." );
+					}
+				} else {
+					ret = throw( exception, this->source, vol, "Volume out of range." );
+				}
+			} else {
+				ret = throw( exception, this->source, freq, "frequency out of range." );
+			}
+		} else {
+			ret = throw( exception, this->source, idx, "Invalid channel index." );
+		}
+	}
+	idx = 0;
+	while( idx < 4 ) {
+		dispose_variable( &params[ idx++ ] );
+	}
+	return ret;
 }
 
 static struct element* parse_fxopen_statement( struct element *elem, struct environment *env,
