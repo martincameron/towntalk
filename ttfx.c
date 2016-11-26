@@ -3,19 +3,31 @@
 
 #include "SDL.h"
 
-#define MAX_SURFACES 16
-#define MAX_SAMPLES 16
+#define NUM_SURFACES 16
+#define NUM_CHANNELS 16
+#define NUM_SAMPLES 64
 #define MIN_TICK_LEN 512
 #define MAX_TICK_LEN 8192
 
+struct fxsample {
+	int loop_start, loop_length;
+	struct variable sample_data;
+};
+
+struct fxchannel {
+	struct fxsample *sample;
+	int sample_pos, frequency, volume, panning;
+};
+
 struct fxenvironment {
 	struct environment env;
-	struct SDL_Surface *surfaces[ MAX_SURFACES ];
+	struct SDL_Surface *surfaces[ NUM_SURFACES ];
 	SDL_TimerID timer;
 	SDLKey key;
-	int tick, tick_len;
-	int audio_idx, audio_end;
-	Sint16 audio[ MAX_TICK_LEN * 2 ];
+	struct fxsample samples[ NUM_SAMPLES ];
+	struct fxchannel channels[ NUM_CHANNELS ];
+	int tick, tick_len, audio_idx, audio_end;
+	int audio[ MAX_TICK_LEN * 2 ];
 };
 
 static Uint32 timer_callback( Uint32 interval, void *param ) {
@@ -27,44 +39,98 @@ static Uint32 timer_callback( Uint32 interval, void *param ) {
 	return interval;
 }
 
+static void mix_channel( struct fxchannel *channel, int *output, int count ) {
+	int idx, end, llen, lend, spos, lamp, ramp, step, sam;
+	char *data;
+	if( channel->volume > 0 && channel->sample
+	&& channel->sample->sample_data.element_value ) {
+		llen = channel->sample->loop_length << 12;
+		lend = ( channel->sample->loop_start << 12 ) + llen;
+		spos = channel->sample_pos;
+		if( spos < lend || llen > 4096 ) {
+			lamp = channel->volume * ( 255 - channel->panning );
+			ramp = channel->volume * channel->panning;
+			step = ( channel->frequency << 12 ) / 48000;
+			data = channel->sample->sample_data.element_value->string;
+			idx = 0;
+			end = count << 1;
+			while( idx < end ) {
+				if( spos >= 0 ) {
+					sam = data[ spos >> 12 ];
+					output[ idx ] += ( sam * lamp ) >> 8;
+					output[ idx + 1 ] += ( sam * ramp ) >> 8;
+				}
+				spos += step;
+				if( spos >= lend ) {
+					if( llen > 4096 ) {
+						while( spos > lend ) {
+							spos -= llen;
+						}
+					} else {
+						spos = lend;
+						break;
+					}
+				}
+				idx += 2;
+			}
+			channel->sample_pos = spos;
+		}
+	}
+}
+
 static void audio_callback( void *userdata, Uint8 *stream, int len ) {
 	struct fxenvironment *fxenv = ( struct fxenvironment * ) userdata;
+	Sint16 *output = ( Sint16 * ) stream;
 	int samples = len >> 2;
-	int count, offset = 0;
+	int *audio = fxenv->audio;
+	int out_idx, out_end, aud_idx, ampl;
+	int channel, count, offset = 0;
 	while( offset < samples ) {
 		count = samples - offset;
 		if( fxenv->audio_idx + count > fxenv->audio_end ) {
 			count = fxenv->audio_end - fxenv->audio_idx;
 		}
-		memcpy( &stream[ offset << 2 ], &fxenv->audio[ fxenv->audio_idx << 1 ], count << 2 );
+		out_idx = offset << 1;
+		out_end = ( offset + count ) << 1;
+		aud_idx = fxenv->audio_idx << 1;
+		while( out_idx < out_end ) {
+			ampl = audio[ aud_idx++ ];
+			if( ampl > 32767 ) {
+				ampl = 32767;
+			}
+			if( ampl < -32768 ) {
+				ampl = -32768;
+			}
+			output[ out_idx++ ] = ampl;
+		}
 		offset += count;
 		fxenv->audio_idx += count;
 		if( fxenv->audio_idx >= fxenv->audio_end ) {
 			fxenv->audio_idx = 0;
 			fxenv->audio_end = fxenv->tick_len;
-			/*
-			while( fxenv->audio_idx < fxenv->audio_end ) {
-				fxenv->audio[ fxenv->audio_idx * 2 ] = -32768 + ( fxenv->audio_idx * 65536 / fxenv->audio_end );
-				fxenv->audio[ fxenv->audio_idx * 2 + 1 ] = -32768;
-				if( fxenv->audio[ fxenv->audio_idx * 2 ] >= 0 ) {
-					fxenv->audio[ fxenv->audio_idx * 2 + 1 ] = 32767;
-				}
-				fxenv->audio_idx++;
+			memset( fxenv->audio, 0, sizeof( int ) * fxenv->tick_len * 2 );
+			channel = 0;
+			while( channel < NUM_CHANNELS ) {
+				mix_channel( &fxenv->channels[ channel++ ], fxenv->audio, fxenv->audio_end );
 			}
-			fxenv->audio_idx = 0;
-			*/
 			fxenv->tick++;
 		}
 	}
 }
 
 static void dispose_fxenvironment( struct fxenvironment *fxenv ) {
-	int idx = 0;
+	int idx;
 	if( fxenv ) {
-		while( idx < MAX_SURFACES ) {
+		idx = 0;
+		while( idx < NUM_SURFACES ) {
 			if( fxenv->surfaces[ idx ] ) {
 				SDL_FreeSurface( fxenv->surfaces[ idx ] );
 			}
+			idx++;
+		}
+		idx = 0;
+		while( idx < NUM_SAMPLES ) {
+			dispose_variable( &fxenv->samples[ idx ].sample_data );
 			idx++;
 		}
 		if( fxenv->timer ) {
@@ -119,7 +185,7 @@ static int execute_fxsurface_statement( struct statement *this, struct variable 
 	}
 	if( ret ) {
 		surf = params[ 0 ].integer_value;
-		if( surf >= 0 && surf < MAX_SURFACES ) {
+		if( surf >= 0 && surf < NUM_SURFACES ) {
 			width = params[ 1 ].integer_value;
 			height = params[ 2 ].integer_value;
 			if( width > 0 && height > 0 ) {
@@ -189,7 +255,7 @@ static int execute_fxblit_statement( struct statement *this, struct variable *va
 	}
 	if( ret ) {
 		idx = params[ 0 ].integer_value;
-		if( idx >= 0 && idx < MAX_SURFACES ) {
+		if( idx >= 0 && idx < NUM_SURFACES ) {
 			src.x = params[ 1 ].integer_value;
 			src.y = params[ 2 ].integer_value;
 			src.w = params[ 3 ].integer_value;
@@ -314,12 +380,54 @@ static int execute_fxaudio_statement( struct statement *this, struct variable *v
 static int execute_fxsample_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	/* fxsample index data$ loopstart looplen; */
-	return 1;
+	int ret, loop, llen, lend, idx = 0;
+	struct element *data;
+	struct variable params[ 4 ];
+	struct expression *expr = this->source;
+	struct fxenvironment *fxenv = ( struct fxenvironment * ) this->source->function->env;
+	memset( params, 0, 4 * sizeof( struct variable ) );
+	ret = expr->evaluate( expr, variables, &params[ idx++ ], exception );
+	expr = expr->next;
+	while( ret && expr ) {
+		ret = expr->evaluate( expr, variables, &params[ idx++ ], exception );
+		expr = expr->next;
+	}
+	if( ret ) {
+		idx = params[ 0 ].integer_value;
+		if( idx >= 0 && idx < NUM_SAMPLES ) {
+			data = params[ 1 ].element_value;
+			if( data ) {
+				if( data->length < 524288 ) {
+					loop = params[ 2 ].integer_value;
+					llen = params[ 3 ].integer_value;
+					lend = loop + llen;
+					if( loop >= 0 && lend >= loop && lend <= data->length ) {
+						fxenv->samples[ idx ].loop_start = loop;
+						fxenv->samples[ idx ].loop_length = llen;
+						assign_variable( &params[ 1 ], &fxenv->samples[ idx ].sample_data );
+					} else {
+						ret = throw( exception, this->source, lend, "Loop out of bounds." );
+					}
+				} else {
+					ret = throw( exception, this->source, data->length, "Sample data too long." );
+				}
+			} else {
+				ret = throw( exception, this->source, 0, "Sample data not a string." );
+			}
+		} else {
+			ret = throw( exception, this->source, idx, "Invalid sample index." );
+		}
+	}
+	idx = 0;
+	while( idx < 4 ) {
+		dispose_variable( &params[ idx++ ] );
+	}
+	return ret;
 }
 
-static int execute_fxplaysam_statement( struct statement *this, struct variable *variables,
+static int execute_fxtrigger_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	/* fxplaysam channel sample offset freq vol pan tick; */
+	/* fxtrigger channel sample offset freq vol pan tick; */
 	return 1;
 }
 
@@ -381,9 +489,9 @@ static struct element* parse_fxsample_statement( struct element *elem, struct en
 	return parse_expr_list_statement( elem, env, func, prev, &execute_fxsample_statement, message );
 }
 
-static struct element* parse_fxplaysam_statement( struct element *elem, struct environment *env,
+static struct element* parse_fxtrigger_statement( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message ) {
-	return parse_expr_list_statement( elem, env, func, prev, &execute_fxplaysam_statement, message );
+	return parse_expr_list_statement( elem, env, func, prev, &execute_fxtrigger_statement, message );
 }
 
 static struct element* parse_fxchannel_statement( struct element *elem, struct environment *env,
@@ -511,7 +619,7 @@ static struct keyword fxstatements[] = {
 	{ "fxtimer", "x;", &parse_fxtimer_statement, &fxstatements[ 7 ] },
 	{ "fxaudio", "x;", &parse_fxaudio_statement, &fxstatements[ 8 ] },
 	{ "fxsample", "xxxx;", &parse_fxsample_statement, &fxstatements[ 9 ] },
-	{ "fxplaysam", "xxxxxxx;", &parse_fxplaysam_statement, &fxstatements[ 10 ] },
+	{ "fxtrigger", "xxxxxxx;", &parse_fxtrigger_statement, &fxstatements[ 10 ] },
 	{ "fxchannel", "xxxx;", &parse_fxchannel_statement, statements }
 };
 

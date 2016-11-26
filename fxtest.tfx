@@ -23,6 +23,15 @@ program fxtest {
 
 	fxtimer 20;
 
+
+let x = 0;
+while <( x 256 ) {
+	set [ image x ] = -( x 128 );
+	inc x;
+}
+
+fxsample 0, $sub( image 0 256 ), 0, 256;
+
 	let x = 0;
 	while TRUE {
 		switch $fxwait {
