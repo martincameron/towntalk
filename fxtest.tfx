@@ -23,14 +23,16 @@ program fxtest {
 
 	fxtimer 20;
 
+	let x = 0;
+	while <( x 256 ) {
+		set [ image x ] = -( x 128 );
+		inc x;
+	}
 
-let x = 0;
-while <( x 256 ) {
-	set [ image x ] = -( x 128 );
-	inc x;
-}
-
-fxsample 0, $sub( image 0 256 ), 0, 256;
+	fxaudio 960;
+	fxsample 0, $sub( image 0 256 ), 0, 256;
+	fxtrigger 0, 0, 0, 16000, 32, 0, $fxtick;
+	fxtrigger 1, 0, 0, 32000, 32, 255, +( $fxtick 50 );
 
 	let x = 0;
 	while TRUE {
