@@ -197,7 +197,7 @@ static int execute_fxsurface_statement( struct statement *this, struct variable 
 						if( array ) {
 							if( SDL_LockSurface( surface ) == 0 ) {
 								idx = 0;
-								len = params[ 3 ].element_value->length;
+								len = params[ 3 ].element_value->line;
 								if( len > width * height ) {
 									len = width * height;
 								}
