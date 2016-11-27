@@ -456,7 +456,7 @@ static void dispose_element( struct element *elem ) {
 		if( elem->reference_count == 0 ) {
 			free( elem->string );
 			if( elem->array ) {
-				idx = 0, len = elem->length;
+				idx = 0, len = elem->line;
 				while( idx < len ) {
 					dispose_variable( &elem->array[ idx++ ] );
 				}
@@ -803,7 +803,7 @@ static int write_variable( struct variable *var, char *output ) {
 }
 
 static int write_array( struct element *arr, char *output ) {
-	int idx = 0, length = 0, count = arr->length, size;
+	int idx = 0, length = 0, count = arr->line, size;
 	if( output ) {
 		while( idx < count ) {
 			length += write_variable( &arr->array[ idx++ ], &output[ length ] );
@@ -984,6 +984,7 @@ static struct global_variable* new_array_variable( char *name, char *message ) {
 				elem->string = new_string( "#Array#" );
 				if( elem->string ) {
 					elem->reference_count = 1;
+					elem->length = strlen( elem->string );
 					elem->array = calloc( 1, sizeof( struct variable ) );
 				}
 			}
@@ -1231,7 +1232,7 @@ static int execute_dim_statement( struct statement *this, struct variable *varia
 				if( len.integer_value >= 0 ) {
 					new = calloc( len.integer_value + 1, sizeof( struct variable ) );
 					if( new ) {
-						count = arr.element_value->length;
+						count = arr.element_value->line;
 						if( count > len.integer_value ) {
 							memcpy( new, old, sizeof( struct variable ) * len.integer_value );
 							idx = len.integer_value;
@@ -1242,7 +1243,7 @@ static int execute_dim_statement( struct statement *this, struct variable *varia
 							memcpy( new, old, sizeof( struct variable ) * count );
 						}
 						arr.element_value->array = new;
-						arr.element_value->length = len.integer_value;
+						arr.element_value->line = len.integer_value;
 						free( old );
 					} else {
 						ret = throw( exception, this->source, 0, OUT_OF_MEMORY );
@@ -1268,7 +1269,7 @@ static int execute_set_statement( struct statement *this, struct variable *varia
 		ret = this->index->evaluate( this->index, variables, &idx, exception );
 		if( ret ) {
 			if( arr.element_value && arr.element_value->array ) {
-				if( idx.integer_value >= 0 && idx.integer_value < arr.element_value->length ) {
+				if( idx.integer_value >= 0 && idx.integer_value < arr.element_value->line ) {
 					ret = this->source->evaluate( this->source, variables,
 						&arr.element_value->array[ idx.integer_value ], exception );
 				} else {
@@ -1314,13 +1315,13 @@ static int execute_array_assignment( struct statement *this, struct variable *va
 			newvar = calloc( newlen + 1, sizeof( struct variable ) );
 			if( newvar ) {
 				idx = 0;
-				length = this->global->element_value->length;
+				length = this->global->element_value->line;
 				values = this->global->element_value->array;
 				while( idx < length ) {
 					dispose_variable( &values[ idx++ ] );
 				}
 				free( values );
-				this->global->element_value->length = newlen;
+				this->global->element_value->line = newlen;
 				this->global->element_value->array = newvar;
 				idx = 0;
 				input = inputs.next;
@@ -1494,7 +1495,7 @@ static int evaluate_index_expression( struct expression *this, struct variable *
 		ret = parameter->evaluate( parameter, variables, &idx, exception );
 		if( ret ) {
 			if( arr.element_value && arr.element_value->array ) {
-				if( idx.integer_value >= 0 && idx.integer_value < arr.element_value->length ) {
+				if( idx.integer_value >= 0 && idx.integer_value < arr.element_value->line ) {
 					assign_variable( &arr.element_value->array[ idx.integer_value ], result );
 				} else {
 					ret = throw( exception, this, idx.integer_value, "Array index out of bounds." );
@@ -1885,7 +1886,11 @@ static int evaluate_slen_expression( struct expression *this, struct variable *v
 	if( ret ) {
 		if( len.element_value ) {
 			dispose_variable( result );
-			result->integer_value = len.element_value->length;
+			if( len.element_value->array ) {
+				result->integer_value = len.element_value->line;
+			} else {
+				result->integer_value = len.element_value->length;
+			}
 			result->element_value = NULL;
 		} else {
 			ret = throw( exception, this, 0, "Not a string or array." );
@@ -2056,7 +2061,7 @@ static int evaluate_schr_expression( struct expression *this, struct variable *v
 static int evaluate_ssub_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	char *data;
-	int ret, offset;
+	int ret, offset, length;
 	struct element *arr;
 	struct expression *parameter = this->parameters;
 	struct variable str = { 0, NULL }, idx = { 0, NULL }, len = { 0, NULL }, *var;
@@ -2069,9 +2074,14 @@ static int evaluate_ssub_expression( struct expression *this, struct variable *v
 			ret = parameter->evaluate( parameter, variables, &len, exception );
 			if( ret ) {
 				if( str.element_value && str.element_value->string ) {
+					if( str.element_value->array ) {
+						length = str.element_value->line;
+					} else {
+						length = str.element_value->length;
+					}
 					if( idx.integer_value >= 0 && len.integer_value >= 0
 						&& MAX_INTEGER - len.integer_value >= idx.integer_value
-						&& idx.integer_value + len.integer_value <= str.element_value->length ) {
+						&& idx.integer_value + len.integer_value <= length ) {
 						arr = calloc( 1, sizeof( struct element ) );
 						if( arr ) {
 							arr->reference_count = 1;
