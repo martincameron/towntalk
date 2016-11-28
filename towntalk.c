@@ -45,8 +45,8 @@
 		const name = value;      Integer, string or tuple constant.
 		global a,b,c;            Global variables.
 		array a,b,c;             Global arrays.
-		function(a) {statements} Function declaration.
-		program {statements}     Entry point function (no arguments).
+		function f(param){stmts} Function declaration.
+		program name{statements} Entry point function (no arguments).
 
 	Statements:
 		rem {}                   Comment.

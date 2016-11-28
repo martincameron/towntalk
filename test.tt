@@ -22,10 +22,12 @@ function testvars(x) {
 
 function testarray() {
 	var err;
-	dim [ a 2 ];
+	dim [ a 3 ];
 	set [ a 0 ] = "a";
 	set [ a 1 ] = 1;
-	try{
+	set [ a 2 ] = [ a 0 ];
+	dim [ a 2 ];
+	try {
 		set [ a 2 ] = 2;
 		throw 0;
 	} catch err {
