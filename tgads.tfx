@@ -1,0 +1,89 @@
+
+array palette, charset;
+
+function tg_charset( str ) {
+	var w, h, clr, chr, y, x;
+	var stroff, chroff;
+	let w = *( 8 96 );
+	let h = *( 16 $len( palette ) );
+	dim [ charset 0 ];
+	dim [ charset *( w h ) ];
+	let clr = 0;
+	while <( clr $len( palette ) ) {
+		let chr = 1;
+		while <( chr 95 ) {
+			let y = 0;
+			while <( y 16 ) {
+				let x = 0;
+				while <( x 8 ) {
+					let stroff = +( +( *( -( chr 1 ) 144 ) *( y 9 ) ) x );
+					let chroff = +( +( +( *( clr *( w 16 ) ) *( chr 8 ) ) *( y w ) ) x );
+					if >( $chr( str stroff ) 32 ) {
+						set [ charset chroff ] = [ palette clr ];
+					}
+					inc x;
+				}
+				inc y;
+			}
+			inc chr;
+		}
+		inc clr;
+	}
+	fxsurface 0, w, h, charset;
+}
+
+function tg_text( text, x, y, clr ) {
+	var idx, len;
+	let len = $len( text );
+	while <( idx len ) {
+		fxblit 0, *( -( $chr( text idx ) 32 ) 8 ), *( clr 16 ), 8, 16, +( x *( idx 8 ) ), y;
+		inc idx;
+	}
+}
+
+function tg_raise_box( x, y, w, h ) {
+	fxrect x, y, 2, h, 0xFFFFFF;
+	fxrect +( x -( w 2 ) ), y, 2, h, 0;
+	fxrect x, y, -( w 1 ), 2, 0xFFFFFF;
+	fxrect +( x 1 ), +( y -( h 2 ) ), -( w 1 ), 2, 0;
+}
+
+function tg_lower_box( x, y, w, h ) {
+	fxrect x, y, 2, h, 0;
+	fxrect +( x -( w 2 ) ), y, 2, h, 0xFFFFFF;
+	fxrect x, y, -( w 1 ), 2, 0;
+	fxrect +( x 1 ), +( y -( h 2 ) ), -( w 1 ), 2, 0xFFFFFF;
+}
+
+function tg_bevel_box( x, y, w, h ) {
+	call tg_lower_box( x, y, w, h );
+	call tg_raise_box( +( x 2 ), +( y 2 ), -( w 4 ), -( h 4 ) );
+}
+
+program tgads {
+	let palette = ${
+		0x000000FF, 0x0000FFFF, 0x00FF00FF, 0x00FFFFFF,
+		0xFF0000FF, 0xFF00FFFF, 0xFFFF00FF, 0xFFFFFFFF };
+
+	call tg_charset( $load( "topaz8.txt" ) );
+
+	fxopen 640, 480, "tgads";
+
+	fxrect 0, 0, 640, 480, 0x808080;
+
+	call tg_bevel_box( 4, 4, 92, 68 );
+
+	fxrect 10, 10, 80, 26, 0xA0A0A0;
+	call tg_raise_box( 10, 10, 80, 26 );
+	call tg_text( "Hello,", 16, 16, 0 );
+
+	fxrect 10, 40, 80, 26, 0x6080B0;
+	call tg_lower_box( 10, 40, 80, 26 );
+	call tg_text( "World!", 16, 46, 7 );
+
+	fxshow;
+
+	while TRUE {
+		print $fxwait;
+	}
+}
