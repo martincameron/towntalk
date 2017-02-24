@@ -19,7 +19,7 @@ function tg_charset( str ) {
 					let stroff = +( +( *( -( chr 1 ) 144 ) *( y 9 ) ) x );
 					let chroff = +( +( +( *( clr *( w 16 ) ) *( chr 8 ) ) *( y w ) ) x );
 					if >( $chr( str stroff ) 32 ) {
-						set [ charset chroff ] = [ palette clr ];
+						set [ charset chroff ] = +( *( [ palette clr ] 256 ) 255 );
 					}
 					inc x;
 				}
@@ -62,8 +62,8 @@ function tg_bevel_box( x, y, w, h ) {
 
 program tgads {
 	let palette = ${
-		0x000000FF, 0x0000FFFF, 0x00FF00FF, 0x00FFFFFF,
-		0xFF0000FF, 0xFF00FFFF, 0xFFFF00FF, 0xFFFFFFFF };
+		0x000000, 0x0000FF, 0x00FF00, 0x00FFFF,
+		0xFF0000, 0xFF00FF, 0xFFFF00, 0xFFFFFF };
 
 	call tg_charset( $load( "topaz8.txt" ) );
 
