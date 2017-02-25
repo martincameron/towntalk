@@ -1,5 +1,6 @@
 
 array palette, charset;
+array tg_c, tg_p, tg_x, tg_y, tg_w, tg_h, tg_t;
 
 function tg_charset( str ) {
 	var w, h, clr, chr, y, x;
@@ -41,23 +42,134 @@ function tg_text( text, x, y, clr ) {
 	}
 }
 
+function tg_box( x, y, w, h, c1, c2 ) {
+	fxrect x, y, 2, h, c1;
+	fxrect +( x -( w 2 ) ), y, 2, h, c2;
+	fxrect x, y, -( w 1 ), 2, c1;
+	fxrect +( x 1 ), +( y -( h 2 ) ), -( w 1 ), 2, c2;
+}
+
 function tg_raise_box( x, y, w, h ) {
-	fxrect x, y, 2, h, 0xFFFFFF;
-	fxrect +( x -( w 2 ) ), y, 2, h, 0;
-	fxrect x, y, -( w 1 ), 2, 0xFFFFFF;
-	fxrect +( x 1 ), +( y -( h 2 ) ), -( w 1 ), 2, 0;
+	call tg_box( x, y, w, h, [ palette 7 ], [ palette 0 ] );
 }
 
 function tg_lower_box( x, y, w, h ) {
-	fxrect x, y, 2, h, 0;
-	fxrect +( x -( w 2 ) ), y, 2, h, 0xFFFFFF;
-	fxrect x, y, -( w 1 ), 2, 0;
-	fxrect +( x 1 ), +( y -( h 2 ) ), -( w 1 ), 2, 0xFFFFFF;
+	call tg_box( x, y, w, h, [ palette 0 ], [ palette 7 ] );
 }
 
 function tg_bevel_box( x, y, w, h ) {
-	call tg_lower_box( x, y, w, h );
-	call tg_raise_box( +( x 2 ), +( y 2 ), -( w 4 ), -( h 4 ) );
+	call tg_box( x, y, w, h, [ palette 7 ], [ palette 0 ] );
+	call tg_box( +( x 2 ), +( y 2 ), -( w 4 ), -( h 4 ), [ palette 0 ], [ palette 7 ] );
+}
+
+function tg_resize( n, x, y, w, h ) {
+	set [ tg_x n ] = x;
+	set [ tg_y n ] = y;
+	set [ tg_w n ] = w;
+	set [ tg_h n ] = h;
+}
+
+function tg_window( n, parent, x, y, w, h ) {
+	set [ tg_c n ] = 1;
+	set [ tg_p n ] = parent;
+	call tg_resize( n, x, y, w, h );
+}
+
+function tg_button( n, parent, x, y, w, h, text ) {
+	set [ tg_c n ] = 2;
+	set [ tg_p n ] = parent;
+	call tg_resize( n, x, y, w, h );
+	set [ tg_t n ] = text;
+}
+
+function tg_init( gadcount ) {
+	dim [ tg_c gadcount ];
+	dim [ tg_p gadcount ];
+	dim [ tg_x gadcount ];
+	dim [ tg_y gadcount ];
+	dim [ tg_w gadcount ];
+	dim [ tg_h gadcount ];
+	dim [ tg_t gadcount ];
+}
+
+function tg_draw_background() {
+	fxrect 0, 0, 640, 480, 0;
+}
+
+function tg_getx( n ) {
+	var x;
+	let x = [ tg_x n ];
+	if >( n 0 ) {
+		let x = +( x tg_getx( [ tg_p n ] ) );
+	}
+	return x;
+}
+
+function tg_gety( n ) {
+	var y;
+	let y = [ tg_y n ];
+	if >( n 0 ) {
+		let y = +( y tg_gety( [ tg_p n ] ) );
+	}
+	return y;
+}
+
+function tg_draw_window( n ) {
+	var x, y;
+	let x = tg_getx( n );
+	let y = tg_gety( n );
+	fxrect x, y, [ tg_w n ], [ tg_h n ], 0x808080;
+	call tg_bevel_box( x, y, [ tg_w n ], [ tg_h n ] );
+}
+
+function tg_draw_button( n ) {
+	var x, y;
+	let x = tg_getx( n );
+	let y = tg_gety( n );
+	fxrect x, y, [ tg_w n ], [ tg_h n ], 0xA0A0A0;
+	call tg_raise_box( x, y, [ tg_w n ], [ tg_h n ] );
+	call tg_text( [ tg_t n ],
+		+( x /( -( [ tg_w n ] *( $len( [ tg_t n ] ) 8 ) ) 2 ) ),
+		+( y /( -( [ tg_h n ] 14 ) 2 ) ), 0 );
+}
+
+function tg_draw( n ) {
+	var idx, len;
+	if <( n 1 ) {
+		call tg_draw_background();
+	} else {
+		switch [ tg_c n ] {
+			case 1 { call tg_draw_window( n ); }
+			case 2 { call tg_draw_button( n ); }
+		}
+	}
+	let idx = 1;
+	let len = $len( tg_p );
+	while <( idx len ) {
+		if =( [ tg_p idx ] n ) {
+			call tg_draw( idx );
+		}
+		inc idx;
+	}
+}
+
+function tg_find( x, y, n ) {
+	var idx, len, x0, y0, x1, y1;
+	let idx = 1;
+	let len = $len( tg_p );
+	while <( idx len ) {
+		if =( [ tg_p idx ] n ) {
+			let x0 = tg_getx( idx );
+			let y0 = tg_gety( idx );
+			let x1 = +( x0 [ tg_w idx ] );
+			let y1 = +( y0 [ tg_h idx ] );
+			if &&( &&( >e( x x0 ) >e( y y0 ) ) &&( <( x x1 ) <( y y1 ) ) ) {
+				return tg_find( x, y, idx );
+			}
+		}
+		inc idx;
+	}
+	return n;
 }
 
 program tgads {
@@ -69,21 +181,18 @@ program tgads {
 
 	fxopen 640, 480, "tgads";
 
-	fxrect 0, 0, 640, 480, 0x808080;
+	call tg_init( 4 );
+	call tg_window( 1, 0, 10, 10, 200, 100 );
+	call tg_button( 2, 1, 10, 10, 80, 26, "Button 2" );
+	call tg_button( 3, 1, 10, 40, 80, 26, "Button 3" );
 
-	call tg_bevel_box( 4, 4, 92, 68 );
-
-	fxrect 10, 10, 80, 26, 0xA0A0A0;
-	call tg_raise_box( 10, 10, 80, 26 );
-	call tg_text( "Hello,", 16, 16, 0 );
-
-	fxrect 10, 40, 80, 26, 0x6080B0;
-	call tg_lower_box( 10, 40, 80, 26 );
-	call tg_text( "World!", 16, 46, 7 );
+	call tg_draw( 0 );
 
 	fxshow;
 
 	while TRUE {
-		print $fxwait;
+		if =( $fxwait 5 ) {
+			print tg_find( $xmouse, $ymouse, 0 );
+		}
 	}
 }
