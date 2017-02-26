@@ -69,10 +69,11 @@ function tg_resize( n, x, y, w, h ) {
 	set [ tg_h n ] = h;
 }
 
-function tg_window( n, parent, x, y, w, h ) {
+function tg_window( n, parent, x, y, w, h, text ) {
 	set [ tg_c n ] = 1;
 	set [ tg_p n ] = parent;
 	call tg_resize( n, x, y, w, h );
+	set [ tg_t n ] = text;
 }
 
 function tg_button( n, parent, x, y, w, h, text ) {
@@ -115,11 +116,15 @@ function tg_gety( n ) {
 }
 
 function tg_draw_window( n ) {
-	var x, y;
+	var x, y, w, h;
 	let x = tg_getx( n );
 	let y = tg_gety( n );
-	fxrect x, y, [ tg_w n ], [ tg_h n ], 0x808080;
-	call tg_bevel_box( x, y, [ tg_w n ], [ tg_h n ] );
+	let w = [ tg_w n ];
+	let h = [ tg_h n ];
+	fxrect x, y, w, h, 0x808080;
+	call tg_raise_box( x, y, w, h );
+	call tg_lower_box( +( x 2 ), +( y 24 ), -( w 4 ), -( h 26 ) );
+	call tg_text( [ tg_t n ], +( x 6 ), +( y 6 ), 0 );
 }
 
 function tg_draw_button( n ) {
@@ -153,18 +158,19 @@ function tg_draw( n ) {
 	}
 }
 
-function tg_find( x, y, n ) {
-	var idx, len, x0, y0, x1, y1;
+function tg_find( x, y, p ) {
+	var n, idx, len, x0, y0, x1, y1;
+	let n = p;
 	let idx = 1;
 	let len = $len( tg_p );
 	while <( idx len ) {
-		if =( [ tg_p idx ] n ) {
-			let x0 = tg_getx( idx );
-			let y0 = tg_gety( idx );
+		if =( [ tg_p idx ] p ) {
+			let x0 = [ tg_x idx ];
+			let y0 = [ tg_y idx ];
 			let x1 = +( x0 [ tg_w idx ] );
 			let y1 = +( y0 [ tg_h idx ] );
 			if &&( &&( >e( x x0 ) >e( y y0 ) ) &&( <( x x1 ) <( y y1 ) ) ) {
-				return tg_find( x, y, idx );
+				let n = tg_find( -( x x0 ), -( y y0 ), idx );
 			}
 		}
 		inc idx;
@@ -181,12 +187,17 @@ program tgads {
 
 	fxopen 640, 480, "tgads";
 
-	call tg_init( 4 );
-	call tg_window( 1, 0, 10, 10, 200, 100 );
-	call tg_button( 2, 1, 10, 10, 80, 26, "Button 2" );
-	call tg_button( 3, 1, 10, 40, 80, 26, "Button 3" );
+	call tg_init( 6 );
+	call tg_window( 1, 0, 10, 10, 200, 100, "Window 1" );
+	call tg_button( 2, 1, 10, 32, 80, 26, "Button 2" );
+	call tg_button( 3, 1, 10, 64, 80, 26, "Button 3" );
+
+	call tg_window( 4, 0, 30, 30, 200, 100, "Window 4" );
+	call tg_button( 5, 4, 10, 32, 80, 26, "Button 5" );
 
 	call tg_draw( 0 );
+
+	fxblit 0, 0, 0, 640, 480, 0, 128;
 
 	fxshow;
 
