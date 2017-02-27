@@ -1,6 +1,8 @@
 
 array palette, charset;
-array tg_c, tg_p, tg_x, tg_y, tg_w, tg_h, tg_t;
+array tg_c, tg_p, tg_x, tg_y, tg_w, tg_h, tg_t, tg_s;
+
+global tg_selx, tg_sely;
 
 function tg_charset( str ) {
 	var w, h, clr, chr, y, x;
@@ -50,16 +52,16 @@ function tg_box( x, y, w, h, c1, c2 ) {
 }
 
 function tg_raise_box( x, y, w, h ) {
-	call tg_box( x, y, w, h, [ palette 7 ], [ palette 0 ] );
+	call tg_box( x, y, w, h, [ palette 1 ], [ palette 0 ] );
 }
 
 function tg_lower_box( x, y, w, h ) {
-	call tg_box( x, y, w, h, [ palette 0 ], [ palette 7 ] );
+	call tg_box( x, y, w, h, [ palette 0 ], [ palette 1 ] );
 }
 
 function tg_bevel_box( x, y, w, h ) {
-	call tg_box( x, y, w, h, [ palette 7 ], [ palette 0 ] );
-	call tg_box( +( x 2 ), +( y 2 ), -( w 4 ), -( h 4 ), [ palette 0 ], [ palette 7 ] );
+	call tg_box( x, y, w, h, [ palette 1 ], [ palette 0 ] );
+	call tg_box( +( x 2 ), +( y 2 ), -( w 4 ), -( h 4 ), [ palette 0 ], [ palette 1 ] );
 }
 
 function tg_resize( n, x, y, w, h ) {
@@ -91,10 +93,12 @@ function tg_init( gadcount ) {
 	dim [ tg_w gadcount ];
 	dim [ tg_h gadcount ];
 	dim [ tg_t gadcount ];
+	dim [ tg_s gadcount ];
 }
 
 function tg_draw_background() {
 	fxrect 0, 0, 640, 480, 0;
+	fxblit 0, 0, 0, 640, 480, 0, 128;
 }
 
 function tg_getx( n ) {
@@ -121,21 +125,32 @@ function tg_draw_window( n ) {
 	let y = tg_gety( n );
 	let w = [ tg_w n ];
 	let h = [ tg_h n ];
-	fxrect x, y, w, h, 0x808080;
+	fxrect x, y, w, 26, [ palette 2 ];
+	fxrect x, +( y 26 ), w, -( h 26 ), [ palette 3 ];
 	call tg_raise_box( x, y, w, h );
 	call tg_lower_box( +( x 2 ), +( y 24 ), -( w 4 ), -( h 26 ) );
 	call tg_text( [ tg_t n ], +( x 6 ), +( y 6 ), 0 );
 }
 
 function tg_draw_button( n ) {
-	var x, y;
+	var x, y, bg, hl, sh;
 	let x = tg_getx( n );
 	let y = tg_gety( n );
-	fxrect x, y, [ tg_w n ], [ tg_h n ], 0xA0A0A0;
-	call tg_raise_box( x, y, [ tg_w n ], [ tg_h n ] );
+	if =( [ tg_s n ] 1 ) {
+		let bg = 3;
+		let hl = 0;
+		let sh = 1;
+	} else {
+		let bg = 2;
+		let hl = 1;
+		let sh = 0;
+	}
+	fxrect x, y, [ tg_w n ], [ tg_h n ], [ palette bg ];
+	call tg_box( x, y, [ tg_w n ], [ tg_h n ],
+		[ palette hl ], [ palette sh ] );
 	call tg_text( [ tg_t n ],
 		+( x /( -( [ tg_w n ] *( $len( [ tg_t n ] ) 8 ) ) 2 ) ),
-		+( y /( -( [ tg_h n ] 14 ) 2 ) ), 0 );
+		+( y /( -( [ tg_h n ] 14 ) 2 ) ), sh );
 }
 
 function tg_draw( n ) {
@@ -178,10 +193,65 @@ function tg_find( x, y, p ) {
 	return n;
 }
 
+function tg_scan( event ) {
+	var n, x, y, selected;
+	switch event {
+		case 4 {
+			if =( $mousekey 1 ) {
+				if =( tg_selx 0 ) {
+					let tg_selx = $xmouse;
+					let tg_sely = $ymouse;
+				}
+				let n = tg_find( tg_selx, tg_sely, 0 );
+				switch [ tg_c n ] {
+					case 1 {
+						let x = $xmouse;
+						let y = $ymouse;
+						set [ tg_x n ] = -( +( [ tg_x n ] x ) tg_selx );
+						set [ tg_y n ] = -( +( [ tg_y n ] y ) tg_sely );
+						let tg_selx = x;
+						let tg_sely = y;
+						call tg_draw( 0 );
+					}
+					case 2 {
+						if =( tg_find( $xmouse, $ymouse, 0 ) n ) {
+							set [ tg_s n ] = 1;
+						} else {
+							set [ tg_s n ] = 0;
+						}
+						call tg_draw( n );
+					}
+				}
+			}
+		}
+		case 5 {
+			let tg_selx = $xmouse;
+			let tg_sely = $ymouse;
+			let n = tg_find( tg_selx, tg_sely, 0 );
+			if =( [ tg_c n ] 2 ) {
+				set [ tg_s n ] = 1;
+				call tg_draw( n );
+			}
+		}
+		case 6 {
+			let n = tg_find( tg_selx, tg_sely, 0 );
+			if =( [ tg_c n ] 2 ) {
+				set [ tg_s n ] = 0;
+				call tg_draw( n );
+				if =( tg_find( $xmouse, $ymouse, 0 ) n ) {
+					let selected = n;
+				}
+			}
+			let tg_selx = 0;
+			let tg_sely = 0;
+		}
+	}
+	return selected;
+}
+
 program tgads {
-	let palette = ${
-		0x000000, 0x0000FF, 0x00FF00, 0x00FFFF,
-		0xFF0000, 0xFF00FF, 0xFFFF00, 0xFFFFFF };
+	var selected;
+	let palette = ${ 0x000000, 0xFFFFFF, 0xA0A0A0, 0x6080B0 };
 
 	call tg_charset( $load( "topaz8.txt" ) );
 
@@ -197,13 +267,13 @@ program tgads {
 
 	call tg_draw( 0 );
 
-	fxblit 0, 0, 0, 640, 480, 0, 128;
-
 	fxshow;
 
 	while TRUE {
-		if =( $fxwait 5 ) {
-			print tg_find( $xmouse, $ymouse, 0 );
+		let selected = tg_scan( $fxwait );
+		if >( selected 0 ) {
+			print selected;
 		}
+		fxshow;
 	}
 }
