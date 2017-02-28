@@ -1,6 +1,6 @@
 
 array palette, charset;
-array tg_c, tg_p, tg_x, tg_y, tg_w, tg_h, tg_t, tg_s;
+array tg_c, tg_p, tg_x, tg_y, tg_w, tg_h, tg_t, tg_a, tg_b, tg_s;
 
 global tg_selx, tg_sely;
 
@@ -85,6 +85,14 @@ function tg_button( n, parent, x, y, w, h, text ) {
 	set [ tg_t n ] = text;
 }
 
+function tg_vslide( n, parent, x, y, w, h, page, max ) {
+	set [ tg_c n ] = 3;
+	set [ tg_p n ] = parent;
+	call tg_resize( n, x, y, w, h );
+	set [ tg_a n ] = page;
+	set [ tg_b n ] = max;
+}
+
 function tg_init( gadcount ) {
 	dim [ tg_c gadcount ];
 	dim [ tg_p gadcount ];
@@ -93,6 +101,8 @@ function tg_init( gadcount ) {
 	dim [ tg_w gadcount ];
 	dim [ tg_h gadcount ];
 	dim [ tg_t gadcount ];
+	dim [ tg_a gadcount ];
+	dim [ tg_b gadcount ];
 	dim [ tg_s gadcount ];
 }
 
@@ -132,6 +142,20 @@ function tg_draw_window( n ) {
 	call tg_text( [ tg_t n ], +( x 6 ), +( y 6 ), 0 );
 }
 
+function tg_draw_vslide( n ) {
+	var x, y, w, h, s, d;
+	let x = tg_getx( n );
+	let y = tg_gety( n );
+	let w = [ tg_w n ];
+	let h = [ tg_h n ];
+	let s = /( *( -( h 4 ) [ tg_a n ] ) [ tg_b n ] );
+	let d = /( *( [ tg_t n ] -( -( h 4 ) s ) ) [ tg_b n ] );
+	fxrect x, y, w, h, [ palette 3 ];
+	call tg_lower_box( x, y, w, h );
+	fxrect +( x, 2 ), +( +( y d ) 2 ), -( w 4 ), s, [ palette 2 ];
+	call tg_raise_box( +( x, 2 ), +( +( y d ) 2 ), -( w 4 ), s );
+}
+
 function tg_draw_button( n ) {
 	var x, y, bg, hl, sh;
 	let x = tg_getx( n );
@@ -161,6 +185,7 @@ function tg_draw( n ) {
 		switch [ tg_c n ] {
 			case 1 { call tg_draw_window( n ); }
 			case 2 { call tg_draw_button( n ); }
+			case 3 { call tg_draw_vslide( n ); }
 		}
 	}
 	let idx = 1;
@@ -257,13 +282,14 @@ program tgads {
 
 	fxopen 640, 480, "tgads";
 
-	call tg_init( 6 );
+	call tg_init( 10 );
 	call tg_window( 1, 0, 10, 10, 200, 100, "Window 1" );
 	call tg_button( 2, 1, 10, 32, 80, 26, "Button 2" );
 	call tg_button( 3, 1, 10, 64, 80, 26, "Button 3" );
 
 	call tg_window( 4, 0, 30, 30, 200, 100, "Window 4" );
 	call tg_button( 5, 4, 10, 32, 80, 26, "Button 5" );
+	call tg_vslide( 6, 4, 100, 32, 20, 60, 10, 20 );
 
 	call tg_draw( 0 );
 
