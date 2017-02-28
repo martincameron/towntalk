@@ -7,7 +7,7 @@
 #include "time.h"
 
 /*
-	Towntalk (c)2016 Martin Cameron.
+	Towntalk (c)2017 Martin Cameron.
 
 	A program file consists of a list of declarations.
 	Variables are integers, strings, elements or array references.
@@ -2521,11 +2521,16 @@ static struct element* parse_function_expression( struct element *elem, struct e
 static struct element* parse_index_expression( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct expression *expr, char *message ) {
 	struct expression prev;
+	int num_params;
 	prev.next = NULL;
-	parse_expressions( elem->child, env, func, &prev, message );
-	if( prev.next ) {
-		expr->parameters = prev.next;
-		expr->evaluate = &evaluate_index_expression;
+	num_params = parse_expressions( elem->child, env, func, &prev, message );
+	expr->parameters = prev.next;
+	if( message[ 0 ] == 0 ) {
+		if( num_params == 2 ) {
+			expr->evaluate = &evaluate_index_expression;
+		} else {
+			sprintf( message, "Invalid index expression on line %d.", elem->line );
+		}
 	}
 	return elem->next;
 }
