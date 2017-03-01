@@ -218,6 +218,57 @@ function tg_find( x, y, p ) {
 	return n;
 }
 
+function tg_arrayswap( a, n, m ) {
+	var t;
+	let t = [ a n ];
+	set [ a n ] = [ a m ];
+	set [ a m ] = t;
+}
+
+function tg_swap( n, m ) {
+	var idx;
+	call tg_arrayswap( tg_c, n, m );
+	call tg_arrayswap( tg_p, n, m );
+	call tg_arrayswap( tg_x, n, m );
+	call tg_arrayswap( tg_y, n, m );
+	call tg_arrayswap( tg_w, n, m );
+	call tg_arrayswap( tg_h, n, m );
+	call tg_arrayswap( tg_t, n, m );
+	call tg_arrayswap( tg_a, n, m );
+	call tg_arrayswap( tg_b, n, m );
+	call tg_arrayswap( tg_s, n, m );
+	while <( idx $len( tg_p ) ) {
+		if =( [ tg_p idx ] n ) {
+			set [ tg_p idx ] = m;
+		} else {
+			if =( [ tg_p idx ] m ) {
+				set [ tg_p idx ] = n;
+			}
+		}
+		inc idx;
+	}
+}
+
+function tg_wintofront( n ) {
+	var w1, w2;
+	while >( [ tg_c n ] 1 ) {
+		let n = [ tg_p n ];
+	}
+	if >( n 0 ) {
+		let w1 = n;
+		while <( n $len( tg_c ) ) {
+			if =( [ tg_c n ] 1 ) {
+				let w2 = n;
+			}
+			inc n;
+		}
+		if !( =( w1 w2 ) ) {
+			call tg_swap( w1, w2 );
+			call tg_draw( w2 );
+		}
+	}
+}
+
 function tg_scan( event ) {
 	var n, x, y, selected;
 	switch event {
@@ -228,6 +279,7 @@ function tg_scan( event ) {
 					let tg_sely = $ymouse;
 				}
 				let n = tg_find( tg_selx, tg_sely, 0 );
+				call tg_wintofront( n );
 				switch [ tg_c n ] {
 					case 1 {
 						let x = $xmouse;
@@ -253,6 +305,7 @@ function tg_scan( event ) {
 			let tg_selx = $xmouse;
 			let tg_sely = $ymouse;
 			let n = tg_find( tg_selx, tg_sely, 0 );
+			call tg_wintofront( n );
 			if =( [ tg_c n ] 2 ) {
 				set [ tg_s n ] = 1;
 				call tg_draw( n );
@@ -283,13 +336,16 @@ program tgads {
 	fxopen 640, 480, "tgads";
 
 	call tg_init( 10 );
-	call tg_window( 1, 0, 10, 10, 200, 100, "Window 1" );
-	call tg_button( 2, 1, 10, 32, 80, 26, "Button 2" );
-	call tg_button( 3, 1, 10, 64, 80, 26, "Button 3" );
 
-	call tg_window( 4, 0, 30, 30, 200, 100, "Window 4" );
-	call tg_button( 5, 4, 10, 32, 80, 26, "Button 5" );
-	call tg_vslide( 6, 4, 100, 32, 20, 60, 10, 20 );
+	call tg_button( 1, 0, 10, 32, 80, 26, "Button 1" );
+
+	call tg_window( 2, 0, 10, 10, 200, 100, "Window 2" );
+	call tg_button( 3, 2, 10, 32, 80, 26, "Button 3" );
+	call tg_button( 4, 2, 10, 64, 80, 26, "Button 4" );
+
+	call tg_window( 5, 0, 30, 30, 200, 100, "Window 5" );
+	call tg_button( 6, 5, 10, 32, 80, 26, "Button 6" );
+	call tg_vslide( 7, 5, 100, 32, 20, 60, 10, 20 );
 
 	call tg_draw( 0 );
 
