@@ -1,6 +1,7 @@
 
 array palette, charset;
-array tg_c, tg_p, tg_x, tg_y, tg_w, tg_h, tg_t, tg_a, tg_b, tg_s;
+array tg_o, tg_c, tg_p;
+array tg_x, tg_y, tg_w, tg_h, tg_t, tg_a, tg_b;
 
 global tg_selx, tg_sely;
 
@@ -94,6 +95,8 @@ function tg_vslide( n, parent, x, y, w, h, page, max ) {
 }
 
 function tg_init( gadcount ) {
+	var idx;
+	dim [ tg_o gadcount ];
 	dim [ tg_c gadcount ];
 	dim [ tg_p gadcount ];
 	dim [ tg_x gadcount ];
@@ -103,7 +106,10 @@ function tg_init( gadcount ) {
 	dim [ tg_t gadcount ];
 	dim [ tg_a gadcount ];
 	dim [ tg_b gadcount ];
-	dim [ tg_s gadcount ];
+	while <( idx gadcount ) {
+		set [ tg_o idx ] = idx;
+		inc idx;
+	}
 }
 
 function tg_draw_background() {
@@ -160,7 +166,7 @@ function tg_draw_button( n ) {
 	var x, y, bg, hl, sh;
 	let x = tg_getx( n );
 	let y = tg_gety( n );
-	if =( [ tg_s n ] 1 ) {
+	if =( [ tg_a n ] 1 ) {
 		let bg = 3;
 		let hl = 0;
 		let sh = 1;
@@ -189,28 +195,29 @@ function tg_draw( n ) {
 		}
 	}
 	let idx = 1;
-	let len = $len( tg_p );
+	let len = $len( tg_o );
 	while <( idx len ) {
-		if =( [ tg_p idx ] n ) {
-			call tg_draw( idx );
+		if =( [ tg_p [ tg_o idx ] ] n ) {
+			call tg_draw( [ tg_o idx ] );
 		}
 		inc idx;
 	}
 }
 
 function tg_find( x, y, p ) {
-	var n, idx, len, x0, y0, x1, y1;
+	var n, idx, len, g, x0, y0, x1, y1;
 	let n = p;
 	let idx = 1;
-	let len = $len( tg_p );
+	let len = $len( tg_o );
 	while <( idx len ) {
-		if =( [ tg_p idx ] p ) {
-			let x0 = [ tg_x idx ];
-			let y0 = [ tg_y idx ];
-			let x1 = +( x0 [ tg_w idx ] );
-			let y1 = +( y0 [ tg_h idx ] );
+		let g = [ tg_o idx ];
+		if =( [ tg_p g ] p ) {
+			let x0 = [ tg_x g ];
+			let y0 = [ tg_y g ];
+			let x1 = +( x0 [ tg_w g ] );
+			let y1 = +( y0 [ tg_h g ] );
 			if &&( &&( >e( x x0 ) >e( y y0 ) ) &&( <( x x1 ) <( y y1 ) ) ) {
-				let n = tg_find( -( x x0 ), -( y y0 ), idx );
+				let n = tg_find( -( x x0 ), -( y y0 ), g );
 			}
 		}
 		inc idx;
@@ -218,54 +225,23 @@ function tg_find( x, y, p ) {
 	return n;
 }
 
-function tg_arrayswap( a, n, m ) {
-	var t;
-	let t = [ a n ];
-	set [ a n ] = [ a m ];
-	set [ a m ] = t;
-}
-
-function tg_swap( n, m ) {
-	var idx;
-	call tg_arrayswap( tg_c, n, m );
-	call tg_arrayswap( tg_p, n, m );
-	call tg_arrayswap( tg_x, n, m );
-	call tg_arrayswap( tg_y, n, m );
-	call tg_arrayswap( tg_w, n, m );
-	call tg_arrayswap( tg_h, n, m );
-	call tg_arrayswap( tg_t, n, m );
-	call tg_arrayswap( tg_a, n, m );
-	call tg_arrayswap( tg_b, n, m );
-	call tg_arrayswap( tg_s, n, m );
-	while <( idx $len( tg_p ) ) {
-		if =( [ tg_p idx ] n ) {
-			set [ tg_p idx ] = m;
-		} else {
-			if =( [ tg_p idx ] m ) {
-				set [ tg_p idx ] = n;
-			}
-		}
-		inc idx;
-	}
-}
-
 function tg_wintofront( n ) {
-	var w1, w2;
+	var idx, end, g;
 	while >( [ tg_c n ] 1 ) {
 		let n = [ tg_p n ];
 	}
-	if >( n 0 ) {
-		let w1 = n;
-		while <( n $len( tg_c ) ) {
-			if =( [ tg_c n ] 1 ) {
-				let w2 = n;
+	let end = -( $len( tg_o ) 1 );
+	if &&( >( n 0 ) !( =( [ tg_o end ] n ) ) ) {
+		let idx = 1;
+		while <( idx $len( tg_o ) ) {
+			let g = [ tg_o -( idx 1 ) ];
+			if =( g n ) {
+				set [ tg_o -( idx 1 ) ] = [ tg_o idx ];
+				set [ tg_o idx ] = g;
 			}
-			inc n;
+			inc idx;
 		}
-		if !( =( w1 w2 ) ) {
-			call tg_swap( w1, w2 );
-			call tg_draw( w2 );
-		}
+		call tg_draw( [ tg_o end ] );
 	}
 }
 
@@ -292,9 +268,9 @@ function tg_scan( event ) {
 					}
 					case 2 {
 						if =( tg_find( $xmouse, $ymouse, 0 ) n ) {
-							set [ tg_s n ] = 1;
+							set [ tg_a n ] = 1;
 						} else {
-							set [ tg_s n ] = 0;
+							set [ tg_a n ] = 0;
 						}
 						call tg_draw( n );
 					}
@@ -307,14 +283,14 @@ function tg_scan( event ) {
 			let n = tg_find( tg_selx, tg_sely, 0 );
 			call tg_wintofront( n );
 			if =( [ tg_c n ] 2 ) {
-				set [ tg_s n ] = 1;
+				set [ tg_a n ] = 1;
 				call tg_draw( n );
 			}
 		}
 		case 6 {
 			let n = tg_find( tg_selx, tg_sely, 0 );
 			if =( [ tg_c n ] 2 ) {
-				set [ tg_s n ] = 0;
+				set [ tg_a n ] = 0;
 				call tg_draw( n );
 				if =( tg_find( $xmouse, $ymouse, 0 ) n ) {
 					let selected = n;
@@ -346,6 +322,9 @@ program tgads {
 	call tg_window( 5, 0, 30, 30, 200, 100, "Window 5" );
 	call tg_button( 6, 5, 10, 32, 80, 26, "Button 6" );
 	call tg_vslide( 7, 5, 100, 32, 20, 60, 10, 20 );
+
+	call tg_window( 8, 0, 40, 40, 200, 200, "Window 8" );
+	call tg_window( 9, 0, 50, 50, 200, 200, "Window 9" );
 
 	call tg_draw( 0 );
 
