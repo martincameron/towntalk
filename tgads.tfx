@@ -248,7 +248,7 @@ function tg_wintofront( n ) {
 function tg_scan( event ) {
 	var n, x, y, selected;
 	switch event {
-		case 4 {
+		case FX_MOUSEMOTION {
 			if =( $mousekey 1 ) {
 				if =( tg_selx 0 ) {
 					let tg_selx = $xmouse;
@@ -277,7 +277,7 @@ function tg_scan( event ) {
 				}
 			}
 		}
-		case 5 {
+		case FX_MOUSEKEYDOWN {
 			let tg_selx = $xmouse;
 			let tg_sely = $ymouse;
 			let n = tg_find( tg_selx, tg_sely, 0 );
@@ -287,7 +287,7 @@ function tg_scan( event ) {
 				call tg_draw( n );
 			}
 		}
-		case 6 {
+		case FX_MOUSEKEYUP {
 			let n = tg_find( tg_selx, tg_sely, 0 );
 			if =( [ tg_c n ] 2 ) {
 				set [ tg_a n ] = 0;
