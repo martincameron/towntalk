@@ -7,26 +7,32 @@ global tg_selx, tg_sely;
 
 function tg_charset( str ) {
 	var w, h, clr, chr, y, x;
-	var stroff, chroff;
+	var stride, stroff, chroff;
+	let stride = 9;
+	if <( $chr( str 9 ) 32 ) {
+		let stride = 10;
+	}
 	let w = *( 8 96 );
 	let h = *( 16 $len( palette ) );
 	dim [ charset 0 ];
 	dim [ charset *( w h ) ];
 	let clr = 0;
 	while <( clr $len( palette ) ) {
+		let stroff = 0;
 		let chr = 1;
 		while <( chr 95 ) {
+			let chroff = +( *( clr *( w 16 ) ) *( chr 8 ) );
 			let y = 0;
 			while <( y 16 ) {
 				let x = 0;
 				while <( x 8 ) {
-					let stroff = +( +( *( -( chr 1 ) 144 ) *( y 9 ) ) x );
-					let chroff = +( +( +( *( clr *( w 16 ) ) *( chr 8 ) ) *( y w ) ) x );
-					if >( $chr( str stroff ) 32 ) {
-						set [ charset chroff ] = +( *( [ palette clr ] 256 ) 255 );
+					if >( $chr( str +( stroff x ) ) 32 ) {
+						set [ charset +( chroff x ) ] = +( *( [ palette clr ] 256 ) 255 );
 					}
 					inc x;
 				}
+				let stroff = +( stroff stride );
+				let chroff = +( chroff w );
 				inc y;
 			}
 			inc chr;
