@@ -154,14 +154,22 @@ function tg_draw_window( n ) {
 	call tg_text( [ tg_t n ], +( x 6 ), +( y 6 ), 0 );
 }
 
+function tg_vslide_size( n ) {
+	return /( *( -( [ tg_h n ] 4 ) [ tg_a n ] ) [ tg_b n ] );
+}
+
+function tg_vslide_offset( n ) {
+	return /( *( [ tg_t n ] -( -( [ tg_h n ] 4 ) tg_vslide_size( n ) ) ) [ tg_b n ] );
+}
+
 function tg_draw_vslide( n ) {
 	var x, y, w, h, s, d;
 	let x = tg_getx( n );
 	let y = tg_gety( n );
 	let w = [ tg_w n ];
 	let h = [ tg_h n ];
-	let s = /( *( -( h 4 ) [ tg_a n ] ) [ tg_b n ] );
-	let d = /( *( [ tg_t n ] -( -( h 4 ) s ) ) [ tg_b n ] );
+	let s = tg_vslide_size( n );
+	let d = tg_vslide_offset( n );
 	fxrect x, y, w, h, [ palette 3 ];
 	call tg_lower_box( x, y, w, h );
 	fxrect +( x, 2 ), +( +( y d ) 2 ), -( w 4 ), s, [ palette 2 ];
@@ -252,7 +260,7 @@ function tg_wintofront( n ) {
 }
 
 function tg_scan( event ) {
-	var n, x, y, selected;
+	var n, s, d, e, x, y, selected;
 	switch event {
 		case FX_MOUSEMOTION {
 			if =( $mousekey 1 ) {
@@ -278,6 +286,21 @@ function tg_scan( event ) {
 						} else {
 							set [ tg_a n ] = 0;
 						}
+						call tg_draw( n );
+					}
+					case 3 {
+						let s = tg_vslide_size( n );
+						let d = tg_vslide_offset( n );
+						let e = -( -( [ tg_h n ] 4 ) s );
+						let y = +( d -( $ymouse tg_sely ) );
+						if <( y 0 ) {
+							let y = 0;
+						}
+						if >( y e ) {
+							let y = e;
+						}
+						set [ tg_t n ] = /( *( y [ tg_b n ] ) e );
+						let tg_sely = +( tg_sely -( tg_vslide_offset( n ) d ) );
 						call tg_draw( n );
 					}
 				}
