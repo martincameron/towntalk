@@ -260,7 +260,7 @@ function tg_wintofront( n ) {
 }
 
 function tg_scan( event ) {
-	var n, s, d, e, x, y, selected;
+	var n, s, o, p, e, t, x, y, selected;
 	switch event {
 		case FX_MOUSEMOTION {
 			if =( $mousekey 1 ) {
@@ -290,18 +290,22 @@ function tg_scan( event ) {
 					}
 					case 3 {
 						let s = tg_vslide_size( n );
-						let d = tg_vslide_offset( n );
+						let o = tg_vslide_offset( n );
 						let e = -( -( [ tg_h n ] 4 ) s );
-						let y = +( d -( $ymouse tg_sely ) );
-						if <( y 0 ) {
-							let y = 0;
+						let y = +( +( tg_gety( n ) o ) 2 );
+						if &&( >( tg_sely y ) <( tg_sely +( y s ) ) ) {
+							let p = +( o -( $ymouse tg_sely ) );
+							if <( p 0 ) {
+								let p = 0;
+							}
+							if >( p e ) {
+								let p = e;
+							}
+							set [ tg_t n ] = /( *( p [ tg_b n ] ) e );
+							let tg_sely = +( tg_sely -( tg_vslide_offset( n ) o ) );
+							let selected = n;
+							call tg_draw( n );
 						}
-						if >( y e ) {
-							let y = e;
-						}
-						set [ tg_t n ] = /( *( y [ tg_b n ] ) e );
-						let tg_sely = +( tg_sely -( tg_vslide_offset( n ) d ) );
-						call tg_draw( n );
 					}
 				}
 			}
@@ -311,9 +315,35 @@ function tg_scan( event ) {
 			let tg_sely = $ymouse;
 			let n = tg_find( tg_selx, tg_sely, 0 );
 			call tg_wintofront( n );
-			if =( [ tg_c n ] 2 ) {
-				set [ tg_a n ] = 1;
-				call tg_draw( n );
+			switch [ tg_c n ] {
+				case 2 {
+					set [ tg_a n ] = 1;
+					call tg_draw( n );
+				}
+				case 3 {
+					let s = tg_vslide_size( n );
+					let o = tg_vslide_offset( n );
+					let e = -( -( [ tg_h n ] 4 ) s );
+					let y = +( +( tg_gety( n ) o ) 2 );
+					if <( tg_sely y ) {
+						let t = -( [ tg_t n ] [ tg_a n ] );
+						if <( t 0 ) {
+							let t = 0;
+						}
+						set [ tg_t n ] = t;
+						let selected = n;
+						call tg_draw( n );
+					}
+					if >( tg_sely +( y s ) ) {
+						let t = +( [ tg_t n ] [ tg_a n ] );
+						if >( t [ tg_b n ] ) {
+							let t = [ tg_b n ];
+						}
+						set [ tg_t n ] = t;
+						let selected = n;
+						call tg_draw( n );
+					}
+				}
 			}
 		}
 		case FX_MOUSEKEYUP {
