@@ -92,12 +92,12 @@ function tg_button( n, parent, x, y, w, h, text ) {
 	set [ tg_t n ] = text;
 }
 
-function tg_vslide( n, parent, x, y, w, h, page, max ) {
+function tg_vslide( n, parent, x, y, w, h, page, count ) {
 	set [ tg_c n ] = 3;
 	set [ tg_p n ] = parent;
 	call tg_resize( n, x, y, w, h );
 	set [ tg_a n ] = page;
-	set [ tg_b n ] = max;
+	set [ tg_b n ] = count;
 }
 
 function tg_init( gadcount ) {
@@ -159,7 +159,11 @@ function tg_vslide_size( n ) {
 }
 
 function tg_vslide_offset( n ) {
-	return /( *( [ tg_t n ] -( -( [ tg_h n ] 4 ) tg_vslide_size( n ) ) ) [ tg_b n ] );
+	var e;
+	let e = -( [ tg_b n ] [ tg_a n ] );
+	if >( e 0 ) {
+		return /( *( [ tg_t n ] -( -( [ tg_h n ] 4 ) tg_vslide_size( n ) ) ) e );
+	}
 }
 
 function tg_draw_vslide( n ) {
@@ -302,7 +306,7 @@ function tg_scan( event ) {
 								let p = e;
 							}
 							if >( p 0 ) {
-								set [ tg_t n ] = /( *( p [ tg_b n ] ) e );
+								set [ tg_t n ] = /( *( p -( [ tg_b n ] [ tg_a n ] ) ) e );
 							} else {
 								set [ tg_t n ] = 0;
 							}
@@ -340,8 +344,8 @@ function tg_scan( event ) {
 					}
 					if >( tg_sely +( y s ) ) {
 						let t = +( [ tg_t n ] [ tg_a n ] );
-						if >( t [ tg_b n ] ) {
-							let t = [ tg_b n ];
+						if >( t -( [ tg_b n ] [ tg_a n ] ) ) {
+							let t = -( [ tg_b n ] [ tg_a n ] );
 						}
 						set [ tg_t n ] = t;
 						let selected = n;
@@ -374,7 +378,7 @@ program tgads {
 
 	fxopen 640, 480, "tgads";
 
-	call tg_init( 10 );
+	call tg_init( 9 );
 
 	call tg_button( 1, 0, 10, 32, 80, 26, "Button 1" );
 
@@ -382,12 +386,11 @@ program tgads {
 	call tg_button( 3, 2, 10, 32, 80, 26, "Button 3" );
 	call tg_button( 4, 2, 10, 64, 80, 26, "Button 4" );
 
-	call tg_window( 5, 0, 30, 30, 200, 100, "Window 5" );
-	call tg_button( 6, 5, 10, 32, 80, 26, "Button 6" );
-	call tg_vslide( 7, 5, 100, 32, 20, 60, 2, 10 );
+	call tg_window( 5, 0, 40, 40, 200, 200, "Window 5" );
 
-	call tg_window( 8, 0, 40, 40, 200, 200, "Window 8" );
-	call tg_window( 9, 0, 50, 50, 200, 200, "Window 9" );
+	call tg_window( 8, 0, 30, 30, 200, 200, "Window 8" );
+	call tg_button( 6, 8, 10, 32, 80, 26, "Button 6" );
+	call tg_vslide( 7, 8, 100, 32, 20, 150, 10, 30 );
 
 	call tg_draw( 0 );
 
