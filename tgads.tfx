@@ -1,7 +1,7 @@
 
 array palette, charset;
-array tg_o, tg_c, tg_p;
-array tg_x, tg_y, tg_w, tg_h, tg_t, tg_a, tg_b;
+array tg_o, tg_t, tg_p;
+array tg_x, tg_y, tg_w, tg_h, tg_a, tg_b, tg_c;
 
 global tg_selx, tg_sely;
 
@@ -79,39 +79,39 @@ function tg_resize( n, x, y, w, h ) {
 }
 
 function tg_window( n, parent, x, y, w, h, text ) {
-	set [ tg_c n ] = 1;
+	set [ tg_t n ] = 1;
 	set [ tg_p n ] = parent;
 	call tg_resize( n, x, y, w, h );
-	set [ tg_t n ] = text;
+	set [ tg_a n ] = text;
 }
 
 function tg_button( n, parent, x, y, w, h, text ) {
-	set [ tg_c n ] = 2;
+	set [ tg_t n ] = 2;
 	set [ tg_p n ] = parent;
 	call tg_resize( n, x, y, w, h );
-	set [ tg_t n ] = text;
+	set [ tg_a n ] = text;
 }
 
 function tg_vslide( n, parent, x, y, w, h, page, count ) {
-	set [ tg_c n ] = 3;
+	set [ tg_t n ] = 3;
 	set [ tg_p n ] = parent;
 	call tg_resize( n, x, y, w, h );
-	set [ tg_a n ] = page;
-	set [ tg_b n ] = count;
+	set [ tg_b n ] = page;
+	set [ tg_c n ] = count;
 }
 
 function tg_init( gadcount ) {
 	var idx;
 	dim [ tg_o gadcount ];
-	dim [ tg_c gadcount ];
+	dim [ tg_t gadcount ];
 	dim [ tg_p gadcount ];
 	dim [ tg_x gadcount ];
 	dim [ tg_y gadcount ];
 	dim [ tg_w gadcount ];
 	dim [ tg_h gadcount ];
-	dim [ tg_t gadcount ];
 	dim [ tg_a gadcount ];
 	dim [ tg_b gadcount ];
+	dim [ tg_c gadcount ];
 	while <( idx gadcount ) {
 		set [ tg_o idx ] = idx;
 		inc idx;
@@ -151,15 +151,15 @@ function tg_draw_window( n ) {
 	fxrect x, +( y 26 ), w, -( h 26 ), [ palette 3 ];
 	call tg_raise_box( x, y, w, h );
 	call tg_lower_box( +( x 2 ), +( y 24 ), -( w 4 ), -( h 26 ) );
-	call tg_text( [ tg_t n ], +( x 6 ), +( y 6 ), 0 );
+	call tg_text( [ tg_a n ], +( x 6 ), +( y 6 ), 0 );
 }
 
 function tg_vslide_size( n ) {
-	return +( /( *( -( [ tg_h n ] 12 ) [ tg_a n ] ) [ tg_b n ] ) 8 );
+	return +( /( *( -( [ tg_h n ] 12 ) [ tg_b n ] ) [ tg_c n ] ) 8 );
 }
 
 function tg_vslide_offset( n ) {
-	return /( *( -( [ tg_h n ] 12 ) [ tg_t n ] ) [ tg_b n ] );
+	return /( *( -( [ tg_h n ] 12 ) [ tg_a n ] ) [ tg_c n ] );
 }
 
 function tg_draw_vslide( n ) {
@@ -180,7 +180,7 @@ function tg_draw_button( n ) {
 	var x, y, bg, hl, sh;
 	let x = tg_getx( n );
 	let y = tg_gety( n );
-	if =( [ tg_a n ] 1 ) {
+	if =( [ tg_b n ] 1 ) {
 		let bg = 3;
 		let hl = 0;
 		let sh = 1;
@@ -192,8 +192,8 @@ function tg_draw_button( n ) {
 	fxrect x, y, [ tg_w n ], [ tg_h n ], [ palette bg ];
 	call tg_box( x, y, [ tg_w n ], [ tg_h n ],
 		[ palette hl ], [ palette sh ] );
-	call tg_text( [ tg_t n ],
-		+( x /( -( [ tg_w n ] *( $len( [ tg_t n ] ) 8 ) ) 2 ) ),
+	call tg_text( [ tg_a n ],
+		+( x /( -( [ tg_w n ] *( $len( [ tg_a n ] ) 8 ) ) 2 ) ),
 		+( y /( -( [ tg_h n ] 14 ) 2 ) ), sh );
 }
 
@@ -202,7 +202,7 @@ function tg_draw( n ) {
 	if <( n 1 ) {
 		call tg_draw_background();
 	} else {
-		switch [ tg_c n ] {
+		switch [ tg_t n ] {
 			case 1 { call tg_draw_window( n ); }
 			case 2 { call tg_draw_button( n ); }
 			case 3 { call tg_draw_vslide( n ); }
@@ -241,7 +241,7 @@ function tg_find( x, y, p ) {
 
 function tg_wintofront( n ) {
 	var idx, end, g;
-	while >( [ tg_c n ] 1 ) {
+	while >( [ tg_t n ] 1 ) {
 		let n = [ tg_p n ];
 	}
 	let end = -( $len( tg_o ) 1 );
@@ -270,7 +270,7 @@ function tg_scan( event ) {
 				}
 				let n = tg_find( tg_selx, tg_sely, 0 );
 				call tg_wintofront( n );
-				switch [ tg_c n ] {
+				switch [ tg_t n ] {
 					case 1 {
 						let x = $xmouse;
 						let y = $ymouse;
@@ -282,9 +282,9 @@ function tg_scan( event ) {
 					}
 					case 2 {
 						if =( tg_find( $xmouse, $ymouse, 0 ) n ) {
-							set [ tg_a n ] = 1;
+							set [ tg_b n ] = 1;
 						} else {
-							set [ tg_a n ] = 0;
+							set [ tg_b n ] = 0;
 						}
 						call tg_draw( n );
 					}
@@ -302,9 +302,9 @@ function tg_scan( event ) {
 								let p = e;
 							}
 							if >( p 0 ) {
-								set [ tg_t n ] = /( *( p -( [ tg_b n ] [ tg_a n ] ) ) e );
+								set [ tg_a n ] = /( *( p -( [ tg_c n ] [ tg_b n ] ) ) e );
 							} else {
-								set [ tg_t n ] = 0;
+								set [ tg_a n ] = 0;
 							}
 							let tg_sely = +( tg_sely -( tg_vslide_offset( n ) o ) );
 							let selected = n;
@@ -319,9 +319,9 @@ function tg_scan( event ) {
 			let tg_sely = $ymouse;
 			let n = tg_find( tg_selx, tg_sely, 0 );
 			call tg_wintofront( n );
-			switch [ tg_c n ] {
+			switch [ tg_t n ] {
 				case 2 {
-					set [ tg_a n ] = 1;
+					set [ tg_b n ] = 1;
 					call tg_draw( n );
 				}
 				case 3 {
@@ -330,20 +330,20 @@ function tg_scan( event ) {
 					let e = -( -( [ tg_h n ] 4 ) s );
 					let y = +( +( tg_gety( n ) o ) 2 );
 					if <( tg_sely y ) {
-						let t = -( [ tg_t n ] [ tg_a n ] );
+						let t = -( [ tg_a n ] [ tg_b n ] );
 						if <( t 0 ) {
 							let t = 0;
 						}
-						set [ tg_t n ] = t;
+						set [ tg_a n ] = t;
 						let selected = n;
 						call tg_draw( n );
 					}
 					if >( tg_sely +( y s ) ) {
-						let t = +( [ tg_t n ] [ tg_a n ] );
-						if >( t -( [ tg_b n ] [ tg_a n ] ) ) {
-							let t = -( [ tg_b n ] [ tg_a n ] );
+						let t = +( [ tg_a n ] [ tg_b n ] );
+						if >( t -( [ tg_c n ] [ tg_b n ] ) ) {
+							let t = -( [ tg_c n ] [ tg_b n ] );
 						}
-						set [ tg_t n ] = t;
+						set [ tg_a n ] = t;
 						let selected = n;
 						call tg_draw( n );
 					}
@@ -352,8 +352,8 @@ function tg_scan( event ) {
 		}
 		case FX_MOUSEKEYUP {
 			let n = tg_find( tg_selx, tg_sely, 0 );
-			if =( [ tg_c n ] 2 ) {
-				set [ tg_a n ] = 0;
+			if =( [ tg_t n ] 2 ) {
+				set [ tg_b n ] = 0;
 				call tg_draw( n );
 				if =( tg_find( $xmouse, $ymouse, 0 ) n ) {
 					let selected = n;
@@ -395,7 +395,7 @@ program tgads {
 	while TRUE {
 		let selected = tg_scan( $fxwait );
 		if >( selected 0 ) {
-			print $cat( selected, " ", [ tg_t selected ] );
+			print $cat( selected, " ", [ tg_a selected ] );
 		}
 		fxshow;
 	}
