@@ -407,13 +407,24 @@ function tg_scan( event ) {
 						set [ tg_a tg_focus ] = t;
 					}
 				} else {
-					if &( $keyshift 3 ) {
-						let c = -( c 32 );
-					}
-					if &&( >( c 31 ) <( c 127 ) ) {
-						set [ tg_a tg_focus ] = $str( t, $asc( c ) );
+					if >( c 31 ) {
+						if &( $keyshift 3 ) {
+							if <( c 64 ) {
+								let c = $chr( " !\"~$%&@()*+<_>?)!\"#$%^&*(::<+>?@", -( c 32 ) );
+							} else {
+								if <( c 96 ) {
+									let c = +( c 32 );
+								} else {
+									let c = -( c 32 );
+								}
+							}
+						}
+						if <( c 127 ) {
+							set [ tg_a tg_focus ] = $str( t, $asc( c ) );
+						}
 					}
 				}
+				let selected = tg_focus;
 				call tg_draw( tg_focus );
 			}
 		}
