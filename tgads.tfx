@@ -3,7 +3,7 @@ array palette, charset;
 array tg_o, tg_t, tg_p;
 array tg_x, tg_y, tg_w, tg_h, tg_a, tg_b, tg_c;
 
-global tg_selx, tg_sely;
+global tg_selx, tg_sely, tg_focus;
 
 function tg_charset( str ) {
 	var w, h, clr, chr, y, x;
@@ -86,18 +86,20 @@ function tg_window( n, parent, x, y, w, h, text ) {
 }
 
 function tg_button( n, parent, x, y, w, h, text ) {
+	call tg_window( n, parent, x, y, w, h, text );
 	set [ tg_t n ] = 2;
-	set [ tg_p n ] = parent;
-	call tg_resize( n, x, y, w, h );
-	set [ tg_a n ] = text;
 }
 
 function tg_vslide( n, parent, x, y, w, h, page, count ) {
+	call tg_window( n, parent, x, y, w, h, 0 );
 	set [ tg_t n ] = 3;
-	set [ tg_p n ] = parent;
-	call tg_resize( n, x, y, w, h );
 	set [ tg_b n ] = page;
 	set [ tg_c n ] = count;
+}
+
+function tg_textbox( n, parent, x, y, w, h, text ) {
+	call tg_window( n, parent, x, y, w, h, text );
+	set [ tg_t n ] = 4;
 }
 
 function tg_init( gadcount ) {
@@ -197,6 +199,25 @@ function tg_draw_button( n ) {
 		+( y /( -( [ tg_h n ] 14 ) 2 ) ), sh );
 }
 
+function tg_draw_textbox( n ) {
+	var x, y, t, c;
+	let x = tg_getx( n );
+	let y = tg_gety( n );
+	let t = [ tg_a n ];
+	let c = /( -( [ tg_w n ] 16 ) 8 );
+	if >( $len( t ) c ) {
+		let t = $sub( t, -( $len( t ) c ), c );
+	}
+	fxrect x, y, [ tg_w n ], [ tg_h n ], [ palette 2 ];
+	if =( [ tg_b n ] 1 ) {
+		fxrect +( x *( +( $len( t ) 1 ) 8 ) ), +( y 6 ), 8, 16, [ palette 3 ];
+	}
+	call tg_box( x, y, [ tg_w n ], [ tg_h n ], [ palette 1 ], [ palette 0 ] );
+	call tg_box( +( x 2 ), +( y 2 ), -( [ tg_w n ] 4 ), -( [ tg_h n ] 4 ),
+		[ palette 0 ], [ palette 1 ] );
+	call tg_text( t, +( x 8 ), +( y 6 ), 0 );
+}
+
 function tg_draw( n ) {
 	var idx, len;
 	if <( n 1 ) {
@@ -206,6 +227,7 @@ function tg_draw( n ) {
 			case 1 { call tg_draw_window( n ); }
 			case 2 { call tg_draw_button( n ); }
 			case 3 { call tg_draw_vslide( n ); }
+			case 4 { call tg_draw_textbox( n ); }
 		}
 	}
 	let idx = 1;
@@ -260,7 +282,7 @@ function tg_wintofront( n ) {
 }
 
 function tg_scan( event ) {
-	var n, s, o, p, e, t, x, y, selected;
+	var n, s, o, p, e, t, c, x, y, selected;
 	switch event {
 		case FX_MOUSEMOTION {
 			if =( $mousekey 1 ) {
@@ -318,6 +340,11 @@ function tg_scan( event ) {
 			let tg_selx = $xmouse;
 			let tg_sely = $ymouse;
 			let n = tg_find( tg_selx, tg_sely, 0 );
+			if =( [ tg_t tg_focus ] 4 ) {
+				set [ tg_b tg_focus ] = 0;
+				call tg_draw( tg_focus );
+			}
+			let tg_focus = n;
 			call tg_wintofront( n );
 			switch [ tg_t n ] {
 				case 2 {
@@ -348,6 +375,10 @@ function tg_scan( event ) {
 						call tg_draw( n );
 					}
 				}
+				case 4 {
+					set [ tg_b n ] = 1;
+					call tg_draw( n );
+				}
 			}
 		}
 		case FX_MOUSEKEYUP {
@@ -362,6 +393,30 @@ function tg_scan( event ) {
 			let tg_selx = 0;
 			let tg_sely = 0;
 		}
+		case FX_KEYDOWN {
+			if =( [ tg_t tg_focus ] 4 ) {
+				let t = [ tg_a tg_focus ];
+				let c = $keyboard;
+				if =( c 8 ) {
+					if >( $len( t ) 0 ) {
+						if &( $keyshift 3 ) {
+							let t = "";
+						} else {
+							let t = $sub( t, 0, -( $len( t ) 1 ) );
+						}
+						set [ tg_a tg_focus ] = t;
+					}
+				} else {
+					if &( $keyshift 3 ) {
+						let c = -( c 32 );
+					}
+					if &&( >( c 31 ) <( c 127 ) ) {
+						set [ tg_a tg_focus ] = $str( t, $asc( c ) );
+					}
+				}
+				call tg_draw( tg_focus );
+			}
+		}
 	}
 	return selected;
 }
@@ -374,7 +429,7 @@ program tgads {
 
 	fxopen 640, 480, "tgads";
 
-	call tg_init( 9 );
+	call tg_init( 20 );
 
 	call tg_button( 1, 0, 10, 32, 80, 26, "Button 1" );
 
@@ -384,9 +439,12 @@ program tgads {
 
 	call tg_window( 5, 0, 40, 40, 200, 200, "Window 5" );
 
-	call tg_window( 8, 0, 30, 30, 200, 200, "Window 8" );
-	call tg_button( 6, 8, 10, 32, 80, 26, "Button 6" );
-	call tg_vslide( 7, 8, 100, 32, 20, 140, 5, 15 );
+	call tg_window( 6, 0, 30, 30, 200, 200, "Window 6" );
+	call tg_button( 7, 6, 10, 32, 80, 26, "Button 7" );
+	call tg_vslide( 8, 6, 100, 32, 20, 140, 5, 15 );
+
+	call tg_textbox( 9, 6, 10, 64, 80, 28, "Text 9" );
+	call tg_textbox( 10, 6, 10, 96, 80, 28, "Text 10" );
 
 	call tg_draw( 0 );
 
