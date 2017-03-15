@@ -1,7 +1,7 @@
 
 array palette, charset;
 array tg_o, tg_t, tg_p;
-array tg_x, tg_y, tg_w, tg_h, tg_a, tg_b, tg_c;
+array tg_x, tg_y, tg_w, tg_h, tg_m, tg_k, tg_a, tg_b, tg_c;
 
 global tg_selx, tg_sely, tg_focus;
 
@@ -72,15 +72,66 @@ function tg_bevel_box( x, y, w, h ) {
 }
 
 function tg_resize( n, x, y, w, h ) {
+	var g, k, a;
+	if <( w [ tg_m n ] ) {
+		let w = [ tg_m n ];
+	}
+	if <( h [ tg_m n ] ) {
+		let h = [ tg_m n ];
+	}
+	if =( [ tg_t n ] 1 ) {
+		while <( g $len( tg_t ) ) {
+			if =( [ tg_p g ] n ) {
+				let k = [ tg_k g ];
+				if &( k 4 ) {
+					if &( k 1 ) {
+						let a = +( [ tg_h g ] -( h [ tg_h n ] ) );
+						if <( a [ tg_m g ] ) {
+							let a = [ tg_m g ];
+						}
+						set [ tg_h g ] = a;
+					} else {
+						set [ tg_y g ] = +( [ tg_y g ] -( h [ tg_h n ] ) );
+					}
+				}
+				if &( k 8 ) {
+					if &( k 2 ) {
+						let a = +( [ tg_w g ] -( w [ tg_w n ] ) );
+						if <( a [ tg_m g ] ) {
+							let a = [ tg_m g ];
+						}
+						set [ tg_w g ] = a;
+					} else {
+						set [ tg_x g ] = +( [ tg_x g ] -( w [ tg_w n ] ) );
+					}
+				}
+			}
+			inc g;
+		}
+	}
 	set [ tg_x n ] = x;
 	set [ tg_y n ] = y;
 	set [ tg_w n ] = w;
 	set [ tg_h n ] = h;
 }
 
+function tg_minsize( n, size ) {
+	set [ tg_m n ] = size;
+}
+
+function tg_anchor( n, top, left, bottom, right ) {
+	var a;
+	if top { let a = |( a 1 ); }
+	if left { let a = |( a 2 ); }
+	if bottom { let a = |( a 4 ); }
+	if right { let a = |( a 8 ); }
+	set [ tg_k n ] = a;
+}
+
 function tg_window( n, parent, x, y, w, h, text ) {
 	set [ tg_t n ] = 1;
 	set [ tg_p n ] = parent;
+	set [ tg_m n ] = 16;
 	call tg_resize( n, x, y, w, h );
 	set [ tg_a n ] = text;
 }
@@ -102,6 +153,12 @@ function tg_textbox( n, parent, x, y, w, h, text ) {
 	set [ tg_t n ] = 4;
 }
 
+function tg_sizegad( n, parent, x, y, w, h ) {
+	call tg_window( n, parent, x, y, w, h, 0 );
+	call tg_anchor( n, 0, 0, 1, 1 );
+	set [ tg_t n ] = 5;
+}
+
 function tg_init( gadcount ) {
 	var idx;
 	dim [ tg_o gadcount ];
@@ -111,6 +168,8 @@ function tg_init( gadcount ) {
 	dim [ tg_y gadcount ];
 	dim [ tg_w gadcount ];
 	dim [ tg_h gadcount ];
+	dim [ tg_m gadcount ];
+	dim [ tg_k gadcount ];
 	dim [ tg_a gadcount ];
 	dim [ tg_b gadcount ];
 	dim [ tg_c gadcount ];
@@ -218,6 +277,14 @@ function tg_draw_textbox( n ) {
 	call tg_text( t, +( x 8 ), +( y 6 ), 0 );
 }
 
+function tg_draw_sizegad( n ) {
+	var x, y;
+	let x = tg_getx( n );
+	let y = tg_gety( n );
+	fxrect x, y, [ tg_w n ], [ tg_h n ], [ palette 2 ];
+	call tg_box( x, y, [ tg_w n ], [ tg_h n ], [ palette 1 ], [ palette 0 ] );
+}
+
 function tg_draw( n ) {
 	var idx, len;
 	if <( n 1 ) {
@@ -228,6 +295,7 @@ function tg_draw( n ) {
 			case 2 { call tg_draw_button( n ); }
 			case 3 { call tg_draw_vslide( n ); }
 			case 4 { call tg_draw_textbox( n ); }
+			case 5 { call tg_draw_sizegad( n ); }
 		}
 	}
 	let idx = 1;
@@ -279,10 +347,11 @@ function tg_wintofront( n ) {
 		}
 		call tg_draw( [ tg_o end ] );
 	}
+	return n;
 }
 
 function tg_scan( event ) {
-	var n, s, o, p, e, t, c, x, y, selected;
+	var n, s, o, p, e, t, c, w, x, y, selected;
 	switch event {
 		case FX_MOUSEMOTION {
 			if =( $mousekey 1 ) {
@@ -291,7 +360,7 @@ function tg_scan( event ) {
 					let tg_sely = $ymouse;
 				}
 				let n = tg_find( tg_selx, tg_sely, 0 );
-				call tg_wintofront( n );
+				let w = tg_wintofront( n );
 				switch [ tg_t n ] {
 					case 1 {
 						let x = $xmouse;
@@ -333,6 +402,18 @@ function tg_scan( event ) {
 							call tg_draw( n );
 						}
 					}
+					case 5 {
+						let x = $xmouse;
+						let y = $ymouse;
+						let o = -( tg_selx tg_getx( n ) );
+						let p = -( tg_sely tg_gety( n ) );
+						call tg_resize( w, [ tg_x w ], [ tg_y w ], 
+							-( +( [ tg_w w ] x ) tg_selx ),
+							-( +( [ tg_h w ] y ) tg_sely ) );
+						let tg_selx = +( tg_getx( n ) o );
+						let tg_sely = +( tg_gety( n ) p );
+						call tg_draw( 0 );
+					}
 				}
 			}
 		}
@@ -345,7 +426,7 @@ function tg_scan( event ) {
 				call tg_draw( tg_focus );
 			}
 			let tg_focus = n;
-			call tg_wintofront( n );
+			let w = tg_wintofront( n );
 			switch [ tg_t n ] {
 				case 2 {
 					set [ tg_b n ] = 1;
@@ -449,13 +530,18 @@ program tgads {
 	call tg_button( 4, 2, 10, 64, 80, 26, "Button 4" );
 
 	call tg_window( 5, 0, 40, 40, 200, 200, "Window 5" );
+	call tg_minsize( 5, 64 );
+	call tg_sizegad( 6, 5, 180, 180, 16, 16 );
 
-	call tg_window( 6, 0, 30, 30, 200, 200, "Window 6" );
-	call tg_button( 7, 6, 10, 32, 80, 26, "Button 7" );
-	call tg_vslide( 8, 6, 100, 32, 20, 140, 5, 15 );
-
-	call tg_textbox( 9, 6, 10, 64, 80, 28, "Text 9" );
-	call tg_textbox( 10, 6, 10, 96, 80, 28, "Text 10" );
+	call tg_window( 7, 0, 30, 30, 200, 200, "Window 6" );
+	call tg_minsize( 7, 150 );
+	call tg_button( 8, 7, 10, 32, 80, 26, "Button 7" );
+	call tg_vslide( 9, 7, 150, 32, 20, 140, 5, 15 );
+	call tg_anchor( 9, 1, 0, 1, 1 );
+	call tg_textbox( 10, 7, 10, 64, 80, 28, "Text 9" );
+	call tg_textbox( 11, 7, 10, 96, 80, 28, "Text 10" );
+	call tg_anchor( 11, 0, 1, 0, 1 );
+	call tg_sizegad( 12, 7, 180, 180, 16, 16 );
 
 	call tg_draw( 0 );
 
