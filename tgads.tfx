@@ -1,5 +1,6 @@
 
-array palette, charset;
+array palette, charset, listitems;
+
 array tg_o, tg_t, tg_p;
 array tg_x, tg_y, tg_w, tg_h, tg_m, tg_k, tg_a, tg_b, tg_c;
 
@@ -159,6 +160,11 @@ function tg_sizegad( n, parent, x, y, w, h ) {
 	set [ tg_t n ] = 5;
 }
 
+function tg_listbox( n, parent, x, y, w, h, list ) {
+	call tg_window( n, parent, x, y, w, h, list );
+	set [ tg_t n ] = 6;
+}
+
 function tg_init( gadcount ) {
 	var idx;
 	dim [ tg_o gadcount ];
@@ -285,6 +291,21 @@ function tg_draw_sizegad( n ) {
 	call tg_box( x, y, [ tg_w n ], [ tg_h n ], [ palette 1 ], [ palette 0 ] );
 }
 
+function tg_draw_listbox( n ) {
+	var x, y, idx, len;
+	let x = tg_getx( n );
+	let y = tg_gety( n );
+	fxrect x, y, [ tg_w n ], [ tg_h n ], [ palette 2 ];
+	call tg_box( x, y, [ tg_w n ], [ tg_h n ], [ palette 0 ], [ palette 1 ] );
+	let len = /( -( [ tg_h n ] 12 ) 16 );
+	while <( idx len ) {
+		if <( +( [ tg_b n ] idx ) $len( [ tg_a n ] ) ) {
+			call tg_text( [ [ tg_a n ] +( [ tg_b n ] idx ) ], +( x 8 ), +( +( y *( idx 16 ) ) 6 ), 0 );
+		}
+		inc idx;
+	}
+}
+
 function tg_draw( n ) {
 	var idx, len;
 	if <( n 1 ) {
@@ -296,6 +317,7 @@ function tg_draw( n ) {
 			case 3 { call tg_draw_vslide( n ); }
 			case 4 { call tg_draw_textbox( n ); }
 			case 5 { call tg_draw_sizegad( n ); }
+			case 6 { call tg_draw_listbox( n ); }
 		}
 	}
 	let idx = 1;
@@ -533,16 +555,20 @@ program tgads {
 	call tg_minsize( 5, 64 );
 	call tg_sizegad( 6, 5, 180, 180, 16, 16 );
 
-	call tg_window( 7, 0, 30, 30, 200, 200, "Window 6" );
+	call tg_window( 7, 0, 30, 30, 400, 200, "Window 6" );
 	call tg_minsize( 7, 150 );
 	call tg_button( 8, 7, 10, 32, 80, 26, "Button 7" );
-	call tg_vslide( 9, 7, 150, 32, 20, 140, 5, 15 );
+	call tg_vslide( 9, 7, 370, 32, 20, 120, 5, 15 );
 	call tg_anchor( 9, 1, 0, 1, 1 );
 	call tg_textbox( 10, 7, 10, 64, 80, 28, "Text 9" );
-	call tg_textbox( 11, 7, 10, 96, 80, 28, "Text 10" );
-	call tg_anchor( 11, 0, 1, 0, 1 );
-	call tg_sizegad( 12, 7, 180, 180, 16, 16 );
+	call tg_textbox( 11, 7, 100, 160, 260, 28, "Text 10" );
+	call tg_anchor( 11, 0, 1, 1, 1 );
+	call tg_sizegad( 12, 7, 380, 180, 16, 16 );
 
+	let listitems = ${ "1", "2", "3", "4", "5" };
+
+	call tg_listbox( 13, 7, 100, 32, 260, 120, listitems );
+	call tg_anchor( 13, 1, 1, 1, 1 );
 	call tg_draw( 0 );
 
 	fxshow;
