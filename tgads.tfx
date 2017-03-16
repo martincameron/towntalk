@@ -292,16 +292,22 @@ function tg_draw_sizegad( n ) {
 }
 
 function tg_draw_listbox( n ) {
-	var x, y, idx, len;
+	var x, y, w, h, idx, txt;
 	let x = tg_getx( n );
 	let y = tg_gety( n );
 	fxrect x, y, [ tg_w n ], [ tg_h n ], [ palette 2 ];
 	call tg_box( x, y, [ tg_w n ], [ tg_h n ], [ palette 0 ], [ palette 1 ] );
-	let len = /( -( [ tg_h n ] 12 ) 16 );
-	while <( idx len ) {
-		if <( +( [ tg_b n ] idx ) $len( [ tg_a n ] ) ) {
-			call tg_text( [ [ tg_a n ] +( [ tg_b n ] idx ) ], +( x 8 ), +( +( y *( idx 16 ) ) 6 ), 0 );
+	let w = /( -( [ tg_w n ] 16 ) 8 );
+	let h = /( -( [ tg_h n ] 12 ) 16 );
+	if >( +( [ tg_b n ] h ) $len( [ tg_a n ] ) ) {
+		let h = -( $len( [ tg_a n ] ) [ tg_b n ] );
+	}
+	while <( idx h ) {
+		let txt = [ [ tg_a n ] +( [ tg_b n ] idx ) ];
+		if >( $len( txt ) w ) {
+			let txt = $sub( txt, 0, w );
 		}
+		call tg_text( txt, +( x 8 ), +( +( y *( idx 16 ) ) 6 ), 0 );
 		inc idx;
 	}
 }
@@ -565,7 +571,7 @@ program tgads {
 	call tg_anchor( 11, 0, 1, 1, 1 );
 	call tg_sizegad( 12, 7, 380, 180, 16, 16 );
 
-	let listitems = ${ "1", "2", "3", "4", "5" };
+	let listitems = ${ "One", "Two", "Three", "Four", "Five" };
 
 	call tg_listbox( 13, 7, 100, 32, 260, 120, listitems );
 	call tg_anchor( 13, 1, 1, 1, 1 );
