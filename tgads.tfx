@@ -571,7 +571,7 @@ program tgads {
 	call tg_anchor( 11, 0, 1, 1, 1 );
 	call tg_sizegad( 12, 7, 380, 180, 16, 16 );
 
-	let listitems = ${ "One", "Two", "Three", "Four", "Five" };
+	let listitems = $fxdir( "." );
 
 	call tg_listbox( 13, 7, 100, 32, 260, 120, listitems );
 	call tg_anchor( 13, 1, 1, 1, 1 );

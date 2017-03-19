@@ -2,6 +2,7 @@
 #include "towntalk.c"
 
 #include "SDL.h"
+#include "dirent.h"
 
 #define NUM_SURFACES 16
 #define NUM_CHANNELS 16
@@ -689,6 +690,69 @@ static int evaluate_sfxtick_expression( struct expression *this, struct variable
 	return 1;
 }
 
+static int evaluate_sfxdir_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	DIR *dir;
+	char message[ 64 ];
+	struct dirent *dentry;
+	struct variable path = { 0, NULL };
+	struct element *elem, *tail, *head = NULL;
+	struct expression *parameter = this->parameters;
+	int len, ret = parameter->evaluate( parameter, variables, &path, exception );
+	if( ret ) {
+		if( path.element_value && path.element_value->string ) {
+			dir = opendir( path.element_value->string );
+			if( dir ) {
+				dentry = readdir( dir );
+				while( dentry && ret ) {
+					elem = calloc( 1, sizeof( struct element ) );
+					if( elem ) {
+						elem->reference_count = 1;
+						len = write_byte_string( dentry->d_name, strlen( dentry->d_name ), NULL );
+						if( len >= 0 ) {
+							elem->string = malloc( len + 1 );
+							if( elem->string ) {
+								write_byte_string( dentry->d_name, strlen( dentry->d_name ), elem->string );
+								elem->string[ len ] = 0;
+								elem->length = len;
+								if( head ) {
+									tail->next = elem;
+									tail = tail->next;
+								} else {
+									head = tail = elem;
+								}
+								dentry = readdir( dir );
+							} else {
+								ret = throw( exception, this, 0, OUT_OF_MEMORY );
+							}
+						} else {
+							ret = throw( exception, this, 0, "String too large." );
+						}
+					} else {
+						ret = throw( exception, this, 0, OUT_OF_MEMORY );
+					}
+				}
+				closedir( dir );
+				if( ret ) {
+					dispose_variable( result );
+					result->integer_value = 0;
+					result->element_value = head;
+				} else {
+					dispose_element( head );
+				}
+			} else {
+				strncpy( message, strerror( errno ), 63 );
+				message[ 63 ] = 0;
+				ret = throw( exception, this, 0, message );
+			}
+		} else {
+			ret = throw( exception, this, 0, "Not a string." );
+		}
+		dispose_variable( &path );
+	}
+	return ret;
+}
+
 static struct constant fxconstants[] = {
 	{ "FX_KEYDOWN", 2, NULL },
 	{ "FX_KEYUP", 3, NULL },
@@ -708,7 +772,8 @@ static struct operator fxoperators[] = {
 	{ "$mousekey",'$', 0, &evaluate_smousekey_expression, &fxoperators[ 6 ] },
 	{ "$keyboard",'$', 0, &evaluate_skeyboard_expression, &fxoperators[ 7 ] },
 	{ "$keyshift",'$', 0, &evaluate_skeyshift_expression, &fxoperators[ 8 ] },
-	{ "$fxtick",'$', 0, &evaluate_sfxtick_expression, operators }
+	{ "$fxtick",'$', 0, &evaluate_sfxtick_expression, &fxoperators[ 9 ] },
+	{ "$fxdir",'$', 1, &evaluate_sfxdir_expression, operators }
 };
 
 static struct keyword fxstatements[] = {
