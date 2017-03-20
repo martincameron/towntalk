@@ -579,12 +579,34 @@ function gradient( c1, c2, out, off, len ) {
 	}
 }
 
+function parse_rws( rws, arr ) {
+	var elem, idx, c, r, g, b;
+	let elem = $parse( rws );
+	if !( $cmp( elem, "RW.SCN" ) ) {
+		let elem = $next( elem );
+		while $cmp( elem, "EOF" ) {
+			if <( idx $len( arr ) ) {
+				let c = $int( elem );
+				let r = *( &( >>( c 8 ) 0xF ) 17 );
+				let g = *( &( >>( c 4 ) 0xF ) 17 ); 
+				let b = *( &( c 0xF ) 17 ); 
+				set [ arr idx ] = +( *( r 65536 ) +( *( g 256 ) b ) );
+				inc idx;
+			}
+			let elem = $next( elem );
+		}
+	} else {
+		throw "Not an RWS file.";
+	}
+}
+
 program tgads {
 	var selected;
 	let palette = ${ 0x000000, 0xFFFFFF, 0xA0A0A0, 0x6080B0 };
 
 	dim [ background 240 ];
-	call gradient( 0x008000, 0x000080, background, 0, 240 );
+	call parse_rws( $load( "demo6.rws" ), background );
+	#call gradient( 0x008000, 0x000080, background, 0, 240 );
 
 	call tg_charset( $load( "topaz8.txt" ) );
 
