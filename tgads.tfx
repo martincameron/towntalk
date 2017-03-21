@@ -142,9 +142,16 @@ function tg_button( n, parent, x, y, w, h, text ) {
 	set [ tg_t n ] = 2;
 }
 
-function tg_vslide( n, parent, x, y, w, h, page, count ) {
+function tg_vslider( n, parent, x, y, w, h, page, count ) {
 	call tg_window( n, parent, x, y, w, h, 0 );
 	set [ tg_t n ] = 3;
+	set [ tg_b n ] = page;
+	set [ tg_c n ] = count;
+}
+
+function tg_hslider( n, parent, x, y, w, h, page, count ) {
+	call tg_window( n, parent, x, y, w, h, 0 );
+	set [ tg_t n ] = 7;
 	set [ tg_b n ] = page;
 	set [ tg_c n ] = count;
 }
@@ -226,26 +233,40 @@ function tg_draw_window( n ) {
 	call tg_text( [ tg_a n ], +( x 6 ), +( y 6 ), 0 );
 }
 
-function tg_vslide_size( n ) {
-	return +( /( *( -( [ tg_h n ] 12 ) [ tg_b n ] ) [ tg_c n ] ) 8 );
+function tg_slider_size( n, p ) {
+	return +( /( *( -( p 12 ) [ tg_b n ] ) [ tg_c n ] ) 8 );
 }
 
-function tg_vslide_offset( n ) {
-	return /( *( -( [ tg_h n ] 12 ) [ tg_a n ] ) [ tg_c n ] );
+function tg_slider_offset( n, p ) {
+	return /( *( -( p 12 ) [ tg_a n ] ) [ tg_c n ] );
 }
 
-function tg_draw_vslide( n ) {
+function tg_draw_vslider( n ) {
 	var x, y, w, h, s, d;
 	let x = tg_getx( n );
 	let y = tg_gety( n );
 	let w = [ tg_w n ];
 	let h = [ tg_h n ];
-	let s = tg_vslide_size( n );
-	let d = tg_vslide_offset( n );
+	let s = tg_slider_size( n, h );
+	let d = tg_slider_offset( n, h );
 	fxrect x, y, w, h, [ palette 3 ];
 	call tg_lower_box( x, y, w, h );
 	fxrect +( x, 2 ), +( +( y d ) 2 ), -( w 4 ), s, [ palette 2 ];
 	call tg_raise_box( +( x, 2 ), +( +( y d ) 2 ), -( w 4 ), s );
+}
+
+function tg_draw_hslider( n ) {
+	var x, y, w, h, s, d;
+	let x = tg_getx( n );
+	let y = tg_gety( n );
+	let w = [ tg_w n ];
+	let h = [ tg_h n ];
+	let s = tg_slider_size( n, w );
+	let d = tg_slider_offset( n, w );
+	fxrect x, y, w, h, [ palette 3 ];
+	call tg_lower_box( x, y, w, h );
+	fxrect +( +( x d ) 2 ), +( y, 2 ), s, -( h 4 ), [ palette 2 ];
+	call tg_raise_box( +( +( x d ) 2 ), +( y, 2 ), s, -( h 4 ) );
 }
 
 function tg_draw_button( n ) {
@@ -333,10 +354,11 @@ function tg_draw( n ) {
 		switch [ tg_t n ] {
 			case 1 { call tg_draw_window( n ); }
 			case 2 { call tg_draw_button( n ); }
-			case 3 { call tg_draw_vslide( n ); }
+			case 3 { call tg_draw_vslider( n ); }
 			case 4 { call tg_draw_textbox( n ); }
 			case 5 { call tg_draw_sizegad( n ); }
 			case 6 { call tg_draw_listbox( n ); }
+			case 7 { call tg_draw_hslider( n ); }
 		}
 	}
 	let idx = 1;
@@ -421,8 +443,8 @@ function tg_scan( event ) {
 						call tg_draw( n );
 					}
 					case 3 {
-						let s = tg_vslide_size( n );
-						let o = tg_vslide_offset( n );
+						let s = tg_slider_size( n, [ tg_h n ] );
+						let o = tg_slider_offset( n, [ tg_h n ] );
 						let e = -( -( [ tg_h n ] 4 ) s );
 						let y = +( +( tg_gety( n ) o ) 2 );
 						if &&( >( tg_sely y ) <( tg_sely +( y s ) ) ) {
@@ -438,7 +460,7 @@ function tg_scan( event ) {
 							} else {
 								set [ tg_a n ] = 0;
 							}
-							let tg_sely = +( tg_sely -( tg_vslide_offset( n ) o ) );
+							let tg_sely = +( tg_sely -( tg_slider_offset( n, [ tg_h n ] ) o ) );
 							let selected = n;
 							call tg_draw( n );
 						}
@@ -454,6 +476,29 @@ function tg_scan( event ) {
 						let tg_selx = +( tg_getx( n ) o );
 						let tg_sely = +( tg_gety( n ) p );
 						call tg_draw( 0 );
+					}
+					case 7 {
+						let s = tg_slider_size( n, [ tg_w n ] );
+						let o = tg_slider_offset( n, [ tg_w n ] );
+						let e = -( -( [ tg_w n ] 4 ) s );
+						let x = +( +( tg_getx( n ) o ) 2 );
+						if &&( >( tg_selx x ) <( tg_selx +( x s ) ) ) {
+							let p = +( o -( $xmouse tg_selx ) );
+							if <( p 0 ) {
+								let p = 0;
+							}
+							if >( p e ) {
+								let p = e;
+							}
+							if >( p 0 ) {
+								set [ tg_a n ] = /( *( p -( [ tg_c n ] [ tg_b n ] ) ) e );
+							} else {
+								set [ tg_a n ] = 0;
+							}
+							let tg_selx = +( tg_selx -( tg_slider_offset( n, [ tg_w n ] ) o ) );
+							let selected = n;
+							call tg_draw( n );
+						}
 					}
 				}
 			}
@@ -474,8 +519,8 @@ function tg_scan( event ) {
 					call tg_draw( n );
 				}
 				case 3 {
-					let s = tg_vslide_size( n );
-					let o = tg_vslide_offset( n );
+					let s = tg_slider_size( n, [ tg_h n ] );
+					let o = tg_slider_offset( n, [ tg_h n ] );
 					let e = -( -( [ tg_h n ] 4 ) s );
 					let y = +( +( tg_gety( n ) o ) 2 );
 					if <( tg_sely y ) {
@@ -508,6 +553,30 @@ function tg_scan( event ) {
 					}
 					let selected = n;
 					call tg_draw( n );
+				}
+				case 7 {
+					let s = tg_slider_size( n, [ tg_w n ] );
+					let o = tg_slider_offset( n, [ tg_w n ] );
+					let e = -( -( [ tg_w n ] 4 ) s );
+					let x = +( +( tg_getx( n ) o ) 2 );
+					if <( tg_selx x ) {
+						let t = -( [ tg_a n ] [ tg_b n ] );
+						if <( t 0 ) {
+							let t = 0;
+						}
+						set [ tg_a n ] = t;
+						let selected = n;
+						call tg_draw( n );
+					}
+					if >( tg_selx +( x s ) ) {
+						let t = +( [ tg_a n ] [ tg_b n ] );
+						if >( t -( [ tg_c n ] [ tg_b n ] ) ) {
+							let t = -( [ tg_c n ] [ tg_b n ] );
+						}
+						set [ tg_a n ] = t;
+						let selected = n;
+						call tg_draw( n );
+					}
 				}
 			}
 		}
@@ -630,7 +699,7 @@ program tgads {
 
 	fxopen 640, 480, "tgads";
 
-	call tg_init( 20 );
+	call tg_init( 25 );
 
 	call tg_button( 1, 0, 10, 32, 80, 26, "Button 1" );
 
@@ -638,25 +707,27 @@ program tgads {
 	call tg_button( 3, 2, 10, 32, 80, 26, "Button 3" );
 	call tg_button( 4, 2, 10, 64, 80, 26, "Button 4" );
 
-	call tg_window( 5, 0, 40, 40, 200, 200, "Window 5" );
-	call tg_minsize( 5, 64 );
-	call tg_sizegad( 6, 5, 180, 180, 16, 16 );
+	call tg_window( 10, 0, 40, 40, 200, 200, "Window 5" );
+	call tg_minsize( 10, 64 );
+	call tg_sizegad( 11, 10, 180, 180, 16, 16 );
+	call tg_hslider( 12, 10, 10, 170, 160, 20, 5, 15 );
+	call tg_anchor( 12, 0, 1, 1, 1 );
 
-	call tg_window( 7, 0, 30, 30, 400, 200, "Window 6" );
-	call tg_minsize( 7, 150 );
-	call tg_button( 8, 7, 10, 32, 80, 26, "Button 7" );
-	call tg_vslide( 9, 7, 370, 32, 20, 120, 5, 15 );
-	call tg_anchor( 9, 1, 0, 1, 1 );
-	call tg_textbox( 10, 7, 10, 64, 80, 28, "Text 9" );
-	call tg_textbox( 11, 7, 100, 160, 260, 28, "Text 10" );
-	call tg_anchor( 11, 0, 1, 1, 1 );
-	call tg_sizegad( 12, 7, 380, 180, 16, 16 );
+	call tg_window( 15, 0, 30, 30, 400, 200, "Window 6" );
+	call tg_minsize( 15, 150 );
+	call tg_button( 16, 15, 10, 32, 80, 26, "Button 7" );
+	call tg_vslider( 17, 15, 370, 32, 20, 120, 5, 15 );
+	call tg_anchor( 17, 1, 0, 1, 1 );
+	call tg_textbox( 18, 15, 10, 64, 80, 28, "Text 9" );
+	call tg_textbox( 19, 15, 100, 160, 260, 28, "Text 10" );
+	call tg_anchor( 19, 0, 1, 1, 1 );
+	call tg_sizegad( 20, 15, 380, 180, 16, 16 );
 
 	let listitems = $fxdir( "." );
 	call sort( listitems );
 
-	call tg_listbox( 13, 7, 100, 32, 260, 120, listitems );
-	call tg_anchor( 13, 1, 1, 1, 1 );
+	call tg_listbox( 21, 15, 100, 32, 260, 120, listitems );
+	call tg_anchor( 21, 1, 1, 1, 1 );
 	call tg_draw( 0 );
 
 	fxshow;
