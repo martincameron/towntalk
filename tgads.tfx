@@ -600,6 +600,24 @@ function parse_rws( rws, arr ) {
 	}
 }
 
+function sort( arr ) {
+	var progress, idx, tmp;
+	let progress = TRUE;
+	while progress {
+		let idx = 1;
+		let progress = FALSE;
+		while <( idx $len( arr ) ) {
+			let tmp = [ arr -( idx 1 ) ];
+			if >( $cmp( tmp [ arr idx ] ) 0 ) {
+				set [ arr -( idx 1 ) ] = [ arr idx ];
+				set [ arr idx ] = tmp;
+				let progress = TRUE;
+			}
+			inc idx;
+		}
+	}
+}
+
 program tgads {
 	var selected;
 	let palette = ${ 0x000000, 0xFFFFFF, 0xA0A0A0, 0x6080B0 };
@@ -635,6 +653,7 @@ program tgads {
 	call tg_sizegad( 12, 7, 380, 180, 16, 16 );
 
 	let listitems = $fxdir( "." );
+	call sort( listitems );
 
 	call tg_listbox( 13, 7, 100, 32, 260, 120, listitems );
 	call tg_anchor( 13, 1, 1, 1, 1 );

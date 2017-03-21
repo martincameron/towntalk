@@ -1999,7 +1999,7 @@ static int evaluate_sflen_expression( struct expression *this, struct variable *
 
 static int evaluate_scmp_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	int ret;
+	int ret, val;
 	struct element *arr1, *arr2;
 	struct expression *parameter = this->parameters;
 	struct variable str1 = { 0, NULL }, str2 = { 0, NULL };
@@ -2012,13 +2012,18 @@ static int evaluate_scmp_expression( struct expression *this, struct variable *v
 			arr2 = str2.element_value;
 			if( arr1 && arr1->string && arr2 && arr2->string ) {
 				dispose_variable( result );
-				if( arr1->length == arr2->length && str1.integer_value == str2.integer_value ) {
-					result->integer_value = memcmp( arr1->string, arr2->string, arr1->length );
-				} else if( arr1->length > arr2->length || str1.integer_value > str2.integer_value ){
-					result->integer_value = 1;
+				if( arr1->length > arr2->length ) {
+					val = memcmp( arr1->string, arr2->string, arr2->length );
+					if( val == 0 ) {
+						val = 1;
+					}
 				} else {
-					result->integer_value = -1;
+					val = memcmp( arr1->string, arr2->string, arr1->length );
+					if( val == 0 && arr1->length < arr2->length ) {
+						val = -1;
+					}
 				}
+				result->integer_value = val;
 				result->element_value = NULL;
 			} else {
 				ret = throw( exception, this, 0, "Not a string." );
