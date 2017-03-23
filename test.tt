@@ -99,7 +99,7 @@ function testline() {
 	let x = $line( ${-} );
 	let y = $line( ${-} );
 	call assert( =( -( y x ) 1 ), $line( ${-} ) );
-	try { call $line( 0 ); } catch e {}
+	try { call $line( a ); } catch e {}
 	call assert( e, $line( ${-} ) );
 }
 

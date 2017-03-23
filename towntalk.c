@@ -2377,7 +2377,7 @@ static int evaluate_sline_expression( struct expression *this, struct variable *
 	struct variable elem = { 0, NULL };
 	int ret = parameter->evaluate( parameter, variables, &elem, exception );
 	if( ret ) {
-		if( elem.element_value && elem.element_value->line >= 0 ) {
+		if( elem.element_value && elem.element_value->array == NULL ) {
 			dispose_variable( result );
 			result->integer_value = elem.element_value->line;
 			result->element_value = NULL;
