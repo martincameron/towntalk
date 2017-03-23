@@ -8,6 +8,12 @@ array a;
 
 include "hello.tt";
 
+function assert( value, line ) {
+	if !( value ) {
+		throw $str( "Assertion failed on line " line );
+	}
+}
+
 function testvoid() {
 }
 
@@ -88,6 +94,15 @@ function testswitch() {
 	}
 }
 
+function testline() {
+	var x, y, e;
+	let x = $line( ${-} );
+	let y = $line( ${-} );
+	call assert( =( -( y x ) 1 ), $line( ${-} ) );
+	try { call $line( 0 ); } catch e {}
+	call assert( e, $line( ${-} ) );
+}
+
 program test {
 	call hello();
 	if testvoid() {
@@ -97,5 +112,7 @@ program test {
 	call testarray();
 	call testfact();
 	call testswitch();
+	call testline();
+
 	print "Tests passed.";
 }

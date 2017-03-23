@@ -123,6 +123,7 @@
 		$parse(str)              Parse string into element list.
 		$next(elem)              Get the next element in the list or null.
 		$child(elem)             Get the first child element or null.
+		$line(elem)              Get the line number of the element.
 		$quote(str)              Encode byte string with quotes and escapes.
 		$unquote(str)            Decode quoted-string into byte string.
 */
@@ -2370,6 +2371,24 @@ static int evaluate_sunquote_expression( struct expression *this, struct variabl
 	return ret;
 }
 
+static int evaluate_sline_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	struct expression *parameter = this->parameters;
+	struct variable elem = { 0, NULL };
+	int ret = parameter->evaluate( parameter, variables, &elem, exception );
+	if( ret ) {
+		if( elem.element_value && elem.element_value->line >= 0 ) {
+			dispose_variable( result );
+			result->integer_value = elem.element_value->line;
+			result->element_value = NULL;
+		} else {
+			ret = throw( exception, this, 0, "Not an element." );
+		}
+		dispose_variable( &elem );
+	}
+	return ret;
+}
+
 static struct operator operators[] = {
 	{ "%", '%', 2, &evaluate_integer_expression, &operators[ 1 ] },
 	{ "&", '&', 2, &evaluate_integer_expression, &operators[ 2 ] },
@@ -2408,7 +2427,8 @@ static struct operator operators[] = {
 	{ "$child",'$', 1, &evaluate_schild_expression, &operators[ 35 ] },
 	{ "$parse",'$', 1, &evaluate_sparse_expression, &operators[ 36 ] },
 	{ "$quote",'$', 1, &evaluate_squote_expression, &operators[ 37 ] },
-	{ "$unquote",'$', 1, &evaluate_sunquote_expression, NULL }
+	{ "$unquote",'$', 1, &evaluate_sunquote_expression, &operators[ 38 ] },
+	{ "$line",'$', 1, &evaluate_sline_expression, NULL }
 };
 
 static struct operator* get_operator( char *name, struct environment *env ) {
