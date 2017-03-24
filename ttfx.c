@@ -172,7 +172,8 @@ static int execute_fxopen_statement( struct statement *this, struct variable *va
 static int execute_fxsurface_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	int ret, surf, width, height, len, idx = 0;
-	struct variable params[ 4 ], *array;
+	struct variable params[ 4 ], *values;
+	struct array *arr;
 	Uint32 *pixels;
 	struct SDL_Surface *surface = NULL;
 	struct expression *expr = this->source;
@@ -194,17 +195,18 @@ static int execute_fxsurface_statement( struct statement *this, struct variable 
 					32, 0xFF000000, 0x00FF0000, 0x0000FF00, 0x000000FF );
 				if( surface ) {
 					if( params[ 3 ].element_value ) {
-						array = params[ 3 ].element_value->array;
-						if( array ) {
+						if( params[ 3 ].element_value->line < 0 ) {
+							arr = ( struct array * ) params[ 3 ].element_value;
+							values = arr->array;
 							if( SDL_LockSurface( surface ) == 0 ) {
 								idx = 0;
-								len = params[ 3 ].element_value->line;
+								len = arr->length;
 								if( len > width * height ) {
 									len = width * height;
 								}
 								pixels = ( Uint32 * ) surface->pixels;
 								while( idx < len ) {
-									pixels[ idx ] = array[ idx ].integer_value;
+									pixels[ idx ] = values[ idx ].integer_value;
 									idx++;
 								}
 								SDL_UnlockSurface( surface );
