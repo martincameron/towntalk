@@ -25,19 +25,19 @@ int main( int argc, char **argv ) {
 				if( env->entry_point ) {
 					/* Evaluate entry-point function. */
 					result.integer_value = except.integer_value = 0;
-					result.element_value = except.element_value = NULL;
+					result.string_value = except.string_value = NULL;
 					expr.line = env->entry_point->line;
 					expr.function = env->entry_point;
 					expr.parameters = NULL;
 					expr.evaluate = &evaluate_function_expression;
 					if( expr.evaluate( &expr, NULL, &result, &except ) ) {
 						exit_code = EXIT_SUCCESS;
-					} else if( except.element_value && except.element_value->string == NULL ) {
+					} else if( except.string_value && except.string_value->string == NULL ) {
 						exit_code = except.integer_value;
 					} else {
 						fprintf( stderr, "Unhandled exception %d.\n", except.integer_value );
-						if( except.element_value && except.element_value->string ) {
-							fprintf( stderr, "%s\n", except.element_value->string );
+						if( except.string_value && except.string_value->string ) {
+							fprintf( stderr, "%s\n", except.string_value->string );
 						}
 					}
 					dispose_variable( &result );

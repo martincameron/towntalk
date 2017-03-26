@@ -45,7 +45,7 @@ static void mix_channel( struct fxchannel *channel, int *output, int count ) {
 	int idx, end, loop, llen, lend, spos, lamp, ramp, step, sam;
 	char *data;
 	if( channel->volume > 0 && channel->sample
-	&& channel->sample->sample_data.element_value ) {
+	&& channel->sample->sample_data.string_value ) {
 		loop = channel->sample->loop_start << 12;
 		llen = channel->sample->loop_length << 12;
 		lend = loop + llen;
@@ -54,7 +54,7 @@ static void mix_channel( struct fxchannel *channel, int *output, int count ) {
 			lamp = channel->volume * ( 255 - channel->panning );
 			ramp = channel->volume * channel->panning;
 			step = ( channel->frequency << 12 ) / SAMPLE_RATE;
-			data = channel->sample->sample_data.element_value->string;
+			data = channel->sample->sample_data.string_value->string;
 			idx = 0;
 			end = count << 1;
 			while( idx < end ) {
@@ -154,8 +154,8 @@ static int execute_fxopen_statement( struct statement *this, struct variable *va
 			expr = expr->next;
 			ret = expr->evaluate( expr, variables, &caption, exception );
 			if( ret ) {
-				if( caption.element_value->string ) {
-					SDL_WM_SetCaption( caption.element_value->string, "" );
+				if( caption.string_value->string ) {
+					SDL_WM_SetCaption( caption.string_value->string, "" );
 				}
 				if( SDL_SetVideoMode( width.integer_value, height.integer_value, 32, SDL_HWSURFACE ) == NULL ) {
 					ret = throw( exception, this->source, 0, SDL_GetError() );
@@ -194,9 +194,9 @@ static int execute_fxsurface_statement( struct statement *this, struct variable 
 				surface = SDL_CreateRGBSurface( SDL_HWSURFACE, width, height,
 					32, 0xFF000000, 0x00FF0000, 0x0000FF00, 0x000000FF );
 				if( surface ) {
-					if( params[ 3 ].element_value ) {
-						if( params[ 3 ].element_value->line < 0 ) {
-							arr = ( struct array * ) params[ 3 ].element_value;
+					if( params[ 3 ].string_value ) {
+						if( params[ 3 ].string_value->line < 0 ) {
+							arr = ( struct array * ) params[ 3 ].string_value;
 							values = arr->array;
 							if( SDL_LockSurface( surface ) == 0 ) {
 								idx = 0;
@@ -386,7 +386,7 @@ static int execute_fxsample_statement( struct statement *this, struct variable *
 	struct variable *result, struct variable *exception ) {
 	/* fxsample index data$ loopstart looplen; */
 	int ret, loop, llen, lend, idx = 0;
-	struct element *data;
+	struct string *data;
 	struct variable params[ 4 ];
 	struct expression *expr = this->source;
 	struct fxenvironment *fxenv = ( struct fxenvironment * ) this->source->function->env;
@@ -400,7 +400,7 @@ static int execute_fxsample_statement( struct statement *this, struct variable *
 	if( ret ) {
 		idx = params[ 0 ].integer_value;
 		if( idx >= 0 && idx < NUM_SAMPLES ) {
-			data = params[ 1 ].element_value;
+			data = params[ 1 ].string_value;
 			if( data ) {
 				if( data->length < 524200 ) {
 					loop = params[ 2 ].integer_value;
@@ -608,7 +608,7 @@ static int evaluate_smillis_expression( struct expression *this, struct variable
 	struct variable *result, struct variable *exception ) {
 	dispose_variable( result );
 	result->integer_value = SDL_GetTicks();
-	result->element_value = NULL;
+	result->string_value = NULL;
 	return 1;
 }
 
@@ -624,7 +624,7 @@ static int handle_event_expression( struct expression *this, SDL_Event *event,
 		}
 		dispose_variable( result );
 		result->integer_value = event->type;
-		result->element_value = NULL;
+		result->string_value = NULL;
 	}
 	return ret;
 }
@@ -648,7 +648,7 @@ static int evaluate_sxmouse_expression( struct expression *this, struct variable
 	struct variable *result, struct variable *exception ) {
 	dispose_variable( result );
 	SDL_GetMouseState( &result->integer_value, NULL );
-	result->element_value = NULL;
+	result->string_value = NULL;
 	return 1;
 }
 
@@ -656,7 +656,7 @@ static int evaluate_symouse_expression( struct expression *this, struct variable
 	struct variable *result, struct variable *exception ) {
 	dispose_variable( result );
 	SDL_GetMouseState( NULL, &result->integer_value );
-	result->element_value = NULL;
+	result->string_value = NULL;
 	return 1;
 }
 
@@ -664,7 +664,7 @@ static int evaluate_smousekey_expression( struct expression *this, struct variab
 	struct variable *result, struct variable *exception ) {
 	dispose_variable( result );
 	result->integer_value = SDL_GetMouseState( NULL, NULL );
-	result->element_value = NULL;
+	result->string_value = NULL;
 	return 1;
 }
 
@@ -672,7 +672,7 @@ static int evaluate_skeyboard_expression( struct expression *this, struct variab
 	struct variable *result, struct variable *exception ) {
 	dispose_variable( result );
 	result->integer_value = ( ( struct fxenvironment * ) this->function->env )->key;
-	result->element_value = NULL;
+	result->string_value = NULL;
 	return 1;
 }
 
@@ -680,7 +680,7 @@ static int evaluate_skeyshift_expression( struct expression *this, struct variab
 	struct variable *result, struct variable *exception ) {
 	dispose_variable( result );
 	result->integer_value = SDL_GetModState();
-	result->element_value = NULL;
+	result->string_value = NULL;
 	return 1;
 }
 
@@ -688,7 +688,7 @@ static int evaluate_sfxtick_expression( struct expression *this, struct variable
 	struct variable *result, struct variable *exception ) {
 	dispose_variable( result );
 	result->integer_value = ( ( struct fxenvironment * ) this->function->env )->tick;
-	result->element_value = NULL;
+	result->string_value = NULL;
 	return 1;
 }
 
@@ -700,23 +700,25 @@ static int evaluate_sfxdir_expression( struct expression *this, struct variable 
 	struct variable path = { 0, NULL };
 	struct element *elem, *tail, *head = NULL;
 	struct expression *parameter = this->parameters;
-	int len, ret = parameter->evaluate( parameter, variables, &path, exception );
+	int len, line = 1;
+	int ret = parameter->evaluate( parameter, variables, &path, exception );
 	if( ret ) {
-		if( path.element_value && path.element_value->string ) {
-			dir = opendir( path.element_value->string );
+		if( path.string_value && path.string_value->string ) {
+			dir = opendir( path.string_value->string );
 			if( dir ) {
 				dentry = readdir( dir );
 				while( dentry && ret ) {
 					elem = calloc( 1, sizeof( struct element ) );
 					if( elem ) {
-						elem->reference_count = 1;
+						elem->str.reference_count = 1;
+						elem->str.line = line++;
 						len = write_byte_string( dentry->d_name, strlen( dentry->d_name ), NULL );
 						if( len >= 0 ) {
-							elem->string = malloc( len + 1 );
-							if( elem->string ) {
-								write_byte_string( dentry->d_name, strlen( dentry->d_name ), elem->string );
-								elem->string[ len ] = 0;
-								elem->length = len;
+							elem->str.string = malloc( len + 1 );
+							if( elem->str.string ) {
+								write_byte_string( dentry->d_name, strlen( dentry->d_name ), elem->str.string );
+								elem->str.string[ len ] = 0;
+								elem->str.length = len;
 								if( head ) {
 									tail->next = elem;
 									tail = tail->next;
@@ -738,9 +740,9 @@ static int evaluate_sfxdir_expression( struct expression *this, struct variable 
 				if( ret ) {
 					dispose_variable( result );
 					result->integer_value = 0;
-					result->element_value = head;
+					result->string_value = &head->str;
 				} else {
-					dispose_element( head );
+					dispose_string( &head->str );
 				}
 			} else {
 				strncpy( message, strerror( errno ), 63 );
@@ -819,19 +821,19 @@ int main( int argc, char **argv ) {
 					if( SDL_Init( SDL_INIT_VIDEO | SDL_INIT_TIMER ) == 0 ) {
 						/* Evaluate entry-point function. */
 						result.integer_value = except.integer_value = 0;
-						result.element_value = except.element_value = NULL;
+						result.string_value = except.string_value = NULL;
 						expr.line = env->entry_point->line;
 						expr.function = env->entry_point;
 						expr.parameters = NULL;
 						expr.evaluate = &evaluate_function_expression;
 						if( expr.evaluate( &expr, NULL, &result, &except ) ) {
 							exit_code = EXIT_SUCCESS;
-						} else if( except.element_value && except.element_value->string == NULL ) {
+						} else if( except.string_value && except.string_value->string == NULL ) {
 							exit_code = except.integer_value;
 						} else {
 							fprintf( stderr, "Unhandled exception %d.\n", except.integer_value );
-							if( except.element_value && except.element_value->string ) {
-								fprintf( stderr, "%s\n", except.element_value->string );
+							if( except.string_value && except.string_value->string ) {
+								fprintf( stderr, "%s\n", except.string_value->string );
 							}
 						}
 						dispose_variable( &result );
