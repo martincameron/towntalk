@@ -462,34 +462,38 @@ static void dispose_string( struct string *str ) {
 	int idx, len;
 	struct array *arr;
 	struct element *elem;
-	while( str ) {
-		str->reference_count--;
-		if( str->reference_count == 0 ) {
+	if( str->reference_count == 1 ) {
+		if( str->line == 0 ) {
 			free( str->string );
-			if( str->line < 0 ) {
-				arr = ( struct array * ) str;
-				idx = 0, len = arr->length;
-				while( idx < len ) {
-					dispose_variable( &arr->array[ idx++ ] );
+			free( str );
+		} else if( str->line > 0 ) {
+			while( str ) {
+				if( str->reference_count == 1 ) {
+					elem = ( struct element * ) str;
+					if( elem->child ) {
+						dispose_string( &elem->child->str );
+					}
+					elem = elem->next;
+					free( str->string );
+					free( str );
+					str = &elem->str;
+				} else {
+					str->reference_count--;
+					str = NULL;
 				}
-				free( arr->array );
-				free( str );
-				str = NULL;
-			} else if( str->line > 0 ) {
-				elem = ( struct element * ) str;
-				if( elem->child ) {
-					dispose_string( &elem->child->str );
-				}
-				elem = elem->next;
-				free( str );
-				str = &elem->str;
-			} else {
-				free( str );
-				str = NULL;
 			}
 		} else {
-			str = NULL;
+			arr = ( struct array * ) str;
+			idx = 0, len = arr->length;
+			while( idx < len ) {
+				dispose_variable( &arr->array[ idx++ ] );
+			}
+			free( arr->array );
+			free( str->string );
+			free( str );
 		}
+	} else {
+		str->reference_count--;
 	}
 }
 
@@ -1833,52 +1837,52 @@ static int evaluate_sint_expression( struct expression *this, struct variable *v
 
 static int evaluate_sstr_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	int ret = 1, len = 0, vallen;
-	char num[ 24 ], *str = NULL, *new;
+	int ret = 1, len = 0, newlen;
+	char num[ 24 ], *val = NULL, *new;
 	struct expression *parameter = this->parameters;
-	struct variable val = { 0, NULL };
-	struct string *arr;
+	struct variable var = { 0, NULL };
+	struct string *str;
 	while( parameter && ret ) {
-		ret = parameter->evaluate( parameter, variables, &val, exception );
+		ret = parameter->evaluate( parameter, variables, &var, exception );
 		if( ret ) {
-			if( val.string_value && val.string_value->string ) {
-				vallen = val.string_value->length;
-				new = val.string_value->string;
+			if( var.string_value && var.string_value->string ) {
+				newlen = var.string_value->length;
+				new = var.string_value->string;
 			} else {
-				sprintf( num, "%d", val.integer_value );
-				vallen = strlen( num );
+				sprintf( num, "%d", var.integer_value );
+				newlen = strlen( num );
 				new = num;
 			}
-			if( MAX_INTEGER - vallen > len ) {
-				new = cat_string( str, len, new, vallen );
-				free( str );
-				str = new;
-				if( str ) {
-					len += vallen;
+			if( MAX_INTEGER - newlen > len ) {
+				new = cat_string( val, len, new, newlen );
+				free( val );
+				val = new;
+				if( val ) {
+					len += newlen;
 				} else {
 					ret = throw( exception, this, 0, OUT_OF_MEMORY );
 				}
 			} else {
 				ret = throw( exception, this, len, "String too large." );
 			}
-			dispose_variable( &val );
+			dispose_variable( &var );
 			parameter = parameter->next;
 		}
 	}
 	if( ret ) {
-		arr = calloc( 1, sizeof( struct string ) );
-		if( arr ) {
-			arr->reference_count = 1;
-			arr->string = str;
-			arr->length = len;
+		str = calloc( 1, sizeof( struct string ) );
+		if( str ) {
+			str->reference_count = 1;
+			str->string = val;
+			str->length = len;
 			dispose_variable( result );
 			result->integer_value = 0;
-			result->string_value = arr;
+			result->string_value = str;
 		} else {
 			ret = throw( exception, this, 0, OUT_OF_MEMORY );
 		}
 	} else {
-		free( str );
+		free( val );
 	}
 	return ret;
 }
@@ -2033,26 +2037,26 @@ static int evaluate_sflen_expression( struct expression *this, struct variable *
 static int evaluate_scmp_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	int ret, val;
-	struct string *arr1, *arr2;
+	struct string *str1, *str2;
 	struct expression *parameter = this->parameters;
-	struct variable str1 = { 0, NULL }, str2 = { 0, NULL };
-	ret = parameter->evaluate( parameter, variables, &str1, exception );
+	struct variable var1 = { 0, NULL }, var2 = { 0, NULL };
+	ret = parameter->evaluate( parameter, variables, &var1, exception );
 	if( ret ) {
 		parameter = parameter->next;
-		ret = parameter->evaluate( parameter, variables, &str2, exception );
+		ret = parameter->evaluate( parameter, variables, &var2, exception );
 		if( ret ) {
-			arr1 = str1.string_value;
-			arr2 = str2.string_value;
-			if( arr1 && arr1->string && arr2 && arr2->string ) {
+			str1 = var1.string_value;
+			str2 = var2.string_value;
+			if( str1 && str1->string && str2 && str2->string ) {
 				dispose_variable( result );
-				if( arr1->length > arr2->length ) {
-					val = memcmp( arr1->string, arr2->string, arr2->length );
+				if( str1->length > str2->length ) {
+					val = memcmp( str1->string, str2->string, str2->length );
 					if( val == 0 ) {
 						val = 1;
 					}
 				} else {
-					val = memcmp( arr1->string, arr2->string, arr1->length );
-					if( val == 0 && arr1->length < arr2->length ) {
+					val = memcmp( str1->string, str2->string, str1->length );
+					if( val == 0 && str1->length < str2->length ) {
 						val = -1;
 					}
 				}
@@ -2061,9 +2065,9 @@ static int evaluate_scmp_expression( struct expression *this, struct variable *v
 			} else {
 				ret = throw( exception, this, 0, "Not a string." );
 			}
-			dispose_variable( &str2 );
+			dispose_variable( &var2 );
 		}
-		dispose_variable( &str1 );
+		dispose_variable( &var1 );
 	}
 	return ret;
 }
@@ -2100,10 +2104,10 @@ static int evaluate_ssub_expression( struct expression *this, struct variable *v
 	struct variable *result, struct variable *exception ) {
 	char *data;
 	int ret, offset, length;
-	struct string *arr;
+	struct string *str;
 	struct expression *parameter = this->parameters;
-	struct variable str = { 0, NULL }, idx = { 0, NULL }, len = { 0, NULL }, *var;
-	ret = parameter->evaluate( parameter, variables, &str, exception );
+	struct variable var = { 0, NULL }, idx = { 0, NULL }, len = { 0, NULL }, *arr;
+	ret = parameter->evaluate( parameter, variables, &var, exception );
 	if( ret ) {
 		parameter = parameter->next;
 		ret = parameter->evaluate( parameter, variables, &idx, exception );
@@ -2111,39 +2115,39 @@ static int evaluate_ssub_expression( struct expression *this, struct variable *v
 			parameter = parameter->next;
 			ret = parameter->evaluate( parameter, variables, &len, exception );
 			if( ret ) {
-				if( str.string_value && str.string_value->string ) {
-					if( str.string_value->line < 0 ) {
-						length = ( ( struct array * ) str.string_value )->length;
+				if( var.string_value && var.string_value->string ) {
+					if( var.string_value->line < 0 ) {
+						length = ( ( struct array * ) var.string_value )->length;
 					} else {
-						length = str.string_value->length;
+						length = var.string_value->length;
 					}
 					if( idx.integer_value >= 0 && len.integer_value >= 0
 						&& MAX_INTEGER - len.integer_value >= idx.integer_value
 						&& idx.integer_value + len.integer_value <= length ) {
-						arr = calloc( 1, sizeof( struct string ) );
-						if( arr ) {
-							arr->reference_count = 1;
-							arr->string = malloc( sizeof( char ) * ( len.integer_value + 1 ) );
-							if( arr->string ) {
-								arr->length = len.integer_value;
-								if( str.string_value->line < 0 ) {
-									data = arr->string;
-									var = ( ( struct array * ) str.string_value )->array;
+						str = calloc( 1, sizeof( struct string ) );
+						if( str ) {
+							str->reference_count = 1;
+							str->string = malloc( sizeof( char ) * ( len.integer_value + 1 ) );
+							if( str->string ) {
+								str->length = len.integer_value;
+								if( var.string_value->line < 0 ) {
+									data = str->string;
+									arr = ( ( struct array * ) var.string_value )->array;
 									offset = 0;
 									while( offset < len.integer_value ) {
-										data[ offset ] = var[ offset + idx.integer_value ].integer_value;
+										data[ offset ] = arr[ offset + idx.integer_value ].integer_value;
 										offset++;
 									}
 								} else {
-									memcpy( arr->string, &str.string_value->string[ idx.integer_value ],
+									memcpy( str->string, &var.string_value->string[ idx.integer_value ],
 										sizeof( char ) * len.integer_value );
 								}
-								arr->string[ len.integer_value ] = 0;
+								str->string[ len.integer_value ] = 0;
 								dispose_variable( result );
 								result->integer_value = 0;
-								result->string_value = arr;
+								result->string_value = str;
 							} else {
-								free( arr );
+								free( str );
 								ret = throw( exception, this, 0, OUT_OF_MEMORY );
 							}
 						} else {
@@ -2159,7 +2163,7 @@ static int evaluate_ssub_expression( struct expression *this, struct variable *v
 			}
 			dispose_variable( &idx );
 		}
-		dispose_variable( &str );
+		dispose_variable( &var );
 	}
 	return ret;
 }
@@ -2215,23 +2219,23 @@ static int evaluate_sargc_expression( struct expression *this, struct variable *
 static int evaluate_sargv_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	int ret;
-	struct string *arr;
+	struct string *str;
 	struct expression *parameter = this->parameters;
 	struct variable idx = { 0, NULL };
 	ret = parameter->evaluate( parameter, variables, &idx, exception );
 	if( ret ) {
 		if( idx.integer_value >= 0 && idx.integer_value < this->function->env->argc ) {
-			arr = calloc( 1, sizeof( struct string ) );
-			if( arr ) {
-				arr->reference_count = 1;
-				arr->string = new_string( this->function->env->argv[ idx.integer_value ] );
-				if( arr->string ) {
-					arr->length = strlen( arr->string );
+			str = calloc( 1, sizeof( struct string ) );
+			if( str ) {
+				str->reference_count = 1;
+				str->string = new_string( this->function->env->argv[ idx.integer_value ] );
+				if( str->string ) {
+					str->length = strlen( str->string );
 					dispose_variable( result );
 					result->integer_value = 0;
-					result->string_value = arr;
+					result->string_value = str;
 				} else {
-					free( arr );
+					free( str );
 					ret = throw( exception, this, 0, OUT_OF_MEMORY );
 				}
 			} else {
@@ -2249,18 +2253,18 @@ static int evaluate_stime_expression( struct expression *this, struct variable *
 	struct variable *result, struct variable *exception ) {
 	int ret = 1;
 	time_t seconds = time( NULL );
-	struct string *arr = calloc( 1, sizeof( struct string ) );
-	if( arr ) {
-		arr->reference_count = 1;
-		arr->string = new_string( ctime( &seconds ) );
-		if( arr->string ) {
-			arr->length = strlen( arr->string );
-			arr->string[ arr->length - 1 ] = 0;
+	struct string *str = calloc( 1, sizeof( struct string ) );
+	if( str ) {
+		str->reference_count = 1;
+		str->string = new_string( ctime( &seconds ) );
+		if( str->string ) {
+			str->length = strlen( str->string );
+			str->string[ str->length - 1 ] = 0;
 			dispose_variable( result );
 			result->integer_value = seconds;
-			result->string_value = arr;
+			result->string_value = str;
 		} else {
-			free( arr );
+			free( str );
 			ret = throw( exception, this, 0, OUT_OF_MEMORY );
 		}
 	} else {
