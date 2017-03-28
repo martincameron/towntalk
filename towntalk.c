@@ -1,5 +1,9 @@
 
+#if defined( __GNUC__ )
+#define alloca( size ) __builtin_alloca( size )
+#else
 #include "alloca.h"
+#endif
 #include "errno.h"
 #include "stdio.h"
 #include "stdlib.h"
@@ -128,12 +132,12 @@
 		$unquote(str)            Decode quoted-string into byte string.
 */
 
-static const int MAX_INTEGER = 0x7FFFFFFF;
+static const int MAX_INTEGER = ( 1 << ( sizeof( int ) * 8 - 1 ) ) - 1u;
 static const char *OUT_OF_MEMORY = "Out of memory.";
 
 /* Reference-counted string. */
 struct string {
-	long reference_count;
+	size_t reference_count;
 	int length, line;
 	char *string;
 };
