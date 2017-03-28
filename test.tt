@@ -21,9 +21,7 @@ function testvars(x) {
 	var y;
 	let y = x;
 	let g = y;
-	if !('( g = ONE ) ) {
-		throw "testvars()";
-	}
+	call assert( =( g ONE ), $line( ${-} ) );
 }
 
 function testarray() {
@@ -38,10 +36,21 @@ function testarray() {
 		throw 0;
 	} catch err {
 	}
+	call assert( =( err 2 ), $line( ${-} ) );
 	dim [ a 1 ];
-	if '( !('( err = 2 ) ) || $cmp( [ a 0 ] "a" ) ) {
-		throw "testarray()";
-	}
+	call assert( =( $cmp( [ a 0 ] "a" ) 0 ), $line( ${-} ) );
+	let a = ${ 0, $str( "\"one" "\"" ), $tup( "\\two\\"2 ), "\063", ${ four(4) }, 84, 84 };
+	let a = $parse( $arr( a ) );
+	call assert( =( $len( a ) 7 ), $line( ${-} ) );
+	call assert( =( [ a 0 ] 0 ), $line( ${-} ) );
+	call assert( =( $cmp( [ a 1 ] "\"one\"" ) 0 ), $line( ${-} ) );
+	call assert( =( $cmp( [ a 2 ] "\\two\\" ) 0 ), $line( ${-} ) );
+	call assert( =( [ a 2 ] 2 ), $line( ${-} ) );
+	call assert( =( $cmp( [ a 3 ] "3" ) 0 ), $line( ${-} ) );
+	call assert( =( $cmp( [ a 4 ] "four" ) 0 ), $line( ${-} ) );
+	call assert( =( $cmp( $child( $next( [ a 4 ] ) ) "4" ) 0 ), $line( ${-} ) );
+	call assert( =( $cmp( $sub( a, 5, 2 ) "TT" ) 0 ), $line( ${-} ) );
+	call assert( =( $cmp( a "#Array#" ) 0 ), $line( ${-} ) );
 }
 
 function testfact() {
@@ -61,37 +70,53 @@ function fact( x ) {
 function testswitch() {
 	var x;
 	switch $tup( "a" 1 ) {
-		case 1 {
-			let x = 0;
-		}
-		case "a" {
-			let x = 0;
-		}
-		case $tup( "a" 1 ) {
-			inc x;
-		}
+		case 1   { let x = 0; }
+		case "a" { let x = 0; }
+		case $tup( "a" 1 ) { inc x; }
 	}
 	switch "a" {
-		case "a" {
-			inc x;
-		}
+		case "a" { inc x; }
 	}
 	switch 1 {
-		case 1 {
-			inc x;
-		}
-		default {
-			let x = 0;
-		}
+		case 1 { inc x; }
+		default { let x = 0; }
 	}
 	switch 2 {
-		default {
-			inc x;
-		}
+		default { inc x; }
 	}
-	if !('( x = 4 ) ) {
-		throw "testswitch()";
-	}
+	call assert( =( x 4 ), $line( ${-} ) );
+}
+
+function testfile() {
+	var f;
+	let f = $load( "test.tt" );
+	call assert( =( $len( f ) $flen( "test.tt" ) ), $line( ${-} ) );
+	call assert( =( $cmp( $parse( f ) "rem" ) 0 ), $line( ${-} ) );
+}
+
+function testargs() {
+	call assert( >( $argc 0 ), $line( ${-} ) );
+	call assert( =( $cmp( $argv( 0 ) "test.tt" ) 0 ), $line( ${-} ) );
+}
+
+function testtime() {
+	call assert( =( $len( $time ) 25 ), $line( ${-} ) );
+}
+
+function testchild() {
+	var e;
+	let e = ${ ( a ) };
+	call assert( =( $cmp( $child( e ), "a" ) 0 ), $line( ${-} ) );
+	try { call $child( 0 ); } catch e {}
+	call assert( e, $line( ${-} ) );
+}
+
+function testnext() {
+	var e;
+	let e = ${ 0 a };
+	call assert( =( $cmp( $next( e ), "a" ) 0 ), $line( ${-} ) );
+	try { call $next( 0 ); } catch e {}
+	call assert( e, $line( ${-} ) );
 }
 
 function testline() {
@@ -103,6 +128,18 @@ function testline() {
 	call assert( e, $line( ${-} ) );
 }
 
+function testquote() {
+	var s;
+	let s = $quote( $str( "\"\\" $asc( 127 ) ) );
+	call assert( =( $cmp( s, "\"\\\"\\\\\\177\"" ) 0 ), $line( ${-} ) );
+}
+
+function testunquote() {
+	var s;
+	let s = $unquote( "\"\\\\\\176\"" );
+	call assert( =( $cmp( s, "\\~" ) 0 ), $line( ${-} ) );
+}
+
 program test {
 	call hello();
 	if testvoid() {
@@ -112,7 +149,15 @@ program test {
 	call testarray();
 	call testfact();
 	call testswitch();
+
+	call testfile();
+	call testargs();
+	call testtime();
+	call testchild();
+	call testnext();
 	call testline();
+	call testquote();
+	call testunquote();
 
 	print "Tests passed.";
 }
