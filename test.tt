@@ -87,6 +87,148 @@ function testswitch() {
 	call assert( =( x 4 ), $line( ${-} ) );
 }
 
+function testarith() {
+	var e;
+	call assert( =( +( +( 1 1 ) +( 1 1 ) ) 4 ), $line( ${-} ) );
+	call assert( =( +( 1 1 ) 2 ), $line( ${-} ) );
+	call assert( =( -( 1 1 ) 0 ), $line( ${-} ) );
+	call assert( =( *( 2 2 ) 4 ), $line( ${-} ) );
+	call assert( =( /( 6 2 ) 3 ), $line( ${-} ) );
+	try { call /( 1 0 ); } catch e {}
+	call assert( e, $line( ${-} ) );
+	call assert( =( %( 6 4 ) 2 ), $line( ${-} ) );
+	let e = 0;
+	try { call %( 1 0 ); } catch e {}
+	call assert( e, $line( ${-} ) );
+	call assert( =( >>( -8 1 ) -4 ), $line( ${-} ) );
+	call assert( =( 1 1 ), $line( ${-} ) );
+	call assert( =( =( 1 0 ) 0 ), $line( ${-} ) );
+	call assert( <( 0 1 ), $line( ${-} ) );
+	call assert( =( <( 1 1 ) 0 ), $line( ${-} ) );
+	call assert( <e( 0 1 ), $line( ${-} ) );
+	call assert( <e( 1 1 ), $line( ${-} ) );
+	call assert( =( <e( 1 0 ) 0 ), $line( ${-} ) );
+	call assert( >( 1 0 ), $line( ${-} ) );
+	call assert( =( >( 1 1 ) 0 ), $line( ${-} ) );
+	call assert( >e( 1 0 ), $line( ${-} ) );
+	call assert( >e( 1 1 ), $line( ${-} ) );
+	call assert( =( >e( 0 1 ) 0 ), $line( ${-} ) );
+	call assert( =( &( 1 2 ) 0 ), $line( ${-} ) );
+	call assert( =( &( 2 2 ) 2 ), $line( ${-} ) );
+	call assert( =( |( 1 2 ) 3 ), $line( ${-} ) );
+	call assert( =( ^( 1 0 ) 1 ), $line( ${-} ) );
+	call assert( =( ^( 1 1 ) 0 ), $line( ${-} ) );
+	call assert( ~( 0 ), $line( ${-} ) );
+}
+
+function testlogic() {
+	call assert( =( !( 0 ) 1 ), $line( ${-} ) );
+	call assert( =( !( 1 ) 0 ), $line( ${-} ) );
+	call assert( =( !( "" ) 0 ), $line( ${-} ) );
+	call assert( =( &&( 0 0 ) 0 ), $line( ${-} ) );
+	call assert( =( &&( 0 1 ) 0 ), $line( ${-} ) );
+	call assert( =( &&( 1 0 ) 0 ), $line( ${-} ) );
+	call assert( =( &&( 1 1 ) 1 ), $line( ${-} ) );
+	call assert( =( &&( 1 "a" ) 1 ), $line( ${-} ) );
+	call assert( =( &&( "a" 1 ) 1 ), $line( ${-} ) );
+	call assert( =( &&( 0 /( 1 0 ) ) 0 ), $line( ${-} ) );
+	call assert( =( ||( 0 0 ) 0 ), $line( ${-} ) );
+	call assert( =( ||( 0 1 ) 1 ), $line( ${-} ) );
+	call assert( =( ||( 1 0 ) 1 ), $line( ${-} ) );
+	call assert( =( ||( 1 1 ) 1 ), $line( ${-} ) );
+	call assert( =( ||( 0 "a" ) 1 ), $line( ${-} ) );
+	call assert( =( ||( "a" 0 ) 1 ), $line( ${-} ) );
+	call assert( =( ||( 1 /( 1 0 ) ) 1 ), $line( ${-} ) );
+}
+
+function testcmp() {
+	var e;
+	try { call $cmp( 0 "" ); } catch e {}
+	call assert( e, $line( ${-} ) );
+	let e = 0;
+	try { call $chr( "" 0 ); } catch e {}
+	call assert( =( $cmp( "0" "0" ) 0 ), $line( ${-} ) );
+	call assert( >( $cmp( "1" "0" ) 0 ), $line( ${-} ) );
+	call assert( <( $cmp( "0" "1" ) 0 ), $line( ${-} ) );
+	call assert( >( $cmp( "aa" "a" ) 0 ), $line( ${-} ) );
+	call assert( <( $cmp( "a" "aa" ) 0 ), $line( ${-} ) );
+	call assert( <( $cmp( "b" "ba" ) 0 ), $line( ${-} ) );
+}
+
+function testcat() {
+	call assert( =( $cmp( $cat( 0 ) "0" ) 0 ), $line( ${-} ) );
+	call assert( =( $cmp( $cat( 0 1 ) "01" ) 0 ), $line( ${-} ) );
+	call assert( =( $cmp( $cat( "" 0 ) "0" ) 0 ), $line( ${-} ) );
+	call assert( =( $cmp( $cat( 0 "" ) "0" ) 0 ), $line( ${-} ) );
+	call assert( =( $cmp( $cat( 0 "1" "2" ) "012" ) 0 ), $line( ${-} ) );
+	call assert( =( $cmp( $cat( a ) a ) 0 ), $line( ${-} ) );
+}
+
+function testchr() {
+	var e;
+	try { call $chr( 0 0 ); } catch e {}
+	call assert( e, $line( ${-} ) );
+	let e = 0;
+	try { call $chr( "" 0 ); } catch e {}
+	call assert( e, $line( ${-} ) );
+	call assert( =( $chr( "~" 0 ) 126 ), $line( ${-} ) );	
+}
+
+function testsub() {
+	var e;
+	try { call $sub( 0 0 0 ); } catch e {}
+	call assert( e, $line( ${-} ) );
+	dim [ a 1 ];
+	let e = 0;
+	try { call $sub( a 1 1 ); } catch e {}
+	call assert( e, $line( ${-} ) );
+	let e = 0;
+	try { call $sub( "a" 1 1 ); } catch e {}
+	call assert( e, $line( ${-} ) );
+	let e = 0;
+	try { call $sub( "a" -1 1 ); } catch e {}
+	call assert( e, $line( ${-} ) );
+	let e = 0;
+	try { call $sub( "a" 0 -1 ); } catch e {}
+	call assert( e, $line( ${-} ) );
+	call assert( =( $cmp( $sub( "abc" 1 1 ) "b" ) 0 ), $line( ${-} ) );
+	let a = ${ 65, 66, 67 };
+	call assert( =( $cmp( $sub( a 0 3 ) "ABC" ) 0 ), $line( ${-} ) );
+}
+
+function testasc() {
+	call assert( =( $cmp( $asc( 126 ) "~" ) 0 ), $line( ${-} ) );
+}
+
+function testint() {
+	var e;
+	call assert( =( $int( "1" ) 1 ), $line( ${-} ) );
+	call assert( =( $int( "0xA" ) 10 ), $line( ${-} ) );
+	call assert( =( $int( "010" ) 8 ), $line( ${-} ) );
+	try{ call $int( "a" ); } catch e {}
+	call assert( e, $line( ${-} ) );
+	let e = 0;
+	try{ call $int( e ); } catch e {}
+	call assert( e, $line( ${-} ) );
+}
+
+function testlen() {
+	var e;
+	call assert( =( $len( "" ) 0 ), $line( ${-} ) );
+	call assert( =( $len( "a" ) 1 ), $line( ${-} ) );
+	dim [ a 1 ];
+	call assert( =( $len( a ) 1 ), $line( ${-} ) );
+	try{ call $len( 0 ); } catch e {}
+	call assert( e, $line( ${-} ) );
+}
+
+function testtup() {
+	var t;
+	let t = $tup( $cat( "a" "b" ), +( 1 2 ) );
+	call assert( =( t 3 ), $line( ${-} ) );
+	call assert( =( $cmp( t, "ab" ) 0 ), $line( ${-} ) );
+}
+
 function testfile() {
 	var f;
 	let f = $load( "test.tt" );
@@ -142,14 +284,22 @@ function testunquote() {
 
 program test {
 	call hello();
-	if testvoid() {
-		throw "testvoid()";
-	}
+	call assert( =( testvoid() 0 ), $line( ${-} ) );
 	call testvars( ONE );
 	call testarray();
 	call testfact();
 	call testswitch();
 
+	call testarith();
+	call testlogic();
+	call testcmp();
+	call testcat();
+	call testchr();
+	call testsub();
+	call testasc();
+	call testint();
+	call testlen();
+	call testtup();
 	call testfile();
 	call testargs();
 	call testtime();
