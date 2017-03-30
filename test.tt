@@ -2,6 +2,8 @@
 rem { Test }
 
 const ONE = 1;
+const STR = "*";
+const ELE = ${ ( * ) };
 
 global g;
 array a;
@@ -22,6 +24,8 @@ function testvars(x) {
 	let y = x;
 	let g = y;
 	call assert( =( g ONE ), $line( ${-} ) );
+	call assert( =( TRUE 1 ), $line( ${-} ) );
+	call assert( =( FALSE 0 ), $line( ${-} ) );
 }
 
 function testarray() {
@@ -87,6 +91,65 @@ function testswitch() {
 	call assert( =( x 4 ), $line( ${-} ) );
 }
 
+function testif() {
+	var x;
+	if FALSE { call assert( 0, $line( ${-} ) ); }
+	if TRUE { let x = 2; }
+	call assert( =( x 2 ), $line( ${-} ) );
+	if "" { let x = 3; }
+	call assert( =( x 3 ), $line( ${-} ) );
+}
+
+function testwhile() {
+	var e, n;
+	while <( n 1 ) { inc n; }
+	call assert( =( n 1 ), $line( ${-} ) );
+	while <( n 10 ) {
+		break;
+		call assert( FALSE, $line( ${-} ) );
+	}
+	while <( n 10 ) {
+		if =( n 5 ) { break; }
+		inc n;
+		continue;
+		call assert( FALSE, $line( ${-} ) );
+	}
+	call assert( =( n 5 ), $line( ${-} ) );
+	while TRUE {
+		try { break; } catch e {}
+		call assert( FALSE, $line( ${-} ) );
+	}
+	while TRUE {
+		try { throw 0; } catch e { break; }
+		call assert( FALSE, $line( ${-} ) );
+	}
+	while TRUE {
+		return 0;
+		call assert( FALSE, $line( ${-} ) );
+	}
+}
+
+function testtry() {
+	var e;
+	try {} catch e { call assert( FALSE, $line( ${-} ) ); }
+	try {
+		try {
+			throw 1;
+		} catch e {
+			call assert( =( e 1 ), $line( ${-} ) );
+			throw 2;
+		}
+	} catch e {
+	}
+	call assert( =( e 2 ), $line( ${-} ) );
+	try { try { return 0; } catch e {} } catch e {}
+	call assert( FALSE, $line( ${-} ) );
+}
+
+function testinfix() {
+	call assert( '( ONE=1 ), $line( ${-} ) );
+}
+
 function testarith() {
 	var e;
 	call assert( =( +( +( 1 1 ) +( 1 1 ) ) 4 ), $line( ${-} ) );
@@ -148,6 +211,7 @@ function testcmp() {
 	let e = 0;
 	try { call $chr( "" 0 ); } catch e {}
 	call assert( =( $cmp( "0" "0" ) 0 ), $line( ${-} ) );
+	call assert( =( $cmp( STR "*" ) 0 ), $line( ${-} ) );
 	call assert( >( $cmp( "1" "0" ) 0 ), $line( ${-} ) );
 	call assert( <( $cmp( "0" "1" ) 0 ), $line( ${-} ) );
 	call assert( >( $cmp( "aa" "a" ) 0 ), $line( ${-} ) );
@@ -171,7 +235,7 @@ function testchr() {
 	let e = 0;
 	try { call $chr( "" 0 ); } catch e {}
 	call assert( e, $line( ${-} ) );
-	call assert( =( $chr( "~" 0 ) 126 ), $line( ${-} ) );	
+	call assert( =( $chr( "~" 0 ) 126 ), $line( ${-} ) );
 }
 
 function testsub() {
@@ -247,16 +311,15 @@ function testtime() {
 
 function testchild() {
 	var e;
-	let e = ${ ( a ) };
-	call assert( =( $cmp( $child( e ), "a" ) 0 ), $line( ${-} ) );
+	call assert( =( $cmp( $child( ${ ( a ) } ), "a" ) 0 ), $line( ${-} ) );
+	call assert( =( $cmp( $child( ELE ), "*" ) 0 ), $line( ${-} ) );
 	try { call $child( 0 ); } catch e {}
 	call assert( e, $line( ${-} ) );
 }
 
 function testnext() {
 	var e;
-	let e = ${ 0 a };
-	call assert( =( $cmp( $next( e ), "a" ) 0 ), $line( ${-} ) );
+	call assert( =( $cmp( $next( ${ 0 a } ), "a" ) 0 ), $line( ${-} ) );
 	try { call $next( 0 ); } catch e {}
 	call assert( e, $line( ${-} ) );
 }
@@ -289,7 +352,10 @@ program test {
 	call testarray();
 	call testfact();
 	call testswitch();
-
+	call testif();
+	call testwhile();
+	call testtry();
+	call testinfix();
 	call testarith();
 	call testlogic();
 	call testcmp();
