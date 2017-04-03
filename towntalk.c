@@ -115,6 +115,7 @@
 		$chr(str idx)            Character at idx as integer.
 		$sub(str off len)        Substring (or byte array to string).
 		$asc(int)                Character code to string.
+		$hex(int)                Integer to fixed-length signed hex string.
 		$int(str)                String to integer.
 		$len(str)                String/Array length.
 		$tup(str int)            String/Integer tuple.
@@ -2431,6 +2432,42 @@ static int evaluate_sline_expression( struct expression *this, struct variable *
 	return ret;
 }
 
+static int evaluate_shex_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	int ret, len;
+	char *hex;
+	struct string *str;
+	struct variable val = { 0, NULL };
+	ret = this->parameters->evaluate( this->parameters, variables, &val, exception );
+	if( ret ) {
+		str = calloc( 1, sizeof( struct string ) );
+		hex = malloc( ( sizeof( int ) * 2 + 4 ) * sizeof( char ) );
+		if( str && hex ) {
+			if( val.integer_value < 0 ) {
+				len = sprintf( hex, "-0x%08x", ( ~val.integer_value ) + 1 );
+			} else {
+				len = sprintf( hex, " 0x%08x", val.integer_value );
+			}
+			if( len > 0 ) {
+				str->reference_count = 1;
+				str->length = len;
+				str->string = hex;
+				dispose_variable( result );
+				result->integer_value = 0;
+				result->string_value = str;
+			} else {
+				ret = throw( exception, this, len, "Output error." );
+			}
+		} else {
+			free( hex );
+			free( str );
+			ret = throw( exception, this, 0, OUT_OF_MEMORY );
+		}
+		dispose_variable( &val );
+	}
+	return ret;
+}
+
 static struct operator operators[] = {
 	{ "%", '%', 2, &evaluate_integer_expression, &operators[ 1 ] },
 	{ "&", '&', 2, &evaluate_integer_expression, &operators[ 2 ] },
@@ -2470,7 +2507,8 @@ static struct operator operators[] = {
 	{ "$parse",'$', 1, &evaluate_sparse_expression, &operators[ 36 ] },
 	{ "$quote",'$', 1, &evaluate_squote_expression, &operators[ 37 ] },
 	{ "$unquote",'$', 1, &evaluate_sunquote_expression, &operators[ 38 ] },
-	{ "$line",'$', 1, &evaluate_sline_expression, NULL }
+	{ "$line",'$', 1, &evaluate_sline_expression, &operators[ 39 ] },
+	{ "$hex",'$', 1, &evaluate_shex_expression, NULL }
 };
 
 static struct operator* get_operator( char *name, struct environment *env ) {

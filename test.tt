@@ -264,6 +264,12 @@ function testasc() {
 	call assert( =( $cmp( $asc( 126 ) "~" ) 0 ), $line( ${-} ) );
 }
 
+function testhex() {
+	call assert( =( $cmp( $hex(  0x00000000 ) " 0x00000000" ) 0 ), $line( ${-} ) );
+	call assert( =( $cmp( $hex( -0x00000001 ) "-0x00000001" ) 0 ), $line( ${-} ) );
+	call assert( =( $cmp( $hex( -0x80000000 ) "-0x80000000" ) 0 ), $line( ${-} ) );
+}
+
 function testint() {
 	var e;
 	call assert( =( $int( "1" ) 1 ), $line( ${-} ) );
@@ -363,6 +369,7 @@ program test {
 	call testchr();
 	call testsub();
 	call testasc();
+	call testhex();
 	call testint();
 	call testlen();
 	call testtup();
