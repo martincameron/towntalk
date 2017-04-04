@@ -20,6 +20,11 @@ function except( elem ) {
 	throw $tup( elem, $line( elem ) );
 }
 
+function setg( x ) {
+	let g = x;
+	return g;
+}
+
 function testvoid() {
 }
 
@@ -27,7 +32,7 @@ function testvars( x ) {
 	var y;
 	let y = x;
 	call assert( =( y x ), ${-} );
-	let g = y;
+	call setg( y );
 	call assert( =( g x ), ${-} );
 	call assert( =( TRUE 1 ), ${-} );
 	call assert( =( FALSE 0 ), ${-} );
@@ -36,8 +41,10 @@ function testvars( x ) {
 
 function testarray() {
 	var err;
-	try { dim [ except( ${ 1 } ) except( ${ 2 } ) ]; } catch err {}
+	call setg( 0 );
+	try { dim [ except( ${ 1 } ) setg( 2 ) ]; } catch err {}
 	call assert( =( $cmp( err "1" ) 0 ), ${-} );
+	call assert( =( g 0 ), ${-} );
 	let err = 0;
 	try { dim [ a except( ${-} ) ]; } catch err {}
 	call assert( err, ${-} );
@@ -175,8 +182,10 @@ function testinfix() {
 
 function testarith() {
 	var err;
-	try { call +( except( ${ 1 } ) except( ${ 2 } ) ); } catch err {}
+	call setg( 0 );
+	try { call +( except( ${ 1 } ) setg( 2 ) ); } catch err {}
 	call assert( =( $cmp( err "1" ) 0 ), ${-} );
+	call assert( =( g 0 ), ${-} );
 	let err = 0;
 	try { call +( 0 except( ${-} ) ); } catch err {}
 	call assert( err, ${-} );
@@ -221,11 +230,13 @@ function testlogic() {
 	call assert( =( !( 1 ) 0 ), ${-} );
 	call assert( =( !( "" ) 0 ), ${-} );
 	let err = 0;
-	try { call &&( except( ${ 1 } ) except( ${ 2 } ) ); } catch err {}
+	call setg( 0 );
+	try { call &&( except( ${ 1 } ) setg( 2 ) ); } catch err {}
 	call assert( =( $cmp( err "1" ) 0 ), ${-} );
+	call assert( =( g 0 ), ${-} );
 	let err = 0;
-	try { call &&( 1 except( ${-} ) ); } catch err {}
-	call assert( err, ${-} );
+	try { call &&( 1 except( ${ 2 } ) ); } catch err {}
+	call assert( =( $cmp( err "2" ) 0 ), ${-} );
 	call assert( =( &&( 0 0 ) 0 ), ${-} );
 	call assert( =( &&( 0 1 ) 0 ), ${-} );
 	call assert( =( &&( 1 0 ) 0 ), ${-} );
@@ -234,8 +245,10 @@ function testlogic() {
 	call assert( =( &&( "a" 1 ) 1 ), ${-} );
 	call assert( =( &&( 0 except( ${-} ) ) 0 ), ${-} );
 	let err = 0;
-	try { call ||( except( ${ 1 } ) except( ${ 2 } ) ); } catch err {}
+	call setg( 0 );
+	try { call ||( except( ${ 1 } ) setg( 2 ) ); } catch err {}
 	call assert( =( $cmp( err "1" ) 0 ), ${-} );
+	call assert( =( g 0 ), ${-} );
 	let err = 0;
 	try { call ||( 0 except( ${-} ) ); } catch err {}
 	call assert( err, ${-} );
@@ -249,11 +262,20 @@ function testlogic() {
 }
 
 function testcmp() {
-	var e;
-	try { call $cmp( 0 "" ); } catch e {}
-	call assert( e, ${-} );
-	let e = 0;
-	try { call $chr( "" 0 ); } catch e {}
+	var err;
+	call setg( 0 );
+	try { call $cmp( except( ${ 1 } ) setg( 2 ) ); } catch err {}
+	call assert( =( $cmp( err "1" ) 0 ), ${-} );
+	call assert( =( g 0 ), ${-} );
+	let err = 0;
+	try { call $cmp( "" except( ${ 2 } ) ); } catch err {}
+	call assert( =( $cmp( err "2" ) 0 ), ${-} );
+	let err = 0;
+	try { call $cmp( 0 "" ); } catch err {}
+	call assert( err, ${-} );
+	let err = 0;
+	try { call $chr( "" 0 ); } catch err {}
+	call assert( =( $cmp( "" "" ) 0 ), ${-} );
 	call assert( =( $cmp( "0" "0" ) 0 ), ${-} );
 	call assert( =( $cmp( STR "*" ) 0 ), ${-} );
 	call assert( >( $cmp( "1" "0" ) 0 ), ${-} );
@@ -264,6 +286,15 @@ function testcmp() {
 }
 
 function testcat() {
+	var err;
+	call setg( "" );
+	try { call $cat( except( ${ 1 } ) setg( "2" ) ); } catch err {}
+	call assert( =( $cmp( err "1" ) 0 ), ${-} );
+	call assert( =( $cmp( g "" ) 0 ), ${-} );
+	let err = 0;
+	try { call $cat( setg( "1" ) except( ${ 2 } ) ); } catch err {}
+	call assert( =( $cmp( err "2" ) 0 ), ${-} );
+	call assert( =( $cmp( g "1" ) 0 ), ${-} );
 	call assert( =( $cmp( $cat( 0 ) "0" ) 0 ), ${-} );
 	call assert( =( $cmp( $cat( 0 1 ) "01" ) 0 ), ${-} );
 	call assert( =( $cmp( $cat( "" 0 ) "0" ) 0 ), ${-} );
@@ -273,81 +304,125 @@ function testcat() {
 }
 
 function testchr() {
-	var e;
-	try { call $chr( 0 0 ); } catch e {}
-	call assert( e, ${-} );
-	let e = 0;
-	try { call $chr( "" 0 ); } catch e {}
-	call assert( e, ${-} );
+	var err;
+	call setg( 0 );
+	try { call $chr( except( ${ 1 } ) setg( 2 ) ); } catch err {}
+	call assert( =( $cmp( err "1" ) 0 ), ${-} );
+	call assert( =( g 0 ), ${-} );
+	let err = 0;
+	try { call $chr( setg( "1" ) except( ${ 2 } ) ); } catch err {}
+	call assert( =( $cmp( err "2" ) 0 ), ${-} );
+	call assert( =( $cmp( g "1" ) 0 ), ${-} );
+	let err = 0;
+	try { call $chr( 0 0 ); } catch err {}
+	call assert( err, ${-} );
+	let err = 0;
+	try { call $chr( "" 0 ); } catch err {}
+	call assert( err, ${-} );
 	call assert( =( $chr( "~" 0 ) 126 ), ${-} );
 }
 
 function testsub() {
-	var e;
-	try { call $sub( 0 0 0 ); } catch e {}
-	call assert( e, ${-} );
+	var err;
+	call setg( 0 );
+	try { call $sub( except( ${ 1 } ) setg( 2 ) setg( 3 ) ); } catch err {}
+	call assert( =( $cmp( err "1" ) 0 ), ${-} );
+	call assert( =( g 0 ), ${-} );
+	let err = 0;
+	try { call $sub( setg( "1" ) except( ${ 2 } ) setg( 3 ) ); } catch err {}
+	call assert( =( $cmp( err "2" ) 0 ), ${-} );
+	call assert( =( $cmp( g "1" ) 0 ), ${-} );
+	let err = 0;
+	try { call $sub( setg( "1" ) setg( 2 ) except( ${ 3 } ) ); } catch err {}
+	call assert( =( $cmp( err "3" ) 0 ), ${-} );
+	call assert( =( g 2 ), ${-} );
+	let err = 0;
+	try { call $sub( 0 0 0 ); } catch err {}
+	call assert( err, ${-} );
 	dim [ a 1 ];
-	let e = 0;
-	try { call $sub( a 1 1 ); } catch e {}
-	call assert( e, ${-} );
-	let e = 0;
-	try { call $sub( "a" 1 1 ); } catch e {}
-	call assert( e, ${-} );
-	let e = 0;
-	try { call $sub( "a" -1 1 ); } catch e {}
-	call assert( e, ${-} );
-	let e = 0;
-	try { call $sub( "a" 0 -1 ); } catch e {}
-	call assert( e, ${-} );
+	let err = 0;
+	try { call $sub( a 1 1 ); } catch err {}
+	call assert( err, ${-} );
+	let err = 0;
+	try { call $sub( "a" 1 1 ); } catch err {}
+	call assert( err, ${-} );
+	let err = 0;
+	try { call $sub( "a" -1 1 ); } catch err {}
+	call assert( err, ${-} );
+	let err = 0;
+	try { call $sub( "a" 0 -1 ); } catch err {}
+	call assert( err, ${-} );
 	call assert( =( $cmp( $sub( "abc" 1 1 ) "b" ) 0 ), ${-} );
 	let a = ${ 65, 66, 67 };
 	call assert( =( $cmp( $sub( a 0 3 ) "ABC" ) 0 ), ${-} );
 }
 
 function testasc() {
+	var err;
+	try { call $asc( except( ${ 1 } ) ); } catch err {}
+	call assert( =( $cmp( err "1" ) 0 ), ${-} );
 	call assert( =( $cmp( $asc( 126 ) "~" ) 0 ), ${-} );
 }
 
 function testhex() {
+	var err;
+	try { call $hex( except( ${ 1 } ) ); } catch err {}
+	call assert( =( $cmp( err "1" ) 0 ), ${-} );
 	call assert( =( $cmp( $hex(  0x00000000 ) " 0x00000000" ) 0 ), ${-} );
 	call assert( =( $cmp( $hex( -0x00000001 ) "-0x00000001" ) 0 ), ${-} );
 	call assert( =( $cmp( $hex( -0x80000000 ) "-0x80000000" ) 0 ), ${-} );
 }
 
 function testint() {
-	var e;
+	var err;
+	try { call $int( except( ${ 1 } ) ); } catch err {}
+	call assert( =( $cmp( err "1" ) 0 ), ${-} );
+	let err = 0;
+	try { call $int( "a" ); } catch err {}
+	call assert( err, ${-} );
+	let err = 0;
+	try { call $int( err ); } catch err {}
+	call assert( err, ${-} );
 	call assert( =( $int( "1" ) 1 ), ${-} );
 	call assert( =( $int( "0xA" ) 10 ), ${-} );
 	call assert( =( $int( "010" ) 8 ), ${-} );
-	try{ call $int( "a" ); } catch e {}
-	call assert( e, ${-} );
-	let e = 0;
-	try{ call $int( e ); } catch e {}
-	call assert( e, ${-} );
 }
 
 function testlen() {
-	var e;
+	var err;
+	try { call $len( except( ${ 1 } ) ); } catch err {}
+	call assert( =( $cmp( err "1" ) 0 ), ${-} );
+	let err = 0;
+	try { call $len( 0 ); } catch err {}
+	call assert( err, ${-} );
 	call assert( =( $len( "" ) 0 ), ${-} );
 	call assert( =( $len( "a" ) 1 ), ${-} );
 	dim [ a 1 ];
 	call assert( =( $len( a ) 1 ), ${-} );
-	try{ call $len( 0 ); } catch e {}
-	call assert( e, ${-} );
 }
 
 function testtup() {
-	var t;
-	let t = $tup( $cat( "a" "b" ), +( 1 2 ) );
-	call assert( =( t 3 ), ${-} );
-	call assert( =( $cmp( t, "ab" ) 0 ), ${-} );
+	var tup, err;
+	call setg( 0 );
+	try { call $tup( except( ${ 1 } ) setg( 2 ) ); } catch err {}
+	call assert( =( $cmp( err "1" ) 0 ), ${-} );
+	call assert( =( g 0 ), ${-} );
+	let err = 0;
+	try { call $tup( setg( "1" ) except( ${ 2 } ) ); } catch err {}
+	call assert( =( $cmp( err "2" ) 0 ), ${-} );
+	call assert( =( $cmp( g "1" ) 0 ), ${-} );
+	let tup = $tup( $cat( "a" "b" ), +( 1 2 ) );
+	call assert( =( tup 3 ), ${-} );
+	call assert( =( $cmp( tup, "ab" ) 0 ), ${-} );
 }
 
 function testfile() {
-	var f;
-	let f = $load( "test.tt" );
-	call assert( =( $len( f ) $flen( "test.tt" ) ), ${-} );
-	call assert( =( $cmp( $parse( f ) "rem" ) 0 ), ${-} );
+	var str, err;
+	try { call $load( except( ${ 1 } ) ); } catch err {}
+	call assert( =( $cmp( err "1" ) 0 ), ${-} );
+	let str = $load( "test.tt" );
+	call assert( =( $len( str ) $flen( "test.tt" ) ), ${-} );
+	call assert( =( $cmp( $parse( str ) "rem" ) 0 ), ${-} );
 }
 
 function testargs() {
@@ -360,37 +435,56 @@ function testtime() {
 }
 
 function testchild() {
-	var e;
+	var err;
+	try { call $child( except( ${ 1 } ) ); } catch err {}
+	call assert( =( $cmp( err "1" ) 0 ), ${-} );
+	let err = 0;
+	try { call $child( 0 ); } catch err {}
+	call assert( err, ${-} );
 	call assert( =( $cmp( $child( ${ ( a ) } ), "a" ) 0 ), ${-} );
 	call assert( =( $cmp( $child( ELE ), "*" ) 0 ), ${-} );
-	try { call $child( 0 ); } catch e {}
-	call assert( e, ${-} );
 }
 
 function testnext() {
-	var e;
+	var err;
+	try { call $next( except( ${ 1 } ) ); } catch err {}
+	call assert( =( $cmp( err "1" ) 0 ), ${-} );
+	let err = 0;
+	try { call $next( 0 ); } catch err {}
+	call assert( err, ${-} );
 	call assert( =( $cmp( $next( ${ 0 a } ), "a" ) 0 ), ${-} );
-	try { call $next( 0 ); } catch e {}
-	call assert( e, ${-} );
 }
 
 function testline() {
-	var x, y, e;
+	var x, y, err;
+	try { call $line( except( ${ 1 } ) ); } catch err {}
+	call assert( =( $cmp( err "1" ) 0 ), ${-} );
+	let err = 0;
+	try { call $line( a ); } catch err {}
+	call assert( err, ${-} );
 	let x = $line( ${-} );
 	let y = $line( ${-} );
 	call assert( =( -( y x ) 1 ), ${-} );
-	try { call $line( a ); } catch e {}
-	call assert( e, ${-} );
 }
 
 function testquote() {
-	var s;
+	var s, err;
+	try { call $quote( except( ${ 1 } ) ); } catch err {}
+	call assert( =( $cmp( err "1" ) 0 ), ${-} );
+	let err = 0;
+	try { call $quote( 0 ); } catch err {}
+	call assert( err, ${-} );
 	let s = $quote( $str( "\"\\" $asc( 127 ) ) );
 	call assert( =( $cmp( s, "\"\\\"\\\\\\177\"" ) 0 ), ${-} );
 }
 
 function testunquote() {
-	var s;
+	var s, err;
+	try { call $unquote( except( ${ 1 } ) ); } catch err {}
+	call assert( =( $cmp( err "1" ) 0 ), ${-} );
+	let err = 0;
+	try { call $unquote( 0 ); } catch err {}
+	call assert( err, ${-} );
 	let s = $unquote( "\"\\\\\\176\"" );
 	call assert( =( $cmp( s, "\\~" ) 0 ), ${-} );
 }
@@ -425,6 +519,5 @@ program test {
 	call testline();
 	call testquote();
 	call testunquote();
-
 	print "Tests passed.";
 }
