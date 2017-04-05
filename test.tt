@@ -416,22 +416,56 @@ function testtup() {
 	call assert( =( $cmp( tup, "ab" ) 0 ), ${-} );
 }
 
-function testfile() {
+function testload() {
 	var str, err;
 	try { call $load( except( ${ 1 } ) ); } catch err {}
 	call assert( =( $cmp( err "1" ) 0 ), ${-} );
+	let err = 0;
+	try { call $load( 0 ); } catch err {}
+	call assert( err, ${-} );
 	let str = $load( "test.tt" );
 	call assert( =( $len( str ) $flen( "test.tt" ) ), ${-} );
-	call assert( =( $cmp( $parse( str ) "rem" ) 0 ), ${-} );
+	call assert( >( $chr( str 0 ) 0 ), ${-} );
 }
 
-function testargs() {
+function testflen() {
+	var err;
+	try { call $load( except( ${ 1 } ) ); } catch err {}
+	call assert( =( $cmp( err "1" ) 0 ), ${-} );
+	let err = 0;
+	try { call $load( 0 ); } catch err {}
+	call assert( err, ${-} );
+	call assert( =( $len( $load( "test.tt" ) ) $flen( "test.tt" ) ), ${-} );
+}
+
+function testargc() {
 	call assert( >( $argc 0 ), ${-} );
+}
+
+function testargv() {
+	var err;
+	try { call $argv( except( ${ 1 } ) ); } catch err {}
+	call assert( =( $cmp( err "1" ) 0 ), ${-} );
+	let err = 0;
+	try { call $argv( -1 ); } catch err {}
+	call assert( err, ${-} );
 	call assert( =( $cmp( $argv( 0 ) "test.tt" ) 0 ), ${-} );
 }
 
 function testtime() {
 	call assert( =( $len( $time ) 25 ), ${-} );
+}
+
+function testparse() {
+	var elem, err;
+	try { call $parse( except( ${ 1 } ) ); } catch err {}
+	call assert( =( $cmp( err "1" ) 0 ), ${-} );
+	let err = 0;
+	try { call $parse( 0 ); } catch err {}
+	call assert( err, ${-} );
+	let elem = $parse( $load( "test.tt" ) );
+	call assert( =( $cmp( elem "rem" ) 0 ), ${-} );
+	call assert( =( $cmp( $child( $next( elem ) ) "Test" ) 0 ), ${-} );
 }
 
 function testchild() {
@@ -511,9 +545,12 @@ program test {
 	call testint();
 	call testlen();
 	call testtup();
-	call testfile();
-	call testargs();
+	call testload();
+	call testflen();
+	call testargc();
+	call testargv();
 	call testtime();
+	call testparse();
 	call testchild();
 	call testnext();
 	call testline();
