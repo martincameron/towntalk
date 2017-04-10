@@ -18,7 +18,9 @@ struct fxsample {
 
 struct fxchannel {
 	struct fxsample *sample;
-	int sample_pos, frequency, volume, panning;
+	int sample_pos, frequency, volume, panning, sequence_wait;
+	struct variable sequence;
+	char *sequence_cmd;
 };
 
 struct fxenvironment {
@@ -132,6 +134,11 @@ static void dispose_fxenvironment( struct fxenvironment *fxenv ) {
 		idx = 0;
 		while( idx < NUM_SAMPLES ) {
 			dispose_variable( &fxenv->samples[ idx ].sample_data );
+			idx++;
+		}
+		idx = 0;
+		while( idx < NUM_CHANNELS ) {
+			dispose_variable( &fxenv->channels[ idx ].sequence );
 			idx++;
 		}
 		if( fxenv->timer ) {
@@ -542,6 +549,52 @@ static int execute_fxchannel_statement( struct statement *this, struct variable 
 	return ret;
 }
 
+static int execute_fxplay_statement( struct statement *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	/*
+		fxplay channel sequence;
+		32-bit decimal sequencer commands:
+			0iikkkvvcc ins + key + vol/pan + chan
+			1ssssssscc sample offset + chan
+			20ttttwwww ticklen + wait
+		Instrument 0 / key 0 ignored.
+		Instrument >0 sets sample pos to 0.
+		Volume 0-64 Panning 65-99 (center 82)
+	*/
+	int ret, idx = 0;
+	struct variable params[ 2 ];
+	struct expression *expr = this->source;
+	struct fxenvironment *fxenv = ( struct fxenvironment * ) this->source->function->env;
+	memset( params, 0, 2 * sizeof( struct variable ) );
+	ret = expr->evaluate( expr, variables, &params[ idx++ ], exception );
+	expr = expr->next;
+	while( ret && expr ) {
+		ret = expr->evaluate( expr, variables, &params[ idx++ ], exception );
+		expr = expr->next;
+	}
+	if( ret ) {
+		idx = params[ 0 ].integer_value;
+		if( idx >= 0 && idx < NUM_CHANNELS ) {
+			if( params[ 1 ].string_value ) {
+				SDL_LockAudio();
+				fxenv->channels[ idx ].sequence_wait = 0;
+				assign_variable( &params[ 1 ], &fxenv->channels[ idx ].sequence );
+				fxenv->channels[ idx ].sequence_cmd = params[ 1 ].string_value->string;
+				SDL_UnlockAudio();
+			} else {
+				ret = throw( exception, this->source, 0, "Not a string." );
+			}
+		} else {
+			ret = throw( exception, this->source, idx, "Invalid channel index." );
+		}
+	}
+	idx = 0;
+	while( idx < 2 ) {
+		dispose_variable( &params[ idx++ ] );
+	}
+	return ret;
+}
+
 static struct element* parse_fxopen_statement( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message ) {
 	return parse_expr_list_statement( elem, env, func, prev, &execute_fxopen_statement, message );
@@ -602,6 +655,11 @@ static struct element* parse_fxtrigger_statement( struct element *elem, struct e
 static struct element* parse_fxchannel_statement( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message ) {
 	return parse_expr_list_statement( elem, env, func, prev, &execute_fxchannel_statement, message );
+}
+
+static struct element* parse_fxplay_statement( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct statement *prev, char *message ) {
+	return parse_expr_list_statement( elem, env, func, prev, &execute_fxplay_statement, message );
 }
 
 static int evaluate_smillis_expression( struct expression *this, struct variable *variables,
@@ -791,7 +849,8 @@ static struct keyword fxstatements[] = {
 	{ "fxaudio", "x;", &parse_fxaudio_statement, &fxstatements[ 8 ] },
 	{ "fxsample", "xxxx;", &parse_fxsample_statement, &fxstatements[ 9 ] },
 	{ "fxtrigger", "xxxxxxx;", &parse_fxtrigger_statement, &fxstatements[ 10 ] },
-	{ "fxchannel", "xxxx;", &parse_fxchannel_statement, statements }
+	{ "fxchannel", "xxxx;", &parse_fxchannel_statement, &fxstatements[ 11 ] },
+	{ "fxplay", "xx;", &parse_fxplay_statement, statements }
 };
 
 int main( int argc, char **argv ) {

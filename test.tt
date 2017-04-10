@@ -523,6 +523,17 @@ function testunquote() {
 	call assert( =( $cmp( s, "\\~" ) 0 ), ${-} );
 }
 
+function testpack() {
+	var err;
+	try { call $pack( except( ${ 1 } ) ); } catch err {}
+	call assert( =( $cmp( err "1" ) 0 ), ${-} );
+	call assert( =( $cmp( $pack( 0 ), "\0\0\0\0" ) 0 ), ${-} );
+	call assert( =( $cmp( $pack( 1 ), "\0\0\0\1" ) 0 ), ${-} );
+	call assert( =( $cmp( $pack( 0x01020304 ), "\1\2\3\4" ) 0 ), ${-} );
+	let a = ${ 0, 0x1020304 };
+	call assert( =( $cmp( $pack( a ), "\0\0\0\0\1\2\3\4" ) 0 ), ${-} );
+}
+
 program test {
 	call hello();
 	call assert( =( testvoid() 0 ), ${-} );
@@ -556,5 +567,6 @@ program test {
 	call testline();
 	call testquote();
 	call testunquote();
+	call testpack();
 	print "Tests passed.";
 }

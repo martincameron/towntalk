@@ -117,7 +117,7 @@
 		$asc(int)                Character code to string.
 		$hex(int)                Integer to fixed-length signed hex string.
 		$int(str)                String to integer.
-		$len(str)                String/Array length.
+		$len(str/arr)            String/Array length.
 		$tup(str int)            String/Integer tuple.
 		$arr(arr)                Array to element string.
 		$load("abc.bin")         Load raw bytes into string.
@@ -129,6 +129,7 @@
 		$next(elem)              Get the next element in the list or null.
 		$child(elem)             Get the first child element or null.
 		$line(elem)              Get the line number of the element.
+		$pack(int/arr)           Encode integers as big-endian byte string.
 		$quote(str)              Encode byte string with quotes and escapes.
 		$unquote(str)            Decode quoted-string into byte string.
 */
@@ -1677,7 +1678,7 @@ static struct element* parse_local_declaration( struct element *elem, struct env
 	return parse_variable_declaration( elem, env, add_local_variable, message);
 }
 
-static int evaluate_int_not_expression( struct expression *this, struct variable *variables,
+static int evaluate_logical_not_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct variable var = { 0, NULL };
 	int ret = this->parameters->evaluate( this->parameters, variables, &var, exception );
@@ -1736,7 +1737,7 @@ static int evaluate_logical_expression( struct expression *this, struct variable
 	return ret;
 }
 
-static int calculate_integer_operation( struct expression *expr,
+static int calculate_arithmetic_operation( struct expression *expr,
 	int lhs, int rhs, struct variable *result, struct variable *exception ) {
 	int value, ret = 1;
 	switch( expr->index ) {
@@ -1781,7 +1782,7 @@ static int calculate_integer_operation( struct expression *expr,
 	return ret;
 }
 
-static int evaluate_integer_expression( struct expression *this, struct variable *variables,
+static int evaluate_arithmetic_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct variable lhs = { 0, NULL }, rhs = { 0, NULL };
 	struct expression *parameter = this->parameters;
@@ -1790,7 +1791,7 @@ static int evaluate_integer_expression( struct expression *this, struct variable
 		parameter = parameter->next;
 		ret = parameter->evaluate( parameter, variables, &rhs, exception );
 		if( ret ) {
-			ret = calculate_integer_operation( this, lhs.integer_value, rhs.integer_value, result, exception );
+			ret = calculate_arithmetic_operation( this, lhs.integer_value, rhs.integer_value, result, exception );
 			dispose_variable( &rhs );
 		}
 		dispose_variable( &lhs );
@@ -1798,7 +1799,7 @@ static int evaluate_integer_expression( struct expression *this, struct variable
 	return ret;
 }
 
-static int evaluate_fastint_expression( struct expression *this, struct variable *variables,
+static int evaluate_fast_arithmetic_expr( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	int lhs, rhs;
 	struct expression *parameter = this->parameters;
@@ -1813,10 +1814,10 @@ static int evaluate_fastint_expression( struct expression *this, struct variable
 	} else {
 		rhs = variables[ parameter->index ].integer_value;
 	}
-	return calculate_integer_operation( this, lhs, rhs, result, exception );
+	return calculate_arithmetic_operation( this, lhs, rhs, result, exception );
 }
 
-static int evaluate_sint_expression( struct expression *this, struct variable *variables,
+static int evaluate_int_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	int ret, val;
 	char *end;
@@ -1840,7 +1841,7 @@ static int evaluate_sint_expression( struct expression *this, struct variable *v
 	return ret;
 }
 
-static int evaluate_sstr_expression( struct expression *this, struct variable *variables,
+static int evaluate_str_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	int ret = 1, len = 0, newlen;
 	char num[ 24 ], *val = NULL, *new;
@@ -1892,7 +1893,7 @@ static int evaluate_sstr_expression( struct expression *this, struct variable *v
 	return ret;
 }
 
-static int evaluate_sasc_expression( struct expression *this, struct variable *variables,
+static int evaluate_asc_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	int ret;
 	char *chr;
@@ -1920,7 +1921,7 @@ static int evaluate_sasc_expression( struct expression *this, struct variable *v
 	return ret;
 }
 
-static int evaluate_slen_expression( struct expression *this, struct variable *variables,
+static int evaluate_len_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	int ret;
 	struct variable len = { 0, NULL };
@@ -1942,7 +1943,7 @@ static int evaluate_slen_expression( struct expression *this, struct variable *v
 	return ret;
 }
 
-static int evaluate_stup_expression( struct expression *this, struct variable *variables,
+static int evaluate_tup_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	int ret;
 	struct expression *parameter = this->parameters;
@@ -1961,7 +1962,7 @@ static int evaluate_stup_expression( struct expression *this, struct variable *v
 	return ret;
 }
 
-static int evaluate_sload_expression( struct expression *this, struct variable *variables,
+static int evaluate_load_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	long len;
 	char message[ 64 ], *buf;
@@ -2011,7 +2012,7 @@ static int evaluate_sload_expression( struct expression *this, struct variable *
 	return ret;
 }
 
-static int evaluate_sflen_expression( struct expression *this, struct variable *variables,
+static int evaluate_flen_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	long len;
 	char message[ 64 ];
@@ -2039,7 +2040,7 @@ static int evaluate_sflen_expression( struct expression *this, struct variable *
 	return ret;
 }
 
-static int evaluate_scmp_expression( struct expression *this, struct variable *variables,
+static int evaluate_cmp_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	int ret, val;
 	struct string *str1, *str2;
@@ -2077,7 +2078,7 @@ static int evaluate_scmp_expression( struct expression *this, struct variable *v
 	return ret;
 }
 
-static int evaluate_schr_expression( struct expression *this, struct variable *variables,
+static int evaluate_chr_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	int ret;
 	struct expression *parameter = this->parameters;
@@ -2105,7 +2106,7 @@ static int evaluate_schr_expression( struct expression *this, struct variable *v
 	return ret;
 }
 
-static int evaluate_ssub_expression( struct expression *this, struct variable *variables,
+static int evaluate_sub_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	char *data;
 	int ret, offset, length;
@@ -2173,7 +2174,7 @@ static int evaluate_ssub_expression( struct expression *this, struct variable *v
 	return ret;
 }
 
-static int evaluate_sarr_expression( struct expression *this, struct variable *variables,
+static int evaluate_arr_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct string *str;
 	struct array *arr;
@@ -2213,7 +2214,7 @@ static int evaluate_sarr_expression( struct expression *this, struct variable *v
 	return ret;
 }
 
-static int evaluate_sargc_expression( struct expression *this, struct variable *variables,
+static int evaluate_argc_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	dispose_variable( result );
 	result->integer_value = this->function->env->argc;
@@ -2221,7 +2222,7 @@ static int evaluate_sargc_expression( struct expression *this, struct variable *
 	return 1;
 }
 
-static int evaluate_sargv_expression( struct expression *this, struct variable *variables,
+static int evaluate_argv_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	int ret;
 	struct string *str;
@@ -2254,7 +2255,7 @@ static int evaluate_sargv_expression( struct expression *this, struct variable *
 	return ret;
 }
 
-static int evaluate_stime_expression( struct expression *this, struct variable *variables,
+static int evaluate_time_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	int ret = 1;
 	time_t seconds = time( NULL );
@@ -2278,7 +2279,7 @@ static int evaluate_stime_expression( struct expression *this, struct variable *
 	return ret;
 }
 
-static int evaluate_snext_expression( struct expression *this, struct variable *variables,
+static int evaluate_next_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct expression *parameter = this->parameters;
 	struct variable prev = { 0, NULL };
@@ -2301,7 +2302,7 @@ static int evaluate_snext_expression( struct expression *this, struct variable *
 	return ret;
 }
 
-static int evaluate_schild_expression( struct expression *this, struct variable *variables,
+static int evaluate_child_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct expression *parameter = this->parameters;
 	struct variable parent = { 0, NULL };
@@ -2324,7 +2325,7 @@ static int evaluate_schild_expression( struct expression *this, struct variable 
 	return ret;
 }
 
-static int evaluate_sparse_expression( struct expression *this, struct variable *variables,
+static int evaluate_parse_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct expression *parameter = this->parameters;
 	struct variable string = { 0, NULL };
@@ -2349,7 +2350,7 @@ static int evaluate_sparse_expression( struct expression *this, struct variable 
 	return ret;
 }
 
-static int evaluate_squote_expression( struct expression *this, struct variable *variables,
+static int evaluate_quote_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	int ret, length;
 	struct expression *parameter = this->parameters;
@@ -2390,7 +2391,7 @@ static int evaluate_squote_expression( struct expression *this, struct variable 
 	return ret;
 }
 
-static int evaluate_sunquote_expression( struct expression *this, struct variable *variables,
+static int evaluate_unquote_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct expression *parameter = this->parameters;
 	struct variable var = { 0, NULL };
@@ -2414,7 +2415,7 @@ static int evaluate_sunquote_expression( struct expression *this, struct variabl
 	return ret;
 }
 
-static int evaluate_sline_expression( struct expression *this, struct variable *variables,
+static int evaluate_line_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct expression *parameter = this->parameters;
 	struct variable elem = { 0, NULL };
@@ -2432,7 +2433,7 @@ static int evaluate_sline_expression( struct expression *this, struct variable *
 	return ret;
 }
 
-static int evaluate_shex_expression( struct expression *this, struct variable *variables,
+static int evaluate_hex_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	int ret, len;
 	char *hex;
@@ -2468,47 +2469,92 @@ static int evaluate_shex_expression( struct expression *this, struct variable *v
 	return ret;
 }
 
+static int evaluate_pack_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	int ret, idx, len, in;
+	char *out;
+	struct string *str;
+	struct variable val = { 0, NULL }, *src;
+	ret = this->parameters->evaluate( this->parameters, variables, &val, exception );
+	if( ret ) {
+		if( val.string_value && val.string_value->line < 0 ) {
+			src = ( ( struct array * ) val.string_value )->array;
+			len = ( ( struct array * ) val.string_value )->length * 4;
+		} else {
+			src = &val;
+			len = 4;
+		}
+		str = calloc( 1, sizeof( struct string ) );
+		out = malloc( ( len + 1 ) * sizeof( char ) );
+		if( str && out ) {
+			idx = 0;
+			while( idx < len ) {
+				in = src[ idx >> 2 ].integer_value;
+				out[ idx ] = in >> 24;
+				out[ idx + 1 ] = in >> 16;
+				out[ idx + 2 ] = in >> 8;
+				out[ idx + 3 ] = in;
+				idx += 4;
+			}
+			out[ idx ] = 0;
+			str->reference_count = 1;
+			str->length = len;
+			str->string = out;
+			dispose_variable( result );
+			result->integer_value = 0;
+			result->string_value = str;
+		} else {
+			free( out );
+			free( str );
+			ret = throw( exception, this, 0, OUT_OF_MEMORY );
+		}
+		dispose_variable( &val );
+	}
+	return ret;
+}
+
 static struct operator operators[] = {
-	{ "%", '%', 2, &evaluate_integer_expression, &operators[ 1 ] },
-	{ "&", '&', 2, &evaluate_integer_expression, &operators[ 2 ] },
-	{ "*", '*', 2, &evaluate_integer_expression, &operators[ 3 ] },
-	{ "+", '+', 2, &evaluate_integer_expression, &operators[ 4 ] },
-	{ "-", '-', 2, &evaluate_integer_expression, &operators[ 5 ] },
-	{ "/", '/', 2, &evaluate_integer_expression, &operators[ 6 ] },
-	{ "<", '<', 2, &evaluate_integer_expression, &operators[ 7 ] },
-	{ "<e",'L', 2, &evaluate_integer_expression, &operators[ 8 ] },
-	{ ">", '>', 2, &evaluate_integer_expression, &operators[ 9 ] },
-	{ ">e",'G', 2, &evaluate_integer_expression, &operators[ 10 ] },
-	{ ">>",'A', 2, &evaluate_integer_expression, &operators[ 11 ] },
-	{ "^", '^', 2, &evaluate_integer_expression, &operators[ 12 ] },
-	{ "=", '=', 2, &evaluate_integer_expression, &operators[ 13 ] },
-	{ "|", '|', 2, &evaluate_integer_expression, &operators[ 14 ] },
-	{ "~", '~', 1, &evaluate_int_not_expression, &operators[ 15 ] },
+	{ "%", '%', 2, &evaluate_arithmetic_expression, &operators[ 1 ] },
+	{ "&", '&', 2, &evaluate_arithmetic_expression, &operators[ 2 ] },
+	{ "*", '*', 2, &evaluate_arithmetic_expression, &operators[ 3 ] },
+	{ "+", '+', 2, &evaluate_arithmetic_expression, &operators[ 4 ] },
+	{ "-", '-', 2, &evaluate_arithmetic_expression, &operators[ 5 ] },
+	{ "/", '/', 2, &evaluate_arithmetic_expression, &operators[ 6 ] },
+	{ "<", '<', 2, &evaluate_arithmetic_expression, &operators[ 7 ] },
+	{ "<e",'L', 2, &evaluate_arithmetic_expression, &operators[ 8 ] },
+	{ ">", '>', 2, &evaluate_arithmetic_expression, &operators[ 9 ] },
+	{ ">e",'G', 2, &evaluate_arithmetic_expression, &operators[ 10 ] },
+	{ ">>",'A', 2, &evaluate_arithmetic_expression, &operators[ 11 ] },
+	{ "^", '^', 2, &evaluate_arithmetic_expression, &operators[ 12 ] },
+	{ "=", '=', 2, &evaluate_arithmetic_expression, &operators[ 13 ] },
+	{ "|", '|', 2, &evaluate_arithmetic_expression, &operators[ 14 ] },
+	{ "~", '~', 1, &evaluate_logical_not_expression, &operators[ 15 ] },
 	{ "!", '!', 1, &evaluate_logical_expression, &operators[ 16 ] },
 	{ "&&",'&', 2, &evaluate_logical_expression, &operators[ 17 ] },
 	{ "||",'|', 2, &evaluate_logical_expression, &operators[ 18 ] },
-	{ "$int", '$', 1, &evaluate_sint_expression, &operators[ 19 ] },
-	{ "$str", '$',-1, &evaluate_sstr_expression, &operators[ 20 ] },
-	{ "$len", '$', 1, &evaluate_slen_expression, &operators[ 21 ] },
-	{ "$asc", '$', 1, &evaluate_sasc_expression, &operators[ 22 ] },
-	{ "$cmp", '$', 2, &evaluate_scmp_expression, &operators[ 23 ] },
-	{ "$cat", '$',-1, &evaluate_sstr_expression, &operators[ 24 ] },
-	{ "$chr", '$', 2, &evaluate_schr_expression, &operators[ 25 ] },
-	{ "$tup", '$', 2, &evaluate_stup_expression, &operators[ 26 ] },
-	{ "$sub", '$', 3, &evaluate_ssub_expression, &operators[ 27 ] },
-	{ "$arr", '$', 1, &evaluate_sarr_expression, &operators[ 28 ] },
-	{ "$load",'$', 1, &evaluate_sload_expression, &operators[ 29 ] },
-	{ "$flen",'$', 1, &evaluate_sflen_expression, &operators[ 30 ] },
-	{ "$argc",'$', 0, &evaluate_sargc_expression, &operators[ 31 ] },
-	{ "$argv",'$', 1, &evaluate_sargv_expression, &operators[ 32 ] },
-	{ "$time",'$', 0, &evaluate_stime_expression, &operators[ 33 ] },
-	{ "$next",'$', 1, &evaluate_snext_expression, &operators[ 34 ] },
-	{ "$child",'$', 1, &evaluate_schild_expression, &operators[ 35 ] },
-	{ "$parse",'$', 1, &evaluate_sparse_expression, &operators[ 36 ] },
-	{ "$quote",'$', 1, &evaluate_squote_expression, &operators[ 37 ] },
-	{ "$unquote",'$', 1, &evaluate_sunquote_expression, &operators[ 38 ] },
-	{ "$line",'$', 1, &evaluate_sline_expression, &operators[ 39 ] },
-	{ "$hex",'$', 1, &evaluate_shex_expression, NULL }
+	{ "$int", '$', 1, &evaluate_int_expression, &operators[ 19 ] },
+	{ "$str", '$',-1, &evaluate_str_expression, &operators[ 20 ] },
+	{ "$len", '$', 1, &evaluate_len_expression, &operators[ 21 ] },
+	{ "$asc", '$', 1, &evaluate_asc_expression, &operators[ 22 ] },
+	{ "$cmp", '$', 2, &evaluate_cmp_expression, &operators[ 23 ] },
+	{ "$cat", '$',-1, &evaluate_str_expression, &operators[ 24 ] },
+	{ "$chr", '$', 2, &evaluate_chr_expression, &operators[ 25 ] },
+	{ "$tup", '$', 2, &evaluate_tup_expression, &operators[ 26 ] },
+	{ "$sub", '$', 3, &evaluate_sub_expression, &operators[ 27 ] },
+	{ "$arr", '$', 1, &evaluate_arr_expression, &operators[ 28 ] },
+	{ "$load",'$', 1, &evaluate_load_expression, &operators[ 29 ] },
+	{ "$flen",'$', 1, &evaluate_flen_expression, &operators[ 30 ] },
+	{ "$argc",'$', 0, &evaluate_argc_expression, &operators[ 31 ] },
+	{ "$argv",'$', 1, &evaluate_argv_expression, &operators[ 32 ] },
+	{ "$time",'$', 0, &evaluate_time_expression, &operators[ 33 ] },
+	{ "$next",'$', 1, &evaluate_next_expression, &operators[ 34 ] },
+	{ "$child",'$', 1, &evaluate_child_expression, &operators[ 35 ] },
+	{ "$parse",'$', 1, &evaluate_parse_expression, &operators[ 36 ] },
+	{ "$quote",'$', 1, &evaluate_quote_expression, &operators[ 37 ] },
+	{ "$unquote",'$', 1, &evaluate_unquote_expression, &operators[ 38 ] },
+	{ "$line",'$', 1, &evaluate_line_expression, &operators[ 39 ] },
+	{ "$hex",'$', 1, &evaluate_hex_expression, &operators[ 40 ] },
+	{ "$pack",'$', 1, &evaluate_pack_expression, NULL }
 };
 
 static struct operator* get_operator( char *name, struct environment *env ) {
@@ -2577,11 +2623,11 @@ static struct element* parse_operator_expression( struct element *elem, struct e
 				expr->parameters = prev.next;
 				if( message[ 0 ] == 0 ) {
 					if( num_operands == oper->num_operands || ( oper->num_operands < 0 && num_operands > 0 ) ) {
-						if( expr->evaluate == &evaluate_integer_expression ) {
+						if( expr->evaluate == &evaluate_arithmetic_expression ) {
 							if( ( prev.next->evaluate == &evaluate_local || prev.next->evaluate == &evaluate_global )
 							&& ( prev.next->next->evaluate == &evaluate_local || prev.next->next->evaluate == &evaluate_global ) ) {
 								/* Optimization for local/global/constant operands. */
-								expr->evaluate = &evaluate_fastint_expression;
+								expr->evaluate = &evaluate_fast_arithmetic_expr;
 							}
 						}
 						next = next->next;
