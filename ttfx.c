@@ -12,6 +12,21 @@
 #define MAX_SAMPLE_LEN 524200
 #define SAMPLE_RATE 48000
 
+static const int FREQ_TABLE[] = {
+	16726, 16847, 16969, 17092, 17216, 17341, 17467, 17593,
+	17721, 17849, 17978, 18109, 18240, 18372, 18505, 18639,
+	18774, 18910, 19047, 19185, 19324, 19464, 19606, 19748,
+	19891, 20035, 20180, 20326, 20474, 20622, 20771, 20922,
+	21073, 21226, 21380, 21535, 21691, 21848, 22006, 22166,
+	22327, 22488, 22651, 22815, 22981, 23147, 23315, 23484,
+	23654, 23826, 23998, 24172, 24347, 24524, 24701, 24880,
+	25061, 25242, 25425, 25609, 25795, 25982, 26170, 26360,
+	26551, 26743, 26937, 27132, 27329, 27527, 27726, 27927,
+	28130, 28334, 28539, 28746, 28954, 29164, 29375, 29588,
+	29802, 30018, 30236, 30455, 30676, 30898, 31122, 31347,
+	31574, 31803, 32034, 32266, 32500, 32735, 32972, 33211
+};
+
 struct fxsample {
 	int loop_start, loop_length;
 	struct variable sample_data;
@@ -106,7 +121,6 @@ static void process_sequence( struct fxenvironment *fxenv ) {
 						fxenv->tick_len = tick;
 					}
 					channel->sequence_wait = cmd % 10000;
-					/*printf( "seq %d %d\n", fxenv->tick_len, channel->sequence_wait );*/
 				} else {
 					chan = cmd % 100;
 					if( chan + idx < NUM_CHANNELS ) {
@@ -115,7 +129,6 @@ static void process_sequence( struct fxenvironment *fxenv ) {
 							/* 10sssssscc sample offset + chan */
 							spos = cmd / 100 % 1000000;
 							if( spos < MAX_SAMPLE_LEN ) {
-								/*printf( "spos %d\n", spos );*/
 								cmdchan->sample_pos = spos << 12;
 							}
 						} else {
@@ -126,8 +139,8 @@ static void process_sequence( struct fxenvironment *fxenv ) {
 								cmdchan->sample_pos = 0;
 							}
 							key = cmd / 10000 % 1000;
-							if( key > 0 ) {
-								cmdchan->frequency = 8363;
+							if( key > 0 && key < 958 ) {
+								cmdchan->frequency = ( FREQ_TABLE[ key % 96 ] << 4 ) >> ( 9 - key / 96 );
 							}
 							vol = cmd / 100 % 100;
 							if( vol < 65 ) {
@@ -135,7 +148,6 @@ static void process_sequence( struct fxenvironment *fxenv ) {
 							} else {
 								cmdchan->panning = ( ( vol - 65 ) * 15 ) >> 1;
 							}
-							/*printf( "chan %d %d %d %d\n", chan + idx, ins, key, vol );*/
 						}
 					}
 				}
