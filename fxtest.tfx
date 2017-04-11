@@ -31,8 +31,8 @@ program fxtest {
 
 	fxaudio 960;
 	fxsample 1, $sub( image 0 256 ), 0, 256;
-	let t = $fxtick;
 	fxplay 0, $cat( $pack( 8200 ) $pack( 14803200 ) $pack( 8201 ) $pack( 14803201 ) );
+	let t = $fxtick;
 
 	let x = 0;
 	while TRUE {
