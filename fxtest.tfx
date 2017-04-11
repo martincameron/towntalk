@@ -31,11 +31,7 @@ program fxtest {
 
 	fxaudio 960;
 	fxsample 1, $sub( image 0 256 ), 0, 256;
-
-	#fxplay 0, $cat( $pack( 013843200 ) $pack( 015763201 ) );
-
-	fxtrigger 0, 0, 0, 8000, 32, 0, $fxtick;
-	fxtrigger 1, 0, 0, 32000, 32, 255, +( $fxtick 50 );
+	fxplay 0, $cat( $pack( 8200 ) $pack( 13843200 ) $pack( 8201 ) $pack( 15763201 ) );
 
 	let x = 0;
 	while TRUE {
@@ -46,8 +42,7 @@ program fxtest {
 					fxrect 160, 120, 320, 240, 0xFFFFFF;
 					fxblit 0, 0, 0, 320, 240, 160, 120;
 					fxshow;
-					fxchannel 0, +( 8000 *( x 13 ) ), 32, 0;
-					#fxplay 0, $pack( +( *( /( *( x 192 ) 640 ) 10000 ) 3200 )  );
+					fxplay 0, $pack( +( *( /( *( x 192 ) 640 ) 10000 ) 3200 )  );
 					let c = +( c 3 );
 					let x = +( x 8 );
 				}
