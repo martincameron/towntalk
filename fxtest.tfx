@@ -2,7 +2,7 @@
 array image;
 
 program fxtest {
-	var c, x, y, w, h, t;
+	var c, x, y, w, h, s;
 	fxopen 640, 480, "fxtest";
 
 	let w = 320;
@@ -31,8 +31,13 @@ program fxtest {
 
 	fxaudio 960;
 	fxsample 1, $sub( image 0 256 ), 0, 256;
-	fxplay 0, $cat( $pack( 8200 ) $pack( 14803200 ) $pack( 8201 ) $pack( 14803201 ) );
-	let t = $fxtick;
+	let c = $cat( $pack( 8200 ) $pack( 14803200 ) $pack( 8201 ) $pack( 14803201 ) );
+	let x = 0;
+	while <( x 80 ) {
+		let c = $cat( c $pack( 2000000002 ) $pack( +( *( +( 480 /( *( x 192 ) 79 ) ) 10000 ) 3200 ) ) );
+		inc x;
+	}
+	fxplay 0, c;
 
 	let x = 0;
 	while TRUE {
@@ -43,9 +48,7 @@ program fxtest {
 					fxrect 160, 120, 320, 240, 0xFFFFFF;
 					fxblit 0, 0, 0, 320, 240, 160, 120;
 					fxshow;
-					if >( $fxtick t ) {
-						fxplay 0, $pack( +( *( +( 480 /( *( x 192 ) 632 ) ) 10000 ) 3200 ) );
-					}
+					#fxplay 0, $pack( +( *( +( 480 /( *( x 192 ) 632 ) ) 10000 ) 3200 ) );
 					let c = +( c 3 );
 					let x = +( x 8 );
 				}

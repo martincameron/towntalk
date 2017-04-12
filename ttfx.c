@@ -97,77 +97,71 @@ static void mix_channel( struct fxchannel *channel, int *output, int count ) {
 	}
 }
 
-static void process_sequence( struct fxenvironment *fxenv ) {
-	int idx, off, len, cmd, tick, chan, spos, key, ins, vol;
+static void process_sequence( struct fxenvironment *fxenv, int channel_idx ) {
+	int off, len, cmd, tick, chan, spos, key, ins, vol;
 	struct fxchannel *channel, *cmdchan;
 	char *seq;
-	idx = 0;
-	while( idx < NUM_CHANNELS ) {
-		channel = &fxenv->channels[ idx ];
-		if( channel->sequence.string_value ) {
-			off = channel->sequence_offset;
-			len = channel->sequence.string_value->length;
-			seq = channel->sequence.string_value->string;
-			while( channel->sequence_wait < 1 && off < len - 3 ) {
-				cmd = seq[ off ] << 24;
-				cmd |= ( seq[ off + 1 ] & 0xFF ) << 16;
-				cmd |= ( seq[ off + 2 ] & 0xFF ) << 8;
-				cmd |= seq[ off + 3 ] & 0xFF;
-				off += 4;
-				if( cmd > 2000000000 ) {
-					/* 20ttttwwww ticklen + wait */
-					tick = cmd / 10000 % 10000;
-					if( tick >= MIN_TICK_LEN && tick <= MAX_TICK_LEN ) {
-						fxenv->tick_len = tick;
-					}
-					channel->sequence_wait = cmd % 10000;
-				} else {
-					chan = cmd % 100;
-					if( chan + idx < NUM_CHANNELS ) {
-						cmdchan = &fxenv->channels[ chan + idx ];
-						if( cmd >= 1000000000 ) {
-							/* 10sssssscc sample offset + chan */
-							spos = cmd / 100 % 1000000;
-							if( spos < MAX_SAMPLE_LEN ) {
-								cmdchan->sample_pos = spos << 12;
-							}
+	channel = &fxenv->channels[ channel_idx ];
+	if( channel->sequence.string_value ) {
+		off = channel->sequence_offset;
+		len = channel->sequence.string_value->length;
+		seq = channel->sequence.string_value->string;
+		while( channel->sequence_wait < 1 && off < len - 3 ) {
+			cmd = seq[ off ] << 24;
+			cmd |= ( seq[ off + 1 ] & 0xFF ) << 16;
+			cmd |= ( seq[ off + 2 ] & 0xFF ) << 8;
+			cmd |= seq[ off + 3 ] & 0xFF;
+			off += 4;
+			if( cmd > 2000000000 ) {
+				/* 20ttttwwww ticklen + wait */
+				tick = cmd / 10000 % 10000;
+				if( tick >= MIN_TICK_LEN && tick <= MAX_TICK_LEN ) {
+					fxenv->tick_len = tick;
+				}
+				channel->sequence_wait = cmd % 10000;
+			} else {
+				chan = cmd % 100;
+				if( chan + channel_idx < NUM_CHANNELS ) {
+					cmdchan = &fxenv->channels[ chan + channel_idx ];
+					if( cmd >= 1000000000 ) {
+						/* 10sssssscc sample offset + chan */
+						spos = cmd / 100 % 1000000;
+						if( spos < MAX_SAMPLE_LEN ) {
+							cmdchan->sample_pos = spos << 12;
+						}
+					} else {
+						/* iikkkvvcc ins + key + vol/pan + chan */
+						ins = cmd / 10000000;
+						if( ins > 0 && ins <= NUM_SAMPLES ) {
+							cmdchan->sample = &fxenv->samples[ ins - 1 ];
+							cmdchan->sample_pos = 0;
+						}
+						key = cmd / 10000 % 1000;
+						if( key > 0 && key < 958 ) {
+							cmdchan->frequency = ( FREQ_TABLE[ key % 96 ] << 4 ) >> ( 9 - key / 96 );
+						}
+						vol = cmd / 100 % 100;
+						if( vol < 65 ) {
+							cmdchan->volume = vol;
 						} else {
-							/* iikkkvvcc ins + key + vol/pan + chan */
-							ins = cmd / 10000000;
-							if( ins > 0 && ins <= NUM_SAMPLES ) {
-								cmdchan->sample = &fxenv->samples[ ins - 1 ];
-								cmdchan->sample_pos = 0;
-							}
-							key = cmd / 10000 % 1000;
-							if( key > 0 && key < 958 ) {
-								cmdchan->frequency = ( FREQ_TABLE[ key % 96 ] << 4 ) >> ( 9 - key / 96 );
-							}
-							vol = cmd / 100 % 100;
-							if( vol < 65 ) {
-								cmdchan->volume = vol;
-							} else {
-								cmdchan->panning = ( ( vol - 65 ) * 15 ) >> 1;
-							}
+							cmdchan->panning = ( ( vol - 65 ) * 15 ) >> 1;
 						}
 					}
 				}
 			}
-			channel->sequence_offset = off;
-			if( channel->sequence_wait > 0 ) {
-				channel->sequence_wait--;
-			}
 		}
-		idx++;
+		channel->sequence_offset = off;
 	}
 }
 
 static void audio_callback( void *userdata, Uint8 *stream, int len ) {
 	struct fxenvironment *fxenv = ( struct fxenvironment * ) userdata;
 	Sint16 *output = ( Sint16 * ) stream;
+	struct fxchannel *channel;
 	int samples = len >> 2;
 	int *audio = fxenv->audio;
 	int out_idx, out_end, aud_idx, ampl;
-	int channel, count, offset = 0;
+	int chan_idx, count, offset = 0;
 	while( offset < samples ) {
 		count = samples - offset;
 		if( fxenv->audio_idx + count > fxenv->audio_end ) {
@@ -189,13 +183,22 @@ static void audio_callback( void *userdata, Uint8 *stream, int len ) {
 		offset += count;
 		fxenv->audio_idx += count;
 		if( fxenv->audio_idx >= fxenv->audio_end ) {
-			process_sequence( fxenv );
+			chan_idx = 0;
+			while( chan_idx < NUM_CHANNELS ) {
+				channel = &fxenv->channels[ chan_idx ];
+				if( channel->sequence_wait < 1 ) {
+					channel->sequence_wait = 0;
+					process_sequence( fxenv, chan_idx );
+				}
+				channel->sequence_wait--;
+				chan_idx++;
+			}
 			fxenv->audio_idx = 0;
 			fxenv->audio_end = fxenv->tick_len;
 			memset( fxenv->audio, 0, sizeof( int ) * fxenv->tick_len * 2 );
-			channel = 0;
-			while( channel < NUM_CHANNELS ) {
-				mix_channel( &fxenv->channels[ channel++ ], fxenv->audio, fxenv->audio_end );
+			chan_idx = 0;
+			while( chan_idx < NUM_CHANNELS ) {
+				mix_channel( &fxenv->channels[ chan_idx++ ], fxenv->audio, fxenv->audio_end );
 			}
 			fxenv->tick++;
 		}
@@ -551,6 +554,7 @@ static int execute_fxplay_statement( struct statement *this, struct variable *va
 				fxenv->channels[ idx ].sequence_offset = 0;
 				fxenv->channels[ idx ].sequence_wait = 0;
 				assign_variable( &params[ 1 ], &fxenv->channels[ idx ].sequence );
+				process_sequence( fxenv, idx );
 				SDL_UnlockAudio();
 			} else {
 				ret = throw( exception, this->source, 0, "Not a string." );
