@@ -31,6 +31,7 @@ struct channel {
 	unsigned char vibrato_type, vibrato_phase, vibrato_speed, vibrato_depth;
 	unsigned char tremolo_type, tremolo_phase, tremolo_speed, tremolo_depth;
 	signed char tremolo_add, vibrato_add, arpeggio_add;
+	int trig_inst, prev_period, prev_vol, prev_pan;
 };
 
 static const unsigned short fine_tuning[] = {
@@ -191,6 +192,7 @@ static void trigger( struct channel *channel ) {
 			channel->sample_idx = ( channel->sample_offset << FP_SHIFT );
 			if( channel->vibrato_type < 4 ) channel->vibrato_phase = 0;
 			if( channel->tremolo_type < 4 ) channel->tremolo_phase = 0;
+			channel->trig_inst = channel->instrument;
 		}
 	}
 }
@@ -199,6 +201,10 @@ static void channel_row( struct channel *chan ) {
 	long effect, param, volume, period;
 	effect = chan->note.effect;
 	param = chan->note.param;
+	chan->trig_inst = 0;
+	chan->prev_period = chan->period;
+	chan->prev_vol = chan->volume;
+	chan->prev_pan = chan->panning;
 	chan->vibrato_add = chan->tremolo_add = chan->arpeggio_add = chan->fx_count = 0;
 	if( !( effect == 0x1D && param > 0 ) ) {
 		/* Not note delay. */
@@ -303,6 +309,10 @@ static void channel_tick( struct channel *chan ) {
 	long effect, param, period;
 	effect = chan->note.effect;
 	param = chan->note.param;
+	chan->trig_inst = 0;
+	chan->prev_period = chan->period;
+	chan->prev_vol = chan->volume;
+	chan->prev_pan = chan->panning;
 	chan->fx_count++;
 	switch( effect ) {
 		case 0x1: /* Portamento Up.*/
@@ -346,6 +356,7 @@ static void channel_tick( struct channel *chan ) {
 			if( chan->fx_count >= param ) {
 				chan->fx_count = 0;
 				chan->sample_idx = 0;
+				chan->trig_inst = chan->instrument;
 			}
 			break;
 		case 0x1C: /* Note Cut.*/
@@ -522,6 +533,9 @@ void micromod_set_position( long pos ) {
 			case 0: case 3: chan->panning =  51; break;
 			case 1: case 2: chan->panning = 204; break;
 		}
+		chan->trig_inst = 0;
+		chan->prev_period = 0;
+		chan->prev_vol = chan->prev_pan = 0;
 	}
 	sequence_tick();
 	tick_offset = 0;
