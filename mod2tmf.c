@@ -693,8 +693,46 @@ static void write_int32be( int value, char *dest ) {
 	dest[ 3 ] = value;
 }
 
+static int get_tmf_key( int chan ) {
+	int freq = ( channels[ chan ].step * sample_rate ) >> FP_SHIFT;
+freq = 384;
+	return freq;
+}
+
 static int write_sequence( char *dest ) {
-	return 0;
+	int chn, idx = 0, song_end = 0;
+	int period, volume, wait = 0;
+	micromod_set_position( 0 );
+	while( !song_end ) {
+		chn = 0;
+		while( chn < num_channels ) {
+			period = channels[ chn ].period;
+			volume = channels[ chn ].volume;
+			if( channels[ chn ].trig_inst
+			|| period - channels[ chn ].prev_period
+			|| volume - channels[ chn ].prev_vol ) {
+				if( wait > 0 ) {
+					if( wait > 9999 ) {
+						wait = 9999;
+					}
+					if( dest ) {
+						write_int32be( 2000000000 + wait, &dest[ idx ] );
+					}
+					idx += 4;
+					wait = 0;
+				}
+				if( dest ) {
+					write_int32be( channels[ chn ].trig_inst * 10000000
+						+ get_tmf_key( chn ) * 10000 + volume * 100 + chn, &dest[ idx ] );
+				}
+				idx += 4;
+			}
+			chn++;
+		}
+		wait++;
+		song_end = sequence_tick();
+	}
+	return idx;
 }
 
 static int mod_to_tmf( signed char *mod, char *tmf ) {
@@ -703,6 +741,7 @@ static int mod_to_tmf( signed char *mod, char *tmf ) {
 		length = 32 * 64;
 		seqlen = write_sequence( NULL );
 		if( tmf ) {
+			printf( "Sequence length: %d bytes.\n", seqlen );
 			memset( tmf, 0, length );
 			strcpy( tmf, "TMF0" );
 			write_int32be( seqlen, &tmf[ 4 ] );
