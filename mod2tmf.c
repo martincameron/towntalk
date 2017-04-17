@@ -49,6 +49,22 @@ static const unsigned char sine_table[] = {
 	255, 253, 250, 244, 235, 224, 212, 197, 180, 161, 141, 120,  97,  74,  49,  24
 };
 
+static const int freq_table[] = {
+	16726, 16847, 16969, 17092, 17216, 17341, 17467, 17593,
+	17721, 17849, 17978, 18109, 18240, 18372, 18505, 18639,
+	18774, 18910, 19047, 19185, 19324, 19464, 19606, 19748,
+	19891, 20035, 20180, 20326, 20474, 20622, 20771, 20922,
+	21073, 21226, 21380, 21535, 21691, 21848, 22006, 22166,
+	22327, 22488, 22651, 22815, 22981, 23147, 23315, 23484,
+	23654, 23826, 23998, 24172, 24347, 24524, 24701, 24880,
+	25061, 25242, 25425, 25609, 25795, 25982, 26170, 26360,
+	26551, 26743, 26937, 27132, 27329, 27527, 27726, 27927,
+	28130, 28334, 28539, 28746, 28954, 29164, 29375, 29588,
+	29802, 30018, 30236, 30455, 30676, 30898, 31122, 31347,
+	31574, 31803, 32034, 32266, 32500, 32735, 32972, 33211,
+	33452
+};
+
 static signed char *module_data;
 static unsigned char *pattern_data, *sequence;
 static long song_length, restart, num_patterns, num_channels;
@@ -695,8 +711,19 @@ static void write_int32be( int value, char *dest ) {
 
 static int get_tmf_key( int chan ) {
 	int freq = ( channels[ chan ].step * sample_rate ) >> FP_SHIFT;
-freq = 0600;
-	return freq;
+	int octave = 0, tone = 0;
+	freq = freq << 5;
+	while( freq >= freq_table[ 96 ] ) {
+		octave++;
+		freq = freq >> 1;
+	}
+	while( freq_table[ tone ] < freq ) {
+		tone++;
+	}
+	if( freq_table[ tone + 1 ] - freq < freq - freq_table[ tone ] ) {
+		tone++;
+	}
+	return octave * 96 + tone;
 }
 
 static int write_sequence( char *dest ) {
