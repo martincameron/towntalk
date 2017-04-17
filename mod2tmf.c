@@ -695,7 +695,7 @@ static void write_int32be( int value, char *dest ) {
 
 static int get_tmf_key( int chan ) {
 	int freq = ( channels[ chan ].step * sample_rate ) >> FP_SHIFT;
-freq = 384;
+freq = 0600;
 	return freq;
 }
 
@@ -712,18 +712,19 @@ static int write_sequence( char *dest ) {
 			|| period - channels[ chn ].prev_period
 			|| volume - channels[ chn ].prev_vol ) {
 				if( wait > 0 ) {
-					if( wait > 9999 ) {
-						wait = 9999;
+					if( wait > 037777 ) {
+						wait = 037777;
 					}
 					if( dest ) {
-						write_int32be( 2000000000 + wait, &dest[ idx ] );
+						write_int32be( 040000 + wait, &dest[ idx ] );
 					}
 					idx += 4;
 					wait = 0;
 				}
 				if( dest ) {
-					write_int32be( channels[ chn ].trig_inst * 10000000
-						+ get_tmf_key( chn ) * 10000 + volume * 100 + chn, &dest[ idx ] );
+					write_int32be( ( get_tmf_key( chn ) << 21 )
+						+ ( channels[ chn ].trig_inst << 15 )
+						+ ( volume << 6 ) + chn, &dest[ idx ] );
 				}
 				idx += 4;
 			}

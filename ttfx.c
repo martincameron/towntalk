@@ -98,7 +98,7 @@ static void mix_channel( struct fxchannel *channel, int *output, int count ) {
 }
 
 static void process_sequence( struct fxenvironment *fxenv, int channel_idx ) {
-	int off, len, cmd, tick, chan, spos, key, ins, vol;
+	int off, len, cmd, tick, chan, key, ins, vol;
 	struct fxchannel *channel, *cmdchan;
 	char *seq;
 	channel = &fxenv->channels[ channel_idx ];
@@ -112,40 +112,37 @@ static void process_sequence( struct fxenvironment *fxenv, int channel_idx ) {
 			cmd |= ( seq[ off + 2 ] & 0xFF ) << 8;
 			cmd |= seq[ off + 3 ] & 0xFF;
 			off += 4;
-			if( cmd > 2000000000 ) {
-				/* 20ttttwwww ticklen + wait */
-				tick = cmd / 10000 % 10000;
+			if( cmd & 040000 ) {
+				/* 0tttttt4wwww ticklen + wait */
+				tick = ( cmd >> 15 ) & 0177777;
 				if( tick >= MIN_TICK_LEN && tick <= MAX_TICK_LEN ) {
 					fxenv->tick_len = tick;
 				}
-				channel->sequence_wait = cmd % 10000;
+				channel->sequence_wait = cmd & 037777;
 			} else {
-				chan = cmd % 100;
+				chan = cmd & 077;
 				if( chan + channel_idx < NUM_CHANNELS ) {
 					cmdchan = &fxenv->channels[ chan + channel_idx ];
-					if( cmd >= 1000000000 ) {
-						/* 10sssssscc sample offset + chan */
-						spos = cmd / 100 % 1000000;
-						if( spos < MAX_SAMPLE_LEN ) {
-							cmdchan->sample_pos = spos << 12;
-						}
+					if( cmd & 020000 ) {
+						/* 0ssssss2vvcc sample offset + vol/pan + channel */
+						cmdchan->sample_pos = ( ( cmd >> 3 ) & 01777770000 );
 					} else {
-						/* iikkkvvcc ins + key + vol/pan + chan */
-						ins = cmd / 10000000;
+						/* 0kkkkii0vvcc key + ins + vol/pan + channel */
+						key = ( cmd >> 21 ) & 01777;
+						if( key > 0 && key < 958 ) {
+							cmdchan->frequency = ( FREQ_TABLE[ key % 96 ] << 4 ) >> ( 9 - key / 96 );
+						}
+						ins = ( cmd >> 15 ) & 077;
 						if( ins > 0 && ins <= NUM_SAMPLES ) {
 							cmdchan->sample = &fxenv->samples[ ins - 1 ];
 							cmdchan->sample_pos = 0;
 						}
-						key = cmd / 10000 % 1000;
-						if( key > 0 && key < 958 ) {
-							cmdchan->frequency = ( FREQ_TABLE[ key % 96 ] << 4 ) >> ( 9 - key / 96 );
-						}
-						vol = cmd / 100 % 100;
-						if( vol < 65 ) {
-							cmdchan->volume = vol;
-						} else {
-							cmdchan->panning = ( ( vol - 65 ) * 15 ) >> 1;
-						}
+					}
+					vol = ( cmd >> 6 ) & 0177;
+					if( vol < 65 ) {
+						cmdchan->volume = vol;
+					} else {
+						cmdchan->panning = ( vol - 64 ) << 2;
 					}
 				}
 			}
@@ -527,13 +524,16 @@ static int execute_fxplay_statement( struct statement *this, struct variable *va
 	struct variable *result, struct variable *exception ) {
 	/*
 		fxplay channel sequence$;
-		32 bit decimal sequencer commands packed into byte string:
-			0iikkkvvcc ins + key + vol/pan + chan
-			1ssssssscc sample offset + chan
-			20ttttwwww ticklen + wait
+		32-bit octal sequencer commands packed into byte string:
+			0kkkkii0vvcc key + ins + volume + channel
+			0kkkkii100cc key + ins + vol(64) + channel
+			0kkkkii1ppcc key + ins + pan(1-63) + channel
+			0ssssss2vvcc sample offset + volume + channel
+			0ssssss300cc sample offset + vol(64) + channel
+			0ssssss3ppcc sample offset + pan(1-63) + channel
+			0tttttt4wwww ticklen + wait
 		Instrument 0 / key 0 ignored.
-		Instrument >0 sets sample pos to 0.
-		Volume 0-64 Panning 65-99 (center 82)
+		Instrument >0 sets sample offset to 0.
 	*/
 	int ret, idx = 0;
 	struct variable params[ 2 ];
