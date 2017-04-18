@@ -1,0 +1,59 @@
+
+function unpack( buf, idx ) {
+	var value, end;
+	let end = +( idx 4 );
+	while <( idx end ) {
+		let value = +( *( value 256 ) &( $chr( buf idx ) 0xFF ) );
+		inc idx;
+	}
+	return value;
+}
+
+function get_loop_len( tmf, idx ) {
+	return unpack( tmf, +( *( idx 32 ) 4 ) );
+}
+
+function get_sample_len( tmf, idx ) {
+	return +( unpack( tmf, *( idx 32 ) ) get_loop_len( tmf, idx ) );
+}
+
+function get_sequence_len( tmf ) {
+	return unpack( tmf, 4 );
+}
+
+function get_name( tmf, idx ) {
+	var offset, len, name;
+	if <( idx 64 ) {
+		let offset = +( *( idx 32 ) 8 );
+		while >( $chr( tmf, +( offset len ) ) 0 ) {
+			inc len;
+		}
+		while &&( >( len 0 ) =( $chr( tmf, -( +( offset len ) 1 ) ) 32 ) ) {
+			let len = -( len 1 );
+		}
+		let name = $sub( tmf, offset, len );
+	}
+	return name;
+}
+
+function load_song( tmf ) {
+}
+
+program playtmf {
+	var tmf, idx, name;
+	if >( $argc 1 ) {
+		let tmf = $load( $argv( 1 ) );
+		print $cat( "Song name: " get_name( tmf, 0 ) );
+		print $cat( "Sequence len : " get_sequence_len( tmf ) );
+		let idx = 1;
+		while <( idx 64 ) {
+			let name = get_name( tmf, idx );
+			if >( $len( name ) 0 ) {
+				print $cat( "Instrument " idx ": " name " Length: " get_sample_len( tmf, idx ) );
+			}
+			inc idx;
+		}
+	} else {
+		error $cat( "Usage ttfx " $argv( 0 ) " song.tmf" );
+	}
+}

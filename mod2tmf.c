@@ -720,7 +720,7 @@ static int get_tmf_key( int chan ) {
 	while( freq_table[ tone ] < freq ) {
 		tone++;
 	}
-	if( freq_table[ tone + 1 ] - freq < freq - freq_table[ tone ] ) {
+	if( freq_table[ tone + 1 ] - freq <= freq - freq_table[ tone ] ) {
 		tone++;
 	}
 	return octave * 96 + tone;
