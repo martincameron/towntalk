@@ -1,4 +1,6 @@
 
+array strings;
+
 function unpack( buf, idx ) {
 	var value, end;
 	let end = +( idx 4 );
@@ -9,50 +11,67 @@ function unpack( buf, idx ) {
 	return value;
 }
 
-function get_loop_len( tmf, idx ) {
-	return unpack( tmf, +( *( idx 32 ) 4 ) );
-}
-
-function get_sample_len( tmf, idx ) {
-	return +( unpack( tmf, *( idx 32 ) ) get_loop_len( tmf, idx ) );
-}
-
-function get_sequence_len( tmf ) {
-	return unpack( tmf, 4 );
-}
-
-function get_name( tmf, idx ) {
-	var offset, len, name;
-	if <( idx 64 ) {
-		let offset = +( *( idx 32 ) 8 );
-		while >( $chr( tmf, +( offset len ) ) 0 ) {
-			inc len;
-		}
-		while &&( >( len 0 ) =( $chr( tmf, -( +( offset len ) 1 ) ) 32 ) ) {
-			let len = -( len 1 );
-		}
-		let name = $sub( tmf, offset, len );
+function trim( str ) {
+	var offset, end;
+	let end = -( $len( str ) 1 );
+	while &&( >e( end 0 ) <( $chr( str, end ) 33 ) ) {
+		let end = -( end 1 );
 	}
-	return name;
+	return $sub( str, offset, +( end 1 ) );
 }
 
-function load_song( tmf ) {
+function load_song( tmf, names ) {
+	var offset, sequence, length, idx, loopidx, looplen;
+	if $cmp( $sub( tmf, 0, 4 ) "TMF0" ) {
+		throw "Not a TMF file.";
+	}
+	if names {
+		dim [ names 64 ];
+		set [ names 0 ] = trim( $sub( tmf 8 32 ) );
+	}
+	let offset = *( 32 64 );
+	let sequence = $sub( tmf, offset, unpack( tmf, 4 ) );
+	let offset = +( offset $len( sequence ) );
+	let idx = 1;
+	while <( idx 64 ) {
+		let loopidx = unpack( tmf, *( idx 32 ) );
+		let looplen = unpack( tmf, +( *( idx 32 ) 4 ) );
+		if names {
+			set [ names idx ] = trim( $sub( tmf +( *( idx 32 ) 8 ) 24 ) );
+		}
+		let length = +( loopidx looplen );
+		if length {
+			fxsample idx, $sub( tmf offset length ), loopidx, looplen;
+			let offset = +( offset length );
+		}
+		inc idx;
+	}
+	return sequence;
 }
 
 program playtmf {
-	var tmf, idx, name;
+	var sequence, idx, name;
 	if >( $argc 1 ) {
-		let tmf = $load( $argv( 1 ) );
-		print $cat( "Song name: " get_name( tmf, 0 ) );
-		print $cat( "Sequence len : " get_sequence_len( tmf ) );
+		let sequence = load_song( $load( $argv( 1 ) ), strings );
+		print $cat( "Song name: " [ strings 0 ] );
+		print $cat( "Sequence len : " $len( sequence ) );
 		let idx = 1;
 		while <( idx 64 ) {
-			let name = get_name( tmf, idx );
+			let name = [ strings idx ];
 			if >( $len( name ) 0 ) {
-				print $cat( "Instrument " idx ": " name " Length: " get_sample_len( tmf, idx ) );
+				print $cat( "Instrument " idx ": " name );
 			}
 			inc idx;
 		}
+
+		fxaudio 960;
+		fxplay 0, $cat( $pack( 016000 ) $pack( 012001 ) $pack( 012002 ) $pack( 016003 ) );
+		fxplay 0, sequence;
+
+		while TRUE {
+			print $fxwait;
+		}
+
 	} else {
 		error $cat( "Usage ttfx " $argv( 0 ) " song.tmf" );
 	}
