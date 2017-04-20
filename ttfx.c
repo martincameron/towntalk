@@ -69,8 +69,8 @@ static void mix_channel( struct fxchannel *channel, int *output, int count ) {
 		lend = loop + llen;
 		spos = channel->sample_pos;
 		if( spos < lend || llen > 4096 ) {
-			lamp = channel->volume * ( 255 - channel->panning );
-			ramp = channel->volume * channel->panning;
+			lamp = channel->volume * ( 128 - channel->panning );
+			ramp = channel->volume * ( 128 + channel->panning );
 			step = ( channel->frequency << 12 ) / SAMPLE_RATE;
 			data = channel->sample->sample_data.string_value->string;
 			idx = 0;
@@ -142,7 +142,7 @@ static void process_sequence( struct fxenvironment *fxenv, int channel_idx ) {
 					if( vol < 65 ) {
 						cmdchan->volume = vol;
 					} else {
-						cmdchan->panning = ( vol - 64 ) << 2;
+						cmdchan->panning = ( vol - 96 ) << 2;
 					}
 				}
 			}
