@@ -193,7 +193,6 @@ static void trigger( struct channel *channel ) {
 		channel->volume = instruments[ ins ].volume;
 		if( instruments[ ins ].loop_length > 0 && channel->instrument > 0 ) {
 			channel->instrument = ins;
-			channel->trig_inst = channel->instrument;
 		}
 	}
 	if( channel->note.effect == 0x09 ) {
