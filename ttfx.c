@@ -106,12 +106,21 @@ static void process_sequence( struct fxenvironment *fxenv, int channel_idx ) {
 		off = channel->sequence_offset;
 		len = channel->sequence.string_value->length;
 		seq = channel->sequence.string_value->string;
-		while( channel->sequence_wait < 1 && off < len - 3 ) {
-			cmd = seq[ off ] << 24;
-			cmd |= ( seq[ off + 1 ] & 0xFF ) << 16;
-			cmd |= ( seq[ off + 2 ] & 0xFF ) << 8;
-			cmd |= seq[ off + 3 ] & 0xFF;
-			off += 4;
+		while( channel->sequence_wait < 1 && off < len - 1 ) {
+			cmd = seq[ off ] & 0xFF;
+			if( cmd & 0x80 ) {
+				cmd = ( cmd & 0x7F ) << 8;
+				cmd |= seq[ off + 1 ] & 0xFF;
+				off += 2;
+			} else if( off < len - 3 ) {
+				cmd = cmd << 24;
+				cmd |= ( seq[ off + 1 ] & 0xFF ) << 16;
+				cmd |= ( seq[ off + 2 ] & 0xFF ) << 8;
+				cmd |= seq[ off + 3 ] & 0xFF;
+				off += 4;
+			} else {
+				off = len;
+			}
 			if( cmd & 040000 ) {
 				/* 0tttttt4wwww ticklen + wait */
 				tick = ( cmd >> 15 ) & 0177777;

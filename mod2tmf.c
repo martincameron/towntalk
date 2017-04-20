@@ -31,7 +31,7 @@ struct channel {
 	unsigned char vibrato_type, vibrato_phase, vibrato_speed, vibrato_depth;
 	unsigned char tremolo_type, tremolo_phase, tremolo_speed, tremolo_depth;
 	signed char tremolo_add, vibrato_add, arpeggio_add;
-	int trig_inst, prev_period, prev_vol, prev_pan;
+	int trig_inst, prev_step, prev_ampl, prev_pan;
 };
 
 static const unsigned short fine_tuning[] = {
@@ -70,7 +70,7 @@ static unsigned char *pattern_data, *sequence;
 static long song_length, restart, num_patterns, num_channels;
 static struct instrument instruments[ 32 ];
 
-static long sample_rate, c2_rate, gain, tick_len, tick_offset;
+static long sample_rate, c2_rate, tick_len, tick_offset;
 static long pattern, break_pattern, row, next_row, tick;
 static long speed, pl_count, pl_channel, random_seed;
 
@@ -129,7 +129,7 @@ static void update_frequency( struct channel *chan ) {
 	volume = chan->volume + chan->tremolo_add;
 	if( volume > 64 ) volume = 64;
 	if( volume < 0 ) volume = 0;
-	chan->ampl = volume * gain;
+	chan->ampl = volume;
 }
 
 static void tone_portamento( struct channel *chan ) {
@@ -191,8 +191,10 @@ static void trigger( struct channel *channel ) {
 		channel->sample_offset = 0;
 		channel->fine_tune = instruments[ ins ].fine_tune;
 		channel->volume = instruments[ ins ].volume;
-		if( instruments[ ins ].loop_length > 0 && channel->instrument > 0 )
+		if( instruments[ ins ].loop_length > 0 && channel->instrument > 0 ) {
 			channel->instrument = ins;
+			channel->trig_inst = channel->instrument;
+		}
 	}
 	if( channel->note.effect == 0x09 ) {
 		channel->sample_offset = ( channel->note.param & 0xFF ) << 8;
@@ -218,8 +220,8 @@ static void channel_row( struct channel *chan ) {
 	effect = chan->note.effect;
 	param = chan->note.param;
 	chan->trig_inst = 0;
-	chan->prev_period = chan->period;
-	chan->prev_vol = chan->volume;
+	chan->prev_step = chan->step;
+	chan->prev_ampl = chan->ampl;
 	chan->prev_pan = chan->panning;
 	chan->vibrato_add = chan->tremolo_add = chan->arpeggio_add = chan->fx_count = 0;
 	if( !( effect == 0x1D && param > 0 ) ) {
@@ -326,8 +328,8 @@ static void channel_tick( struct channel *chan ) {
 	effect = chan->note.effect;
 	param = chan->note.param;
 	chan->trig_inst = 0;
-	chan->prev_period = chan->period;
-	chan->prev_vol = chan->volume;
+	chan->prev_step = chan->step;
+	chan->prev_ampl = chan->ampl;
 	chan->prev_pan = chan->panning;
 	chan->fx_count++;
 	switch( effect ) {
@@ -550,8 +552,8 @@ void micromod_set_position( long pos ) {
 			case 1: case 2: chan->panning = 204; break;
 		}
 		chan->trig_inst = 0;
-		chan->prev_period = 0;
-		chan->prev_vol = chan->prev_pan = 0;
+		chan->prev_step = 0;
+		chan->prev_ampl = chan->prev_pan = 0;
 	}
 	sequence_tick();
 	tick_offset = 0;
@@ -602,7 +604,6 @@ long micromod_initialise( signed char *data, long sampling_rate ) {
 		sample_data_offset += sample_length;
 	}
 	c2_rate = ( num_channels > 4 ) ? 8363 : 8287;
-	gain = ( num_channels > 4 ) ? 1 : 2;
 	micromod_set_position( 0 );
 	return 0;
 }
@@ -702,6 +703,11 @@ static long read_module_length( char *filename ) {
 	return length;
 }
 
+static void write_int16be( int value, char *dest ) {
+	dest[ 0 ] = value >> 8;
+	dest[ 1 ] = value;
+}
+
 static void write_int32be( int value, char *dest ) {
 	dest[ 0 ] = value >> 24;
 	dest[ 1 ] = value >> 16;
@@ -728,32 +734,47 @@ static int get_tmf_key( int chan ) {
 
 static int write_sequence( char *dest ) {
 	int chn, idx = 0, song_end = 0;
-	int period, volume, wait = 0;
+	int inst, sidx, step, d_step, ampl, d_ampl, wait = 0;
 	micromod_set_position( 0 );
 	while( !song_end ) {
 		chn = 0;
 		while( chn < num_channels ) {
-			period = channels[ chn ].period;
-			volume = channels[ chn ].volume;
-			if( channels[ chn ].trig_inst
-			|| period - channels[ chn ].prev_period
-			|| volume - channels[ chn ].prev_vol ) {
+			inst = channels[ chn ].trig_inst;
+			sidx = channels[ chn ].sample_idx;
+			step = channels[ chn ].step;
+			d_step = step - channels[ chn ].prev_step;
+			ampl = channels[ chn ].ampl;
+			d_ampl = ampl - channels[ chn ].prev_ampl;
+			if( inst || d_step || d_ampl ) {
 				if( wait > 0 ) {
 					if( wait > 037777 ) {
 						wait = 037777;
 					}
 					if( dest ) {
-						write_int32be( 040000 + wait, &dest[ idx ] );
+						write_int16be( 0140000 + wait, &dest[ idx ] );
 					}
-					idx += 4;
+					idx += 2;
 					wait = 0;
 				}
-				if( dest ) {
-					write_int32be( ( get_tmf_key( chn ) << 21 )
-						+ ( channels[ chn ].trig_inst << 15 )
-						+ ( volume << 6 ) + chn, &dest[ idx ] );
+				if( inst || d_step ) {
+					if( dest ) {
+						write_int32be( ( get_tmf_key( chn ) << 21 ) + ( inst << 15 )
+							+ ( ampl << 6 ) + chn, &dest[ idx ] );
+					}
+					idx += 4;
+					if( inst && sidx ) {
+						if( dest ) {
+							write_int32be( ( ( ( sidx >> FP_SHIFT ) & 0177777 ) << 15 )
+								+ 020000 + ( ampl << 6 ) + chn, &dest[ idx ] );
+						}
+						idx += 4;
+					}
+				} else {
+					if( dest ) {
+						write_int16be( 0100000 + ( ampl << 6 ) + chn, &dest[ idx ] );
+					}
+					idx += 2;
 				}
-				idx += 4;
 			}
 			chn++;
 		}
