@@ -193,6 +193,7 @@ static void trigger( struct channel *channel ) {
 		channel->volume = instruments[ ins ].volume;
 		if( instruments[ ins ].loop_length > 0 && channel->instrument > 0 ) {
 			channel->instrument = ins;
+			channel->trig_inst = channel->instrument;
 		}
 	}
 	if( channel->note.effect == 0x09 ) {
@@ -714,8 +715,7 @@ static void write_int32be( int value, char *dest ) {
 	dest[ 3 ] = value;
 }
 
-static int get_tmf_key( int chan ) {
-	int freq = ( channels[ chan ].step * sample_rate ) >> FP_SHIFT;
+static int get_tmf_key( int freq ) {
 	int octave = 0, tone = 0;
 	freq = freq << 5;
 	while( freq >= freq_table[ 96 ] ) {
@@ -733,7 +733,7 @@ static int get_tmf_key( int chan ) {
 
 static int write_sequence( char *dest ) {
 	int chn, idx = 0, song_end = 0;
-	int inst, sidx, step, d_step, ampl, d_ampl, wait = 0;
+	int inst, sidx, step, d_step, freq, ampl, d_ampl, wait = 0;
 	micromod_set_position( 0 );
 	while( !song_end ) {
 		chn = 0;
@@ -742,6 +742,7 @@ static int write_sequence( char *dest ) {
 			sidx = channels[ chn ].sample_idx;
 			step = channels[ chn ].step;
 			d_step = step - channels[ chn ].prev_step;
+			freq = ( step * sample_rate ) >> FP_SHIFT;
 			ampl = channels[ chn ].ampl;
 			d_ampl = ampl - channels[ chn ].prev_ampl;
 			if( inst || d_step || d_ampl ) {
@@ -755,20 +756,47 @@ static int write_sequence( char *dest ) {
 					idx += 2;
 					wait = 0;
 				}
-				if( inst || d_step ) {
+				if( inst ) {
+					if( sidx & FP_MASK ) {
+						/* Switch Instrument.*/
+						if( dest ) {
+							write_int32be( ( inst << 15 )
+								+ ( ampl << 6 ) + chn, &dest[ idx ] );
+						}
+						idx += 4;
+						if( d_step ) {
+							/* Modulate Pitch.*/
+							if( dest ) {
+								write_int32be( ( get_tmf_key( freq ) << 21 )
+									+ ( ampl << 6 ) + chn, &dest[ idx ] );
+							}
+							idx += 4;
+						}
+					} else {
+						/* Trigger Instrument.*/
+						if( dest ) {
+							write_int32be( ( get_tmf_key( freq ) << 21 ) + ( inst << 15 )
+								+ ( ampl << 6 ) + chn, &dest[ idx ] );
+						}
+						idx += 4;
+						if( sidx ) {
+							/* Set Sample Offset.*/
+							if( dest ) {
+								write_int32be( ( ( ( sidx >> FP_SHIFT ) & 0177777 ) << 15 )
+									+ 020000 + ( ampl << 6 ) + chn, &dest[ idx ] );
+							}
+							idx += 4;
+						}
+					}
+				} else if( d_step ) {
+					/* Modulate Pitch.*/
 					if( dest ) {
-						write_int32be( ( get_tmf_key( chn ) << 21 ) + ( inst << 15 )
+						write_int32be( ( get_tmf_key( freq ) << 21 )
 							+ ( ampl << 6 ) + chn, &dest[ idx ] );
 					}
 					idx += 4;
-					if( inst && sidx ) {
-						if( dest ) {
-							write_int32be( ( ( ( sidx >> FP_SHIFT ) & 0177777 ) << 15 )
-								+ 020000 + ( ampl << 6 ) + chn, &dest[ idx ] );
-						}
-						idx += 4;
-					}
 				} else {
+					/* Modulate Vol.*/
 					if( dest ) {
 						write_int16be( 0100000 + ( ampl << 6 ) + chn, &dest[ idx ] );
 					}

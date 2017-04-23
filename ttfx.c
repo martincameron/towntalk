@@ -144,7 +144,9 @@ static void process_sequence( struct fxenvironment *fxenv, int channel_idx ) {
 						ins = ( cmd >> 15 ) & 077;
 						if( ins > 0 && ins <= NUM_SAMPLES ) {
 							cmdchan->sample = &fxenv->samples[ ins - 1 ];
-							cmdchan->sample_pos = 0;
+							if( key > 0 ) {
+								cmdchan->sample_pos = 0;
+							}
 						}
 					}
 					vol = ( cmd >> 6 ) & 0177;
@@ -542,7 +544,7 @@ static int execute_fxplay_statement( struct statement *this, struct variable *va
 			0ssssss3ppcc sample offset + pan(1-63) + channel
 			0tttttt4wwww ticklen + wait
 		Instrument 0 / key 0 ignored.
-		Instrument >0 sets sample offset to 0.
+		Instrument >0 and key >0 sets sample offset to 0.
 	*/
 	int ret, idx = 0;
 	struct variable params[ 2 ];
