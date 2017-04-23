@@ -191,7 +191,8 @@ static void trigger( struct channel *channel ) {
 		channel->sample_offset = 0;
 		channel->fine_tune = instruments[ ins ].fine_tune;
 		channel->volume = instruments[ ins ].volume;
-		if( instruments[ ins ].loop_length > 0 && channel->instrument > 0 ) {
+		if( instruments[ ins ].loop_length > 0 && channel->instrument > 0
+		&& channel->instrument != ins ) {
 			channel->instrument = ins;
 			channel->trig_inst = channel->instrument;
 		}
