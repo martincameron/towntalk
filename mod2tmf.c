@@ -31,7 +31,7 @@ struct channel {
 	unsigned char vibrato_type, vibrato_phase, vibrato_speed, vibrato_depth;
 	unsigned char tremolo_type, tremolo_phase, tremolo_speed, tremolo_depth;
 	signed char tremolo_add, vibrato_add, arpeggio_add;
-	int trig_inst, prev_step, prev_ampl, prev_pan;
+	int trig_inst, swap_inst, prev_step, prev_ampl, prev_pan;
 };
 
 static const unsigned short fine_tuning[] = {
@@ -194,7 +194,7 @@ static void trigger( struct channel *channel ) {
 		if( instruments[ ins ].loop_length > 0 && channel->instrument > 0
 		&& channel->instrument != ins ) {
 			channel->instrument = ins;
-			channel->trig_inst = channel->instrument;
+			channel->swap_inst = channel->instrument;
 		}
 	}
 	if( channel->note.effect == 0x09 ) {
@@ -220,7 +220,7 @@ static void channel_row( struct channel *chan ) {
 	long effect, param, volume, period;
 	effect = chan->note.effect;
 	param = chan->note.param;
-	chan->trig_inst = 0;
+	chan->trig_inst = chan->swap_inst = 0;
 	chan->prev_step = chan->step;
 	chan->prev_ampl = chan->ampl;
 	chan->prev_pan = chan->panning;
@@ -328,7 +328,7 @@ static void channel_tick( struct channel *chan ) {
 	long effect, param, period;
 	effect = chan->note.effect;
 	param = chan->note.param;
-	chan->trig_inst = 0;
+	chan->trig_inst = chan->swap_inst = 0;
 	chan->prev_step = chan->step;
 	chan->prev_ampl = chan->ampl;
 	chan->prev_pan = chan->panning;
@@ -734,19 +734,20 @@ static int get_tmf_key( int freq ) {
 
 static int write_sequence( char *dest ) {
 	int chn, idx = 0, song_end = 0;
-	int inst, sidx, step, d_step, freq, ampl, d_ampl, wait = 0;
+	int inst, swap, sidx, step, d_step, freq, ampl, d_ampl, wait = 0;
 	micromod_set_position( 0 );
 	while( !song_end ) {
 		chn = 0;
 		while( chn < num_channels ) {
 			inst = channels[ chn ].trig_inst;
+			swap = channels[ chn ].swap_inst;
 			sidx = channels[ chn ].sample_idx;
 			step = channels[ chn ].step;
 			d_step = step - channels[ chn ].prev_step;
 			freq = ( step * sample_rate ) >> FP_SHIFT;
 			ampl = channels[ chn ].ampl;
 			d_ampl = ampl - channels[ chn ].prev_ampl;
-			if( inst || d_step || d_ampl ) {
+			if( inst || swap || d_step || d_ampl ) {
 				if( wait > 0 ) {
 					if( wait > 037777 ) {
 						wait = 037777;
@@ -758,36 +759,34 @@ static int write_sequence( char *dest ) {
 					wait = 0;
 				}
 				if( inst ) {
-					if( sidx & FP_MASK ) {
-						/* Switch Instrument.*/
+					/* Trigger Instrument.*/
+					if( dest ) {
+						write_int32be( ( get_tmf_key( freq ) << 21 ) + ( inst << 15 )
+							+ ( ampl << 6 ) + chn, &dest[ idx ] );
+					}
+					idx += 4;
+					if( sidx ) {
+						/* Set Sample Offset.*/
 						if( dest ) {
-							write_int32be( ( inst << 15 )
+							write_int32be( ( ( ( sidx >> FP_SHIFT ) & 0177777 ) << 15 )
+								+ 020000 + ( ampl << 6 ) + chn, &dest[ idx ] );
+						}
+						idx += 4;
+					}
+				} else if( swap ) {
+					/* Switch Instrument.*/
+					if( dest ) {
+						write_int32be( ( swap << 15 )
+							+ ( ampl << 6 ) + chn, &dest[ idx ] );
+					}
+					idx += 4;
+					if( d_step ) {
+						/* Modulate Pitch.*/
+						if( dest ) {
+							write_int32be( ( get_tmf_key( freq ) << 21 )
 								+ ( ampl << 6 ) + chn, &dest[ idx ] );
 						}
 						idx += 4;
-						if( d_step ) {
-							/* Modulate Pitch.*/
-							if( dest ) {
-								write_int32be( ( get_tmf_key( freq ) << 21 )
-									+ ( ampl << 6 ) + chn, &dest[ idx ] );
-							}
-							idx += 4;
-						}
-					} else {
-						/* Trigger Instrument.*/
-						if( dest ) {
-							write_int32be( ( get_tmf_key( freq ) << 21 ) + ( inst << 15 )
-								+ ( ampl << 6 ) + chn, &dest[ idx ] );
-						}
-						idx += 4;
-						if( sidx ) {
-							/* Set Sample Offset.*/
-							if( dest ) {
-								write_int32be( ( ( ( sidx >> FP_SHIFT ) & 0177777 ) << 15 )
-									+ 020000 + ( ampl << 6 ) + chn, &dest[ idx ] );
-							}
-							idx += 4;
-						}
 					}
 				} else if( d_step ) {
 					/* Modulate Pitch.*/
