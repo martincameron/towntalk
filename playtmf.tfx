@@ -54,7 +54,7 @@ program playtmf {
 	if >( $argc 1 ) {
 		let sequence = load_song( $load( $argv( 1 ) ), strings );
 		print $cat( "Song name: " [ strings 0 ] );
-		print $cat( "Sequence len : " $len( sequence ) );
+		print $cat( "Sequence length: " $len( sequence ) " bytes.");
 		let idx = 1;
 		while <( idx 64 ) {
 			let name = [ strings idx ];

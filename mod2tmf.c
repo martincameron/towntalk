@@ -733,10 +733,17 @@ static int get_tmf_key( int freq ) {
 }
 
 static int write_sequence( char *dest ) {
-	int chn, idx = 0, song_end = 0;
-	int inst, swap, sidx, step, d_step, freq, ampl, d_ampl, wait = 0;
+	int chn, idx = 0, song_end = 0, tick = 0, wait = 0;
+	int inst, swap, sidx, step, d_step, freq, ampl, d_ampl;
 	micromod_set_position( 0 );
 	while( !song_end ) {
+		if( tick != tick_len ) {
+			if( dest ) {
+				write_int32be( ( tick_len << 15 ) + 040000, &dest[ idx ] );
+			}
+			tick = tick_len;
+			idx += 4;
+		}
 		chn = 0;
 		while( chn < num_channels ) {
 			inst = channels[ chn ].trig_inst;
@@ -813,7 +820,7 @@ static int write_sequence( char *dest ) {
 
 static int mod_to_tmf( signed char *mod, char *tmf ) {
 	int seqlen, idx, loop_start, loop_length, length = -1;
-	if( micromod_initialise( mod, 8000 ) >= 0 ) {
+	if( micromod_initialise( mod, 48000 ) >= 0 ) {
 		length = 32 * 64;
 		seqlen = write_sequence( NULL );
 		if( tmf ) {
