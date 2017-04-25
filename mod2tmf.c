@@ -723,7 +723,7 @@ static int get_tmf_key( int freq ) {
 		octave++;
 		freq = freq >> 1;
 	}
-	while( freq_table[ tone ] < freq ) {
+	while( freq_table[ tone + 1 ] < freq ) {
 		tone++;
 	}
 	if( freq_table[ tone + 1 ] - freq <= freq - freq_table[ tone ] ) {
