@@ -79,9 +79,9 @@ public class XM2TMF {
 			Module module = new Module( new Data( new java.io.FileInputStream( args[ 0 ] ) ) );
 			IBXM ibxm = new IBXM( module, 48000 );
 			/* Perform conversion. */
+			byte[] tmf = new byte[ convert( module, ibxm, null ) ];
 			java.io.OutputStream outputStream = new java.io.FileOutputStream( args[ 1 ] );
 			try {
-				byte[] tmf = new byte[ convert( module, ibxm, null ) ];
 				convert( module, ibxm, tmf );
 				outputStream.write( tmf );
 			} finally {
