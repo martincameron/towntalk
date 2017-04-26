@@ -36,7 +36,7 @@ public class Channel {
 	private boolean keyOn;
 	private int noteKey, noteIns, noteVol, noteEffect, noteParam;
 	public int sampleOffset, sampleIdx, sampleFra, freq, ampl, pann;
-	public int instIdx, trigInst, swapInst, prevFreq, prevAmpl;
+	public int instIdx, trigInst, swapInst, prevFreq, prevAmpl, prevPann;
 	private int volume, panning, fadeOutVol, volEnvTick, panEnvTick;
 	private int period, portaPeriod, retrigCount, fxCount, autoVibratoCount;
 	private int portaUpParam, portaDownParam, tonePortaParam, offsetParam;
@@ -94,6 +94,7 @@ public class Channel {
 		trigInst = swapInst = 0;
 		prevFreq = freq;
 		prevAmpl = ampl;
+		prevPann = pann;
 		retrigCount++;
 		vibratoAdd = tremoloAdd = arpeggioAdd = fxCount = 0;
 		if( !( ( noteEffect == 0x7D || noteEffect == 0xFD ) && noteParam > 0 ) ) {
@@ -226,6 +227,7 @@ public class Channel {
 		trigInst = swapInst = 0;
 		prevFreq = freq;
 		prevAmpl = ampl;
+		prevPann = pann;
 		vibratoAdd = 0;
 		fxCount++;
 		retrigCount++;

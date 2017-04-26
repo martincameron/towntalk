@@ -75,7 +75,11 @@ public class Sample {
 		int end = length + DELAY;
 		while( idx < end ) {
 			int sam = ( sampleData[ idx++ ] + 32768 ) >> 7;
-			sam = ( sam >> 1 ) + ( sam & 1 );
+			if( sam < 510 ) {
+				sam = ( sam >> 1 ) + ( sam & 1 );
+			} else {
+				sam = 255;
+			}
 			output[ offset++ ] = ( byte ) ( sam - 128 );
 		}
 	}

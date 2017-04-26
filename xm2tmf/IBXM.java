@@ -210,8 +210,9 @@ public class IBXM {
 				int d_freq = freq - channels[ chn ].prevFreq;
 				int ampl = channels[ chn ].ampl;
 				int d_ampl = ampl - channels[ chn ].prevAmpl;
-				int vol = ampl >> ( Sample.FP_SHIFT - 6 );
-				if( ( inst | swap | d_freq | d_ampl ) != 0 ) {
+				int pann = channels[ chn ].pann;
+				int d_pann = pann - channels[ chn ].prevPann;
+				if( ( inst | swap | d_freq | d_ampl | d_pann ) != 0 ) {
 					if( wait > 0 ) {
 						if( wait > 037777 ) {
 							wait = 037777;
@@ -221,6 +222,13 @@ public class IBXM {
 						}
 						offset += 2;
 						wait = 0;
+					}
+					int vol = ampl >> ( Sample.FP_SHIFT - 6 );
+					int pan = 0100 + ( ( pann < 4 ) ? 1 : ( pann >> 2 ) );
+					if( d_pann != 0 && d_ampl == 0 ) {
+						vol = pan;
+						d_ampl = 1;
+						d_pann = 0;
 					}
 					if( inst != 0 ) {
 						/* Trigger Instrument.*/
@@ -259,10 +267,17 @@ public class IBXM {
 								+ ( vol << 6 ) + chn );
 						}
 						offset += 4;
-					} else {
+					} else if( d_ampl != 0 ) {
 						/* Modulate Vol.*/
 						if( output != null ) {
 							writeInt16be( output, offset, 0100000 + ( vol << 6 ) + chn );
+						}
+						offset += 2;
+					}
+					if( d_pann != 0 ) {
+						/* Modulate Panning.*/
+						if( output != null ) {
+							writeInt16be( output, offset, 0100000 + ( pan << 6 ) + chn );
 						}
 						offset += 2;
 					}
