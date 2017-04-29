@@ -31,17 +31,36 @@ struct data {
 
 struct sample {
 	int loop_start, loop_length;
+	short volume, panning, rel_note, fine_tune, *data;
+};
+
+struct envelope {
+	char enabled, sustain, looped, num_points;
+	short sustain_tick, loop_start_tick, loop_end_tick;
+	short points_tick[ 16 ], points_ampl[ 16 ];
 };
 
 struct instrument {
-	char *name;
-	int num_samples;
+	int num_samples, vol_fadeout;
+	char name[ 24 ], key_to_sample[ 97 ];
+	char vib_type, vib_sweep, vib_depth, vib_rate;
 	struct sample samples[ 96 ];
+	struct envelope vol_env, pan_env;
+};
+
+struct pattern {
+	int num_rows;
+	char *data;
 };
 
 struct module {
-	char *name;
-	int num_instruments;
+	char name[ 24 ];
+	int num_channels, num_instruments;
+	int num_patterns, sequence_len, restart_pos;
+	int default_gvol, default_speed, default_tempo, c2_rate, gain;
+	int linear_periods, fast_vol_slides;
+	unsigned char default_panning[ 32 ], sequence[ 256 ];
+	struct pattern patterns[ 256 ];
 	struct instrument instruments[ 256 ];
 };
 
@@ -57,11 +76,263 @@ struct replay {
 	int speed, tempo, pl_count, pl_chan;
 };
 
-static struct module* new_module( struct data module_data ) {
-	return calloc( 1, sizeof( struct module ) );
+static char* data_ascii( struct data *data, int offset, int length, char *dest ) {
+	if( offset > data->length ) {
+		offset = data->length;
+	}
+	if( offset + length > data->length ) {
+		length = data->length - offset;
+	}
+	memcpy( dest, &data->buffer[ offset ], length );
+	return dest;
+}
+
+static int data_u8( struct data *data, int offset ) {
+	int value = 0;
+	if( offset < data->length ) {
+		value = data->buffer[ offset ] & 0xFF;
+	}
+	return value;
+}
+
+static int data_u16le( struct data *data, int offset ) {
+	int value = 0;
+	if( offset + 1 < data->length ) {
+		value = ( data->buffer[ offset ] & 0xFF )
+			| ( ( data->buffer[ offset + 1 ] & 0xFF ) << 8 );
+	}
+	return value;
+}
+
+static unsigned int data_u32le( struct data *data, int offset ) {
+	unsigned int value = 0;
+	if( offset + 3 < data->length ) {
+		value = ( data->buffer[ offset ] & 0xFF )
+			| ( ( data->buffer[ offset + 1 ] & 0xFF ) << 8 )
+			| ( ( data->buffer[ offset + 2 ] & 0xFF ) << 16 )
+			| ( ( data->buffer[ offset + 3 ] & 0xFF ) << 24 );
+	}
+	return value;
+}
+
+static void data_sam_s8d( struct data *data, int offset, int count, short *dest ) {
+}
+
+static void data_sam_s16d( struct data *data, int offset, int count, short *dest ) {
+}
+
+static void sample_ping_pong( struct sample *sample ) {
+}
+
+static int module_load_xm( struct module *module, struct data *data ) {
+	int delta_env, offset, next_offset, idx, entry;
+	int num_rows, num_notes, pat_data_len, pat_data_offset;
+	int sam, sam_head_offset, sam_data_bytes, sam_loop_start, sam_loop_length;
+	int note, flags, key, ins, vol, fxc, fxp;
+	int point, point_tick, point_offset;
+	int looped, ping_pong, sixteen_bit;
+	char ascii[ 16 ], *pattern_data;
+	struct instrument *instrument;
+	struct sample *sample;
+	if( data_u16le( data, 58 ) != 0x0104 ) {
+		fputs( "XM format version must be 0x0104!", stderr );
+		return 0;
+	}
+	data_ascii( data, 17, 20, module->name );
+	module->name[ 20 ] = 0;
+	delta_env = !memcmp( data_ascii( data, 38, 15, ascii ), "DigiBooster Pro", 15 );
+	offset = 60 + data_u32le( data, 60 );
+	module->sequence_len = data_u16le( data, 64 );
+	if( module->sequence_len > 256 ) {
+		module->sequence_len = 256;
+	}
+	module->restart_pos = data_u16le( data, 66 );
+	module->num_channels = data_u16le( data, 68 );
+	module->num_patterns = data_u16le( data, 70 );
+	module->num_instruments = data_u16le( data, 72 );
+	module->linear_periods = data_u16le( data, 74 ) & 0x1;
+	module->default_gvol = 64;
+	module->default_speed = data_u16le( data, 76 );
+	module->default_tempo = data_u16le( data, 78 );
+	module->c2_rate = 8363;
+	module->gain = 64;
+	for( idx = 0; idx < 32; idx++ ) {
+		module->default_panning[ idx ] = 128;
+	}
+	for( idx = 0; idx < module->sequence_len; idx++ ) {
+		entry = data_u8( data, 80 + idx );
+		module->sequence[ idx ] = entry < module->num_patterns ? entry : 0;
+	}
+	for( idx = 0; idx < module->num_patterns; idx++ ) {
+		if( data_u8( data, offset + 4 ) ) {
+			fputs( "Unknown pattern packing type!", stderr );
+			return 0;
+		}
+		num_rows = data_u16le( data, offset + 5 );
+		pat_data_len = data_u16le( data, offset + 7 );
+		offset += data_u32le( data, offset );
+		next_offset = offset + pat_data_len;
+		if( idx < 256 ) {
+			num_notes = num_rows * module->num_channels;
+			pattern_data = calloc( num_notes, 5 );
+			if( pattern_data ) {
+				module->patterns[ idx ].num_rows = num_rows;
+				module->patterns[ idx ].data = pattern_data;
+				if( pat_data_len > 0 ) {
+					pat_data_offset = 0;
+					for( note = 0; note < num_notes; note++ ) {
+						flags = data_u8( data, offset );
+						if( ( flags & 0x80 ) == 0 ) flags = 0x1F; else offset++;
+						key = ( flags & 0x01 ) > 0 ? data_u8( data, offset++ ) : 0;
+						pattern_data[ pat_data_offset++ ] = key;
+						ins = ( flags & 0x02 ) > 0 ? data_u8( data, offset++ ) : 0;
+						pattern_data[ pat_data_offset++ ] = ins;
+						vol = ( flags & 0x04 ) > 0 ? data_u8( data, offset++ ) : 0;
+						pattern_data[ pat_data_offset++ ] = vol;
+						fxc = ( flags & 0x08 ) > 0 ? data_u8( data, offset++ ) : 0;
+						fxp = ( flags & 0x10 ) > 0 ? data_u8( data, offset++ ) : 0;
+						if( fxc >= 0x40 ) fxc = fxp = 0;
+						pattern_data[ pat_data_offset++ ] = fxc;
+						pattern_data[ pat_data_offset++ ] = fxp;
+					}
+				}
+			}
+		}
+		offset = next_offset;
+	}
+	for( idx = 1; idx <= module->num_instruments; idx++ ) {
+		instrument = &module->instruments[ idx ];
+		data_ascii( data, offset + 4, 22, instrument->name );
+		instrument->num_samples = data_u16le( data, offset + 27 );
+		if( instrument->num_samples && idx < 256 ) {
+			for( key = 0; key < 96; key++ ) {
+				instrument->key_to_sample[ key + 1 ] = data_u8( data, offset + 33 + key );
+				point_tick = 0;
+				for( point = 0; point < 12; point++ ) {
+					point_offset = offset + 129 + ( point * 4 );
+					point_tick = ( delta_env ? point_tick : 0 ) + data_u16le( data, point_offset );
+					instrument->vol_env.points_tick[ point ] = point_tick;
+					instrument->vol_env.points_ampl[ point ] = data_u16le( data, point_offset + 2 );
+				}
+				point_tick = 0;
+				for( point = 0; point < 12; point++ ) {
+					point_offset = offset + 177 + ( point * 4 );
+					point_tick = ( delta_env ? point_tick : 0 ) + data_u16le( data, point_offset );
+					instrument->pan_env.points_tick[ point ] = point_tick;
+					instrument->pan_env.points_ampl[ point ] = data_u16le( data, point_offset + 2 );
+				}
+				instrument->vol_env.num_points = data_u8( data, offset + 225 );
+				if( instrument->vol_env.num_points > 12 ) {
+					instrument->vol_env.num_points = 0;
+				}
+				instrument->pan_env.num_points = data_u8( data, offset + 226 );
+				if( instrument->pan_env.num_points > 12 ) {
+					instrument->pan_env.num_points = 0;
+				}
+				instrument->vol_env.sustain_tick = instrument->vol_env.points_tick[ data_u8( data, offset + 227 ) & 0xF ];
+				instrument->vol_env.loop_start_tick = instrument->vol_env.points_tick[ data_u8( data, offset + 228 ) & 0xF ];
+				instrument->vol_env.loop_end_tick = instrument->vol_env.points_tick[ data_u8( data, offset + 229 ) & 0xF ];
+				instrument->pan_env.sustain_tick = instrument->pan_env.points_tick[ data_u8( data, offset + 230 ) & 0xF ];
+				instrument->pan_env.loop_start_tick = instrument->pan_env.points_tick[ data_u8( data, offset + 231 ) & 0xF ];
+				instrument->pan_env.loop_end_tick = instrument->pan_env.points_tick[ data_u8( data, offset + 232 ) & 0xF ];
+				instrument->vol_env.enabled = instrument->vol_env.num_points > 0 && ( data_u8( data, offset + 233 ) & 0x1 );
+				instrument->vol_env.sustain = ( data_u8( data, offset + 233 ) & 0x2 ) > 0;
+				instrument->vol_env.looped = ( data_u8( data, offset + 233 ) & 0x4 ) > 0;
+				instrument->pan_env.enabled = instrument->pan_env.num_points > 0 && ( data_u8( data, offset + 234 ) & 0x1 );
+				instrument->pan_env.sustain = ( data_u8( data, offset + 234 ) & 0x2 ) > 0;
+				instrument->pan_env.looped = ( data_u8( data, offset + 234 ) & 0x4 ) > 0;
+				instrument->vib_type = data_u8( data, offset + 235 );
+				instrument->vib_sweep = data_u8( data, offset + 236 );
+				instrument->vib_depth = data_u8( data, offset + 237 );
+				instrument->vib_rate = data_u8( data, offset + 238 );
+				instrument->vol_fadeout = data_u16le( data, offset + 239 );
+			}
+		}
+		offset += data_u32le( data, offset );
+		sam_head_offset = offset;
+		offset += instrument->num_samples * 40;
+		for( sam = 0; sam < instrument->num_samples; sam++ ) {
+			sam_data_bytes = data_u32le( data, sam_head_offset );
+			if( sam < 96 ) {
+				sample = &instrument->samples[ idx ];
+				sam_loop_start = data_u32le( data, sam_head_offset + 4 );
+				sam_loop_length = data_u32le( data, sam_head_offset + 8 );
+				sample->volume = data_u8( data, sam_head_offset + 12 );
+				sample->fine_tune = data_u8( data, sam_head_offset + 13 );
+				looped = ( data_u8( data, sam_head_offset + 14 ) & 0x3 ) > 0;
+				ping_pong = ( data_u8( data, sam_head_offset + 14 ) & 0x2 ) > 0;
+				sixteen_bit = ( data_u8( data, sam_head_offset + 14 ) & 0x10 ) > 0;
+				sample->panning = data_u8( data, sam_head_offset + 15 );
+				sample->rel_note = data_u8( data, sam_head_offset + 16 );
+				sam_head_offset += 40;
+				if( !looped || ( sam_loop_start + sam_loop_length ) > sam_data_bytes ) {
+					sam_loop_start = sam_data_bytes;
+					sam_loop_length = 0;
+				}
+				sample->data = calloc( sam_data_bytes, 1 );
+				if( sample->data ) {
+					if( sixteen_bit ) {
+						data_sam_s16d( data, offset, sam_data_bytes >> 1, sample->data );
+						sample->loop_start = sam_loop_start >> 1;
+						sample->loop_length = sam_loop_length >> 1;
+					} else {
+						data_sam_s8d( data, offset, sam_data_bytes, sample->data );
+						sample->loop_start = sam_loop_start;
+						sample->loop_length = sam_loop_length;
+					}
+					if( ping_pong ) {
+						sample_ping_pong( sample );
+					}
+				}
+			}
+			offset += sam_data_bytes;
+		}
+	}
+	return 1;
+}
+
+static int module_load_s3m( struct module *module, struct data *data ) {
+	return 0;
+}
+
+static int module_load_mod( struct module *module, struct data *data ) {
+	return 0;
+}
+
+static int module_load( struct module *module, struct data *data ) {
+	int result = 0;
+	char ascii[ 16 ];
+	if( !memcmp( data_ascii( data, 0, 16, ascii ), "Extended Module:", 16 ) ) {
+		result = module_load_xm( module, data );
+	} else if( !memcmp( data_ascii( data, 44, 4, ascii ), "SCRM", 4 ) ) {
+		result = module_load_s3m( module, data );
+	} else {
+		result = module_load_mod( module, data );
+	}
+	return result;
+}
+
+static struct module* new_module( struct data *data ) {
+	struct module *module = calloc( 1, sizeof( struct module ) );
+	if( module && data ) {
+		if( !module_load( module, data ) ) {
+			free( module );
+			module = NULL;
+		}
+	}
+	return module;
 }
 
 static void dispose_module( struct module *module ) {
+	int idx, sam;
+	for( idx = 0; idx < 256; idx++ ) {
+		free( module->patterns[ idx ].data );
+	}
+	for( idx = 0; idx < 256; idx++ ) {
+		for( sam = 0; sam < 96; sam++ ) {
+			free( module->instruments[ idx ].samples[ sam ].data );
+		}
+	}
 	free( module );
 }
 
@@ -73,10 +344,15 @@ static struct replay* new_replay( struct module *module, int sample_rate ) {
 	return replay;
 }
 
-static int replay_set_position( struct replay *replay, int pos ) {
+static void dispose_replay( struct replay *replay ) {
+	free( replay );
+}
+
+static void replay_set_sequence_pos( struct replay *replay, int pos ) {
 }
 
 static int replay_tick( struct replay *replay ) {
+	return 1;
 }
 
 static int replay_calculate_tick_len( struct replay *replay ) {
@@ -160,7 +436,7 @@ static int write_sequence( struct replay *replay, char *dest ) {
 	int chn, idx = 0, song_end = 0, bpm = 0, wait = 0;
 	int inst, swap, sidx, step, d_step, freq;
 	int vol, ampl, d_ampl, pan, pann, d_pann;
-	replay_set_position( replay, 0 );
+	replay_set_sequence_pos( replay, 0 );
 	while( !song_end ) {
 		if( bpm != replay->tempo ) {
 			if( dest ) {
@@ -260,53 +536,52 @@ static int write_sequence( struct replay *replay, char *dest ) {
 	return idx;
 }
 
-static int xm_to_tmf( struct data module_data, char *tmf ) {
+static int xm_to_tmf( struct module *module, char *tmf ) {
 	int seqlen, idx, loop_start, loop_length, length = -1;
-	struct module *module = new_module( module_data );
+	struct instrument *instrument;
 	struct sample *sample;
-	if( module ) {
-		if( module->num_instruments > 63 ) {
-			fputs( "Module has too many instruments.", stderr );
-		} else {
-			struct replay *replay = new_replay( module, 48000 );
-			if( replay ) {
-				length = 32 * 64;
-				seqlen = write_sequence( replay, NULL );
-				if( tmf ) {
-					printf( "Sequence length: %d bytes.\n", seqlen );
-					memset( tmf, 0, length );
-					strcpy( tmf, "TMF0" );
-					write_int32be( seqlen, &tmf[ 4 ] );
-					/*get_string( 0, &tmf[ 8 ] );*/
-					write_sequence( replay, &tmf[ length ] );
-				}
-				length = length + seqlen;
-				idx = 1;
-				while( idx < 32 ) {
-					sample = &module->instruments[ idx ].samples[ 0 ];
-					loop_start = sample->loop_start;
-					loop_length = sample->loop_length;
-					if( tmf ) {
-						write_int32be( loop_start, &tmf[ idx * 32 ] );
-						write_int32be( loop_length, &tmf[ idx * 32 + 4 ] );
-						/*get_string( idx, &tmf[ idx * 32 + 8 ] );*/
-						sample_quantize( sample, &tmf[ length ], loop_start + loop_length );
-					}
-					length = length + loop_start + loop_length;
-					idx++;
-				}
+	if( module->num_instruments > 63 ) {
+		fputs( "Module has too many instruments.", stderr );
+	} else {
+		struct replay *replay = new_replay( module, 48000 );
+		if( replay ) {
+			length = 32 * 64;
+			seqlen = write_sequence( replay, NULL );
+			if( tmf ) {
+				printf( "Sequence length: %d bytes.\n", seqlen );
+				memset( tmf, 0, length );
+				strcpy( tmf, "TMF0" );
+				write_int32be( seqlen, &tmf[ 4 ] );
+				memcpy( &tmf[ 8 ], module->name, 24 );
+				write_sequence( replay, &tmf[ length ] );
 			}
+			length = length + seqlen;
+			idx = 1;
+			while( idx <= module->num_instruments ) {
+				instrument = &module->instruments[ idx ];
+				sample = &instrument->samples[ 0 ];
+				loop_start = sample->loop_start;
+				loop_length = sample->loop_length;
+				if( tmf ) {
+					write_int32be( loop_start, &tmf[ idx * 32 ] );
+					write_int32be( loop_length, &tmf[ idx * 32 + 4 ] );
+					memcpy( &tmf[ idx * 32 + 8 ], instrument->name, 24 );
+					sample_quantize( sample, &tmf[ length ], loop_start + loop_length );
+				}
+				length = length + loop_start + loop_length;
+				idx++;
+			}
+			dispose_replay( replay );
 		}
-		dispose_module( module );
 	}
 	return length;
 }
 
 int main( int argc, char **argv ) {
-	int result;
-	long count, length;
-	char *mod, *tmf;
+	int result, length;
+	char *input, *output;
 	struct data data;
+	struct module *module;
 	result = EXIT_FAILURE;
 	if( argc != 3 ) {
 		fprintf( stderr, "%s\nUsage: %s input.xm output.tmf\n", VERSION, argv[ 0 ] );
@@ -314,26 +589,30 @@ int main( int argc, char **argv ) {
 		/* Read module file.*/
 		length = read_file( argv[ 1 ], NULL );
 		if( length >= 0 ) {
-			printf( "Module Data Length: %li bytes.\n", length );
-			mod = calloc( length, 1 );
-			if( mod != NULL ) {
-				if( read_file( argv[ 1 ], mod ) >= 0 ) {
-					/* Perform conversion. */
-					data.buffer = mod;
+			printf( "Module Data Length: %i bytes.\n", length );
+			input = calloc( length, 1 );
+			if( input != NULL ) {
+				if( read_file( argv[ 1 ], input ) >= 0 ) {
+					data.buffer = input;
 					data.length = length;
-					length = xm_to_tmf( data, NULL );
-					if( length > 0 ) {
-						tmf = calloc( length, 1 );
-						if( tmf != NULL ) {
-							xm_to_tmf( data, tmf );
-							if( write_file( argv[ 2 ], tmf, length ) > 0 ) {
-								result = EXIT_SUCCESS;
+					module = new_module( &data );
+					if( module ) {
+						/* Perform conversion. */
+						length = xm_to_tmf( module, NULL );
+						if( length > 0 ) {
+							output = calloc( length, 1 );
+							if( output != NULL ) {
+								xm_to_tmf( module, output );
+								if( write_file( argv[ 2 ], output, length ) > 0 ) {
+									result = EXIT_SUCCESS;
+								}
+								free( output );
 							}
-							free( tmf );
 						}
+						dispose_module( module );
 					}
-					free( mod );
 				}
+				free( input );
 			}
 		}
 	}
