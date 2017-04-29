@@ -26,8 +26,7 @@ public class XM2TMF {
 	}
 
 	public static int convert( Module module, IBXM ibxm, byte[] output ) {
-		int numInstruments = module.instruments.length;
-		if( numInstruments > 63 ) {
+		if( module.numInstruments > 63 ) {
 			throw new IllegalArgumentException( "Module has too many instruments." );
 		}
 		if( module.numChannels > 16 ) {
@@ -49,7 +48,7 @@ public class XM2TMF {
 		}
 		length = length + seqlen;
 		int idx = 1;
-		while( idx < numInstruments ) {
+		while( idx <= module.numInstruments ) {
 			Instrument instrument = module.instruments[ idx ];
 			Sample sample = instrument.samples[ 0 ];
 			int loopStart = sample.getLoopStart();
