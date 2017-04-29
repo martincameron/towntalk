@@ -16,5 +16,5 @@ ttfx: ttfx.c towntalk.c
 mod2tmf: mod2tmf.c
 	$(CC) $(CFLAGS) mod2tmf.c -o mod2tmf
 
-xm2tmf: xm2tmf.c
+xmtotmf: xm2tmf.c
 	$(CC) $(CFLAGS) xm2tmf.c -o xmtotmf

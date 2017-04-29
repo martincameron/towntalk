@@ -692,7 +692,7 @@ program tgads {
 	let palette = ${ 0x000000, 0xFFFFFF, 0xA0A0A0, 0x6080B0 };
 
 	dim [ background 240 ];
-	call parse_rws( $load( "demo5.rws" ), background );
+	call parse_rws( $load( "rws/demo5.rws" ), background );
 	#call gradient( 0x008000, 0x000080, background, 0, 240 );
 
 	call tg_charset( $load( "topaz8.txt" ) );
