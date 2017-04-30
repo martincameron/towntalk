@@ -60,21 +60,25 @@ struct module {
 	int num_patterns, sequence_len, restart_pos;
 	int default_gvol, default_speed, default_tempo, c2_rate, gain;
 	int linear_periods, fast_vol_slides;
-	unsigned char default_panning[ 32 ], sequence[ 256 ];
+	unsigned char *sequence, default_panning[ 32 ];
 	struct pattern *patterns;
 	struct instrument *instruments;
 };
 
 struct channel {
+	struct module *module;
+	struct replay *replay;
+	int id, pl_row;
 	int sample_idx, step, ampl, pann;
 	int trig_inst, swap_inst, prev_step, prev_ampl, prev_pann;
 };
 
 struct replay {
-	struct channel channels[ 32 ];
-	int sample_rate, num_channels;
+	int sample_rate, global_vol;
 	int seq_pos, break_pos, row, next_row, tick;
 	int speed, tempo, pl_count, pl_chan;
+	struct channel *channels;
+	struct module *module;
 };
 
 static char* data_ascii( struct data *data, int offset, int length, char *dest ) {
@@ -175,6 +179,7 @@ static void sample_ping_pong( struct sample *sample ) {
 static void dispose_module( struct module *module ) {
 	int idx, sam;
 	struct instrument *instrument;
+	free( module->sequence );
 	for( idx = 0; idx < module->num_patterns; idx++ ) {
 		free( module->patterns[ idx ].data );
 	}
@@ -212,9 +217,6 @@ static struct module* module_load_xm( struct data *data ) {
 		delta_env = !memcmp( data_ascii( data, 38, 15, ascii ), "DigiBooster Pro", 15 );
 		offset = 60 + data_u32le( data, 60 );
 		module->sequence_len = data_u16le( data, 64 );
-		if( module->sequence_len > 256 ) {
-			module->sequence_len = 256;
-		}
 		module->restart_pos = data_u16le( data, 66 );
 		module->num_channels = data_u16le( data, 68 );
 		module->num_patterns = data_u16le( data, 70 );
@@ -227,6 +229,11 @@ static struct module* module_load_xm( struct data *data ) {
 		module->gain = 64;
 		for( idx = 0; idx < 32; idx++ ) {
 			module->default_panning[ idx ] = 128;
+		}
+		module->sequence = calloc( module->sequence_len, sizeof( unsigned char ) );
+		if( !module->sequence ) {
+			dispose_module( module );
+			return NULL;
 		}
 		for( idx = 0; idx < module->sequence_len; idx++ ) {
 			entry = data_u8( data, 80 + idx );
@@ -404,23 +411,106 @@ static struct module* module_load( struct data *data ) {
 	return module;
 }
 
-static struct replay* new_replay( struct module *module, int sample_rate ) {
-	struct replay *replay = calloc( 1, sizeof( struct replay ) );
-	if( replay ) {
-		replay->sample_rate = sample_rate;
+static void channel_init( struct channel *channel, struct replay *replay, int id ) {
+	memset( channel, 0, sizeof( struct channel ) );
+	channel->module = replay->module;
+	channel->replay = replay;
+	channel->id = id;
+}
+
+static void channel_tick( struct channel *channel ) {
+}
+
+static int replay_row( struct replay *replay ) {
+	int idx, song_end = 0;
+	struct pattern *pattern;
+	struct module *module = replay->module;
+	if( replay->next_row < 0 ) {
+		replay->break_pos = replay->seq_pos + 1;
+		replay->next_row = 0;
 	}
-	return replay;
-}
-
-static void dispose_replay( struct replay *replay ) {
-	free( replay );
-}
-
-static void replay_set_sequence_pos( struct replay *replay, int pos ) {
+	if( replay->break_pos >= 0 ) {
+		if( replay->break_pos >= module->sequence_len ) {
+			replay->break_pos = replay->next_row = 0;
+		}
+		while( module->sequence[ replay->break_pos ] >= module->num_patterns ) {
+			replay->break_pos++;
+			if( replay->break_pos >= module->sequence_len ) {
+				replay->break_pos = replay->next_row = 0;
+			}
+		}
+		if( replay->break_pos <= replay->seq_pos ) {
+			song_end = 1;
+		}
+		replay->seq_pos = replay->break_pos;
+		for( idx = 0; idx < module->num_channels; idx++ ) {
+			replay->channels[ idx ].pl_row = 0;
+		}
+		replay->break_pos = -1;
+	}
+	pattern = &module->patterns[ module->sequence[ replay->seq_pos ] ];
+	replay->row = replay->next_row;
+	if( replay->row >= pattern->num_rows ) {
+		replay->row = 0;
+	}
+	replay->next_row = replay->row + 1;
+	if( replay->next_row >= pattern->num_rows ) {
+		replay->next_row = -1;
+	}
+	return song_end;
 }
 
 static int replay_tick( struct replay *replay ) {
-	return 1;
+	int idx, num_channels, song_end = 0;
+	if( --replay->tick <= 0 ) {
+		replay->tick = replay->speed;
+		song_end = replay_row( replay );
+	} else {
+		num_channels = replay->module->num_channels;
+		for( idx = 0; idx < num_channels; idx++ ) {
+			channel_tick( &replay->channels[ idx ] );
+		}
+	}
+	return song_end;
+}
+
+static void replay_set_sequence_pos( struct replay *replay, int pos ) {
+	int idx;
+	struct module *module = replay->module;
+	if( pos >= module->sequence_len ) {
+		pos = 0;
+	}
+	replay->break_pos = pos;
+	replay->next_row = 0;
+	replay->tick = 1;
+	replay->global_vol = module->default_gvol;
+	replay->speed = module->default_speed > 0 ? module->default_speed : 6;
+	replay->tempo = module->default_tempo > 0 ? module->default_tempo : 125;
+	replay->pl_count = replay->pl_chan = -1;
+	for( idx = 0; idx < module->num_channels; idx++ ) {
+		channel_init( &replay->channels[ idx ], replay, idx );
+	}
+	replay_tick( replay );
+}
+
+static void dispose_replay( struct replay *replay ) {
+	free( replay->channels );
+	free( replay );
+}
+
+static struct replay* new_replay( struct module *module, int sample_rate ) {
+	struct replay *replay = calloc( 1, sizeof( struct replay ) );
+	if( replay ) {
+		replay->module = module;
+		replay->channels = calloc( module->num_channels, sizeof( struct channel ) );
+		if( !replay->channels ) {
+			dispose_replay( replay );
+			replay = NULL;
+		}
+		replay->sample_rate = sample_rate;
+		replay_set_sequence_pos( replay, 0 );
+	}
+	return replay;
 }
 
 static int replay_calculate_tick_len( struct replay *replay ) {
@@ -516,6 +606,7 @@ static int write_sequence( struct replay *replay, char *dest ) {
 	int chn, idx = 0, song_end = 0, bpm = 0, wait = 0;
 	int inst, swap, sidx, step, d_step, freq;
 	int vol, ampl, d_ampl, pan, pann, d_pann;
+	int num_chn = replay->module->num_channels;
 	replay_set_sequence_pos( replay, 0 );
 	while( !song_end ) {
 		if( bpm != replay->tempo ) {
@@ -527,7 +618,7 @@ static int write_sequence( struct replay *replay, char *dest ) {
 			idx += 4;
 		}
 		chn = 0;
-		while( chn < replay->num_channels ) {
+		while( chn < num_chn ) {
 			inst = replay->channels[ chn ].trig_inst;
 			swap = replay->channels[ chn ].swap_inst;
 			sidx = replay->channels[ chn ].sample_idx;
