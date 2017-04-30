@@ -163,6 +163,35 @@ static void data_sam_s16d( struct data *data, int offset, int count, short *dest
 	}
 }
 
+static int envelope_next_tick( struct envelope *envelope, int tick, int key_on ) {
+	tick++;
+	if( envelope->looped && tick >= envelope->loop_end_tick ) {
+		tick = envelope->loop_start_tick;
+	}
+	if( envelope->sustain && key_on && tick >= envelope->sustain_tick ) {
+		tick = envelope->sustain_tick;
+	}
+	return tick;
+}
+	
+static int envelope_calculate_ampl( struct envelope *envelope, int tick ) {
+	int idx, point, dt, da;
+	int ampl = envelope->points_ampl[ envelope->num_points - 1 ];
+	if( tick < envelope->points_tick[ envelope->num_points - 1 ] ) {
+		point = 0;
+		for( idx = 1; idx < envelope->num_points; idx++ ) {
+			if( envelope->points_tick[ idx ] <= tick ) {
+				point = idx;
+			}
+		}
+		dt = envelope->points_tick[ point + 1 ] - envelope->points_tick[ point ];
+		da = envelope->points_ampl[ point + 1 ] - envelope->points_ampl[ point ];
+		ampl = envelope->points_ampl[ point ];
+		ampl += ( ( da << 24 ) / dt ) * ( tick - envelope->points_tick[ point ] ) >> 24;
+	}
+	return ampl;
+}
+
 static void sample_ping_pong( struct sample *sample ) {
 	int idx;
 	int loop_start = sample->loop_start;
