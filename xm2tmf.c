@@ -50,7 +50,7 @@ struct instrument {
 };
 
 struct pattern {
-	int num_rows;
+	int num_channels, num_rows;
 	char *data;
 };
 
@@ -60,7 +60,7 @@ struct module {
 	int num_patterns, sequence_len, restart_pos;
 	int default_gvol, default_speed, default_tempo, c2_rate, gain;
 	int linear_periods, fast_vol_slides;
-	unsigned char *sequence, default_panning[ 32 ];
+	unsigned char *default_panning, *sequence;
 	struct pattern *patterns;
 	struct instrument *instruments;
 };
@@ -70,7 +70,12 @@ struct channel {
 	struct replay *replay;
 	int id, pl_row;
 	int sample_idx, step, ampl, pann;
+	int volume, panning;
 	int trig_inst, swap_inst, prev_step, prev_ampl, prev_pann;
+};
+
+struct note {
+	unsigned char key, instrument, volume, effect, param;
 };
 
 struct replay {
@@ -179,6 +184,7 @@ static void sample_ping_pong( struct sample *sample ) {
 static void dispose_module( struct module *module ) {
 	int idx, sam;
 	struct instrument *instrument;
+	free( module->default_panning );
 	free( module->sequence );
 	for( idx = 0; idx < module->num_patterns; idx++ ) {
 		free( module->patterns[ idx ].data );
@@ -227,7 +233,12 @@ static struct module* module_load_xm( struct data *data ) {
 		module->default_tempo = data_u16le( data, 78 );
 		module->c2_rate = 8363;
 		module->gain = 64;
-		for( idx = 0; idx < 32; idx++ ) {
+		module->default_panning = calloc( module->num_channels, sizeof( unsigned char ) );
+		if( !module->default_panning ) {
+			dispose_module( module );
+			return NULL;
+		}
+		for( idx = 0; idx < module->num_channels; idx++ ) {
 			module->default_panning[ idx ] = 128;
 		}
 		module->sequence = calloc( module->sequence_len, sizeof( unsigned char ) );
@@ -260,6 +271,7 @@ static struct module* module_load_xm( struct data *data ) {
 				dispose_module( module );
 				return NULL;
 			}
+			module->patterns[ idx ].num_channels = module->num_channels;
 			module->patterns[ idx ].num_rows = num_rows;
 			module->patterns[ idx ].data = pattern_data;
 			if( pat_data_len > 0 ) {
@@ -411,19 +423,38 @@ static struct module* module_load( struct data *data ) {
 	return module;
 }
 
-static void channel_init( struct channel *channel, struct replay *replay, int id ) {
+static void pattern_get_note( struct pattern *pattern, int row, int chan, struct note *dest ) {
+	int offset = ( row * pattern->num_channels + chan ) * 5;
+	if( offset >= 0 && row < pattern->num_rows && chan < pattern->num_channels ) {
+		dest->key = pattern->data[ offset ];
+		dest->instrument = pattern->data[ offset + 1 ];
+		dest->volume = pattern->data[ offset + 2 ];
+		dest->effect = pattern->data[ offset + 3 ];
+		dest->param = pattern->data[ offset + 4 ];
+	} else {
+		memset( dest, 0, sizeof( struct note ) );
+	}
+}
+
+static void channel_init( struct channel *channel, struct replay *replay, int idx ) {
 	memset( channel, 0, sizeof( struct channel ) );
 	channel->module = replay->module;
 	channel->replay = replay;
-	channel->id = id;
+	channel->id = idx;
+	channel->panning = replay->module->default_panning[ idx ];
 }
 
 static void channel_tick( struct channel *channel ) {
 }
 
+static void channel_row( struct channel *channel, struct note *note ) {
+}
+
 static int replay_row( struct replay *replay ) {
 	int idx, song_end = 0;
+	struct note note;
 	struct pattern *pattern;
+	struct channel *channel;
 	struct module *module = replay->module;
 	if( replay->next_row < 0 ) {
 		replay->break_pos = replay->seq_pos + 1;
@@ -456,6 +487,85 @@ static int replay_row( struct replay *replay ) {
 	replay->next_row = replay->row + 1;
 	if( replay->next_row >= pattern->num_rows ) {
 		replay->next_row = -1;
+	}
+	for( idx = 0; idx < module->num_channels; idx++ ) {
+		channel = &replay->channels[ idx ];
+		pattern_get_note( pattern, replay->row, idx, &note );
+		if( note.effect == 0xE ) {
+			note.effect = 0x70 | ( note.param >> 4 );
+			note.param &= 0xF;
+		}
+		if( note.effect == 0x93 ) {
+			note.effect = 0xF0 | ( note.param >> 4 );
+			note.param &= 0xF;
+		}
+		if( note.effect == 0 && note.param > 0 ) {
+			note.effect = 0x8A;
+		}
+		channel_row( channel, &note );
+		switch( note.effect ) {
+			case 0x81: /* Set Speed. */
+				if( note.param > 0 ) {
+					replay->tick = replay->speed = note.param;
+				}
+				break;
+			case 0xB: case 0x82: /* Pattern Jump.*/
+				if( replay->pl_count < 0 ) {
+					replay->break_pos = note.param;
+					replay->next_row = 0;
+				}
+				break;
+			case 0xD: case 0x83: /* Pattern Break.*/
+				if( replay->pl_count < 0 ) {
+					if( replay->break_pos < 0 ) {
+						replay->break_pos = replay->seq_pos + 1;
+					}
+					replay->next_row = ( note.param >> 4 ) * 10 + ( note.param & 0xF );
+				}
+				break;
+			case 0xF: /* Set Speed/Tempo.*/
+				if( note.param > 0 ) {
+					if( note.param < 32 ) {
+						replay->tick = replay->speed = note.param;
+					} else {
+						replay->tempo = note.param;
+					}
+				}
+				break;
+			case 0x94: /* Set Tempo.*/
+				if( note.param > 32 ) {
+					replay->tempo = note.param;
+				}
+				break;
+			case 0x76: case 0xFB : /* Pattern Loop.*/
+				if( note.param == 0 ) {
+					/* Set loop marker on this channel. */
+					channel->pl_row = replay->row;
+				}
+				if( channel->pl_row < replay->row && replay->break_pos < 0 ) {
+					/* Marker valid. */
+					if( replay->pl_count < 0 ) {
+						/* Not already looping, begin. */
+						replay->pl_count = note.param;
+						replay->pl_chan = idx;
+					}
+					if( replay->pl_chan == idx ) {
+						/* Next Loop.*/
+						if( replay->pl_count == 0 ) {
+							/* Loop finished. Invalidate current marker. */
+							channel->pl_row = replay->row + 1;
+						} else {
+							/* Loop. */
+							replay->next_row = channel->pl_row;
+						}
+						replay->pl_count--;
+					}
+				}
+				break;
+			case 0x7E: case 0xFE: /* Pattern Delay.*/
+				replay->tick = replay->speed + replay->speed * note.param;
+				break;
+		}
 	}
 	return song_end;
 }
