@@ -6,7 +6,7 @@
 
 static const char *VERSION = "MOD/S3M/XM to TMF converter (c)2017 mumart@gmail.com";
 
-static const int FP_SHIFT = 15;
+static const int FP_SHIFT = 15, FP_ONE = 32768, FP_MASK = 32767;
 
 static const int tmf_freq_table[] = {
 	16744, 16865, 16988, 17111, 17235, 17360, 17485, 17612,
@@ -22,6 +22,31 @@ static const int tmf_freq_table[] = {
 	29834, 30051, 30268, 30488, 30709, 30931, 31155, 31381,
 	31609, 31838, 32068, 32301, 32535, 32770, 33008, 33247,
 	33488
+};
+
+static const int exp2_table[] = {
+	32768, 32946, 33125, 33305, 33486, 33667, 33850, 34034,
+	34219, 34405, 34591, 34779, 34968, 35158, 35349, 35541,
+	35734, 35928, 36123, 36319, 36516, 36715, 36914, 37114,
+	37316, 37518, 37722, 37927, 38133, 38340, 38548, 38757,
+	38968, 39180, 39392, 39606, 39821, 40037, 40255, 40473,
+	40693, 40914, 41136, 41360, 41584, 41810, 42037, 42265,
+	42495, 42726, 42958, 43191, 43425, 43661, 43898, 44137,
+	44376, 44617, 44859, 45103, 45348, 45594, 45842, 46091,
+	46341, 46593, 46846, 47100, 47356, 47613, 47871, 48131,
+	48393, 48655, 48920, 49185, 49452, 49721, 49991, 50262,
+	50535, 50810, 51085, 51363, 51642, 51922, 52204, 52488,
+	52773, 53059, 53347, 53637, 53928, 54221, 54515, 54811,
+	55109, 55408, 55709, 56012, 56316, 56622, 56929, 57238,
+	57549, 57861, 58176, 58491, 58809, 59128, 59449, 59772,
+	60097, 60423, 60751, 61081, 61413, 61746, 62081, 62419,
+	62757, 63098, 63441, 63785, 64132, 64480, 64830, 65182,
+	65536
+};
+
+static const short sine_table[] = {
+	  0,  24,  49,  74,  97, 120, 141, 161, 180, 197, 212, 224, 235, 244, 250, 253,
+	255, 253, 250, 244, 235, 224, 212, 197, 180, 161, 141, 120,  97,  74,  49,  24
 };
 
 struct data {
@@ -65,17 +90,28 @@ struct module {
 	struct instrument *instruments;
 };
 
-struct channel {
-	struct module *module;
-	struct replay *replay;
-	int id, pl_row;
-	int sample_idx, step, ampl, pann;
-	int volume, panning;
-	int trig_inst, swap_inst, prev_step, prev_ampl, prev_pann;
-};
-
 struct note {
 	unsigned char key, instrument, volume, effect, param;
+};
+
+struct channel {
+	struct replay *replay;
+	struct instrument *instrument;
+	struct sample *sample;
+	struct note note;
+	int id, key_on, random_seed, pl_row;
+	int sample_off, sample_idx, sample_fra, freq, ampl, pann;
+	int volume, panning, fadeout_vol, vol_env_tick, pan_env_tick;
+	int period, porta_period, retrig_count, fx_count, av_count;
+	int porta_up_param, porta_down_param, tone_porta_param, offset_param;
+	int fine_porta_up_param, fine_porta_down_param, xfine_porta_param;
+	int arpeggio_param, vol_slide_param, gvol_slide_param, pan_slide_param;
+	int fine_vslide_up_param, fine_vslide_down_param;
+	int retrig_volume, retrig_ticks, tremor_on_ticks, tremor_off_ticks;
+	int vibrato_type, vibrato_phase, vibrato_speed, vibrato_depth;
+	int tremolo_type, tremolo_phase, tremolo_speed, tremolo_depth;
+	int tremolo_add, vibrato_add, arpeggio_add;
+	int inst_idx, trig_inst, swap_inst, prev_freq, prev_ampl, prev_pann;
 };
 
 struct replay {
@@ -85,6 +121,26 @@ struct replay {
 	struct channel *channels;
 	struct module *module;
 };
+
+static int exp2( int x ) {
+	int c, m, y;
+	int x0 = ( x & FP_MASK ) >> ( FP_SHIFT - 7 );
+	c = exp2_table[ x0 ];
+	m = exp2_table[ x0 + 1 ] - c;
+	y = ( m * ( x & ( FP_MASK >> 7 ) ) >> 8 ) + c;
+	return ( y << FP_SHIFT ) >> ( FP_SHIFT - ( x >> FP_SHIFT ) );
+}
+
+static int log2( int x ) {
+	int step;
+	int y = 16 << FP_SHIFT;
+	for( step = y; step > 0; step >>= 1 ) {
+		if( exp2( y - step ) >= x ) {
+			y -= step;
+		}
+	}
+	return y;
+}
 
 static char* data_ascii( struct data *data, int offset, int length, char *dest ) {
 	if( offset > data->length ) {
@@ -328,6 +384,12 @@ static struct module* module_load_xm( struct data *data ) {
 			dispose_module( module );
 			return NULL;
 		}
+		instrument = &module->instruments[ 0 ];
+		instrument->samples = calloc( 1, sizeof( struct sample ) );
+		if( !instrument->samples ) {
+			dispose_module( module );
+			return NULL;
+		}
 		for( idx = 1; idx <= module->num_instruments; idx++ ) {
 			instrument = &module->instruments[ idx ];
 			data_ascii( data, offset + 4, 22, instrument->name );
@@ -467,16 +529,264 @@ static void pattern_get_note( struct pattern *pattern, int row, int chan, struct
 
 static void channel_init( struct channel *channel, struct replay *replay, int idx ) {
 	memset( channel, 0, sizeof( struct channel ) );
-	channel->module = replay->module;
 	channel->replay = replay;
 	channel->id = idx;
 	channel->panning = replay->module->default_panning[ idx ];
+	channel->instrument = &replay->module->instruments[ 0 ];
+	channel->sample = &channel->instrument->samples[ 0 ];
+	channel->random_seed = ( idx + 1 ) * 0xABCDEF;
+}
+
+static int channel_waveform( struct channel *channel, int phase, int type ) {
+	int amplitude = 0;
+	switch( type ) {
+		default: /* Sine. */
+			amplitude = sine_table[ phase & 0x1F ];
+			if( ( phase & 0x20 ) > 0 ) {
+				amplitude = -amplitude;
+			}
+			break;
+		case 6: /* Saw Up.*/
+			amplitude = ( ( ( phase + 0x20 ) & 0x3F ) << 3 ) - 255;
+			break;
+		case 1: case 7: /* Saw Down. */
+			amplitude = 255 - ( ( ( phase + 0x20 ) & 0x3F ) << 3 );
+			break;
+		case 2: case 5: /* Square. */
+			amplitude = ( phase & 0x20 ) > 0 ? 255 : -255;
+			break;
+		case 3: case 8: /* Random. */
+			amplitude = ( channel->random_seed >> 20 ) - 255;
+			channel->random_seed = ( channel->random_seed * 65 + 17 ) & 0x1FFFFFFF;
+			break;
+	}
+	return amplitude;
+}
+
+static void channel_vibrato( struct channel *channel, int fine ) {
+	int wave = channel_waveform( channel, channel->vibrato_phase, channel->vibrato_type & 0x3 );
+	channel->vibrato_add = wave * channel->vibrato_depth >> ( fine ? 7 : 5 );
+}
+
+static void channel_trigger( struct channel *channel ) {
+	int key, sam, porta, period, fine_tune, ins = channel->note.instrument;
+	struct sample *sample;
+	if( ins > 0 && ins <= channel->replay->module->num_instruments ) {
+		channel->inst_idx = ins;
+		channel->instrument = &channel->replay->module->instruments[ ins ];
+		key = channel->note.key < 97 ? channel->note.key : 0;
+		sam = channel->instrument->key_to_sample[ key ];
+		sample = &channel->instrument->samples[ sam ];
+		channel->volume = sample->volume >= 64 ? 64 : sample->volume & 0x3F;
+		if( sample->panning >= 0 ) {
+			channel->panning = sample->panning & 0xFF;
+		}
+		if( channel->period > 0 && sample->loop_length > 1 ) {
+			channel->sample = sample; /* Amiga trigger.*/
+			channel->swap_inst = ins;
+		}
+		channel->sample_off = 0;
+		channel->vol_env_tick = channel->pan_env_tick = 0;
+		channel->fadeout_vol = 32768;
+		channel->key_on = 1;
+	}
+	if( channel->note.effect == 0x09 || channel->note.effect == 0x8F ) {
+		/* Set Sample Offset. */
+		if( channel->note.param > 0 ) {
+			channel->offset_param = channel->note.param;
+		}
+		channel->sample_off = channel->offset_param << 8;
+	}
+	if( channel->note.volume >= 0x10 && channel->note.volume < 0x60 ) {
+		channel->volume = channel->note.volume < 0x50 ? channel->note.volume - 0x10 : 64;
+	}
+	switch( channel->note.volume & 0xF0 ) {
+		case 0x80: /* Fine Vol Down.*/
+			channel->volume -= channel->note.volume & 0xF;
+			if( channel->volume < 0 ) {
+				channel->volume = 0;
+			}
+			break;
+		case 0x90: /* Fine Vol Up.*/
+			channel->volume += channel->note.volume & 0xF;
+			if( channel->volume > 64 ) {
+				channel->volume = 64;
+			}
+			break;
+		case 0xA0: /* Set Vibrato Speed.*/
+			if( ( channel->note.volume & 0xF ) > 0 ) {
+				channel->vibrato_speed = channel->note.volume & 0xF;
+			}
+			break;
+		case 0xB0: /* Vibrato.*/
+			if( ( channel->note.volume & 0xF ) > 0 ) {
+				channel->vibrato_depth = channel->note.volume & 0xF;
+			}
+			channel_vibrato( channel, 0 );
+			break;
+		case 0xC0: /* Set Panning.*/
+			channel->panning = ( channel->note.volume & 0xF ) * 17;
+			break;
+		case 0xF0: /* Tone Porta.*/
+			if( ( channel->note.volume & 0xF ) > 0 ) {
+				channel->tone_porta_param = channel->note.volume & 0xF;
+			}
+			break;
+	}
+	if( channel->note.key > 0 ) {
+		if( channel->note.key > 96 ) {
+			channel->key_on = 0;
+		} else {
+			porta = ( channel->note.volume & 0xF0 ) == 0xF0 ||
+				channel->note.effect == 0x03 || channel->note.effect == 0x05 ||
+				channel->note.effect == 0x87 || channel->note.effect == 0x8C;
+			if( !porta ) {
+				ins = channel->instrument->key_to_sample[ channel->note.key ];
+				channel->sample = &channel->instrument->samples[ ins ];
+			}
+			fine_tune = channel->sample->fine_tune;
+			if( channel->note.effect == 0x75 || channel->note.effect == 0xF2 ) {
+				/* Set Fine Tune. */
+				fine_tune = ( ( channel->note.param & 0xF ) << 4 ) - 128;
+			}
+			key = channel->note.key + channel->sample->rel_note;
+			if( key < 1 ) {
+				key = 1;
+			}
+			if( key > 120 ) {
+				key = 120;
+			}
+			period = ( key << 6 ) + ( fine_tune >> 1 );
+			if( channel->replay->module->linear_periods ) {
+				channel->porta_period = 7744 - period;
+			} else {
+				channel->porta_period = 29021 * exp2( ( period << FP_SHIFT ) / -768 ) >> FP_SHIFT;
+			}
+			if( !porta ) {
+				channel->period = channel->porta_period;
+				channel->sample_idx = channel->sample_off;
+				channel->sample_fra = 0;
+				if( channel->vibrato_type < 4 ) {
+					channel->vibrato_phase = 0;
+				}
+				if( channel->tremolo_type < 4 ) {
+					channel->tremolo_phase = 0;
+				}
+				channel->retrig_count = channel->av_count = 0;
+				channel->trig_inst = channel->inst_idx;
+			}
+		}
+	}
+}
+
+static void channel_update_envelopes( struct channel *channel ) {
+	if( channel->instrument->vol_env.enabled ) {
+		if( !channel->key_on ) {
+			channel->fadeout_vol -= channel->instrument->vol_fadeout;
+			if( channel->fadeout_vol < 0 ) {
+				channel->fadeout_vol = 0;
+			}
+		}
+		channel->vol_env_tick = envelope_next_tick( &channel->instrument->vol_env,
+			channel->vol_env_tick, channel->key_on );
+	}
+	if( channel->instrument->pan_env.enabled ) {
+		channel->pan_env_tick = envelope_next_tick( &channel->instrument->pan_env,
+			channel->pan_env_tick, channel->key_on );
+	}
+}
+
+static void channel_auto_vibrato( struct channel *channel ) {
+	int sweep, rate, type, wave;
+	int depth = channel->instrument->vib_depth & 0x7F;
+	if( depth > 0 ) {
+		sweep = channel->instrument->vib_sweep & 0x7F;
+		rate = channel->instrument->vib_rate & 0x7F;
+		type = channel->instrument->vib_type;
+		if( channel->av_count < sweep ) {
+			depth = depth * channel->av_count / sweep;
+		}
+		wave = channel_waveform( channel, channel->av_count * rate >> 2, type + 4 );
+		channel->vibrato_add += wave * depth >> 8;
+		channel->av_count++;
+	}
+}
+
+static void channel_calculate_freq( struct channel *channel ) {
+	int per = channel->period + channel->vibrato_add;
+	if( channel->replay->module->linear_periods ) {
+		per = per - ( channel->arpeggio_add << 6 );
+		if( per < 28 || per > 7680 ) {
+			per = 7680;
+		}
+		channel->freq = ( ( channel->replay->module->c2_rate >> 4 )
+			* exp2( ( ( 4608 - per ) << FP_SHIFT ) / 768 ) ) >> ( FP_SHIFT - 4 );
+	} else {
+		if( per > 29021 ) {
+			per = 29021;
+		}
+		per = ( per << FP_SHIFT ) / exp2( ( channel->arpeggio_add << FP_SHIFT ) / 12 );
+		if( per < 28 ) {
+			per = 29021;
+		}
+		channel->freq = channel->replay->module->c2_rate * 1712 / per;
+	}
+}
+
+static void channel_calculate_ampl( struct channel *channel ) {
+	int vol, range, env_pan = 32, env_vol = channel->key_on ? 64 : 0;
+	if( channel->instrument->vol_env.enabled ) {
+		env_vol = envelope_calculate_ampl( &channel->instrument->vol_env, channel->vol_env_tick );
+	}
+	vol = channel->volume + channel->tremolo_add;
+	if( vol > 64 ) {
+		vol = 64;
+	}
+	if( vol < 0 ) {
+		vol = 0;
+	}
+	vol = ( vol * channel->replay->module->gain * FP_ONE ) >> 13;
+	vol = ( vol * channel->fadeout_vol ) >> 15;
+	channel->ampl = ( vol * channel->replay->global_vol * env_vol ) >> 12;
+	if( channel->instrument->pan_env.enabled ) {
+		env_pan = envelope_calculate_ampl( &channel->instrument->pan_env, channel->pan_env_tick );
+	}
+	range = ( channel->panning < 128 ) ? channel->panning : ( 255 - channel->panning );
+	channel->pann = channel->panning + ( range * ( env_pan - 32 ) >> 5 );
 }
 
 static void channel_tick( struct channel *channel ) {
+	channel->trig_inst = channel->swap_inst = 0;
+	channel->prev_freq = channel->freq;
+	channel->prev_ampl = channel->ampl;
+	channel->prev_pann = channel->pann;
+	channel->vibrato_add = 0;
+	channel->fx_count++;
+	channel->retrig_count++;
+
+	channel_auto_vibrato( channel );
+	channel_calculate_freq( channel );
+	channel_calculate_ampl( channel );
+	channel_update_envelopes( channel );
 }
 
 static void channel_row( struct channel *channel, struct note *note ) {
+	channel->note = *note;
+	channel->trig_inst = channel->swap_inst = 0;
+	channel->prev_freq = channel->freq;
+	channel->prev_ampl = channel->ampl;
+	channel->prev_pann = channel->pann;
+	channel->retrig_count++;
+	channel->vibrato_add = channel->tremolo_add = channel->arpeggio_add = channel->fx_count = 0;
+	if( !( ( note->effect == 0x7D || note->effect == 0xFD ) && note->param > 0 ) ) {
+		/* Not note delay.*/
+		channel_trigger( channel );
+	}
+
+	channel_auto_vibrato( channel );
+	channel_calculate_freq( channel );
+	channel_calculate_ampl( channel );
+	channel_update_envelopes( channel );
 }
 
 static int replay_row( struct replay *replay ) {
@@ -743,7 +1053,7 @@ static int get_tmf_key( int freq ) {
 
 static int write_sequence( struct replay *replay, char *dest ) {
 	int chn, idx = 0, song_end = 0, bpm = 0, wait = 0;
-	int inst, swap, sidx, step, d_step, freq;
+	int inst, swap, sidx, freq, d_freq;
 	int vol, ampl, d_ampl, pan, pann, d_pann;
 	int num_chn = replay->module->num_channels;
 	replay_set_sequence_pos( replay, 0 );
@@ -761,14 +1071,13 @@ static int write_sequence( struct replay *replay, char *dest ) {
 			inst = replay->channels[ chn ].trig_inst;
 			swap = replay->channels[ chn ].swap_inst;
 			sidx = replay->channels[ chn ].sample_idx;
-			step = replay->channels[ chn ].step;
-			d_step = step - replay->channels[ chn ].prev_step;
-			freq = ( step * replay->sample_rate ) >> FP_SHIFT;
+			freq = replay->channels[ chn ].freq;
+			d_freq = freq - replay->channels[ chn ].prev_freq;
 			ampl = replay->channels[ chn ].ampl;
 			d_ampl = ampl - replay->channels[ chn ].prev_ampl;
 			pann = replay->channels[ chn ].pann;
 			d_pann = pann - replay->channels[ chn ].prev_pann;
-			if( inst || swap || d_step || d_ampl || d_pann ) {
+			if( inst || swap || d_freq || d_ampl || d_pann ) {
 				if( wait > 0 ) {
 					if( wait > 037777 ) {
 						wait = 037777;
@@ -808,7 +1117,7 @@ static int write_sequence( struct replay *replay, char *dest ) {
 							+ ( vol << 6 ) + chn, &dest[ idx ] );
 					}
 					idx += 4;
-					if( d_step ) {
+					if( d_freq ) {
 						/* Modulate Pitch.*/
 						if( dest ) {
 							write_int32be( ( get_tmf_key( freq ) << 21 )
@@ -816,7 +1125,7 @@ static int write_sequence( struct replay *replay, char *dest ) {
 						}
 						idx += 4;
 					}
-				} else if( d_step ) {
+				} else if( d_freq ) {
 					/* Modulate Pitch.*/
 					if( dest ) {
 						write_int32be( ( get_tmf_key( freq ) << 21 )
