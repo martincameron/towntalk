@@ -396,10 +396,14 @@ static struct module* module_load_xm( struct data *data ) {
 			instrument->num_samples = data_u16le( data, offset + 27 );
 			if( instrument->num_samples ) {
 				instrument->samples = calloc( instrument->num_samples, sizeof( struct sample ) );
-				if( !instrument->samples ) {
-					dispose_module( module );
-					return NULL;
-				}
+			} else {
+				instrument->samples = calloc( 1, sizeof( struct sample ) );
+			}
+			if( !instrument->samples ) {
+				dispose_module( module );
+				return NULL;
+			}
+			if( instrument->num_samples ) {
 				for( key = 0; key < 96; key++ ) {
 					instrument->key_to_sample[ key + 1 ] = data_u8( data, offset + 33 + key );
 				}
