@@ -537,6 +537,95 @@ static void channel_init( struct channel *channel, struct replay *replay, int id
 	channel->random_seed = ( idx + 1 ) * 0xABCDEF;
 }
 
+static void channel_volume_slide( struct channel *channel ) {
+	int up = channel->vol_slide_param >> 4;
+	int down = channel->vol_slide_param & 0xF;
+	if( down == 0xF && up > 0 ) {
+		/* Fine slide up.*/
+		if( channel->fx_count == 0 ) {
+			channel->volume += up;
+		}
+	} else if( up == 0xF && down > 0 ) {
+		/* Fine slide down.*/
+		if( channel->fx_count == 0 ) {
+			channel->volume -= down;
+		}
+	} else if( channel->fx_count > 0 || channel->replay->module->fast_vol_slides ) {
+		/* Normal.*/
+		channel->volume += up - down;
+	}
+	if( channel->volume > 64 ) {
+		channel->volume = 64;
+	}
+	if( channel->volume < 0 ) {
+		channel->volume = 0;
+	}
+}
+
+static void channel_porta_up( struct channel *channel, int param ) {
+	switch( param & 0xF0 ) {
+		case 0xE0: /* Extra-fine porta.*/
+			if( channel->fx_count == 0 ) {
+				channel->period -= param & 0xF;
+			}
+			break;
+		case 0xF0: /* Fine porta.*/
+			if( channel->fx_count == 0 ) {
+				channel->period -= ( param & 0xF ) << 2;
+			}
+			break;
+		default:/* Normal porta.*/
+			if( channel->fx_count > 0 ) {
+				channel->period -= param << 2;
+			}
+			break;
+	}
+	if( channel->period < 0 ) {
+		channel->period = 0;
+	}
+}
+
+static void channel_porta_down( struct channel *channel, int param ) {
+	if( channel->period > 0 ) {
+		switch( param & 0xF0 ) {
+			case 0xE0: /* Extra-fine porta.*/
+				if( channel->fx_count == 0 ) {
+					channel->period += param & 0xF;
+				}
+				break;
+			case 0xF0: /* Fine porta.*/
+				if( channel->fx_count == 0 ) {
+					channel->period += ( param & 0xF ) << 2;
+				}
+				break;
+			default:/* Normal porta.*/
+				if( channel->fx_count > 0 ) {
+					channel->period += param << 2;
+				}
+				break;
+		}
+		if( channel->period > 65535 ) {
+			channel->period = 65535;
+		}
+	}
+}
+
+static void channel_tone_porta( struct channel *channel ) {
+	if( channel->period > 0 ) {
+		if( channel->period < channel->porta_period ) {
+			channel->period += channel->tone_porta_param << 2;
+			if( channel->period > channel->porta_period ) {
+				channel->period = channel->porta_period;
+			}
+		} else {
+			channel->period -= channel->tone_porta_param << 2;
+			if( channel->period < channel->porta_period ) {
+				channel->period = channel->porta_period;
+			}
+		}
+	}
+}
+
 static int channel_waveform( struct channel *channel, int phase, int type ) {
 	int amplitude = 0;
 	switch( type ) {
@@ -566,6 +655,50 @@ static int channel_waveform( struct channel *channel, int phase, int type ) {
 static void channel_vibrato( struct channel *channel, int fine ) {
 	int wave = channel_waveform( channel, channel->vibrato_phase, channel->vibrato_type & 0x3 );
 	channel->vibrato_add = wave * channel->vibrato_depth >> ( fine ? 7 : 5 );
+}
+
+static void channel_tremolo( struct channel *channel ) {
+	int wave = channel_waveform( channel, channel->tremolo_phase, channel->tremolo_type & 0x3 );
+	channel->tremolo_add = wave * channel->tremolo_depth >> 6;
+}
+
+static void channel_tremor( struct channel *channel ) {
+	if( channel->retrig_count >= channel->tremor_on_ticks ) {
+		channel->tremolo_add = -64;
+	}
+	if( channel->retrig_count >= ( channel->tremor_on_ticks + channel->tremor_off_ticks ) ) {
+		channel->tremolo_add = channel->retrig_count = 0;
+	}
+}
+
+static void channel_retrig_vol_slide( struct channel *channel ) {
+	if( channel->retrig_count >= channel->retrig_ticks ) {
+		channel->trig_inst = channel->inst_idx;
+		channel->retrig_count = channel->sample_idx = channel->sample_fra = 0;
+		switch( channel->retrig_volume ) {
+			case 0x1: channel->volume = channel->volume -  1; break;
+			case 0x2: channel->volume = channel->volume -  2; break;
+			case 0x3: channel->volume = channel->volume -  4; break;
+			case 0x4: channel->volume = channel->volume -  8; break;
+			case 0x5: channel->volume = channel->volume - 16; break;
+			case 0x6: channel->volume = channel->volume * 2 / 3; break;
+			case 0x7: channel->volume = channel->volume >> 1; break;
+			case 0x8: /* ? */ break;
+			case 0x9: channel->volume = channel->volume +  1; break;
+			case 0xA: channel->volume = channel->volume +  2; break;
+			case 0xB: channel->volume = channel->volume +  4; break;
+			case 0xC: channel->volume = channel->volume +  8; break;
+			case 0xD: channel->volume = channel->volume + 16; break;
+			case 0xE: channel->volume = channel->volume * 3 / 2; break;
+			case 0xF: channel->volume = channel->volume << 1; break;
+		}
+		if( channel->volume <  0 ) {
+			channel->volume = 0;
+		}
+		if( channel->volume > 64 ) {
+			channel->volume = 64;
+		}
+	}
 }
 
 static void channel_trigger( struct channel *channel ) {
@@ -763,7 +896,130 @@ static void channel_tick( struct channel *channel ) {
 	channel->vibrato_add = 0;
 	channel->fx_count++;
 	channel->retrig_count++;
-
+	if( !( channel->note.effect == 0x7D && channel->fx_count <= channel->note.param ) ) {
+		switch( channel->note.volume & 0xF0 ) {
+			case 0x60: /* Vol Slide Down.*/
+				channel->volume -= channel->note.volume & 0xF;
+				if( channel->volume < 0 ) {
+					channel->volume = 0;
+				}
+				break;
+			case 0x70: /* Vol Slide Up.*/
+				channel->volume += channel->note.volume & 0xF;
+				if( channel->volume > 64 ) {
+					channel->volume = 64;
+				}
+				break;
+			case 0xB0: /* Vibrato.*/
+				channel->vibrato_phase += channel->vibrato_speed;
+				channel_vibrato( channel, 0 );
+				break;
+			case 0xD0: /* Pan Slide Left.*/
+				channel->panning -= channel->note.volume & 0xF;
+				if( channel->panning < 0 ) {
+					channel->panning = 0;
+				}
+				break;
+			case 0xE0: /* Pan Slide Right.*/
+				channel->panning += channel->note.volume & 0xF;
+				if( channel->panning > 255 ) {
+					channel->panning = 255;
+				}
+				break;
+			case 0xF0: /* Tone Porta.*/
+				channel_tone_porta( channel );
+				break;
+		}
+	}
+	switch( channel->note.effect ) {
+		case 0x01: case 0x86: /* Porta Up. */
+			channel_porta_up( channel, channel->porta_up_param );
+			break;
+		case 0x02: case 0x85: /* Porta Down. */
+			channel_porta_down( channel, channel->porta_down_param );
+			break;
+		case 0x03: case 0x87: /* Tone Porta. */
+			channel_tone_porta( channel );
+			break;
+		case 0x04: case 0x88: /* Vibrato. */
+			channel->vibrato_phase += channel->vibrato_speed;
+			channel_vibrato( channel, 0 );
+			break;
+		case 0x05: case 0x8C: /* Tone Porta + Vol Slide. */
+			channel_tone_porta( channel );
+			channel_volume_slide( channel );
+			break;
+		case 0x06: case 0x8B: /* Vibrato + Vol Slide. */
+			channel->vibrato_phase += channel->vibrato_speed;
+			channel_vibrato( channel, 0 );
+			channel_volume_slide( channel );
+			break;
+		case 0x07: case 0x92: /* Tremolo. */
+			channel->tremolo_phase += channel->tremolo_speed;
+			channel_tremolo( channel );
+			break;
+		case 0x0A: case 0x84: /* Vol Slide. */
+			channel_volume_slide( channel );
+			break;
+		case 0x11: /* Global Volume Slide. */
+			channel->replay->global_vol = channel->replay->global_vol
+				+ ( channel->gvol_slide_param >> 4 )
+				- ( channel->gvol_slide_param & 0xF );
+			if( channel->replay->global_vol < 0 ) {
+				channel->replay->global_vol = 0;
+			}
+			if( channel->replay->global_vol > 64 ) {
+				channel->replay->global_vol = 64;
+			}
+			break;
+		case 0x19: /* Panning Slide. */
+			channel->panning = channel->panning
+				+ ( channel->pan_slide_param >> 4 )
+				- ( channel->pan_slide_param & 0xF );
+			if( channel->panning < 0 ) {
+				channel->panning = 0;
+			}
+			if( channel->panning > 255 ) {
+				channel->panning = 255;
+			}
+			break;
+		case 0x1B: case 0x91: /* Retrig + Vol Slide. */
+			channel_retrig_vol_slide( channel );
+			break;
+		case 0x1D: case 0x89: /* Tremor. */
+			channel_tremor( channel );
+			break;
+		case 0x79: /* Retrig. */
+			if( channel->fx_count >= channel->note.param ) {
+				channel->fx_count = 0;
+				channel->sample_idx = channel->sample_fra = 0;
+				channel->trig_inst = channel->inst_idx;
+			}
+			break;
+		case 0x7C: case 0xFC: /* Note Cut. */
+			if( channel->note.param == channel->fx_count ) {
+				channel->volume = 0;
+			}
+			break;
+		case 0x7D: case 0xFD: /* Note Delay. */
+			if( channel->note.param == channel->fx_count ) {
+				channel_trigger( channel );
+			}
+			break;
+		case 0x8A: /* Arpeggio. */
+			if( channel->fx_count == 1 ) {
+				channel->arpeggio_add = channel->arpeggio_param >> 4;
+			} else if( channel->fx_count == 2 ) {
+				channel->arpeggio_add = channel->arpeggio_param & 0xF;
+			} else {
+				channel->arpeggio_add = channel->fx_count = 0;
+			}
+			break;
+		case 0x95: /* Fine Vibrato. */
+			channel->vibrato_phase += channel->vibrato_speed;
+			channel_vibrato( channel, 1 );
+			break;
+	}
 	channel_auto_vibrato( channel );
 	channel_calculate_freq( channel );
 	channel_calculate_ampl( channel );
@@ -782,7 +1038,180 @@ static void channel_row( struct channel *channel, struct note *note ) {
 		/* Not note delay.*/
 		channel_trigger( channel );
 	}
-
+	switch( channel->note.effect ) {
+		case 0x01: case 0x86: /* Porta Up. */
+			if( channel->note.param > 0 ) {
+				channel->porta_up_param = channel->note.param;
+			}
+			channel_porta_up( channel, channel->porta_up_param );
+			break;
+		case 0x02: case 0x85: /* Porta Down. */
+			if( channel->note.param > 0 ) {
+				channel->porta_down_param = channel->note.param;
+			}
+			channel_porta_down( channel, channel->porta_down_param );
+			break;
+		case 0x03: case 0x87: /* Tone Porta. */
+			if( channel->note.param > 0 ) {
+				channel->tone_porta_param = channel->note.param;
+			}
+			break;
+		case 0x04: case 0x88: /* Vibrato. */
+			if( ( channel->note.param >> 4 ) > 0 ) {
+				channel->vibrato_speed = channel->note.param >> 4;
+			}
+			if( ( channel->note.param & 0xF ) > 0 ) {
+				channel->vibrato_depth = channel->note.param & 0xF;
+			}
+			channel_vibrato( channel, 0 );
+			break;
+		case 0x05: case 0x8C: /* Tone Porta + Vol Slide. */
+			if( channel->note.param > 0 ) {
+				channel->vol_slide_param = channel->note.param;
+			}
+			channel_volume_slide( channel );
+			break;
+		case 0x06: case 0x8B: /* Vibrato + Vol Slide. */
+			if( channel->note.param > 0 ) {
+				channel->vol_slide_param = channel->note.param;
+			}
+			channel_vibrato( channel, 0 );
+			channel_volume_slide( channel );
+			break;
+		case 0x07: case 0x92: /* Tremolo. */
+			if( ( channel->note.param >> 4 ) > 0 ) {
+				channel->tremolo_speed = channel->note.param >> 4;
+			}
+			if( ( channel->note.param & 0xF ) > 0 ) {
+				channel->tremolo_depth = channel->note.param & 0xF;
+			}
+			channel_tremolo( channel );
+			break;
+		case 0x08: /* Set Panning.*/
+			channel->panning = ( channel->note.param < 128 ) ? ( channel->note.param << 1 ) : 255;
+			break;
+		case 0x0A: case 0x84: /* Vol Slide. */
+			if( channel->note.param > 0 ) {
+				channel->vol_slide_param = channel->note.param;
+			}
+			channel_volume_slide( channel );
+			break;
+		case 0x0C: /* Set Volume. */
+			channel->volume = channel->note.param >= 64 ? 64 : channel->note.param & 0x3F;
+			break;
+		case 0x10: case 0x96: /* Set Global Volume. */
+			channel->replay->global_vol = channel->note.param >= 64 ? 64 : channel->note.param & 0x3F;
+			break;
+		case 0x11: /* Global Volume Slide. */
+			if( channel->note.param > 0 ) {
+				channel->gvol_slide_param = channel->note.param;
+			}
+			break;
+		case 0x14: /* Key Off. */
+			channel->key_on = 0;
+			break;
+		case 0x15: /* Set Envelope Tick. */
+			channel->vol_env_tick = channel->pan_env_tick = channel->note.param & 0xFF;
+			break;
+		case 0x19: /* Panning Slide. */
+			if( channel->note.param > 0 ) {
+				channel->pan_slide_param = channel->note.param;
+			}
+			break;
+		case 0x1B: case 0x91: /* Retrig + Vol Slide. */
+			if( ( channel->note.param >> 4 ) > 0 ) {
+				channel->retrig_volume = channel->note.param >> 4;
+			}
+			if( ( channel->note.param & 0xF ) > 0 ) {
+				channel->retrig_ticks = channel->note.param & 0xF;
+			}
+			channel_retrig_vol_slide( channel );
+			break;
+		case 0x1D: case 0x89: /* Tremor. */
+			if( ( channel->note.param >> 4 ) > 0 ) {
+				channel->tremor_on_ticks = channel->note.param >> 4;
+			}
+			if( ( channel->note.param & 0xF ) > 0 ) {
+				channel->tremor_off_ticks = channel->note.param & 0xF;
+			}
+			channel_tremor( channel );
+			break;
+		case 0x21: /* Extra Fine Porta. */
+			if( channel->note.param > 0 ) {
+				channel->xfine_porta_param = channel->note.param;
+			}
+			switch( channel->xfine_porta_param & 0xF0 ) {
+				case 0x10:
+					channel_porta_up( channel, 0xE0 | ( channel->xfine_porta_param & 0xF ) );
+					break;
+				case 0x20:
+					channel_porta_down( channel, 0xE0 | ( channel->xfine_porta_param & 0xF ) );
+					break;
+			}
+			break;
+		case 0x71: /* Fine Porta Up. */
+			if( channel->note.param > 0 ) {
+				channel->fine_porta_up_param = channel->note.param;
+			}
+			channel_porta_up( channel, 0xF0 | ( channel->fine_porta_up_param & 0xF ) );
+			break;
+		case 0x72: /* Fine Porta Down. */
+			if( channel->note.param > 0 ) {
+				channel->fine_porta_down_param = channel->note.param;
+			}
+			channel_porta_down( channel, 0xF0 | ( channel->fine_porta_down_param & 0xF ) );
+			break;
+		case 0x74: case 0xF3: /* Set Vibrato Waveform. */
+			if( channel->note.param < 8 ) {
+				channel->vibrato_type = channel->note.param;
+			}
+			break;
+		case 0x77: case 0xF4: /* Set Tremolo Waveform. */
+			if( channel->note.param < 8 ) {
+				channel->tremolo_type = channel->note.param;
+			}
+			break;
+		case 0x7A: /* Fine Vol Slide Up. */
+			if( channel->note.param > 0 ) {
+				channel->fine_vslide_up_param = channel->note.param;
+			}
+			channel->volume += channel->fine_vslide_up_param;
+			if( channel->volume > 64 ) {
+				channel->volume = 64;
+			}
+			break;
+		case 0x7B: /* Fine Vol Slide Down. */
+			if( channel->note.param > 0 ) {
+				channel->fine_vslide_down_param = channel->note.param;
+			}
+			channel->volume -= channel->fine_vslide_down_param;
+			if( channel->volume < 0 ) {
+				channel->volume = 0;
+			}
+			break;
+		case 0x7C: case 0xFC: /* Note Cut. */
+			if( channel->note.param <= 0 ) {
+				channel->volume = 0;
+			}
+			break;
+		case 0x8A: /* Arpeggio. */
+			if( channel->note.param > 0 ) {
+				channel->arpeggio_param = channel->note.param;
+			}
+			break;
+		case 0x95: /* Fine Vibrato.*/
+			if( ( channel->note.param >> 4 ) > 0 ) {
+				channel->vibrato_speed = channel->note.param >> 4;
+			}
+			if( ( channel->note.param & 0xF ) > 0 ) {
+				channel->vibrato_depth = channel->note.param & 0xF;
+			}
+			channel_vibrato( channel, 1 );
+			break;
+		case 0xF8: /* Set Panning. */
+			channel->panning = channel->note.param * 17;
+			break;
+	}
 	channel_auto_vibrato( channel );
 	channel_calculate_freq( channel );
 	channel_calculate_ampl( channel );
