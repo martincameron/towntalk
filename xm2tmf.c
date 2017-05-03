@@ -143,13 +143,21 @@ static int log2( int x ) {
 }
 
 static char* data_ascii( struct data *data, int offset, int length, char *dest ) {
+	int idx, chr;
 	if( offset > data->length ) {
 		offset = data->length;
 	}
 	if( offset + length > data->length ) {
 		length = data->length - offset;
 	}
-	memcpy( dest, &data->buffer[ offset ], length );
+	for( idx = 0; idx < length; idx++ ) {
+		chr = data->buffer[ offset + idx ];
+		if( chr < 32 ) {
+			dest[ idx ] = 32;
+		} else {
+			dest[ idx ] = chr;
+		}
+	}
 	return dest;
 }
 
@@ -205,13 +213,13 @@ static void data_sam_s8d( struct data *data, int offset, int count, short *dest 
 }
 
 static void data_sam_s16d( struct data *data, int offset, int count, short *dest ) {
-	int idx, length = data->length >> 1, sam = 0;
+	int idx, length = data->length, sam = 0;
 	signed char *buffer = data->buffer;
 	if( offset > length ) {
 		offset = length;
 	}
-	if( offset + count > length ) {
-		count = length - offset;
+	if( offset + count * 2 > length ) {
+		count = ( length - offset ) / 2;
 	}
 	for( idx = 0; idx < count; idx++ ) {
 		sam += ( buffer[ offset + idx * 2 ] & 0xFF ) | ( buffer[ offset + idx * 2 + 1 ] << 8 );
@@ -363,7 +371,11 @@ static struct module* module_load_xm( struct data *data ) {
 				pat_data_offset = 0;
 				for( note = 0; note < num_notes; note++ ) {
 					flags = data_u8( data, offset );
-					if( ( flags & 0x80 ) == 0 ) flags = 0x1F; else offset++;
+					if( ( flags & 0x80 ) == 0 ) {
+						flags = 0x1F;
+					} else {
+						offset++;
+					}
 					key = ( flags & 0x01 ) > 0 ? data_u8( data, offset++ ) : 0;
 					pattern_data[ pat_data_offset++ ] = key;
 					ins = ( flags & 0x02 ) > 0 ? data_u8( data, offset++ ) : 0;
@@ -372,7 +384,9 @@ static struct module* module_load_xm( struct data *data ) {
 					pattern_data[ pat_data_offset++ ] = vol;
 					fxc = ( flags & 0x08 ) > 0 ? data_u8( data, offset++ ) : 0;
 					fxp = ( flags & 0x10 ) > 0 ? data_u8( data, offset++ ) : 0;
-					if( fxc >= 0x40 ) fxc = fxp = 0;
+					if( fxc >= 0x40 ) {
+						fxc = fxp = 0;
+					}
 					pattern_data[ pat_data_offset++ ] = fxc;
 					pattern_data[ pat_data_offset++ ] = fxp;
 				}
@@ -403,6 +417,7 @@ static struct module* module_load_xm( struct data *data ) {
 				dispose_module( module );
 				return NULL;
 			}
+			instrument->samples[ 0 ].panning = -1;
 			if( instrument->num_samples ) {
 				for( key = 0; key < 96; key++ ) {
 					instrument->key_to_sample[ key + 1 ] = data_u8( data, offset + 33 + key );
@@ -719,7 +734,8 @@ static void channel_trigger( struct channel *channel ) {
 			channel->panning = sample->panning & 0xFF;
 		}
 		if( channel->period > 0 && sample->loop_length > 1 ) {
-			channel->sample = sample; /* Amiga trigger.*/
+			/* Amiga trigger.*/
+			channel->sample = sample;
 			channel->swap_inst = ins;
 		}
 		channel->sample_off = 0;
