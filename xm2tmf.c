@@ -1506,6 +1506,9 @@ static int write_sequence( struct replay *replay, char *dest ) {
 	int vol, ampl, d_ampl, pan, pann, d_pann;
 	int num_chn = replay->module->num_channels;
 	replay_set_sequence_pos( replay, 0 );
+	for( chn = 0; chn < num_chn; chn++ ) {
+		replay->channels[ chn ].prev_pann = -1;
+	}
 	while( !song_end ) {
 		if( bpm != replay->tempo ) {
 			if( dest ) {
@@ -1515,8 +1518,7 @@ static int write_sequence( struct replay *replay, char *dest ) {
 			bpm = replay->tempo;
 			idx += 4;
 		}
-		chn = 0;
-		while( chn < num_chn ) {
+		for( chn = 0; chn < num_chn; chn++ ) {
 			inst = replay->channels[ chn ].trig_inst;
 			swap = replay->channels[ chn ].swap_inst;
 			sidx = replay->channels[ chn ].sample_idx;
@@ -1596,7 +1598,6 @@ static int write_sequence( struct replay *replay, char *dest ) {
 					idx += 2;
 				}
 			}
-			chn++;
 		}
 		wait++;
 		song_end = replay_tick( replay );
