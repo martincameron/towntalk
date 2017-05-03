@@ -5,7 +5,7 @@
 #include "dirent.h"
 
 #define NUM_SURFACES 16
-#define NUM_CHANNELS 16
+#define NUM_CHANNELS 32
 #define NUM_SAMPLES 64
 #define MIN_TICK_LEN 512
 #define MAX_TICK_LEN 8192

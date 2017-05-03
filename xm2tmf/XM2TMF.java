@@ -29,9 +29,6 @@ public class XM2TMF {
 		if( module.numInstruments > 63 ) {
 			throw new IllegalArgumentException( "Module has too many instruments." );
 		}
-		if( module.numChannels > 16 ) {
-			throw new IllegalArgumentException( "Module has too many channels." );
-		}
 		int length = 32 * 64;
 		int seqlen = ibxm.writeSequence( null, 0 );
 		if( output != null ) {
