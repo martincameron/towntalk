@@ -80,7 +80,7 @@ struct pattern {
 };
 
 struct module {
-	char name[ 24 ];
+	char name[ 32 ];
 	int num_channels, num_instruments;
 	int num_patterns, sequence_len, restart_pos;
 	int default_gvol, default_speed, default_tempo, c2_rate, gain;
@@ -513,7 +513,69 @@ static struct module* module_load_xm( struct data *data ) {
 }
 
 static struct module* module_load_s3m( struct data *data ) {
-	return NULL;
+	int idx, module_data_idx, flags, version;
+	int signed_samples, stereo_mode, default_pan, channel_map[ 32 ];
+	struct instrument *instrument;
+	struct sample *sample;
+	struct module *module = calloc( 1, sizeof( struct module ) );
+	if( module ) {
+		data_ascii( data, 0, 28, module->name );
+		module->sequence_len = data_u16le( data, 32 );
+		module->num_instruments = data_u16le( data, 34 );
+		module->num_patterns = data_u16le( data, 36 );
+		flags = data_u16le( data, 38 );
+		version = data_u16le( data, 40 );
+		module->fast_vol_slides = ( ( flags & 0x40 ) == 0x40 ) || version == 0x1300;
+		signed_samples = data_u16le( data, 42 ) == 1;
+		if( data_u32le( data, 44 ) != 0x4d524353 ) {
+			fputs( "Not an S3M file!", stderr );
+			dispose_module( module );
+			return NULL;
+		}
+		module->default_gvol = data_u8( data, 48 );
+		module->default_speed = data_u8( data, 49 );
+		module->default_tempo = data_u8( data, 50 );
+		module->c2_rate = 8363;
+		module->gain = data_u8( data, 51 ) & 0x7F;
+		stereo_mode = ( data_u8( data, 51 ) & 0x80 ) == 0x80;
+		default_pan = data_u8( data, 53 ) == 0xFC;
+		for( idx = 0; idx < 32; idx++ ) {
+			channel_map[ idx ] = -1;
+			if( data_u8( data, 64 + idx ) < 16 ) {
+				channel_map[ idx ] = module->num_channels++;
+			}
+		}
+		module->sequence = calloc( module->sequence_len, sizeof( unsigned char ) );
+		if( !module->sequence ){
+			dispose_module( module );
+			return NULL;
+		}
+		for( idx = 0; idx < module->sequence_len; idx++ ) {
+			module->sequence[ idx ] = data_u8( data, 96 + idx );
+		}
+		module_data_idx = 96 + module->sequence_len;
+		module->instruments = calloc( module->num_instruments + 1, sizeof( struct instrument ) );
+		if( !module->instruments ) {
+			dispose_module( module );
+			return NULL;
+		}
+		instrument = &module->instruments[ 0 ];
+		instrument->samples = calloc( 1, sizeof( struct sample ) );
+		if( !instrument->samples ) {
+			dispose_module( module );
+			return NULL;
+		}
+		for( idx = 1; idx <= module->num_instruments; idx++ ) {
+			instrument = &module->instruments[ idx ];
+			instrument->samples = calloc( 1, sizeof( struct sample ) );
+			if( !instrument->samples ) {
+				dispose_module( module );
+				return NULL;
+			}
+			sample = &instrument->samples[ 0 ];
+		}
+	}
+	return module;
 }
 
 static struct module* module_load_mod( struct data *data ) {
