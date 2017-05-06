@@ -122,7 +122,7 @@ struct replay {
 	struct module *module;
 };
 
-static int exp2( int x ) {
+static int exp_2( int x ) {
 	int c, m, y;
 	int x0 = ( x & FP_MASK ) >> ( FP_SHIFT - 7 );
 	c = exp2_table[ x0 ];
@@ -131,11 +131,11 @@ static int exp2( int x ) {
 	return ( y << FP_SHIFT ) >> ( FP_SHIFT - ( x >> FP_SHIFT ) );
 }
 
-static int log2( int x ) {
+static int log_2( int x ) {
 	int step;
 	int y = 16 << FP_SHIFT;
 	for( step = y; step > 0; step >>= 1 ) {
-		if( exp2( y - step ) >= x ) {
+		if( exp_2( y - step ) >= x ) {
 			y -= step;
 		}
 	}
@@ -197,6 +197,34 @@ static unsigned int data_u32le( struct data *data, int offset ) {
 	return value;
 }
 
+static void data_sam_u8( struct data *data, int offset, int count, short *dest ) {
+	int idx, length = data->length;
+	signed char *buffer = data->buffer;
+	if( offset > length ) {
+		offset = length;
+	}
+	if( offset + count > length ) {
+		count = length - offset;
+	}
+	for( idx = 0; idx < count; idx++ ) {
+		dest[ idx ] = ( ( buffer[ offset + idx ] & 0xFF ) - 128 ) << 8;
+	}
+}
+
+static void data_sam_s8( struct data *data, int offset, int count, short *dest ) {
+	int idx, length = data->length;
+	signed char *buffer = data->buffer;
+	if( offset > length ) {
+		offset = length;
+	}
+	if( offset + count > length ) {
+		count = length - offset;
+	}
+	for( idx = 0; idx < count; idx++ ) {
+		dest[ idx ] = buffer[ offset + idx ] << 8;
+	}
+}
+
 static void data_sam_s8d( struct data *data, int offset, int count, short *dest ) {
 	int idx, length = data->length, sam = 0;
 	signed char *buffer = data->buffer;
@@ -209,6 +237,20 @@ static void data_sam_s8d( struct data *data, int offset, int count, short *dest 
 	for( idx = 0; idx < count; idx++ ) {
 		sam += buffer[ offset + idx ];
 		dest[ idx ] = sam << 8;
+	}
+}
+
+static void data_sam_s16( struct data *data, int offset, int count, short *dest ) {
+	int idx, length = data->length;
+	signed char *buffer = data->buffer;
+	if( offset > length ) {
+		offset = length;
+	}
+	if( offset + count * 2 > length ) {
+		count = ( length - offset ) / 2;
+	}
+	for( idx = 0; idx < count; idx++ ) {
+		dest[ idx ] = ( buffer[ offset + idx * 2 ] & 0xFF ) | ( buffer[ offset + idx * 2 + 1 ] << 8 );
 	}
 }
 
@@ -298,7 +340,7 @@ static struct module* module_load_xm( struct data *data ) {
 	int delta_env, offset, next_offset, idx, entry;
 	int num_rows, num_notes, pat_data_len, pat_data_offset;
 	int sam, sam_head_offset, sam_data_bytes, sam_data_samples;
-	int sam_loop_start, sam_loop_length;
+	int num_samples, sam_loop_start, sam_loop_length;
 	int note, flags, key, ins, vol, fxc, fxp;
 	int point, point_tick, point_offset;
 	int looped, ping_pong, sixteen_bit;
@@ -407,18 +449,15 @@ static struct module* module_load_xm( struct data *data ) {
 		for( idx = 1; idx <= module->num_instruments; idx++ ) {
 			instrument = &module->instruments[ idx ];
 			data_ascii( data, offset + 4, 22, instrument->name );
-			instrument->num_samples = data_u16le( data, offset + 27 );
-			if( instrument->num_samples ) {
-				instrument->samples = calloc( instrument->num_samples, sizeof( struct sample ) );
-			} else {
-				instrument->samples = calloc( 1, sizeof( struct sample ) );
-			}
+			num_samples = data_u16le( data, offset + 27 );
+			instrument->num_samples = ( num_samples > 0 ) ? num_samples : 1;
+			instrument->samples = calloc( instrument->num_samples, sizeof( struct sample ) );
 			if( !instrument->samples ) {
 				dispose_module( module );
 				return NULL;
 			}
 			instrument->samples[ 0 ].panning = -1;
-			if( instrument->num_samples ) {
+			if( num_samples > 0 ) {
 				for( key = 0; key < 96; key++ ) {
 					instrument->key_to_sample[ key + 1 ] = data_u8( data, offset + 33 + key );
 				}
@@ -464,8 +503,8 @@ static struct module* module_load_xm( struct data *data ) {
 			}
 			offset += data_u32le( data, offset );
 			sam_head_offset = offset;
-			offset += instrument->num_samples * 40;
-			for( sam = 0; sam < instrument->num_samples; sam++ ) {
+			offset += num_samples * 40;
+			for( sam = 0; sam < num_samples; sam++ ) {
 				sample = &instrument->samples[ sam ];
 				sam_data_bytes = data_u32le( data, sam_head_offset );
 				sam_loop_start = data_u32le( data, sam_head_offset + 4 );
@@ -513,8 +552,10 @@ static struct module* module_load_xm( struct data *data ) {
 }
 
 static struct module* module_load_s3m( struct data *data ) {
-	int idx, module_data_idx, flags, version;
+	int idx, module_data_idx, inst_offset, flags, version;
 	int signed_samples, stereo_mode, default_pan, channel_map[ 32 ];
+	int sample_offset, sample_length, loop_start, loop_length;
+	int stereo, sixteen_bit, tune;
 	struct instrument *instrument;
 	struct sample *sample;
 	struct module *module = calloc( 1, sizeof( struct module ) );
@@ -560,6 +601,7 @@ static struct module* module_load_s3m( struct data *data ) {
 			return NULL;
 		}
 		instrument = &module->instruments[ 0 ];
+		instrument->num_samples = 1;
 		instrument->samples = calloc( 1, sizeof( struct sample ) );
 		if( !instrument->samples ) {
 			dispose_module( module );
@@ -567,12 +609,61 @@ static struct module* module_load_s3m( struct data *data ) {
 		}
 		for( idx = 1; idx <= module->num_instruments; idx++ ) {
 			instrument = &module->instruments[ idx ];
+			instrument->num_samples = 1;
 			instrument->samples = calloc( 1, sizeof( struct sample ) );
 			if( !instrument->samples ) {
 				dispose_module( module );
 				return NULL;
 			}
 			sample = &instrument->samples[ 0 ];
+			inst_offset = data_u16le( data, module_data_idx ) << 4;
+			module_data_idx += 2;
+			data_ascii( data, inst_offset + 48, 28, instrument->name );
+			if( data_u8( data, inst_offset ) == 1 && data_u16le( data, inst_offset + 76 ) == 0x4353 ) {
+				sample_offset = ( data_u8( data, inst_offset + 13 ) << 20 )
+					+ ( data_u16le( data, inst_offset + 14 ) << 4 );
+				sample_length = data_u32le( data, inst_offset + 16 );
+				loop_start = data_u32le( data, inst_offset + 20 );
+				loop_length = data_u32le( data, inst_offset + 24 ) - loop_start;
+				sample->volume = data_u8( data, inst_offset + 28 );
+				sample->panning = -1;
+				if( data_u8( data, inst_offset + 30 ) != 0 ) {
+					fputs( "Packed samples not supported!", stderr );
+					dispose_module( module );
+					return NULL;
+				}
+				if( loop_start + loop_length > sample_length ) {
+					loop_length = sample_length - loop_start;
+				}
+				if( loop_length < 1 || !( data_u8( data, inst_offset + 31 ) & 0x1 ) ) {
+					loop_start = sample_length;
+					loop_length = 0;
+				}
+				sample->loop_start = loop_start;
+				sample->loop_length = loop_length;
+				stereo = data_u8( data, inst_offset + 31 ) & 0x2;
+				sixteen_bit = data_u8( data, inst_offset + 31 ) & 0x4;
+				tune = ( log_2( data_u32le( data, inst_offset + 32 ) ) - log_2( module->c2_rate ) ) * 12;
+				sample->rel_note = tune >> FP_SHIFT;
+				sample->fine_tune = ( tune & FP_MASK ) >> ( FP_SHIFT - 7 );
+				sample->data = calloc( sample_length, sizeof( short ) );
+				if( sample->data ) {
+					if( sixteen_bit ) {
+						if( signed_samples ) {
+							data_sam_s16( data, sample_offset, sample_length, sample->data );
+						}
+					} else {
+						if( signed_samples ) {
+							data_sam_s8( data, sample_offset, sample_length, sample->data );
+						} else {
+							data_sam_u8( data, sample_offset, sample_length, sample->data );
+						}
+					}
+				} else {
+					dispose_module( module );
+					return NULL;
+				}
+			}
 		}
 	}
 	return module;
@@ -875,7 +966,7 @@ static void channel_trigger( struct channel *channel ) {
 			if( channel->replay->module->linear_periods ) {
 				channel->porta_period = 7744 - period;
 			} else {
-				channel->porta_period = 29021 * exp2( ( period << FP_SHIFT ) / -768 ) >> FP_SHIFT;
+				channel->porta_period = 29021 * exp_2( ( period << FP_SHIFT ) / -768 ) >> FP_SHIFT;
 			}
 			if( !porta ) {
 				channel->period = channel->porta_period;
@@ -935,12 +1026,12 @@ static void channel_calculate_freq( struct channel *channel ) {
 			per = 7680;
 		}
 		channel->freq = ( ( channel->replay->module->c2_rate >> 4 )
-			* exp2( ( ( 4608 - per ) << FP_SHIFT ) / 768 ) ) >> ( FP_SHIFT - 4 );
+			* exp_2( ( ( 4608 - per ) << FP_SHIFT ) / 768 ) ) >> ( FP_SHIFT - 4 );
 	} else {
 		if( per > 29021 ) {
 			per = 29021;
 		}
-		per = ( per << FP_SHIFT ) / exp2( ( channel->arpeggio_add << FP_SHIFT ) / 12 );
+		per = ( per << FP_SHIFT ) / exp_2( ( channel->arpeggio_add << FP_SHIFT ) / 12 );
 		if( per < 28 ) {
 			per = 29021;
 		}
