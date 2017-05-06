@@ -192,6 +192,9 @@ public class IBXM {
 		boolean songEnd = false;
 		int bpm = 0, wait = 0;
 		setSequencePos( 0 );
+		for( int chn = 0; chn < channels.length; chn++ ) {
+			channels[ chn ].prevPann = -1;
+		}
 		while( !songEnd ) {
 			if( bpm != tempo ) {
 				if( output != null ) {
@@ -201,8 +204,7 @@ public class IBXM {
 				bpm = tempo;
 				offset += 4;
 			}
-			int chn = 0;
-			while( chn < channels.length ) {
+			for( int chn = 0; chn < channels.length; chn++ ) {
 				int inst = channels[ chn ].trigInst;
 				int swap = channels[ chn ].swapInst;
 				int sidx = channels[ chn ].sampleIdx;
@@ -282,7 +284,6 @@ public class IBXM {
 						offset += 2;
 					}
 				}
-				chn++;
 			}
 			wait++;
 			songEnd = tick();
