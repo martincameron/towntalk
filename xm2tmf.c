@@ -552,10 +552,13 @@ static struct module* module_load_xm( struct data *data ) {
 }
 
 static struct module* module_load_s3m( struct data *data ) {
-	int idx, module_data_idx, inst_offset, flags, version;
-	int signed_samples, stereo_mode, default_pan, channel_map[ 32 ];
+	int idx, module_data_idx, inst_offset, flags;
+	int version, sixteen_bit, tune, signed_samples;
+	int stereo_mode, default_pan, channel_map[ 32 ];
 	int sample_offset, sample_length, loop_start, loop_length;
-	int stereo, sixteen_bit, tune;
+	int pat_offset, note_offset, row, chan, token;
+	int key, inst, volume, effect, param, panning;
+	char *pattern_data;
 	struct instrument *instrument;
 	struct sample *sample;
 	struct module *module = calloc( 1, sizeof( struct module ) );
@@ -641,7 +644,7 @@ static struct module* module_load_s3m( struct data *data ) {
 				}
 				sample->loop_start = loop_start;
 				sample->loop_length = loop_length;
-				stereo = data_u8( data, inst_offset + 31 ) & 0x2;
+				/* stereo = data_u8( data, inst_offset + 31 ) & 0x2; */
 				sixteen_bit = data_u8( data, inst_offset + 31 ) & 0x4;
 				tune = ( log_2( data_u32le( data, inst_offset + 32 ) ) - log_2( module->c2_rate ) ) * 12;
 				sample->rel_note = tune >> FP_SHIFT;
@@ -664,6 +667,94 @@ static struct module* module_load_s3m( struct data *data ) {
 					return NULL;
 				}
 			}
+		}
+		module->patterns = calloc( module->num_patterns, sizeof( struct pattern ) );
+		if( !module->patterns ) {
+			dispose_module( module );
+			return NULL;
+		}
+		for( idx = 0; idx < module->num_patterns; idx++ ) {
+			module->patterns[ idx ].num_channels = module->num_channels;
+			module->patterns[ idx ].num_rows = 64;
+			pattern_data = calloc( module->num_channels * 64, 5 );
+			if( !pattern_data ) {
+				dispose_module( module );
+				return NULL;
+			}
+			module->patterns[ idx ].data = pattern_data;
+			pat_offset = ( data_u16le( data, module_data_idx ) << 4 ) + 2;
+			row = 0;
+			while( row < 64 ) {
+				token = data_u8( data, pat_offset++ );
+				if( token ) {
+					key = inst = 0;
+					if( ( token & 0x20 ) == 0x20 ) {
+						/* Key + Instrument.*/
+						key = data_u8( data, pat_offset++ );
+						inst = data_u8( data, pat_offset++ );
+						if( key < 0xFE ) {
+							key = ( key >> 4 ) * 12 + ( key & 0xF ) + 1;
+						} else if( key == 0xFF ) {
+							key = 0;
+						}
+					}
+					volume = 0;
+					if( ( token & 0x40 ) == 0x40 ) {
+						/* Volume Column.*/
+						volume = ( data_u8( data, pat_offset++ ) & 0x7F ) + 0x10;
+						if( volume > 0x50 ) {
+							volume = 0;
+						}
+					}
+					effect = param = 0;
+					if( ( token & 0x80 ) == 0x80 ) {
+						/* Effect + Param.*/
+						effect = data_u8( data, pat_offset++ );
+						param = data_u8( data, pat_offset++ );
+						if( effect < 1 || effect >= 0x40 ) {
+							effect = param = 0;
+						} else if( effect > 0 ) {
+							effect += 0x80;
+						}
+					}
+					chan = channel_map[ token & 0x1F ];
+					if( chan >= 0 ) {
+						note_offset = ( row * module->num_channels + chan ) * 5;
+						pattern_data[ note_offset     ] = key;
+						pattern_data[ note_offset + 1 ] = inst;
+						pattern_data[ note_offset + 2 ] = volume;
+						pattern_data[ note_offset + 3 ] = effect;
+						pattern_data[ note_offset + 4 ] = param;
+					}
+				} else {
+					row++;
+				}
+			}
+			module_data_idx += 2;
+		}
+		module->default_panning = calloc( module->num_channels, sizeof( unsigned char ) );
+		if( module->default_panning ) {
+			for( chan = 0; chan < 32; chan++ ) {
+				if( channel_map[ chan ] >= 0 ) {
+					panning = 7;
+					if( stereo_mode ) {
+						panning = 12;
+						if( data_u8( data, 64 + chan ) < 8 ) {
+							panning = 3;
+						}
+					}
+					if( default_pan ) {
+						flags = data_u8( data, module_data_idx + chan );
+						if( ( flags & 0x20 ) == 0x20 ) {
+							panning = flags & 0xF;
+						}
+					}
+					module->default_panning[ channel_map[ chan ] ] = panning * 17;
+				}
+			}
+		} else {
+			dispose_module( module );
+			return NULL;
 		}
 	}
 	return module;
