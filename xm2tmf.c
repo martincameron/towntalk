@@ -1800,7 +1800,7 @@ static int write_sequence( struct replay *replay, char *dest ) {
 					if( sidx ) {
 						/* Set Sample Offset.*/
 						if( dest ) {
-							write_int32be( ( ( ( sidx >> FP_SHIFT ) & 0177777 ) << 15 )
+							write_int32be( ( ( sidx & 0177777 ) << 15 )
 								+ 020000 + ( vol << 6 ) + chn, &dest[ idx ] );
 						}
 						idx += 4;
