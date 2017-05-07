@@ -55,7 +55,7 @@ struct data {
 };
 
 struct sample {
-	char name[ 24 ];
+	char name[ 32 ];
 	int loop_start, loop_length;
 	short volume, panning, rel_note, fine_tune, *data;
 };
@@ -68,7 +68,7 @@ struct envelope {
 
 struct instrument {
 	int num_samples, vol_fadeout;
-	char name[ 24 ], key_to_sample[ 97 ];
+	char name[ 32 ], key_to_sample[ 97 ];
 	char vib_type, vib_sweep, vib_depth, vib_rate;
 	struct envelope vol_env, pan_env;
 	struct sample *samples;
