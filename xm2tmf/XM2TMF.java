@@ -37,8 +37,8 @@ public class XM2TMF {
 			writeLatin1( output, 0, "TMF0" );
 			writeInt32be( output, 4, seqlen );
 			String songName = module.songName;
-			if( songName.length() > 23 ) {
-				songName = songName.substring( 0, 23 );
+			if( songName.length() > 24 ) {
+				songName = songName.substring( 0, 24 );
 			}
 			writeLatin1( output, 8, songName );
 			ibxm.writeSequence( output, length );
@@ -54,8 +54,8 @@ public class XM2TMF {
 				writeInt32be( output, idx * 32, loopStart );
 				writeInt32be( output, idx * 32 + 4, loopLength );
 				String instrumentName = instrument.name;
-				if( instrumentName.length() > 23 ) {
-					instrumentName = instrumentName.substring( 0, 23 );
+				if( instrumentName.length() > 24 ) {
+					instrumentName = instrumentName.substring( 0, 24 );
 				}
 				writeLatin1( output, idx * 32 + 8, instrumentName );
 				sample.getSampleData( output, length, loopStart + loopLength );
