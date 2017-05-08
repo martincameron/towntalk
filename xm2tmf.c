@@ -197,20 +197,6 @@ static unsigned int data_u32le( struct data *data, int offset ) {
 	return value;
 }
 
-static void data_sam_u8( struct data *data, int offset, int count, short *dest ) {
-	int idx, length = data->length;
-	signed char *buffer = data->buffer;
-	if( offset > length ) {
-		offset = length;
-	}
-	if( offset + count > length ) {
-		count = length - offset;
-	}
-	for( idx = 0; idx < count; idx++ ) {
-		dest[ idx ] = ( ( buffer[ offset + idx ] & 0xFF ) - 128 ) << 8;
-	}
-}
-
 static void data_sam_s8( struct data *data, int offset, int count, short *dest ) {
 	int idx, length = data->length;
 	signed char *buffer = data->buffer;
@@ -225,21 +211,6 @@ static void data_sam_s8( struct data *data, int offset, int count, short *dest )
 	}
 }
 
-static void data_sam_s8d( struct data *data, int offset, int count, short *dest ) {
-	int idx, length = data->length, sam = 0;
-	signed char *buffer = data->buffer;
-	if( offset > length ) {
-		offset = length;
-	}
-	if( offset + count > length ) {
-		count = length - offset;
-	}
-	for( idx = 0; idx < count; idx++ ) {
-		sam += buffer[ offset + idx ];
-		dest[ idx ] = sam << 8;
-	}
-}
-
 static void data_sam_s16( struct data *data, int offset, int count, short *dest ) {
 	int idx, length = data->length;
 	signed char *buffer = data->buffer;
@@ -251,21 +222,6 @@ static void data_sam_s16( struct data *data, int offset, int count, short *dest 
 	}
 	for( idx = 0; idx < count; idx++ ) {
 		dest[ idx ] = ( buffer[ offset + idx * 2 ] & 0xFF ) | ( buffer[ offset + idx * 2 + 1 ] << 8 );
-	}
-}
-
-static void data_sam_s16d( struct data *data, int offset, int count, short *dest ) {
-	int idx, length = data->length, sam = 0;
-	signed char *buffer = data->buffer;
-	if( offset > length ) {
-		offset = length;
-	}
-	if( offset + count * 2 > length ) {
-		count = ( length - offset ) / 2;
-	}
-	for( idx = 0; idx < count; idx++ ) {
-		sam += ( buffer[ offset + idx * 2 ] & 0xFF ) | ( buffer[ offset + idx * 2 + 1 ] << 8 );
-		dest[ idx ] = sam;
 	}
 }
 
@@ -340,7 +296,7 @@ static struct module* module_load_xm( struct data *data ) {
 	int delta_env, offset, next_offset, idx, entry;
 	int num_rows, num_notes, pat_data_len, pat_data_offset;
 	int sam, sam_head_offset, sam_data_bytes, sam_data_samples;
-	int num_samples, sam_loop_start, sam_loop_length;
+	int num_samples, sam_loop_start, sam_loop_length, amp;
 	int note, flags, key, ins, vol, fxc, fxp;
 	int point, point_tick, point_offset;
 	int looped, ping_pong, sixteen_bit;
@@ -446,8 +402,8 @@ static struct module* module_load_xm( struct data *data ) {
 			dispose_module( module );
 			return NULL;
 		}
-		for( idx = 1; idx <= module->num_instruments; idx++ ) {
-			instrument = &module->instruments[ idx ];
+		for( ins = 1; ins <= module->num_instruments; ins++ ) {
+			instrument = &module->instruments[ ins ];
 			data_ascii( data, offset + 4, 22, instrument->name );
 			num_samples = data_u16le( data, offset + 27 );
 			instrument->num_samples = ( num_samples > 0 ) ? num_samples : 1;
@@ -533,9 +489,17 @@ static struct module* module_load_xm( struct data *data ) {
 				sample->data = calloc( sam_data_samples, sizeof( short ) );
 				if( sample->data ) {
 					if( sixteen_bit ) {
-						data_sam_s16d( data, offset, sam_data_samples, sample->data );
+						data_sam_s16( data, offset, sam_data_samples, sample->data );
 					} else {
-						data_sam_s8d( data, offset, sam_data_samples, sample->data );
+						data_sam_s8( data, offset, sam_data_samples, sample->data );
+					}
+					amp = 0;
+					for( idx = 0; idx < sam_data_samples; idx++ ) {
+						amp = ( amp + sample->data[ idx ] ) & 0xFFFF;
+						if( amp > 32767 ) {
+							amp = amp - 65536;
+						}
+						sample->data[ idx ] = amp;
 					}
 					if( ping_pong ) {
 						sample_ping_pong( sample );
@@ -557,7 +521,7 @@ static struct module* module_load_s3m( struct data *data ) {
 	int stereo_mode, default_pan, channel_map[ 32 ];
 	int sample_offset, sample_length, loop_start, loop_length;
 	int pat_offset, note_offset, row, chan, token;
-	int key, inst, volume, effect, param, panning;
+	int key, ins, volume, effect, param, panning;
 	char *pattern_data;
 	struct instrument *instrument;
 	struct sample *sample;
@@ -610,8 +574,8 @@ static struct module* module_load_s3m( struct data *data ) {
 			dispose_module( module );
 			return NULL;
 		}
-		for( idx = 1; idx <= module->num_instruments; idx++ ) {
-			instrument = &module->instruments[ idx ];
+		for( ins = 1; ins <= module->num_instruments; ins++ ) {
+			instrument = &module->instruments[ ins ];
 			instrument->num_samples = 1;
 			instrument->samples = calloc( 1, sizeof( struct sample ) );
 			if( !instrument->samples ) {
@@ -652,14 +616,13 @@ static struct module* module_load_s3m( struct data *data ) {
 				sample->data = calloc( sample_length, sizeof( short ) );
 				if( sample->data ) {
 					if( sixteen_bit ) {
-						if( signed_samples ) {
-							data_sam_s16( data, sample_offset, sample_length, sample->data );
-						}
+						data_sam_s16( data, sample_offset, sample_length, sample->data );
 					} else {
-						if( signed_samples ) {
-							data_sam_s8( data, sample_offset, sample_length, sample->data );
-						} else {
-							data_sam_u8( data, sample_offset, sample_length, sample->data );
+						data_sam_s8( data, sample_offset, sample_length, sample->data );
+					}
+					if( !signed_samples ) {
+						for( idx = 0; idx < sample_length; idx++ ) {
+							sample->data[ idx ] = ( sample->data[ idx ] & 0xFFFF ) - 32768;
 						}
 					}
 				} else {
@@ -687,11 +650,11 @@ static struct module* module_load_s3m( struct data *data ) {
 			while( row < 64 ) {
 				token = data_u8( data, pat_offset++ );
 				if( token ) {
-					key = inst = 0;
+					key = ins = 0;
 					if( ( token & 0x20 ) == 0x20 ) {
 						/* Key + Instrument.*/
 						key = data_u8( data, pat_offset++ );
-						inst = data_u8( data, pat_offset++ );
+						ins = data_u8( data, pat_offset++ );
 						if( key < 0xFE ) {
 							key = ( key >> 4 ) * 12 + ( key & 0xF ) + 1;
 						} else if( key == 0xFF ) {
@@ -721,7 +684,7 @@ static struct module* module_load_s3m( struct data *data ) {
 					if( chan >= 0 ) {
 						note_offset = ( row * module->num_channels + chan ) * 5;
 						pattern_data[ note_offset     ] = key;
-						pattern_data[ note_offset + 1 ] = inst;
+						pattern_data[ note_offset + 1 ] = ins;
 						pattern_data[ note_offset + 2 ] = volume;
 						pattern_data[ note_offset + 3 ] = effect;
 						pattern_data[ note_offset + 4 ] = param;
