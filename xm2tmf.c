@@ -178,6 +178,15 @@ static int data_u8( struct data *data, int offset ) {
 	return value;
 }
 
+static int data_u16be( struct data *data, int offset ) {
+	int value = 0;
+	if( offset + 1 < data->length ) {
+		value = ( ( data->buffer[ offset ] & 0xFF ) << 8 )
+			| ( data->buffer[ offset + 1 ] & 0xFF );
+	}
+	return value;
+}
+
 static int data_u16le( struct data *data, int offset ) {
 	int value = 0;
 	if( offset + 1 < data->length ) {
@@ -725,7 +734,166 @@ static struct module* module_load_s3m( struct data *data ) {
 }
 
 static struct module* module_load_mod( struct data *data ) {
-	return NULL;
+	int idx, pat, module_data_idx, pat_data_len, pat_data_idx;
+	int period, key, ins, effect, param, fine_tune;
+	int sample_length, loop_start, loop_length;
+	char *pattern_data;
+	struct instrument *instrument;
+	struct sample *sample;
+	struct module *module = calloc( 1, sizeof( struct module ) );
+	if( module ) {
+		data_ascii( data, 0, 20, module->name );
+		module->sequence_len = data_u8( data, 950 ) & 0x7F;
+		module->restart_pos = data_u8( data, 951 ) & 0x7F;
+		if( module->restart_pos >= module->sequence_len ) {
+			module->restart_pos = 0;
+		}
+		module->sequence = calloc( 128, sizeof( unsigned char ) );
+		if( !module->sequence ){
+			dispose_module( module );
+			return NULL;
+		}
+		for( idx = 0; idx < 128; idx++ ) {
+			pat = data_u8( data, 952 + idx ) & 0x7F;
+			module->sequence[ idx ] = pat;
+			if( pat >= module->num_patterns ) {
+				module->num_patterns = pat + 1;
+			}
+		}
+		switch( data_u16be( data, 1082 ) ) {
+			case 0x4b2e: /* M.K. */
+			case 0x4b21: /* M!K! */
+			case 0x5434: /* FLT4 */
+				module->num_channels = 4;
+				module->c2_rate = 8287;
+				module->gain = 64;
+				break;
+			case 0x484e: /* xCHN */
+				module->num_channels = data_u8( data, 1080 ) - 48;
+				module->c2_rate = 8363;
+				module->gain = 32;
+				break;
+			case 0x4348: /* xxCH */
+				module->num_channels = ( data_u8( data, 1080 ) - 48 ) * 10;
+				module->num_channels += data_u8( data, 1081 ) - 48;
+				module->c2_rate = 8363;
+				module->gain = 32;
+				break;
+			default:
+				fputs( "MOD Format not recognised!", stderr );
+				dispose_module( module );
+				return NULL;
+		}
+		module->default_gvol = 64;
+		module->default_speed = 6;
+		module->default_tempo = 125;
+		module->default_panning = calloc( module->num_channels, sizeof( unsigned char ) );
+		if( !module->default_panning ) {
+			dispose_module( module );
+			return NULL;
+		}
+		for( idx = 0; idx < module->num_channels; idx++ ) {
+			module->default_panning[ idx ] = 51;
+			if( ( idx & 3 ) == 1 || ( idx & 3 ) == 2 ) {
+				module->default_panning[ idx ] = 204;
+			}
+		}
+		module_data_idx = 1084;
+		module->patterns = calloc( module->num_patterns, sizeof( struct pattern ) );
+		if( !module->patterns ) {
+			dispose_module( module );
+			return NULL;
+		}
+		pat_data_len = module->num_channels * 64 * 5;
+		for( pat = 0; pat < module->num_patterns; pat++ ) {
+			module->patterns[ pat ].num_channels = module->num_channels;
+			module->patterns[ pat ].num_rows = 64;
+			pattern_data = calloc( 1, pat_data_len );
+			if( !pattern_data ) {
+				dispose_module( module );
+				return NULL;
+			}
+			module->patterns[ pat ].data = pattern_data;
+			for( pat_data_idx = 0; pat_data_idx < pat_data_len; pat_data_idx += 5 ) {
+				period = ( data_u8( data, module_data_idx ) & 0xF ) << 8;
+				period = ( period | data_u8( data, module_data_idx + 1 ) ) * 4;
+				if( period >= 112 && period <= 6848 ) {
+					key = -12 * log_2( ( period << FP_SHIFT ) / 29021 );
+					key = ( key + ( key & ( FP_ONE >> 1 ) ) ) >> FP_SHIFT;
+					pattern_data[ pat_data_idx ] = key;
+				}
+				ins = ( data_u8( data, module_data_idx + 2 ) & 0xF0 ) >> 4;
+				ins = ins | ( data_u8( data, module_data_idx ) & 0x10 );
+				pattern_data[ pat_data_idx + 1 ] = ins;
+				effect = data_u8( data, module_data_idx + 2 ) & 0x0F;
+				param  = data_u8( data, module_data_idx + 3 );
+				if( param == 0 && ( effect < 3 || effect == 0xA ) ) {
+					effect = 0;
+				}
+				if( param == 0 && ( effect == 5 || effect == 6 ) ) {
+					effect -= 2;
+				}
+				if( effect == 8 && module->num_channels == 4 ) {
+					effect = param = 0;
+				}
+				pattern_data[ pat_data_idx + 3 ] = effect;
+				pattern_data[ pat_data_idx + 4 ] = param;
+				module_data_idx += 4;
+			}
+		}
+		module->num_instruments = 31;
+		module->instruments = calloc( module->num_instruments + 1, sizeof( struct instrument ) );
+		if( !module->instruments ) {
+			dispose_module( module );
+			return NULL;
+		}
+		instrument = &module->instruments[ 0 ];
+		instrument->num_samples = 1;
+		instrument->samples = calloc( 1, sizeof( struct sample ) );
+		if( !instrument->samples ) {
+			dispose_module( module );
+			return NULL;
+		}
+		for( ins = 1; ins <= module->num_instruments; ins++ ) {
+			instrument = &module->instruments[ ins ];
+			instrument->num_samples = 1;
+			instrument->samples = calloc( 1, sizeof( struct sample ) );
+			if( !instrument->samples ) {
+				dispose_module( module );
+				return NULL;
+			}
+			sample = &instrument->samples[ 0 ];
+			data_ascii( data, ins * 30 - 10, 22, instrument->name );
+			sample_length = data_u16be( data, ins * 30 + 12 ) * 2;
+			fine_tune = ( data_u8( data, ins * 30 + 14 ) & 0xF ) << 4;
+			sample->fine_tune = ( fine_tune & 0x7F ) - ( fine_tune & 0x80 );
+			sample->volume = data_u8( data, ins * 30 + 15 ) & 0x7F;
+			if( sample->volume > 64 ) {
+				sample->volume = 64;
+			}
+			sample->panning = -1;
+			loop_start = data_u16be( data, ins * 30 + 16 ) * 2;
+			loop_length = data_u16be( data, ins * 30 + 18 ) * 2;
+			if( loop_start + loop_length > sample_length ) {
+				loop_length = sample_length - loop_start;
+			}
+			if( loop_length < 4 ) {
+				loop_start = sample_length;
+				loop_length = 0;
+			}
+			sample->loop_start = loop_start;
+			sample->loop_length = loop_length;
+			sample->data = calloc( sample_length, sizeof( short ) );
+			if( sample->data ) {
+				data_sam_s8( data, module_data_idx, sample_length, sample->data );
+			} else {
+				dispose_module( module );
+				return NULL;
+			}
+			module_data_idx += sample_length;
+		}
+	}
+	return module;
 }
 
 static struct module* module_load( struct data *data ) {
