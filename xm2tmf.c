@@ -50,7 +50,7 @@ static const short sine_table[] = {
 };
 
 struct data {
-	signed char *buffer;
+	char *buffer;
 	int length;
 };
 
@@ -165,6 +165,7 @@ static int data_s8( struct data *data, int offset ) {
 	int value = 0;
 	if( offset < data->length ) {
 		value = data->buffer[ offset ];
+		value = ( value & 0x7F ) - ( value & 0x80 );
 	}
 	return value;
 }
@@ -198,8 +199,8 @@ static unsigned int data_u32le( struct data *data, int offset ) {
 }
 
 static void data_sam_s8( struct data *data, int offset, int count, short *dest ) {
-	int idx, length = data->length;
-	signed char *buffer = data->buffer;
+	int idx, amp, length = data->length;
+	char *buffer = data->buffer;
 	if( offset > length ) {
 		offset = length;
 	}
@@ -207,13 +208,14 @@ static void data_sam_s8( struct data *data, int offset, int count, short *dest )
 		count = length - offset;
 	}
 	for( idx = 0; idx < count; idx++ ) {
-		dest[ idx ] = buffer[ offset + idx ] << 8;
+		amp = ( buffer[ offset + idx ] & 0xFF ) << 8;
+		dest[ idx ] = ( amp & 0x7FFF ) - ( amp & 0x8000 );
 	}
 }
 
-static void data_sam_s16( struct data *data, int offset, int count, short *dest ) {
-	int idx, length = data->length;
-	signed char *buffer = data->buffer;
+static void data_sam_s16le( struct data *data, int offset, int count, short *dest ) {
+	int idx, amp, length = data->length;
+	char *buffer = data->buffer;
 	if( offset > length ) {
 		offset = length;
 	}
@@ -221,7 +223,8 @@ static void data_sam_s16( struct data *data, int offset, int count, short *dest 
 		count = ( length - offset ) / 2;
 	}
 	for( idx = 0; idx < count; idx++ ) {
-		dest[ idx ] = ( buffer[ offset + idx * 2 ] & 0xFF ) | ( buffer[ offset + idx * 2 + 1 ] << 8 );
+		amp = ( buffer[ offset + idx * 2 ] & 0xFF ) | ( buffer[ offset + idx * 2 + 1 ] << 8 );
+		dest[ idx ] = ( amp & 0x7FFF ) - ( amp & 0x8000 );
 	}
 }
 
@@ -489,16 +492,14 @@ static struct module* module_load_xm( struct data *data ) {
 				sample->data = calloc( sam_data_samples, sizeof( short ) );
 				if( sample->data ) {
 					if( sixteen_bit ) {
-						data_sam_s16( data, offset, sam_data_samples, sample->data );
+						data_sam_s16le( data, offset, sam_data_samples, sample->data );
 					} else {
 						data_sam_s8( data, offset, sam_data_samples, sample->data );
 					}
 					amp = 0;
 					for( idx = 0; idx < sam_data_samples; idx++ ) {
-						amp = ( amp + sample->data[ idx ] ) & 0xFFFF;
-						if( amp > 32767 ) {
-							amp = amp - 65536;
-						}
+						amp = amp + sample->data[ idx ];
+						amp = ( amp & 0x7FFF ) - ( amp & 0x8000 );
 						sample->data[ idx ] = amp;
 					}
 					if( ping_pong ) {
@@ -616,7 +617,7 @@ static struct module* module_load_s3m( struct data *data ) {
 				sample->data = calloc( sample_length, sizeof( short ) );
 				if( sample->data ) {
 					if( sixteen_bit ) {
-						data_sam_s16( data, sample_offset, sample_length, sample->data );
+						data_sam_s16le( data, sample_offset, sample_length, sample->data );
 					} else {
 						data_sam_s8( data, sample_offset, sample_length, sample->data );
 					}
@@ -1869,7 +1870,7 @@ int main( int argc, char **argv ) {
 			input = calloc( length, 1 );
 			if( input != NULL ) {
 				if( read_file( argv[ 1 ], input ) >= 0 ) {
-					data.buffer = ( signed char * ) input;
+					data.buffer = input;
 					data.length = length;
 					module = module_load( &data );
 					if( module ) {
