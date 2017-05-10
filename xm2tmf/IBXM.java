@@ -199,7 +199,7 @@ public class IBXM {
 			if( bpm != tempo ) {
 				if( output != null ) {
 					int tickLen = calculateTickLen( tempo, sampleRate );
-					writeInt32be( output, offset, ( tickLen << 15 ) + 040000 );
+					writeInt32be( output, offset, tickLen << 12 );
 				}
 				bpm = tempo;
 				offset += 4;
@@ -216,72 +216,62 @@ public class IBXM {
 				int d_pann = pann - channels[ chn ].prevPann;
 				if( ( inst | swap | d_freq | d_ampl | d_pann ) != 0 ) {
 					if( wait > 0 ) {
-						if( wait > 037777 ) {
-							wait = 037777;
+						if( wait > 0xFFF ) {
+							wait = 0xFFF;
 						}
 						if( output != null ) {
-							writeInt16be( output, offset, 0140000 + wait );
+							writeInt32be( output, offset, wait );
 						}
-						offset += 2;
+						offset += 4;
 						wait = 0;
-					}
-					int vol = ampl >> ( Sample.FP_SHIFT - 6 );
-					int pan = 0100 + ( ( pann < 4 ) ? 1 : ( pann >> 2 ) );
-					if( d_pann != 0 && d_ampl == 0 ) {
-						vol = pan;
-						d_ampl = 1;
-						d_pann = 0;
 					}
 					if( inst != 0 ) {
 						/* Trigger Instrument.*/
 						if( output != null ) {
-							writeInt32be( output, offset, ( getTMFKey( freq ) << 21 )
-								+ ( inst << 15 ) + ( vol << 6 ) + chn );
+							writeInt32be( output, offset, 0x10000000
+								+ ( getTMFKey( freq ) << 16 )
+								+ ( inst << 8 ) + chn );
 						}
 						offset += 4;
 						if( sidx != 0 ) {
 							/* Set Sample Offset.*/
 							if( output != null ) {
-								writeInt32be( output, offset, ( ( sidx & 0177777 ) << 15 )
-									+ 020000 + ( vol << 6 ) + chn );
+								writeInt32be( output, offset, 0x30000000
+									+ ( ( sidx & 0xFFFFF ) << 8 ) + chn );
 							}
 							offset += 4;
 						}
 					} else if( swap != 0 ) {
 						/* Switch Instrument.*/
 						if( output != null ) {
-							writeInt32be( output, offset, ( swap << 15 )
-								+ ( vol << 6 ) + chn );
+							writeInt32be( output, offset, 0x10000000
+								+ ( swap << 8 ) + chn );
 						}
 						offset += 4;
 						if( d_freq != 0 ) {
 							/* Modulate Pitch.*/
 							if( output != null ) {
-								writeInt32be( output, offset, ( getTMFKey( freq ) << 21 )
-									+ ( vol << 6 ) + chn  );
+								writeInt32be( output, offset, 0x10000000
+									+ ( getTMFKey( freq ) << 16 ) + chn );
 							}
 							offset += 4;
 						}
 					} else if( d_freq != 0 ) {
 						/* Modulate Pitch.*/
 						if( output != null ) {
-							writeInt32be( output, offset, ( getTMFKey( freq ) << 21 )
-								+ ( vol << 6 ) + chn );
+							writeInt32be( output, offset, 0x10000000
+								+ ( getTMFKey( freq ) << 16 ) + chn );
 						}
 						offset += 4;
-					} else if( d_ampl != 0 ) {
-						/* Modulate Vol.*/
-						if( output != null ) {
-							writeInt16be( output, offset, 0100000 + ( vol << 6 ) + chn );
-						}
-						offset += 2;
 					}
-					if( d_pann != 0 ) {
-						/* Modulate Panning.*/
+					if( ( d_ampl | d_pann ) != 0 ) {
+						/* Modulate Vol/Pan.*/
 						if( output != null ) {
-							writeInt16be( output, offset, 0100000 + ( pan << 6 ) + chn );
+							writeInt32be( output, offset, 0x20000000
+								+ ( ( ampl >> ( Sample.FP_SHIFT - 6 ) ) << 16 )
+								+ ( pann << 8 ) + chn );
 						}
-						offset += 2;
+						offset += 4;
 					}
 				}
 			}
@@ -305,11 +295,6 @@ public class IBXM {
 			tone++;
 		}
 		return octave * 96 + tone;
-	}
-
-	private static void writeInt16be( byte[] output, int offset, int value ) {
-		output[ offset ] = ( byte ) ( value >> 8 );
-		output[ offset + 1 ] = ( byte ) value;
 	}
 
 	private static void writeInt32be( byte[] output, int offset, int value ) {

@@ -1847,12 +1847,6 @@ static long write_file( char *filename, char *buffer, int length ) {
 	return count;
 }
 
-
-static void write_int16be( int value, char *dest ) {
-	dest[ 0 ] = value >> 8;
-	dest[ 1 ] = value;
-}
-
 static void write_int32be( int value, char *dest ) {
 	dest[ 0 ] = value >> 24;
 	dest[ 1 ] = value >> 16;
@@ -1879,7 +1873,7 @@ static int get_tmf_key( int freq ) {
 static int write_sequence( struct replay *replay, char *dest ) {
 	int chn, idx = 0, song_end = 0, bpm = 0, wait = 0;
 	int inst, swap, sidx, freq, d_freq;
-	int vol, ampl, d_ampl, pan, pann, d_pann;
+	int vol, ampl, d_ampl, pann, d_pann;
 	int num_chn = replay->module->num_channels;
 	replay_set_sequence_pos( replay, 0 );
 	for( chn = 0; chn < num_chn; chn++ ) {
@@ -1888,8 +1882,7 @@ static int write_sequence( struct replay *replay, char *dest ) {
 	while( !song_end ) {
 		if( bpm != replay->tempo ) {
 			if( dest ) {
-				write_int32be( ( replay_calculate_tick_len( replay ) << 15 )
-					+ 040000, &dest[ idx ] );
+				write_int32be( replay_calculate_tick_len( replay ) << 12, &dest[ idx ] );
 			}
 			bpm = replay->tempo;
 			idx += 4;
@@ -1906,72 +1899,65 @@ static int write_sequence( struct replay *replay, char *dest ) {
 			d_pann = pann - replay->channels[ chn ].prev_pann;
 			if( inst || swap || d_freq || d_ampl || d_pann ) {
 				if( wait > 0 ) {
-					if( wait > 037777 ) {
-						wait = 037777;
+					if( wait > 0xFFF ) {
+						wait = 0xFFF;
 					}
 					if( dest ) {
-						write_int16be( 0140000 + wait, &dest[ idx ] );
+						write_int32be( wait, &dest[ idx ] );
 					}
-					idx += 2;
+					idx += 4;
 					wait = 0;
-				}
-				vol = ampl >> ( FP_SHIFT - 6 );
-				pan = 0100 + ( ( pann < 4 ) ? 1 : ( pann >> 2 ) );
-				if( d_pann && !d_ampl ) {
-					vol = pan;
-					d_ampl = 1;
-					d_pann = 0;
 				}
 				if( inst ) {
 					/* Trigger Instrument.*/
 					if( dest ) {
-						write_int32be( ( get_tmf_key( freq ) << 21 ) + ( inst << 15 )
-							+ ( vol << 6 ) + chn, &dest[ idx ] );
+						write_int32be( 0x10000000
+							+ ( get_tmf_key( freq ) << 16 )
+							+ ( inst << 8 ) + chn, &dest[ idx ] );
 					}
 					idx += 4;
 					if( sidx ) {
 						/* Set Sample Offset.*/
 						if( dest ) {
-							write_int32be( ( ( sidx & 0177777 ) << 15 )
-								+ 020000 + ( vol << 6 ) + chn, &dest[ idx ] );
+							write_int32be( 0x30000000
+								+ ( ( sidx & 0xFFFFF ) << 8 )
+								+ chn, &dest[ idx ] );
 						}
 						idx += 4;
 					}
 				} else if( swap ) {
 					/* Switch Instrument.*/
 					if( dest ) {
-						write_int32be( ( swap << 15 )
-							+ ( vol << 6 ) + chn, &dest[ idx ] );
+						write_int32be( 0x10000000
+							+ ( swap << 8 ) + chn, &dest[ idx ] );
 					}
 					idx += 4;
 					if( d_freq ) {
 						/* Modulate Pitch.*/
 						if( dest ) {
-							write_int32be( ( get_tmf_key( freq ) << 21 )
-								+ ( vol << 6 ) + chn, &dest[ idx ] );
+							write_int32be( 0x10000000
+								+ ( get_tmf_key( freq ) << 16 )
+								+ chn, &dest[ idx ] );
 						}
 						idx += 4;
 					}
 				} else if( d_freq ) {
 					/* Modulate Pitch.*/
 					if( dest ) {
-						write_int32be( ( get_tmf_key( freq ) << 21 )
-							+ ( vol << 6 ) + chn, &dest[ idx ] );
+						write_int32be( 0x10000000
+							+ ( get_tmf_key( freq ) << 16 )
+							+ chn, &dest[ idx ] );
 					}
 					idx += 4;
-				} else if( d_ampl ) {
-					/* Modulate Vol.*/
-					if( dest ) {
-						write_int16be( 0100000 + ( vol << 6 ) + chn, &dest[ idx ] );
-					}
-					idx += 2;
 				}
-				if( d_pann ) {
-					/* Modulate Pan.*/
+				if( d_ampl || d_pann ) {
+					/* Modulate Vol/Pan.*/
 					if( dest ) {
-						write_int16be( 0100000 + ( pan << 6 ) + chn, &dest[ idx ] );
+						vol = ampl >> ( FP_SHIFT - 6 );
+						write_int32be( 0x20000000 + ( vol << 16 )
+							+ ( pann << 8 ) + chn, &dest[ idx ] );
 					}
-					idx += 2;
+					idx += 4;
 				}
 			}
 		}

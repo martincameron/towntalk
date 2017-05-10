@@ -98,7 +98,7 @@ static void mix_channel( struct fxchannel *channel, int *output, int count ) {
 }
 
 static void process_sequence( struct fxenvironment *fxenv, int channel_idx ) {
-	int off, len, cmd, tick, chan, key, ins, vol;
+	int off, len, cmd, oper, tick, chan, key, ins, vol;
 	struct fxchannel *channel, *cmdchan;
 	char *seq;
 	channel = &fxenv->channels[ channel_idx ];
@@ -106,54 +106,46 @@ static void process_sequence( struct fxenvironment *fxenv, int channel_idx ) {
 		off = channel->sequence_offset;
 		len = channel->sequence.string_value->length;
 		seq = channel->sequence.string_value->string;
-		while( channel->sequence_wait < 1 && off < len - 1 ) {
-			cmd = seq[ off ] & 0xFF;
-			if( cmd & 0x80 ) {
-				cmd = ( cmd & 0x7F ) << 8;
-				cmd |= seq[ off + 1 ] & 0xFF;
-				off += 2;
-			} else if( off < len - 3 ) {
-				cmd = cmd << 24;
-				cmd |= ( seq[ off + 1 ] & 0xFF ) << 16;
-				cmd |= ( seq[ off + 2 ] & 0xFF ) << 8;
-				cmd |= seq[ off + 3 ] & 0xFF;
-				off += 4;
-			} else {
-				off = len;
-			}
-			if( cmd & 040000 ) {
-				/* 0tttttt4wwww ticklen + wait */
-				tick = ( cmd >> 15 ) & 0177777;
+		while( channel->sequence_wait < 1 && off < len - 3 ) {
+			cmd = ( ( seq[ off ] & 0xFF ) << 24 )
+				| ( ( seq[ off + 1 ] & 0xFF ) << 16 )
+				| ( ( seq[ off + 2 ] & 0xFF ) << 8 )
+				| ( seq[ off + 3 ] & 0xFF );
+			off += 4;
+			oper = ( cmd >> 28 ) & 0xF;
+			if( oper == 0 ) {
+				/* 0x0ttttwww ticklen + wait */
+				tick = cmd >> 12;
 				if( tick >= MIN_TICK_LEN && tick <= MAX_TICK_LEN ) {
 					fxenv->tick_len = tick;
 				}
-				channel->sequence_wait = cmd & 037777;
+				channel->sequence_wait = cmd & 0xFFF;
 			} else {
-				chan = cmd & 077;
+				chan = cmd & 0xFF;
 				if( chan + channel_idx < NUM_CHANNELS ) {
 					cmdchan = &fxenv->channels[ chan + channel_idx ];
-					if( cmd & 020000 ) {
-						/* 0ssssss2vvcc sample offset + vol/pan + channel */
-						cmdchan->sample_pos = ( ( cmd >> 3 ) & 01777770000 );
-					} else {
-						/* 0kkkkii0vvcc key + ins + vol/pan + channel */
-						key = ( cmd >> 21 ) & 01777;
-						if( key > 0 && key < 957 ) {
-							cmdchan->frequency = ( FREQ_TABLE[ key % 96 ] << 4 ) >> ( 9 - key / 96 );
-						}
-						ins = ( cmd >> 15 ) & 077;
-						if( ins > 0 && ins <= NUM_SAMPLES ) {
-							cmdchan->sample = &fxenv->samples[ ins - 1 ];
-							if( key > 0 ) {
-								cmdchan->sample_pos = 0;
+					switch( oper ) {
+						case 1: /* 0x1kkkiicc key + instrument + channel */
+							key = ( cmd >> 16 ) & 0xFFF;
+							if( key > 0 && key < 957 ) {
+								cmdchan->frequency = ( FREQ_TABLE[ key % 96 ] << 4 ) >> ( 9 - key / 96 );
 							}
-						}
-					}
-					vol = ( cmd >> 6 ) & 0177;
-					if( vol < 65 ) {
-						cmdchan->volume = vol;
-					} else {
-						cmdchan->panning = ( vol - 96 ) << 2;
+							ins = ( cmd >> 8 ) & 0xFF;
+							if( ins > 0 && ins <= NUM_SAMPLES ) {
+								cmdchan->sample = &fxenv->samples[ ins - 1 ];
+								if( key > 0 ) {
+									cmdchan->sample_pos = 0;
+								}
+							}
+							break;
+						case 2: /* 0x20vvppcc volume + panning + channel */
+							vol = ( cmd >> 16 ) & 0xFF;
+							cmdchan->volume = vol < 64 ? vol : 64;
+							cmdchan->panning = ( ( cmd >> 8 ) & 0xFF ) - 128;
+							break;
+						case 3: /* 0x3ssssscc sample offset + channel */
+							cmdchan->sample_pos = ( ( cmd & 0xFFFFF00 ) << 4 );
+							break;
 					}
 				}
 			}
@@ -535,16 +527,15 @@ static int execute_fxplay_statement( struct statement *this, struct variable *va
 	struct variable *result, struct variable *exception ) {
 	/*
 		fxplay channel sequence$;
-		32-bit octal sequencer commands packed into byte string:
-			0kkkkii0vvcc key + ins + volume + channel
-			0kkkkii100cc key + ins + vol(64) + channel
-			0kkkkii1ppcc key + ins + pan(1-63) + channel
-			0ssssss2vvcc sample offset + volume + channel
-			0ssssss300cc sample offset + vol(64) + channel
-			0ssssss3ppcc sample offset + pan(1-63) + channel
-			0tttttt4wwww ticklen + wait
+		32-bit sequencer commands packed into byte string:
+			0x0ttttwww set tempo in samples per tick (if t > 0) and wait w ticks.
+			0x1kkkiicc set key k and instrument i on channel c.
+			0x20vvppcc set volume v and panning p on channel c.
+			0x3ssssscc set sample offset s on channel c.
+		Sample rate is 48000hz.
 		Instrument 0 / key 0 ignored.
 		Instrument >0 and key >0 sets sample offset to 0.
+		Keys specified in 96ths of an octave (480 = 16744hz).
 	*/
 	int ret, idx = 0;
 	struct variable params[ 2 ];

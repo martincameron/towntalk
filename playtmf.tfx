@@ -65,15 +65,6 @@ program playtmf {
 		}
 
 		fxaudio 960;
-
-		let idx = 0;
-		while <( idx 16 ) {
-			fxplay 0, $pack( +( 016000 idx ) );
-			inc idx;
-			fxplay 0, $pack( +( 012000 idx ) );
-			inc idx;
-		}
-
 		fxplay 0, sequence;
 
 		while TRUE {

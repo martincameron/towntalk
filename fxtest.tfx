@@ -31,10 +31,10 @@ program fxtest {
 
 	fxaudio 960;
 	fxsample 1, $sub( image 0 256 ), 0, 256;
-	let c = $cat( $pack( 016000 ) $pack( 07400104000 ) $pack( 012001 ) $pack( 07400104001 ) );
+	let c = $cat( $pack( 0x20402000 ) $pack( 0x11E00100 ) $pack( 0x2040C001 ) $pack( 0x11E00101 ) );
 	let x = 0;
 	while <( x 80 ) {
-		let c = $cat( c $pack( 040002 ) $pack( +( *( +( 0740 /( *( x 192 ) 79 ) ) 010000000 ) 04000 ) ) );
+		let c = $cat( c $pack( 2 ) $pack( +( *( +( 0x1E0 /( *( x 192 ) 79 ) ) 0x10000 ) 0x10000000 ) ) );
 		inc x;
 	}
 	fxplay 0, c;
@@ -48,7 +48,6 @@ program fxtest {
 					fxrect 160, 120, 320, 240, 0xFFFFFF;
 					fxblit 0, 0, 0, 320, 240, 160, 120;
 					fxshow;
-					#fxplay 0, $pack( +( *( +( 0740 /( *( x 192 ) 632 ) ) 010000000 ) 04000 ) );
 					let c = +( c 3 );
 					let x = +( x 8 );
 				}
