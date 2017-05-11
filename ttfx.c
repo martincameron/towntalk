@@ -557,8 +557,8 @@ static int execute_fxplay_statement( struct statement *this, struct variable *va
 			0x3xxxxxxx do nothing.
 			0xvvcc set volume (0x40-0x80) on channel c.
 			0xppcc set panning (0x81-0xBF) on channel c.
-			0xCxxxxxxx do nothing.
-			0xDxxxxxxx do nothing.
+			0xCxxx do nothing.
+			0xDxxx do nothing.
 			0xEttt set tempo in samples per tick (at 24000hz).
 			0xFwww wait w ticks.
 		Instrument 0 / key 0 ignored.
