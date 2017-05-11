@@ -704,6 +704,11 @@ static long read_module_length( char *filename ) {
 	return length;
 }
 
+static void write_int16be( int value, char *dest ) {
+	dest[ 0 ] = value >> 8;
+	dest[ 1 ] = value;
+}
+
 static void write_int32be( int value, char *dest ) {
 	dest[ 0 ] = value >> 24;
 	dest[ 1 ] = value >> 16;
@@ -729,7 +734,7 @@ static int get_tmf_key( int freq ) {
 
 static int write_sequence( char *dest ) {
 	int chn, idx = 0, song_end = 0, tick = 0, wait = 0;
-	int inst, swap, sidx, step, d_step, freq, ampl, d_ampl, pann, d_pann;
+	int inst, swap, sidx, step, d_step, freq, ampl, d_ampl, pann, d_pann, pan;
 	micromod_set_position( 0 );
 	for( chn = 0; chn < num_channels; chn++ ) {
 		channels[ chn ].prev_panning = -1;
@@ -737,10 +742,10 @@ static int write_sequence( char *dest ) {
 	while( !song_end ) {
 		if( tick != tick_len ) {
 			if( dest ) {
-				write_int32be( tick_len << 12, &dest[ idx ] );
+				write_int16be( 0xE000 + ( ( tick_len >> 1 ) & 0xFFF ), &dest[ idx ] );
 			}
 			tick = tick_len;
-			idx += 4;
+			idx += 2;
 		}
 		for( chn = 0; chn < num_channels; chn++ ) {
 			inst = channels[ chn ].trig_inst;
@@ -759,15 +764,15 @@ static int write_sequence( char *dest ) {
 						wait = 0xFFF;
 					}
 					if( dest ) {
-						write_int32be( wait, &dest[ idx ] );
+						write_int16be( 0xF000 + wait, &dest[ idx ] );
 					}
-					idx += 4;
+					idx += 2;
 					wait = 0;
 				}
 				if( inst ) {
 					/* Trigger Instrument.*/
 					if( dest ) {
-						write_int32be( 0x10000000
+						write_int32be( 0xA0000000
 							+ ( get_tmf_key( freq ) << 16 )
 							+ ( inst << 8 ) + chn, &dest[ idx ] );
 					}
@@ -775,7 +780,7 @@ static int write_sequence( char *dest ) {
 					if( sidx ) {
 						/* Set Sample Offset.*/
 						if( dest ) {
-							write_int32be( 0x30000000
+							write_int32be( 0xD0000000
 								+ ( ( sidx >> FP_SHIFT ) << 8 )
 								+ chn, &dest[ idx ] );
 						}
@@ -784,14 +789,14 @@ static int write_sequence( char *dest ) {
 				} else if( swap ) {
 					/* Switch Instrument.*/
 					if( dest ) {
-						write_int32be( 0x10000000
+						write_int32be( 0xA0000000
 							+ ( swap << 8 ) + chn, &dest[ idx ] );
 					}
 					idx += 4;
 					if( d_step ) {
 						/* Modulate Pitch.*/
 						if( dest ) {
-							write_int32be( 0x10000000
+							write_int32be( 0xA0000000
 								+ ( get_tmf_key( freq ) << 16 )
 								+ chn, &dest[ idx ] );
 						}
@@ -800,19 +805,26 @@ static int write_sequence( char *dest ) {
 				} else if( d_step ) {
 					/* Modulate Pitch.*/
 					if( dest ) {
-						write_int32be( 0x10000000
+						write_int32be( 0xA0000000
 							+ ( get_tmf_key( freq ) << 16 )
 							+ chn, &dest[ idx ] );
 					}
 					idx += 4;
 				}
-				if( d_ampl || d_pann ) {
-					/* Modulate Vol/Pan.*/
+				if( d_ampl ) {
+					/* Modulate volume.*/
 					if( dest ) {
-						write_int32be( 0x20000000 + ( ampl << 16 )
-							+ ( pann << 8 ) + chn, &dest[ idx ] );
+						write_int16be( ( ampl << 8 ) + chn, &dest[ idx ] );
 					}
-					idx += 4;
+					idx += 2;
+				}
+				if( d_pann ) {
+					/* Modulate panning.*/
+					if( dest ) {
+						pan = ( pann > 4 ) ? ( pann >> 2 ) : 1;
+						write_int16be( ( ( 0x40 + pan ) << 8 ) + chn, &dest[ idx ] );
+					}
+					idx += 2;
 				}
 			}
 		}

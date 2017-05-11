@@ -1847,6 +1847,11 @@ static long write_file( char *filename, char *buffer, int length ) {
 	return count;
 }
 
+static void write_int16be( int value, char *dest ) {
+	dest[ 0 ] = value >> 8;
+	dest[ 1 ] = value;
+}
+
 static void write_int32be( int value, char *dest ) {
 	dest[ 0 ] = value >> 24;
 	dest[ 1 ] = value >> 16;
@@ -1872,8 +1877,8 @@ static int get_tmf_key( int freq ) {
 
 static int write_sequence( struct replay *replay, char *dest ) {
 	int chn, idx = 0, song_end = 0, bpm = 0, wait = 0;
-	int inst, swap, sidx, freq, d_freq;
-	int vol, ampl, d_ampl, pann, d_pann;
+	int len, inst, swap, sidx, freq, d_freq;
+	int vol, ampl, d_ampl, pan, pann, d_pann;
 	int num_chn = replay->module->num_channels;
 	replay_set_sequence_pos( replay, 0 );
 	for( chn = 0; chn < num_chn; chn++ ) {
@@ -1882,10 +1887,11 @@ static int write_sequence( struct replay *replay, char *dest ) {
 	while( !song_end ) {
 		if( bpm != replay->tempo ) {
 			if( dest ) {
-				write_int32be( replay_calculate_tick_len( replay ) << 12, &dest[ idx ] );
+				len = replay_calculate_tick_len( replay ) >> 1;
+				write_int16be( 0xE000 + ( len & 0xFFF ), &dest[ idx ] );
 			}
 			bpm = replay->tempo;
-			idx += 4;
+			idx += 2;
 		}
 		for( chn = 0; chn < num_chn; chn++ ) {
 			inst = replay->channels[ chn ].trig_inst;
@@ -1903,15 +1909,15 @@ static int write_sequence( struct replay *replay, char *dest ) {
 						wait = 0xFFF;
 					}
 					if( dest ) {
-						write_int32be( wait, &dest[ idx ] );
+						write_int16be( 0xF000 + wait, &dest[ idx ] );
 					}
-					idx += 4;
+					idx += 2;
 					wait = 0;
 				}
 				if( inst ) {
 					/* Trigger Instrument.*/
 					if( dest ) {
-						write_int32be( 0x10000000
+						write_int32be( 0xA0000000
 							+ ( get_tmf_key( freq ) << 16 )
 							+ ( inst << 8 ) + chn, &dest[ idx ] );
 					}
@@ -1919,7 +1925,7 @@ static int write_sequence( struct replay *replay, char *dest ) {
 					if( sidx ) {
 						/* Set Sample Offset.*/
 						if( dest ) {
-							write_int32be( 0x30000000
+							write_int32be( 0xD0000000
 								+ ( ( sidx & 0xFFFFF ) << 8 )
 								+ chn, &dest[ idx ] );
 						}
@@ -1928,14 +1934,14 @@ static int write_sequence( struct replay *replay, char *dest ) {
 				} else if( swap ) {
 					/* Switch Instrument.*/
 					if( dest ) {
-						write_int32be( 0x10000000
+						write_int32be( 0xA0000000
 							+ ( swap << 8 ) + chn, &dest[ idx ] );
 					}
 					idx += 4;
 					if( d_freq ) {
 						/* Modulate Pitch.*/
 						if( dest ) {
-							write_int32be( 0x10000000
+							write_int32be( 0xA0000000
 								+ ( get_tmf_key( freq ) << 16 )
 								+ chn, &dest[ idx ] );
 						}
@@ -1944,20 +1950,27 @@ static int write_sequence( struct replay *replay, char *dest ) {
 				} else if( d_freq ) {
 					/* Modulate Pitch.*/
 					if( dest ) {
-						write_int32be( 0x10000000
+						write_int32be( 0xA0000000
 							+ ( get_tmf_key( freq ) << 16 )
 							+ chn, &dest[ idx ] );
 					}
 					idx += 4;
 				}
-				if( d_ampl || d_pann ) {
-					/* Modulate Vol/Pan.*/
+				if( d_ampl ) {
+					/* Modulate volume.*/
 					if( dest ) {
 						vol = ampl >> ( FP_SHIFT - 6 );
-						write_int32be( 0x20000000 + ( vol << 16 )
-							+ ( pann << 8 ) + chn, &dest[ idx ] );
+						write_int16be( ( vol << 8 ) + chn, &dest[ idx ] );
 					}
-					idx += 4;
+					idx += 2;
+				}
+				if( d_pann ) {
+					/* Modulate panning.*/
+					if( dest ) {
+						pan = ( pann > 4 ) ? ( pann >> 2 ) : 1;
+						write_int16be( ( ( 0x40 + pan ) << 8 ) + chn, &dest[ idx ] );
+					}
+					idx += 2;
 				}
 			}
 		}
