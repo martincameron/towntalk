@@ -228,7 +228,7 @@ public class IBXM {
 					if( inst != 0 ) {
 						/* Trigger Instrument.*/
 						if( output != null ) {
-							writeInt32be( output, offset, 0xA0000000
+							writeInt32be( output, offset, 0x10000000
 								+ ( getTMFKey( freq ) << 16 )
 								+ ( inst << 8 ) + chn );
 						}
@@ -236,7 +236,7 @@ public class IBXM {
 						if( sidx != 0 ) {
 							/* Set Sample Offset.*/
 							if( output != null ) {
-								writeInt32be( output, offset, 0xD0000000
+								writeInt32be( output, offset, 0x20000000
 									+ ( ( sidx & 0xFFFFF ) << 8 ) + chn );
 							}
 							offset += 4;
@@ -244,14 +244,14 @@ public class IBXM {
 					} else if( swap != 0 ) {
 						/* Switch Instrument.*/
 						if( output != null ) {
-							writeInt32be( output, offset, 0xA0000000
+							writeInt32be( output, offset, 0x10000000
 								+ ( swap << 8 ) + chn );
 						}
 						offset += 4;
 						if( d_freq != 0 ) {
 							/* Modulate Pitch.*/
 							if( output != null ) {
-								writeInt32be( output, offset, 0xA0000000
+								writeInt32be( output, offset, 0x10000000
 									+ ( getTMFKey( freq ) << 16 ) + chn );
 							}
 							offset += 4;
@@ -259,7 +259,7 @@ public class IBXM {
 					} else if( d_freq != 0 ) {
 						/* Modulate Pitch.*/
 						if( output != null ) {
-							writeInt32be( output, offset, 0xA0000000
+							writeInt32be( output, offset, 0x10000000
 								+ ( getTMFKey( freq ) << 16 ) + chn );
 						}
 						offset += 4;
@@ -268,7 +268,8 @@ public class IBXM {
 						/* Modulate volume.*/
 						if( output != null ) {
 							int vol = ampl >> ( Sample.FP_SHIFT - 6 );
-							writeInt16be( output, offset, ( vol << 8 ) + chn );
+							writeInt16be( output, offset,
+								( ( 0x40 + vol ) << 8 ) + chn );
 						}
 						offset += 2;
 					}
@@ -277,7 +278,7 @@ public class IBXM {
 						if( output != null ) {
 							int pan = ( pann > 4 ) ? ( pann >> 2 ) : 1;
 							writeInt16be( output, offset,
-								( ( 0x40 + pan ) << 8 ) + chn );
+								( ( 0x80 + pan ) << 8 ) + chn );
 						}
 						offset += 2;
 					}

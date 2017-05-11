@@ -772,7 +772,7 @@ static int write_sequence( char *dest ) {
 				if( inst ) {
 					/* Trigger Instrument.*/
 					if( dest ) {
-						write_int32be( 0xA0000000
+						write_int32be( 0x10000000
 							+ ( get_tmf_key( freq ) << 16 )
 							+ ( inst << 8 ) + chn, &dest[ idx ] );
 					}
@@ -780,7 +780,7 @@ static int write_sequence( char *dest ) {
 					if( sidx ) {
 						/* Set Sample Offset.*/
 						if( dest ) {
-							write_int32be( 0xD0000000
+							write_int32be( 0x20000000
 								+ ( ( sidx >> FP_SHIFT ) << 8 )
 								+ chn, &dest[ idx ] );
 						}
@@ -789,14 +789,14 @@ static int write_sequence( char *dest ) {
 				} else if( swap ) {
 					/* Switch Instrument.*/
 					if( dest ) {
-						write_int32be( 0xA0000000
+						write_int32be( 0x10000000
 							+ ( swap << 8 ) + chn, &dest[ idx ] );
 					}
 					idx += 4;
 					if( d_step ) {
 						/* Modulate Pitch.*/
 						if( dest ) {
-							write_int32be( 0xA0000000
+							write_int32be( 0x10000000
 								+ ( get_tmf_key( freq ) << 16 )
 								+ chn, &dest[ idx ] );
 						}
@@ -805,7 +805,7 @@ static int write_sequence( char *dest ) {
 				} else if( d_step ) {
 					/* Modulate Pitch.*/
 					if( dest ) {
-						write_int32be( 0xA0000000
+						write_int32be( 0x10000000
 							+ ( get_tmf_key( freq ) << 16 )
 							+ chn, &dest[ idx ] );
 					}
@@ -814,7 +814,7 @@ static int write_sequence( char *dest ) {
 				if( d_ampl ) {
 					/* Modulate volume.*/
 					if( dest ) {
-						write_int16be( ( ampl << 8 ) + chn, &dest[ idx ] );
+						write_int16be( ( ( 0x40 + ampl ) << 8 ) + chn, &dest[ idx ] );
 					}
 					idx += 2;
 				}
@@ -822,7 +822,7 @@ static int write_sequence( char *dest ) {
 					/* Modulate panning.*/
 					if( dest ) {
 						pan = ( pann > 4 ) ? ( pann >> 2 ) : 1;
-						write_int16be( ( ( 0x40 + pan ) << 8 ) + chn, &dest[ idx ] );
+						write_int16be( ( ( 0x80 + pan ) << 8 ) + chn, &dest[ idx ] );
 					}
 					idx += 2;
 				}

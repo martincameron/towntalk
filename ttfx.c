@@ -109,7 +109,7 @@ static void process_sequence( struct fxenvironment *fxenv, int channel_idx ) {
 		while( channel->sequence_wait < 1 && off < len ) {
 			cmd = seq[ off ] & 0xFF;
 			oper = cmd >> 4;
-			if( oper <= 0x7 || oper >= 0xE ) {
+			if( oper == 0 || oper >= 0x4 ) {
 				if( off + 1 < len ) {
 					cmd = ( cmd << 8 ) | ( seq[ off + 1 ] & 0xFF );
 					off += 2;
@@ -122,16 +122,16 @@ static void process_sequence( struct fxenvironment *fxenv, int channel_idx ) {
 						if( tick >= MIN_TICK_LEN && tick <= MAX_TICK_LEN ) {
 							fxenv->tick_len = tick;
 						}
-					} else {
+					} else if( oper >= 0x4 ) {
 						chan = cmd & 0xFF;
 						if( chan + channel_idx < NUM_CHANNELS ) {
 							cmdchan = &fxenv->channels[ chan + channel_idx ];
-							if( cmd >= 0x4100 ) {
+							if( cmd >= 0x8100 ) {
 								/* 0xppcc set panning. */
-								cmdchan->panning = ( ( cmd >> 8 ) - 0x40 ) * 4 - 128;
+								cmdchan->panning = ( ( cmd >> 8 ) - 0x80 ) * 4 - 128;
 							} else {
 								/* 0xvvcc set volume */
-								vol = ( cmd >> 8 ) & 0xFF;
+								vol = ( ( cmd >> 8 ) - 0x40 ) & 0xFF;
 								cmdchan->volume = vol < 64 ? vol : 64;
 							}
 						}
@@ -150,7 +150,7 @@ static void process_sequence( struct fxenvironment *fxenv, int channel_idx ) {
 					if( chan + channel_idx < NUM_CHANNELS ) {
 						cmdchan = &fxenv->channels[ chan + channel_idx ];
 						switch( oper ) {
-							case 0xA: /* 0xAkkkiicc key + instrument + channel */
+							case 0x1: /* 0x1kkkiicc key + instrument + channel */
 								key = ( cmd >> 16 ) & 0xFFF;
 								if( key > 0 && key < 957 ) {
 									cmdchan->frequency = ( FREQ_TABLE[ key % 96 ] << 4 ) >> ( 9 - key / 96 );
@@ -163,7 +163,7 @@ static void process_sequence( struct fxenvironment *fxenv, int channel_idx ) {
 									}
 								}
 								break;
-							case 0xD: /* 0xDssssscc sample offset + channel */
+							case 0x2: /* 0x2ssssscc sample offset + channel */
 								cmdchan->sample_pos = ( ( cmd & 0xFFFFF00 ) << 4 );
 								break;
 						}
@@ -551,10 +551,14 @@ static int execute_fxplay_statement( struct statement *this, struct variable *va
 	/*
 		fxplay channel sequence$;
 		2 and 4-byte sequencer commands packed into byte string:
-			0xvvcc set volume (0x00-0x40) on channel c.
-			0xppcc set panning (0x41-0x7F) on channel c.
-			0xAkkkiicc set key k and instrument i on channel c.
-			0xDssssscc set sample offset s on channel c.
+			0x0xxx do nothing (used to pad 2-byte cmds to 4).
+			0x1kkkiicc set key k and instrument i on channel c.
+			0x2ssssscc set sample offset s on channel c.
+			0x3xxxxxxx do nothing.
+			0xvvcc set volume (0x40-0x80) on channel c.
+			0xppcc set panning (0x81-0xBF) on channel c.
+			0xCxxxxxxx do nothing.
+			0xDxxxxxxx do nothing.
 			0xEttt set tempo in samples per tick (at 24000hz).
 			0xFwww wait w ticks.
 		Instrument 0 / key 0 ignored.

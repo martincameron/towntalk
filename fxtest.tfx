@@ -31,10 +31,12 @@ program fxtest {
 
 	fxaudio 960;
 	fxsample 1, $sub( image 0 256 ), 0, 256;
-	let c = $cat( $pack( 0x20402000 ) $pack( 0x11E00100 ) $pack( 0x2040C001 ) $pack( 0x11E00101 ) );
+	let c = $cat(
+		$pack( 0x8000 ) $pack( 0xA000 ) $pack( 0x11E00100 )
+		$pack( 0x8001 ) $pack( 0xA001 ) $pack( 0x11E00101 ) );
 	let x = 0;
 	while <( x 80 ) {
-		let c = $cat( c $pack( 2 ) $pack( +( *( +( 0x1E0 /( *( x 192 ) 79 ) ) 0x10000 ) 0x10000000 ) ) );
+		let c = $cat( c $pack( 0xF002 ) $pack( +( *( +( 0x1E0 /( *( x 192 ) 79 ) ) 0x10000 ) 0x10000000 ) ) );
 		inc x;
 	}
 	fxplay 0, c;
