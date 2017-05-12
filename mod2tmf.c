@@ -545,16 +545,12 @@ void micromod_set_position( long pos ) {
 	random_seed = 0xABCDEF;
 	for( chan_idx = 0; chan_idx < num_channels; chan_idx++ ) {
 		chan = &channels[ chan_idx ];
+		memset( chan, 0, sizeof( struct channel ) );
 		chan->id = chan_idx;
-		chan->instrument = chan->assigned = 0;
-		chan->volume = 0;
 		switch( chan_idx & 0x3 ) {
 			case 0: case 3: chan->panning =  51; break;
 			case 1: case 2: chan->panning = 204; break;
 		}
-		chan->trig_inst = 0;
-		chan->prev_step = 0;
-		chan->prev_ampl = chan->prev_panning = 0;
 	}
 	sequence_tick();
 	tick_offset = 0;
