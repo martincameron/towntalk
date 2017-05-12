@@ -922,6 +922,32 @@ static void pattern_get_note( struct pattern *pattern, int row, int chan, struct
 	}
 }
 
+static void sample_quantize( struct sample *sample, char *output ) {
+	int sam, offset = 0;
+	int idx = 0, end = sample->loop_start + sample->loop_length;
+	short *sample_data = sample->data;
+	while( idx < end ) {
+		sam = ( sample_data[ idx++ ] + 32768 ) >> 7;
+		if( sam < 510 ) {
+			sam = ( sam >> 1 ) + ( sam & 1 );
+		} else {
+			sam = 255;
+		}
+		output[ offset++ ] = sam - 128;
+	}
+}
+
+static int sample_calculate_sample_idx( struct sample *sample, int sample_idx ) {
+	int loop_offset = sample_idx - sample->loop_start;
+	if( loop_offset > 0 ) {
+		sample_idx = sample->loop_start;
+		if( sample->loop_length > 1 ) {
+			sample_idx += loop_offset % sample->loop_length;
+		}
+	}
+	return sample_idx;
+}
+
 static void channel_init( struct channel *channel, struct replay *replay, int idx ) {
 	memset( channel, 0, sizeof( struct channel ) );
 	channel->replay = replay;
@@ -1614,6 +1640,14 @@ static void channel_row( struct channel *channel, struct note *note ) {
 	channel_update_envelopes( channel );
 }
 
+static void channel_update_sample_idx( struct channel *channel, int length ) {
+	int step = ( channel->freq << ( FP_SHIFT - 3 ) ) / ( channel->replay->sample_rate >> 3 );
+	channel->sample_fra += step * length;
+	channel->sample_idx = sample_calculate_sample_idx( channel->sample,
+		channel->sample_idx + ( channel->sample_fra >> FP_SHIFT ) );
+	channel->sample_fra &= FP_MASK;
+}
+
 static int replay_row( struct replay *replay ) {
 	int idx, song_end = 0;
 	struct note note;
@@ -1791,19 +1825,30 @@ static int replay_calculate_tick_len( struct replay *replay ) {
 	return ( replay->sample_rate * 5 ) / ( replay->tempo * 2 );
 }
 
-static void sample_quantize( struct sample *sample, char *output ) {
-	int sam, offset = 0;
-	int idx = 0, end = sample->loop_start + sample->loop_length;
-	short *sample_data = sample->data;
-	while( idx < end ) {
-		sam = ( sample_data[ idx++ ] + 32768 ) >> 7;
-		if( sam < 510 ) {
-			sam = ( sam >> 1 ) + ( sam & 1 );
-		} else {
-			sam = 255;
-		}
-		output[ offset++ ] = sam - 128;
+static int replay_calculate_duration( struct replay *replay ) {
+	int song_end = 0, duration = 0;
+	replay_set_sequence_pos( replay, 0 );
+	while( !song_end ) {
+		duration += replay_calculate_tick_len( replay );
+		song_end = replay_tick( replay );
 	}
+	replay_set_sequence_pos( replay, 0 );
+	return duration;
+}
+
+static int replay_seek( struct replay *replay, int sample_pos ) {
+	int idx, tick_len, current_pos = 0;
+	replay_set_sequence_pos( replay, 0 );
+	tick_len = replay_calculate_tick_len( replay );
+	while( ( sample_pos - current_pos ) >= tick_len ) {
+		for( idx = 0; idx < replay->module->num_channels; idx++ ) {
+			channel_update_sample_idx( &replay->channels[ idx ], tick_len );
+		}
+		current_pos += tick_len;
+		replay_tick( replay );
+		tick_len = replay_calculate_tick_len( replay );
+	}
+	return current_pos;
 }
 
 static long read_file( char *file_name, void *buffer ) {
