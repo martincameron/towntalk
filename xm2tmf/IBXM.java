@@ -236,7 +236,7 @@ public class IBXM {
 						if( sidx != 0 ) {
 							/* Set Sample Offset.*/
 							if( output != null ) {
-								writeInt32be( output, offset, 0x20000000
+								writeInt32be( output, offset, 0x30000000
 									+ ( ( sidx & 0xFFFFF ) << 8 ) + chn );
 							}
 							offset += 4;
@@ -244,23 +244,25 @@ public class IBXM {
 					} else if( swap != 0 ) {
 						/* Switch Instrument.*/
 						if( output != null ) {
-							writeInt32be( output, offset, 0x10000000
+							writeInt32be( output, offset, 0x20000000
+								+ ( getTMFKey( freq ) << 16 )
 								+ ( swap << 8 ) + chn );
 						}
 						offset += 4;
-						if( d_freq != 0 ) {
-							/* Modulate Pitch.*/
-							if( output != null ) {
-								writeInt32be( output, offset, 0x10000000
-									+ ( getTMFKey( freq ) << 16 ) + chn );
-							}
-							offset += 4;
-						}
 					} else if( d_freq != 0 ) {
 						/* Modulate Pitch.*/
+						int vol = 0;
+						if( d_ampl != 0 ) {
+							vol = 0x40 + ( ampl >> ( Sample.FP_SHIFT - 6 ) );
+							d_ampl = 0;
+						} else if( d_pann != 0 ) {
+							vol = 0x80 + ( ( pann > 4 ) ? ( pann >> 2 ) : 1 );
+							d_pann = 0;
+						}
 						if( output != null ) {
 							writeInt32be( output, offset, 0x10000000
-								+ ( getTMFKey( freq ) << 16 ) + chn );
+								+ ( getTMFKey( freq ) << 16 )
+								+ ( vol << 8 ) + chn );
 						}
 						offset += 4;
 					}
