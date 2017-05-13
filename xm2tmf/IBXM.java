@@ -208,13 +208,16 @@ public class IBXM {
 				int inst = channels[ chn ].trigInst;
 				int swap = channels[ chn ].swapInst;
 				int sidx = channels[ chn ].sampleIdx;
-				int freq = channels[ chn ].freq;
-				int d_freq = freq - channels[ chn ].prevFreq;
-				int ampl = channels[ chn ].ampl;
-				int d_ampl = ampl - channels[ chn ].prevAmpl;
+				int tkey = getTMFKey( channels[ chn ].freq );
+				int d_tkey = tkey - getTMFKey( channels[ chn ].prevFreq );
+				int ampl = channels[ chn ].ampl >> ( Sample.FP_SHIFT - 6 );
+				int d_ampl = ampl - ( channels[ chn ].prevAmpl >> ( Sample.FP_SHIFT - 6 ) );
 				int pann = channels[ chn ].pann;
-				int d_pann = pann - channels[ chn ].prevPann;
-				if( ( inst | swap | d_freq | d_ampl | d_pann ) != 0 ) {
+				pann = ( pann > 4 ) ? ( pann >> 2 ) : 1;
+				int d_pann = channels[ chn ].prevPann;
+				d_pann = ( d_pann > 4 ) ? ( d_pann >> 2 ) : 1;
+				d_pann = pann - d_pann;
+				if( ( inst | swap | d_tkey | d_ampl | d_pann ) != 0 ) {
 					if( wait > 0 ) {
 						if( wait > 0xFFF ) {
 							wait = 0xFFF;
@@ -229,8 +232,7 @@ public class IBXM {
 						/* Trigger Instrument.*/
 						if( output != null ) {
 							writeInt32be( output, offset, 0x10000000
-								+ ( getTMFKey( freq ) << 16 )
-								+ ( inst << 8 ) + chn );
+								+ ( tkey << 16 ) + ( inst << 8 ) + chn );
 						}
 						offset += 4;
 						if( sidx != 0 ) {
@@ -245,42 +247,38 @@ public class IBXM {
 						/* Switch Instrument.*/
 						if( output != null ) {
 							writeInt32be( output, offset, 0x20000000
-								+ ( getTMFKey( freq ) << 16 )
-								+ ( swap << 8 ) + chn );
+								+ ( tkey << 16 ) + ( swap << 8 ) + chn );
 						}
 						offset += 4;
-					} else if( d_freq != 0 ) {
+					} else if( d_tkey != 0 ) {
 						/* Modulate Pitch.*/
 						int vol = 0;
 						if( d_ampl != 0 ) {
-							vol = 0x40 + ( ampl >> ( Sample.FP_SHIFT - 6 ) );
+							vol = 0x40 + ampl;
 							d_ampl = 0;
 						} else if( d_pann != 0 ) {
-							vol = 0x80 + ( ( pann > 4 ) ? ( pann >> 2 ) : 1 );
+							vol = 0x80 + pann;
 							d_pann = 0;
 						}
 						if( output != null ) {
 							writeInt32be( output, offset, 0x10000000
-								+ ( getTMFKey( freq ) << 16 )
-								+ ( vol << 8 ) + chn );
+								+ ( tkey << 16 ) + ( vol << 8 ) + chn );
 						}
 						offset += 4;
 					}
 					if( d_ampl != 0 ) {
 						/* Modulate volume.*/
 						if( output != null ) {
-							int vol = ampl >> ( Sample.FP_SHIFT - 6 );
 							writeInt16be( output, offset,
-								( ( 0x40 + vol ) << 8 ) + chn );
+								( ( 0x40 + ampl ) << 8 ) + chn );
 						}
 						offset += 2;
 					}
 					if( d_pann != 0 ) {
 						/* Modulate panning.*/
 						if( output != null ) {
-							int pan = ( pann > 4 ) ? ( pann >> 2 ) : 1;
 							writeInt16be( output, offset,
-								( ( 0x80 + pan ) << 8 ) + chn );
+								( ( 0x80 + pann ) << 8 ) + chn );
 						}
 						offset += 2;
 					}
