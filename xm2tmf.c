@@ -1885,6 +1885,10 @@ static int calculate_tick_len( int tempo, int sample_rate ) {
 	return ( sample_rate * 5 ) / ( tempo * 2 );
 }
 
+static int calculate_mix_buf_len( int sample_rate ) {
+	return ( calculate_tick_len( 32, sample_rate ) + 65 ) * 4;
+}
+
 static int replay_calculate_duration( struct replay *replay ) {
 	int song_end = 0, duration = 0;
 	replay_set_sequence_pos( replay, 0 );
