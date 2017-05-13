@@ -115,9 +115,10 @@ struct channel {
 };
 
 struct replay {
-	int sample_rate, global_vol;
+	int sample_rate, interpolation, global_vol;
 	int seq_pos, break_pos, row, next_row, tick;
 	int speed, tempo, pl_count, pl_chan;
+	int *ramp_buf;
 	struct channel *channels;
 	struct module *module;
 };
@@ -937,17 +938,6 @@ static void sample_quantize( struct sample *sample, char *output ) {
 	}
 }
 
-static int sample_calculate_sample_idx( struct sample *sample, int sample_idx ) {
-	int loop_offset = sample_idx - sample->loop_start;
-	if( loop_offset > 0 ) {
-		sample_idx = sample->loop_start;
-		if( sample->loop_length > 1 ) {
-			sample_idx += loop_offset % sample->loop_length;
-		}
-	}
-	return sample_idx;
-}
-
 static void channel_init( struct channel *channel, struct replay *replay, int idx ) {
 	memset( channel, 0, sizeof( struct channel ) );
 	channel->replay = replay;
@@ -1639,11 +1629,77 @@ static void channel_row( struct channel *channel, struct note *note ) {
 	channel_update_envelopes( channel );
 }
 
-static void channel_update_sample_idx( struct channel *channel, int length ) {
-	int step = ( channel->freq << ( FP_SHIFT - 3 ) ) / ( channel->replay->sample_rate >> 3 );
-	channel->sample_fra += step * length;
-	channel->sample_idx = sample_calculate_sample_idx( channel->sample,
-		channel->sample_idx + ( channel->sample_fra >> FP_SHIFT ) );
+static void channel_resample( struct channel *channel, int *mix_buf,
+		int offset, int count, int sample_rate, int interpolate ) {
+	struct sample *sample = channel->sample;
+	int l_gain, r_gain, sam_idx, sam_fra, step;
+	int loop_len, loop_end, out_idx, out_end, y, m, c;
+	short *sample_data = channel->sample->data;
+	if( channel->ampl > 0 ) {
+		l_gain = channel->ampl * ( 255 - channel->pann ) >> 8;
+		r_gain = channel->ampl * channel->pann >> 8;
+		sam_idx = channel->sample_idx;
+		sam_fra = channel->sample_fra;
+		step = ( channel->freq << ( FP_SHIFT - 3 ) ) / ( sample_rate >> 3 );
+		loop_len = sample->loop_length;
+		loop_end = sample->loop_start + loop_len;
+		out_idx = offset * 2;
+		out_end = ( offset + count ) * 2;
+		if( interpolate ) {
+			while( out_idx < out_end ) {
+				if( sam_idx >= loop_end ) {
+					if( loop_len > 1 ) {
+						while( sam_idx >= loop_end ) {
+							sam_idx -= loop_len;
+						}
+					} else {
+						break;
+					}
+				}
+				c = sample_data[ sam_idx ];
+				m = sample_data[ sam_idx + 1 ] - c;
+				y = ( ( m * sam_fra ) >> FP_SHIFT ) + c;
+				mix_buf[ out_idx++ ] += ( y * l_gain ) >> FP_SHIFT;
+				mix_buf[ out_idx++ ] += ( y * r_gain ) >> FP_SHIFT;
+				sam_fra += step;
+				sam_idx += sam_fra >> FP_SHIFT;
+				sam_fra &= FP_MASK;
+			}
+		} else {
+			while( out_idx < out_end ) {
+				if( sam_idx >= loop_end ) {
+					if( loop_len > 1 ) {
+						while( sam_idx >= loop_end ) {
+							sam_idx -= loop_len;
+						}
+					} else {
+						break;
+					}
+				}
+				y = sample_data[ sam_idx ];
+				mix_buf[ out_idx++ ] += ( y * l_gain ) >> FP_SHIFT;
+				mix_buf[ out_idx++ ] += ( y * r_gain ) >> FP_SHIFT;
+				sam_fra += step;
+				sam_idx += sam_fra >> FP_SHIFT;
+				sam_fra &= FP_MASK;
+			}
+		}
+	}
+}
+
+static void channel_update_sample_idx( struct channel *channel, int count, int sample_rate ) {
+	struct sample *sample = channel->sample;
+	int step = ( channel->freq << ( FP_SHIFT - 3 ) ) / ( sample_rate >> 3 );
+	channel->sample_fra += step * count;
+	channel->sample_idx += channel->sample_fra >> FP_SHIFT;
+	if( channel->sample_idx > sample->loop_start ) {
+		if( sample->loop_length > 1 ) {
+			channel->sample_idx = sample->loop_start
+				+ ( channel->sample_idx - sample->loop_start ) % sample->loop_length;
+		} else {
+			channel->sample_idx = sample->loop_start;
+		}
+	}
 	channel->sample_fra &= FP_MASK;
 }
 
@@ -1797,38 +1853,43 @@ static void replay_set_sequence_pos( struct replay *replay, int pos ) {
 	for( idx = 0; idx < module->num_channels; idx++ ) {
 		channel_init( &replay->channels[ idx ], replay, idx );
 	}
+	memset( replay->ramp_buf, 0, 128 * sizeof( int ) );
 	replay_tick( replay );
 }
 
 static void dispose_replay( struct replay *replay ) {
+	free( replay->ramp_buf );
 	free( replay->channels );
 	free( replay );
 }
 
-static struct replay* new_replay( struct module *module, int sample_rate ) {
+static struct replay* new_replay( struct module *module, int sample_rate, int interpolation ) {
 	struct replay *replay = calloc( 1, sizeof( struct replay ) );
 	if( replay ) {
 		replay->module = module;
+		replay->sample_rate = sample_rate;
+		replay->interpolation = interpolation;
+		replay->ramp_buf = calloc( 128, sizeof( int ) );
 		replay->channels = calloc( module->num_channels, sizeof( struct channel ) );
-		if( !replay->channels ) {
+		if( replay->ramp_buf && replay->channels ) {
+			replay_set_sequence_pos( replay, 0 );
+		} else {
 			dispose_replay( replay );
 			replay = NULL;
 		}
-		replay->sample_rate = sample_rate;
-		replay_set_sequence_pos( replay, 0 );
 	}
 	return replay;
 }
 
-static int replay_calculate_tick_len( struct replay *replay ) {
-	return ( replay->sample_rate * 5 ) / ( replay->tempo * 2 );
+static int calculate_tick_len( int tempo, int sample_rate ) {
+	return ( sample_rate * 5 ) / ( tempo * 2 );
 }
 
 static int replay_calculate_duration( struct replay *replay ) {
 	int song_end = 0, duration = 0;
 	replay_set_sequence_pos( replay, 0 );
 	while( !song_end ) {
-		duration += replay_calculate_tick_len( replay );
+		duration += calculate_tick_len( replay->tempo, replay->sample_rate );
 		song_end = replay_tick( replay );
 	}
 	replay_set_sequence_pos( replay, 0 );
@@ -1838,16 +1899,55 @@ static int replay_calculate_duration( struct replay *replay ) {
 static int replay_seek( struct replay *replay, int sample_pos ) {
 	int idx, tick_len, current_pos = 0;
 	replay_set_sequence_pos( replay, 0 );
-	tick_len = replay_calculate_tick_len( replay );
+	tick_len = calculate_tick_len( replay->tempo, replay->sample_rate );
 	while( ( sample_pos - current_pos ) >= tick_len ) {
 		for( idx = 0; idx < replay->module->num_channels; idx++ ) {
-			channel_update_sample_idx( &replay->channels[ idx ], tick_len );
+			channel_update_sample_idx( &replay->channels[ idx ],
+				tick_len * 2, replay->sample_rate * 2 );
 		}
 		current_pos += tick_len;
 		replay_tick( replay );
-		tick_len = replay_calculate_tick_len( replay );
+		tick_len = calculate_tick_len( replay->tempo, replay->sample_rate );
 	}
 	return current_pos;
+}
+
+void replay_volume_ramp( struct replay *replay, int *mix_buf, int tick_len ) {
+	int idx, a1, a2, ramp_rate = 256 * 2048 / replay->sample_rate;
+	for( idx = 0, a1 = 0; a1 < 256; idx += 2, a1 += ramp_rate ) {
+		a2 = 256 - a1;
+		mix_buf[ idx     ] = ( mix_buf[ idx     ] * a1 + replay->ramp_buf[ idx     ] * a2 ) >> 8;
+		mix_buf[ idx + 1 ] = ( mix_buf[ idx + 1 ] * a1 + replay->ramp_buf[ idx + 1 ] * a2 ) >> 8;
+	}
+	memcpy( replay->ramp_buf, &mix_buf[ tick_len * 2 ], 128 * sizeof( int ) );
+}
+
+/* 2:1 downsampling with simple but effective anti-aliasing. Buf must contain count * 2 + 1 stereo samples. */
+void downsample( int *buf, int count ) {
+	int idx, out_idx, out_len = count * 2;
+	for( idx = 0, out_idx = 0; out_idx < out_len; idx += 4, out_idx += 2 ) {
+		buf[ out_idx     ] = ( buf[ idx     ] >> 2 ) + ( buf[ idx + 2 ] >> 1 ) + ( buf[ idx + 4 ] >> 2 );
+		buf[ out_idx + 1 ] = ( buf[ idx + 1 ] >> 2 ) + ( buf[ idx + 3 ] >> 1 ) + ( buf[ idx + 5 ] >> 2 );
+	}
+}
+
+static int replay_get_audio( struct replay *replay, int *mix_buf ) {
+	struct channel *channel;
+	int idx, num_channels, tick_len = calculate_tick_len( replay->tempo, replay->sample_rate );
+	/* Clear output buffer. */
+	memset( mix_buf, 0, ( tick_len + 65 ) * 4 * sizeof( int ) );
+	/* Resample. */
+	num_channels = replay->module->num_channels;
+	for( idx = 0; idx < num_channels; idx++ ) {
+		channel = &replay->channels[ idx ];
+		channel_resample( channel, mix_buf, 0, ( tick_len + 65 ) * 2,
+			replay->sample_rate * 2, replay->interpolation );
+		channel_update_sample_idx( channel, tick_len * 2, replay->sample_rate * 2 );
+	}
+	downsample( mix_buf, tick_len + 64 );
+	replay_volume_ramp( replay, mix_buf, tick_len );
+	replay_tick( replay );
+	return tick_len;
 }
 
 static long read_file( char *file_name, void *buffer ) {
@@ -1931,7 +2031,7 @@ static int write_sequence( struct replay *replay, char *dest ) {
 	while( !song_end ) {
 		if( bpm != replay->tempo ) {
 			if( dest ) {
-				len = replay_calculate_tick_len( replay ) >> 1;
+				len = calculate_tick_len( replay->tempo, 24000 );
 				write_int16be( 0xE000 + ( len & 0xFFF ), &dest[ idx ] );
 			}
 			bpm = replay->tempo;
@@ -2039,7 +2139,7 @@ static int xm_to_tmf( struct module *module, char *tmf ) {
 	if( ins > 64 ) {
 		fputs( "Module has too many instruments.", stderr );
 	} else {
-		struct replay *replay = new_replay( module, 48000 );
+		struct replay *replay = new_replay( module, 24000, 0 );
 		if( replay ) {
 			length = 32 * 64;
 			seqlen = write_sequence( replay, NULL );
