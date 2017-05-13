@@ -56,7 +56,7 @@ struct data {
 
 struct sample {
 	char name[ 32 ];
-	int loop_start, loop_length;
+	int idx, loop_start, loop_length;
 	short volume, panning, rel_note, fine_tune, *data;
 };
 
@@ -111,7 +111,7 @@ struct channel {
 	int vibrato_type, vibrato_phase, vibrato_speed, vibrato_depth;
 	int tremolo_type, tremolo_phase, tremolo_speed, tremolo_depth;
 	int tremolo_add, vibrato_add, arpeggio_add;
-	int inst_idx, trig_inst, swap_inst, prev_freq, prev_ampl, prev_pann;
+	int trig_inst, swap_inst, prev_freq, prev_ampl, prev_pann;
 };
 
 struct replay {
@@ -1094,7 +1094,7 @@ static void channel_tremor( struct channel *channel ) {
 
 static void channel_retrig_vol_slide( struct channel *channel ) {
 	if( channel->retrig_count >= channel->retrig_ticks ) {
-		channel->trig_inst = channel->inst_idx;
+		channel->trig_inst = channel->sample->idx;
 		channel->retrig_count = channel->sample_idx = channel->sample_fra = 0;
 		switch( channel->retrig_volume ) {
 			case 0x1: channel->volume = channel->volume -  1; break;
@@ -1126,7 +1126,6 @@ static void channel_trigger( struct channel *channel ) {
 	int key, sam, porta, period, fine_tune, ins = channel->note.instrument;
 	struct sample *sample;
 	if( ins > 0 && ins <= channel->replay->module->num_instruments ) {
-		channel->inst_idx = ins;
 		channel->instrument = &channel->replay->module->instruments[ ins ];
 		key = channel->note.key < 97 ? channel->note.key : 0;
 		sam = channel->instrument->key_to_sample[ key ];
@@ -1138,7 +1137,7 @@ static void channel_trigger( struct channel *channel ) {
 		if( channel->period > 0 && sample->loop_length > 1 ) {
 			/* Amiga trigger.*/
 			channel->sample = sample;
-			channel->swap_inst = ins;
+			channel->swap_inst = channel->sample->idx;
 		}
 		channel->sample_off = 0;
 		channel->vol_env_tick = channel->pan_env_tick = 0;
@@ -1228,7 +1227,7 @@ static void channel_trigger( struct channel *channel ) {
 					channel->tremolo_phase = 0;
 				}
 				channel->retrig_count = channel->av_count = 0;
-				channel->trig_inst = channel->inst_idx;
+				channel->trig_inst = channel->sample->idx;
 			}
 		}
 	}
@@ -1415,7 +1414,7 @@ static void channel_tick( struct channel *channel ) {
 			if( channel->fx_count >= channel->note.param ) {
 				channel->fx_count = 0;
 				channel->sample_idx = channel->sample_fra = 0;
-				channel->trig_inst = channel->inst_idx;
+				channel->trig_inst = channel->sample->idx;
 			}
 			break;
 		case 0x7C: case 0xFC: /* Note Cut. */
@@ -2026,10 +2025,18 @@ static int write_sequence( struct replay *replay, char *dest ) {
 }
 
 static int xm_to_tmf( struct module *module, char *tmf ) {
-	int seqlen, idx, loop_start, loop_length, length = -1;
+	int seqlen, idx, ins, sam, length = -1;
+	int loop_start, loop_length;
 	struct instrument *instrument;
 	struct sample *sample;
-	if( module->num_instruments > 63 ) {
+	idx = 1;
+	for( ins = 1; ins <= module->num_instruments; ins++ ) {
+		instrument = &module->instruments[ ins ];
+		for( sam = 0; sam < instrument->num_samples; sam++ ) {
+			instrument->samples[ sam ].idx = idx++;
+		}
+	}
+	if( ins > 64 ) {
 		fputs( "Module has too many instruments.", stderr );
 	} else {
 		struct replay *replay = new_replay( module, 48000 );
@@ -2044,21 +2051,23 @@ static int xm_to_tmf( struct module *module, char *tmf ) {
 				memcpy( &tmf[ 8 ], module->name, 24 );
 				write_sequence( replay, &tmf[ length ] );
 			}
-			length = length + seqlen;
 			idx = 1;
-			while( idx <= module->num_instruments ) {
-				instrument = &module->instruments[ idx ];
-				sample = &instrument->samples[ 0 ];
-				loop_start = sample->loop_start;
-				loop_length = sample->loop_length;
-				if( tmf ) {
-					write_int32be( loop_start, &tmf[ idx * 32 ] );
-					write_int32be( loop_length, &tmf[ idx * 32 + 4 ] );
-					memcpy( &tmf[ idx * 32 + 8 ], instrument->name, 24 );
-					sample_quantize( sample, &tmf[ length ] );
+			length = length + seqlen;
+			for( ins = 1; ins <= module->num_instruments; ins++ ) {
+				instrument = &module->instruments[ ins ];
+				for( sam = 0; sam < instrument->num_samples; sam++ ) {
+					sample = &instrument->samples[ sam ];
+					loop_start = sample->loop_start;
+					loop_length = sample->loop_length;
+					if( tmf ) {
+						write_int32be( loop_start, &tmf[ idx * 32 ] );
+						write_int32be( loop_length, &tmf[ idx * 32 + 4 ] );
+						memcpy( &tmf[ idx * 32 + 8 ], instrument->name, 24 );
+						sample_quantize( sample, &tmf[ length ] );
+					}
+					length = length + loop_start + loop_length;
+					idx++;
 				}
-				length = length + loop_start + loop_length;
-				idx++;
 			}
 			dispose_replay( replay );
 		}
