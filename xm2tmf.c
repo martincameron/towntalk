@@ -273,7 +273,7 @@ static void sample_ping_pong( struct sample *sample ) {
 	int loop_length = sample->loop_length;
 	int loop_end = loop_start + loop_length;
 	short *sample_data = sample->data;
-	short *new_data = calloc( loop_end + loop_length, sizeof( short ) );
+	short *new_data = calloc( loop_end + loop_length + 1, sizeof( short ) );
 	if( new_data ) {
 		memcpy( new_data, sample_data, loop_end * sizeof( short ) );
 		for( idx = 0; idx < loop_length; idx++ ) {
@@ -282,6 +282,7 @@ static void sample_ping_pong( struct sample *sample ) {
 		free( sample->data );
 		sample->data = new_data;
 		sample->loop_length *= 2;
+		sample->data[ loop_start + sample->loop_length ] = sample->data[ loop_start ];
 	}
 }
 
@@ -290,18 +291,24 @@ static void dispose_module( struct module *module ) {
 	struct instrument *instrument;
 	free( module->default_panning );
 	free( module->sequence );
-	for( idx = 0; idx < module->num_patterns; idx++ ) {
-		free( module->patterns[ idx ].data );
-	}
-	free( module->patterns );
-	for( idx = 0; idx <= module->num_instruments; idx++ ) {
-		instrument = &module->instruments[ idx ];
-		for( sam = 0; sam < instrument->num_samples; sam++ ) {
-			free( instrument->samples[ sam ].data );
+	if( module->patterns ) {
+		for( idx = 0; idx < module->num_patterns; idx++ ) {
+			free( module->patterns[ idx ].data );
 		}
-		free( instrument->samples );
+		free( module->patterns );
 	}
-	free( module->instruments );
+	if( module->instruments ) {
+		for( idx = 0; idx <= module->num_instruments; idx++ ) {
+			instrument = &module->instruments[ idx ];
+			if( instrument->samples ) {
+				for( sam = 0; sam < instrument->num_samples; sam++ ) {
+					free( instrument->samples[ sam ].data );
+				}
+				free( instrument->samples );
+			}
+		}
+		free( module->instruments );
+	}
 	free( module );
 }
 
@@ -319,7 +326,7 @@ static struct module* module_load_xm( struct data *data ) {
 	struct module *module = calloc( 1, sizeof( struct module ) );
 	if( module ) {
 		if( data_u16le( data, 58 ) != 0x0104 ) {
-			fputs( "XM format version must be 0x0104!", stderr );
+			fputs( "XM format version must be 0x0104!\n", stderr );
 			dispose_module( module );
 			return NULL;
 		}
@@ -361,7 +368,7 @@ static struct module* module_load_xm( struct data *data ) {
 		}
 		for( idx = 0; idx < module->num_patterns; idx++ ) {
 			if( data_u8( data, offset + 4 ) ) {
-				fputs( "Unknown pattern packing type!", stderr );
+				fputs( "Unknown pattern packing type!\n", stderr );
 				dispose_module( module );
 				return NULL;
 			}
@@ -499,7 +506,7 @@ static struct module* module_load_xm( struct data *data ) {
 				}
 				sample->loop_start = sam_loop_start;
 				sample->loop_length = sam_loop_length;
-				sample->data = calloc( sam_data_samples, sizeof( short ) );
+				sample->data = calloc( sam_data_samples + 1, sizeof( short ) );
 				if( sample->data ) {
 					if( sixteen_bit ) {
 						data_sam_s16le( data, offset, sam_data_samples, sample->data );
@@ -512,6 +519,7 @@ static struct module* module_load_xm( struct data *data ) {
 						amp = ( amp & 0x7FFF ) - ( amp & 0x8000 );
 						sample->data[ idx ] = amp;
 					}
+					sample->data[ sam_loop_start + sam_loop_length ] = sample->data[ sam_loop_start ];
 					if( ping_pong ) {
 						sample_ping_pong( sample );
 					}
@@ -547,7 +555,7 @@ static struct module* module_load_s3m( struct data *data ) {
 		module->fast_vol_slides = ( ( flags & 0x40 ) == 0x40 ) || version == 0x1300;
 		signed_samples = data_u16le( data, 42 ) == 1;
 		if( data_u32le( data, 44 ) != 0x4d524353 ) {
-			fputs( "Not an S3M file!", stderr );
+			fputs( "Not an S3M file!\n", stderr );
 			dispose_module( module );
 			return NULL;
 		}
@@ -606,7 +614,7 @@ static struct module* module_load_s3m( struct data *data ) {
 				sample->volume = data_u8( data, inst_offset + 28 );
 				sample->panning = -1;
 				if( data_u8( data, inst_offset + 30 ) != 0 ) {
-					fputs( "Packed samples not supported!", stderr );
+					fputs( "Packed samples not supported!\n", stderr );
 					dispose_module( module );
 					return NULL;
 				}
@@ -624,7 +632,7 @@ static struct module* module_load_s3m( struct data *data ) {
 				tune = ( log_2( data_u32le( data, inst_offset + 32 ) ) - log_2( module->c2_rate ) ) * 12;
 				sample->rel_note = tune >> FP_SHIFT;
 				sample->fine_tune = ( tune & FP_MASK ) >> ( FP_SHIFT - 7 );
-				sample->data = calloc( sample_length, sizeof( short ) );
+				sample->data = calloc( sample_length + 1, sizeof( short ) );
 				if( sample->data ) {
 					if( sixteen_bit ) {
 						data_sam_s16le( data, sample_offset, sample_length, sample->data );
@@ -636,6 +644,7 @@ static struct module* module_load_s3m( struct data *data ) {
 							sample->data[ idx ] = ( sample->data[ idx ] & 0xFFFF ) - 32768;
 						}
 					}
+					sample->data[ loop_start + loop_length ] = sample->data[ loop_start ];
 				} else {
 					dispose_module( module );
 					return NULL;
@@ -781,7 +790,7 @@ static struct module* module_load_mod( struct data *data ) {
 				module->gain = 32;
 				break;
 			default:
-				fputs( "MOD Format not recognised!", stderr );
+				fputs( "MOD Format not recognised!\n", stderr );
 				dispose_module( module );
 				return NULL;
 		}
@@ -884,9 +893,10 @@ static struct module* module_load_mod( struct data *data ) {
 			}
 			sample->loop_start = loop_start;
 			sample->loop_length = loop_length;
-			sample->data = calloc( sample_length, sizeof( short ) );
+			sample->data = calloc( sample_length + 1, sizeof( short ) );
 			if( sample->data ) {
 				data_sam_s8( data, module_data_idx, sample_length, sample->data );
+				sample->data[ loop_start + loop_length ] = sample->data[ loop_start ];
 			} else {
 				dispose_module( module );
 				return NULL;
@@ -1996,15 +2006,22 @@ static long write_file( char *filename, char *buffer, int length ) {
 }
 
 static void write_int16be( int value, char *dest ) {
-	dest[ 0 ] = value >> 8;
-	dest[ 1 ] = value;
+	dest[ 0 ] = ( value >> 8 ) & 0xFF;
+	dest[ 1 ] = value & 0xFF;
 }
 
 static void write_int32be( int value, char *dest ) {
-	dest[ 0 ] = value >> 24;
-	dest[ 1 ] = value >> 16;
-	dest[ 2 ] = value >> 8;
-	dest[ 3 ] = value;
+	dest[ 0 ] = ( value >> 24 ) & 0xFF;
+	dest[ 1 ] = ( value >> 16 ) & 0xFF;
+	dest[ 2 ] = ( value >> 8 ) & 0xFF;
+	dest[ 3 ] = value & 0xFF;
+}
+
+static void write_int32le( int value, char *dest ) {
+	dest[ 0 ] = value & 0xFF;
+	dest[ 1 ] = ( value >> 8 ) & 0xFF;
+	dest[ 2 ] = ( value >> 16 ) & 0xFF;
+	dest[ 3 ] = ( value >> 24 ) & 0xFF;
 }
 
 static int get_tmf_key( int freq ) {
@@ -2177,19 +2194,66 @@ static int xm_to_tmf( struct module *module, char *tmf ) {
 	return length;
 }
 
+static int xm_to_wav( struct module *module, char *wav ) {
+	int mix_buf[ 16384 ];
+	int idx, duration, samples, ampl, offset, length = 0;
+	struct replay *replay = new_replay( module, 48000, 0 );
+	if( replay ) {
+		duration = replay_calculate_duration( replay );
+		length = duration * 4 + 40;
+		if( wav ) {
+			printf( "Wave file length: %d bytes.\n", length );
+			strcpy( wav, "RIFF" );
+			write_int32le( duration * 4 + 36, &wav[ 4 ] );
+			strcpy( &wav[ 8 ], "WAVEfmt " );
+			write_int32le( 16, &wav[ 16 ] );
+			write_int32le( 0x00020001, &wav[ 20 ] );
+			write_int32le( 48000, &wav[ 24 ] );
+			write_int32le( 48000 * 4, &wav[ 28 ] );
+			write_int32le( 0x00100004, &wav[ 32 ] );
+			strcpy( &wav[ 36 ], "data" );
+			write_int32le( duration, &wav[ 40 ] );
+			replay_set_sequence_pos( replay, 0 );
+			offset = 40;
+			while( offset < length ) {
+				samples = replay_get_audio( replay, mix_buf ) * 2;
+				for( idx = 0; idx < samples; idx++ ) {
+					ampl = mix_buf[ idx ];
+					if( ampl > 32767 ) {
+						ampl = 32767;
+					}
+					if( ampl < -32768 ) {
+						ampl = -32768;
+					}
+					wav[ offset++ ] = ampl & 0xFF;
+					wav[ offset++ ] = ( ampl >> 8 ) & 0xFF;
+				}
+			}
+		}
+		dispose_replay( replay );
+	}
+	return length;
+}
+
 int main( int argc, char **argv ) {
 	int result, length;
-	char *input, *output;
+	char *input, *output, *ext;
 	struct data data;
 	struct module *module;
 	result = EXIT_FAILURE;
 	if( argc != 3 ) {
 		fprintf( stderr, "%s\nUsage: %s input.xm output.tmf\n", VERSION, argv[ 0 ] );
 	} else {
+		/* Get output file extension. */
+		ext = argv[ 2 ];
+		length = strlen( argv[ 2 ] );
+		if( length > 3 ) {
+			ext = &ext[ length - 3 ];
+		}
 		/* Read module file.*/
 		length = read_file( argv[ 1 ], NULL );
 		if( length >= 0 ) {
-			printf( "Module Data Length: %i bytes.\n", length );
+			printf( "Module Data Length: %d bytes.\n", length );
 			input = calloc( length, 1 );
 			if( input != NULL ) {
 				if( read_file( argv[ 1 ], input ) >= 0 ) {
@@ -2198,11 +2262,19 @@ int main( int argc, char **argv ) {
 					module = module_load( &data );
 					if( module ) {
 						/* Perform conversion. */
-						length = xm_to_tmf( module, NULL );
+						if( strcmp( ext, "tmf" ) == 0 ) {
+							length = xm_to_tmf( module, NULL );
+						} else {
+							length = xm_to_wav( module, NULL );
+						}
 						if( length > 0 ) {
 							output = calloc( length, 1 );
 							if( output != NULL ) {
-								xm_to_tmf( module, output );
+								if( strcmp( ext, "tmf" ) == 0 ) {
+									xm_to_tmf( module, output );
+								} else {
+									xm_to_wav( module, output );
+								}
 								if( write_file( argv[ 2 ], output, length ) > 0 ) {
 									result = EXIT_SUCCESS;
 								}
