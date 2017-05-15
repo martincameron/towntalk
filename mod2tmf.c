@@ -801,7 +801,7 @@ static int write_sequence( char *dest ) {
 						d_pann = 0;
 					}
 					if( dest ) {
-						write_int32be( 0x10000000
+						write_int32be( 0x20000000
 							+ ( get_tmf_key( freq ) << 16 )
 							+ ( pan << 8 ) + chn, &dest[ idx ] );
 					}

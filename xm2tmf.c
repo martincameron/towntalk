@@ -111,7 +111,7 @@ struct channel {
 	int vibrato_type, vibrato_phase, vibrato_speed, vibrato_depth;
 	int tremolo_type, tremolo_phase, tremolo_speed, tremolo_depth;
 	int tremolo_add, vibrato_add, arpeggio_add;
-	int trig_inst, swap_inst, prev_freq, prev_ampl, prev_pann;
+	int trig_inst, swap_inst, prev_inst, prev_freq, prev_ampl, prev_pann;
 };
 
 struct replay {
@@ -1134,10 +1134,11 @@ static void channel_trigger( struct channel *channel ) {
 		if( sample->panning >= 0 ) {
 			channel->panning = sample->panning & 0xFF;
 		}
-		if( channel->period > 0 && sample->loop_length > 1 ) {
+		if( channel->period > 0 && sample->loop_length > 1
+		&& channel->sample->idx != sample->idx ) {
 			/* Amiga trigger.*/
+			channel->swap_inst = sample->idx;
 			channel->sample = sample;
-			channel->swap_inst = channel->sample->idx;
 		}
 		channel->sample_off = 0;
 		channel->vol_env_tick = channel->pan_env_tick = 0;
@@ -1311,6 +1312,7 @@ static void channel_calculate_ampl( struct channel *channel ) {
 
 static void channel_tick( struct channel *channel ) {
 	channel->trig_inst = channel->swap_inst = 0;
+	channel->prev_inst = channel->sample->idx;
 	channel->prev_freq = channel->freq;
 	channel->prev_ampl = channel->ampl;
 	channel->prev_pann = channel->pann;
@@ -1450,6 +1452,7 @@ static void channel_tick( struct channel *channel ) {
 static void channel_row( struct channel *channel, struct note *note ) {
 	channel->note = *note;
 	channel->trig_inst = channel->swap_inst = 0;
+	channel->prev_inst = channel->sample->idx;
 	channel->prev_freq = channel->freq;
 	channel->prev_ampl = channel->ampl;
 	channel->prev_pann = channel->pann;
@@ -2084,6 +2087,15 @@ static int write_sequence( struct replay *replay, char *dest ) {
 				}
 				if( inst ) {
 					/* Trigger Instrument.*/
+					if( inst == replay->channels[ chn ].prev_inst ) {
+						if( d_ampl ) {
+							inst = 0x40 + ampl;
+							d_ampl = 0;
+						} else if( d_pann ) {
+							inst = 0x80 + pann;
+							d_pann = 0;
+						}
+					}
 					if( dest ) {
 						write_int32be( 0x10000000
 							+ ( tkey << 16 ) + ( inst << 8 ) + chn, &dest[ idx ] );
@@ -2116,7 +2128,7 @@ static int write_sequence( struct replay *replay, char *dest ) {
 						d_pann = 0;
 					}
 					if( dest ) {
-						write_int32be( 0x10000000
+						write_int32be( 0x20000000
 							+ ( tkey << 16 ) + ( vol << 8 ) + chn, &dest[ idx ] );
 					}
 					idx += 4;

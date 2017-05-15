@@ -261,7 +261,7 @@ public class IBXM {
 							d_pann = 0;
 						}
 						if( output != null ) {
-							writeInt32be( output, offset, 0x10000000
+							writeInt32be( output, offset, 0x20000000
 								+ ( tkey << 16 ) + ( vol << 8 ) + chn );
 						}
 						offset += 4;

@@ -517,7 +517,7 @@ public class Channel {
 			Sample sam = instrument.samples[ instrument.keyToSample[ noteKey < 97 ? noteKey : 0 ] ];
 			volume = sam.volume >= 64 ? 64 : sam.volume & 0x3F;
 			if( sam.panning >= 0 ) panning = sam.panning & 0xFF;
-			if( period > 0 && sam.looped() ) {
+			if( period > 0 && sam.looped() && sample != sam ) {
 				sample = sam; /* Amiga trigger.*/
 				swapInst = instIdx;
 			}

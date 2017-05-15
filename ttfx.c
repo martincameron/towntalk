@@ -160,10 +160,10 @@ static void process_sequence( struct fxenvironment *fxenv, int channel_idx ) {
 								cmdchan->volume = ins - 0x40;
 							} else {
 								cmdchan->sample = &fxenv->samples[ ins - 1 ];
-								if( oper == 1 ) {
-									cmdchan->sample_pos = 0;
-								}
 							}
+						}
+						if( oper == 1 ) {
+							cmdchan->sample_pos = 0;
 						}
 					}
 				}
