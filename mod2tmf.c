@@ -728,6 +728,15 @@ static int get_tmf_key( int freq ) {
 	return octave * 96 + tone;
 }
 
+static int sqr_rt( int y ) {
+	int n, x = 256;
+	for( n = 0; n < 8; n++ ) {
+		x = ( x + y / x );
+		x = ( x >> 1 ) + ( x & 1 );
+	}
+	return x;
+}
+
 static int write_sequence( char *dest ) {
 	int chn, idx = 0, song_end = 0, tick = 0, wait = 0;
 	int inst, swap, sidx, step, d_step, freq, ampl, d_ampl, pann, d_pann, pan;
@@ -750,8 +759,8 @@ static int write_sequence( char *dest ) {
 			step = channels[ chn ].step;
 			d_step = step - channels[ chn ].prev_step;
 			freq = ( step * sample_rate ) >> FP_SHIFT;
-			ampl = channels[ chn ].ampl;
-			d_ampl = ampl - channels[ chn ].prev_ampl;
+			ampl = sqr_rt( channels[ chn ].ampl << 6 );
+			d_ampl = ampl - sqr_rt( channels[ chn ].prev_ampl << 6 );
 			pann = channels[ chn ].panning;
 			d_pann = pann - channels[ chn ].prev_panning;
 			if( inst || swap || d_step || d_ampl || d_pann ) {

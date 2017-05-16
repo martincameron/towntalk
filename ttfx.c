@@ -69,8 +69,8 @@ static void mix_channel( struct fxchannel *channel, int *output, int count ) {
 		lend = loop + llen;
 		spos = channel->sample_pos;
 		if( spos < lend || llen > 4096 ) {
-			lamp = channel->volume * ( 128 - channel->panning );
-			ramp = channel->volume * ( 128 + channel->panning );
+			lamp = channel->volume * ( 32 - channel->panning );
+			ramp = channel->volume * ( 32 + channel->panning );
 			step = ( channel->frequency << 12 ) / SAMPLE_RATE;
 			data = channel->sample->sample_data.string_value->string;
 			idx = 0;
@@ -86,8 +86,8 @@ static void mix_channel( struct fxchannel *channel, int *output, int count ) {
 						}
 					}
 					sam = data[ spos >> 12 ];
-					output[ idx ] += ( sam * lamp ) >> 8;
-					output[ idx + 1 ] += ( sam * ramp ) >> 8;
+					output[ idx ] += ( sam * lamp ) >> 11;
+					output[ idx + 1 ] += ( sam * ramp ) >> 11;
 				}
 				spos += step;
 				idx += 2;
@@ -98,7 +98,7 @@ static void mix_channel( struct fxchannel *channel, int *output, int count ) {
 }
 
 static void process_sequence( struct fxenvironment *fxenv, int channel_idx ) {
-	int off, len, cmd, oper, tick, chan, key, ins;
+	int off, len, cmd, oper, tick, chan, key, ins, vol;
 	struct fxchannel *channel, *cmdchan;
 	char *seq;
 	channel = &fxenv->channels[ channel_idx ];
@@ -138,10 +138,11 @@ static void process_sequence( struct fxenvironment *fxenv, int channel_idx ) {
 					if( oper >= 0x4 ) {
 						if( cmd >= 0x8100 ) {
 							/* 0xppcc set panning. */
-							cmdchan->panning = ( ( cmd >> 8 ) - 0x80 ) * 4 - 128;
+							cmdchan->panning = ( ( cmd >> 8 ) - 0x80 ) - 32;
 						} else if( cmd >= 0x4000 ) {
 							/* 0xvvcc set volume */
-							cmdchan->volume = ( cmd >> 8 ) - 0x40;
+							vol = ( cmd >> 8 ) - 0x40;
+							cmdchan->volume = vol * vol;
 						}
 					} else if( oper == 0x3 ) {
 						/* 0x3ssssscc sample offset + channel */
@@ -155,9 +156,10 @@ static void process_sequence( struct fxenvironment *fxenv, int channel_idx ) {
 						ins = ( cmd >> 8 ) & 0xFF;
 						if( ins > 0 && ins < 0xC0 ) {
 							if( ins >= 0x81 ) {
-								cmdchan->panning = ( ins - 0x80 ) * 4 - 128;
+								cmdchan->panning = ( ins - 0x80 ) - 32;
 							} else if( ins >= 0x40 ) {
-								cmdchan->volume = ins - 0x40;
+								vol = ins - 0x40;
+								cmdchan->volume = vol * vol;
 							} else {
 								cmdchan->sample = &fxenv->samples[ ins - 1 ];
 							}

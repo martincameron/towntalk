@@ -7,22 +7,6 @@ package xm2tmf;
 public class IBXM {
 	public static final String VERSION = "a73tmf (c)2017 mumart@gmail.com";
 
-	private static final int FREQ_TABLE[] = {
-		16744, 16865, 16988, 17111, 17235, 17360, 17485, 17612,
-		17740, 17868, 17998, 18128, 18260, 18392, 18525, 18659,
-		18795, 18931, 19068, 19206, 19345, 19485, 19627, 19769,
-		19912, 20056, 20202, 20348, 20496, 20644, 20794, 20944,
-		21096, 21249, 21403, 21558, 21714, 21872, 22030, 22190,
-		22351, 22513, 22676, 22840, 23006, 23172, 23340, 23509,
-		23680, 23851, 24024, 24198, 24374, 24550, 24728, 24907,
-		25088, 25270, 25453, 25637, 25823, 26010, 26198, 26388,
-		26580, 26772, 26966, 27162, 27358, 27557, 27756, 27957,
-		28160, 28364, 28570, 28777, 28985, 29195, 29407, 29620,
-		29834, 30051, 30268, 30488, 30709, 30931, 31155, 31381,
-		31609, 31838, 32068, 32301, 32535, 32770, 33008, 33247,
-		33488
-	};
-
 	private Module module;
 	private int[] rampBuf;
 	private boolean[] muted;
@@ -209,15 +193,15 @@ public class IBXM {
 				int swap = channels[ chn ].swapInst;
 				int sidx = channels[ chn ].sampleIdx;
 				int tkey = getTMFKey( channels[ chn ].freq );
-				int d_tkey = tkey - getTMFKey( channels[ chn ].prevFreq );
-				int ampl = channels[ chn ].ampl >> ( Sample.FP_SHIFT - 6 );
-				int d_ampl = ampl - ( channels[ chn ].prevAmpl >> ( Sample.FP_SHIFT - 6 ) );
+				int dTkey = tkey - getTMFKey( channels[ chn ].prevFreq );
+				int ampl = sqrt( channels[ chn ].ampl >> ( Sample.FP_SHIFT - 12 ) );
+				int dAmpl = ampl - sqrt( channels[ chn ].prevAmpl >> ( Sample.FP_SHIFT - 12 ) );
 				int pann = channels[ chn ].pann;
 				pann = ( pann > 4 ) ? ( pann >> 2 ) : 1;
-				int d_pann = channels[ chn ].prevPann;
-				d_pann = ( d_pann > 4 ) ? ( d_pann >> 2 ) : 1;
-				d_pann = pann - d_pann;
-				if( ( inst | swap | d_tkey | d_ampl | d_pann ) != 0 ) {
+				int dPann = channels[ chn ].prevPann;
+				dPann = ( dPann > 4 ) ? ( dPann >> 2 ) : 1;
+				dPann = pann - dPann;
+				if( ( inst | swap | dTkey | dAmpl | dPann ) != 0 ) {
 					if( wait > 0 ) {
 						if( wait > 0xFFF ) {
 							wait = 0xFFF;
@@ -230,6 +214,15 @@ public class IBXM {
 					}
 					if( inst != 0 ) {
 						/* Trigger Instrument.*/
+						if( inst == channels[ chn ].prevInst ) {
+							if( dAmpl != 0 ) {
+								inst = 0x40 + ampl;
+								dAmpl = 0;
+							} else if( dPann != 0 ) {
+								inst = 0x80 + pann;
+								dPann = 0;
+							}
+						}
 						if( output != null ) {
 							writeInt32be( output, offset, 0x10000000
 								+ ( tkey << 16 ) + ( inst << 8 ) + chn );
@@ -250,15 +243,15 @@ public class IBXM {
 								+ ( tkey << 16 ) + ( swap << 8 ) + chn );
 						}
 						offset += 4;
-					} else if( d_tkey != 0 ) {
+					} else if( dTkey != 0 ) {
 						/* Modulate Pitch.*/
 						int vol = 0;
-						if( d_ampl != 0 ) {
+						if( dAmpl != 0 ) {
 							vol = 0x40 + ampl;
-							d_ampl = 0;
-						} else if( d_pann != 0 ) {
+							dAmpl = 0;
+						} else if( dPann != 0 ) {
 							vol = 0x80 + pann;
-							d_pann = 0;
+							dPann = 0;
 						}
 						if( output != null ) {
 							writeInt32be( output, offset, 0x20000000
@@ -266,7 +259,7 @@ public class IBXM {
 						}
 						offset += 4;
 					}
-					if( d_ampl != 0 ) {
+					if( dAmpl != 0 ) {
 						/* Modulate volume.*/
 						if( output != null ) {
 							writeInt16be( output, offset,
@@ -274,7 +267,7 @@ public class IBXM {
 						}
 						offset += 2;
 					}
-					if( d_pann != 0 ) {
+					if( dPann != 0 ) {
 						/* Modulate panning.*/
 						if( output != null ) {
 							writeInt16be( output, offset,
@@ -291,19 +284,21 @@ public class IBXM {
 	}
 
 	private static int getTMFKey( int freq ) {
-		int octave = 0, tone = 0;
-		freq = freq << 5;
-		while( freq >= FREQ_TABLE[ 96 ] ) {
-			octave++;
-			freq = freq >> 1;
+		int key = 0;
+		if( freq > 523 ) {
+			key = 960 + ( ( ( Channel.log2( freq ) - Channel.log2( 16744 ) ) * 192 ) >> Sample.FP_SHIFT );
+			key = ( key >> 1 ) + ( key & 1 );
 		}
-		while( FREQ_TABLE[ tone + 1 ] < freq ) {
-			tone++;
+		return key;
+	}
+
+	static int sqrt( int y ) {
+		int x = 256;
+		for( int n = 0; n < 8; n++ ) {
+			x = ( x + y / x );
+			x = ( x >> 1 ) + ( x & 1 );
 		}
-		if( FREQ_TABLE[ tone + 1 ] - freq <= freq - FREQ_TABLE[ tone ] ) {
-			tone++;
-		}
-		return octave * 96 + tone;
+		return x;
 	}
 
 	private static void writeInt16be( byte[] output, int offset, int value ) {

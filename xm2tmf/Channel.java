@@ -36,7 +36,7 @@ public class Channel {
 	private boolean keyOn;
 	private int noteKey, noteIns, noteVol, noteEffect, noteParam;
 	public int sampleOffset, sampleIdx, sampleFra, freq, ampl, pann;
-	public int instIdx, trigInst, swapInst, prevFreq, prevAmpl, prevPann;
+	public int instIdx, trigInst, swapInst, prevInst, prevFreq, prevAmpl, prevPann;
 	private int volume, panning, fadeOutVol, volEnvTick, panEnvTick;
 	private int period, portaPeriod, retrigCount, fxCount, autoVibratoCount;
 	private int portaUpParam, portaDownParam, tonePortaParam, offsetParam;
@@ -92,6 +92,7 @@ public class Channel {
 		noteEffect = note.effect;
 		noteParam = note.param;
 		trigInst = swapInst = 0;
+		prevInst = instIdx;
 		prevFreq = freq;
 		prevAmpl = ampl;
 		prevPann = pann;
@@ -225,6 +226,7 @@ public class Channel {
 	
 	public void tick() {
 		trigInst = swapInst = 0;
+		prevInst = instIdx;
 		prevFreq = freq;
 		prevAmpl = ampl;
 		prevPann = pann;

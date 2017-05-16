@@ -8,22 +8,6 @@ static const char *VERSION = "MOD/S3M/XM to TMF converter (c)2017 mumart@gmail.c
 
 static const int FP_SHIFT = 15, FP_ONE = 32768, FP_MASK = 32767;
 
-static const int tmf_freq_table[] = {
-	16744, 16865, 16988, 17111, 17235, 17360, 17485, 17612,
-	17740, 17868, 17998, 18128, 18260, 18392, 18525, 18659,
-	18795, 18931, 19068, 19206, 19345, 19485, 19627, 19769,
-	19912, 20056, 20202, 20348, 20496, 20644, 20794, 20944,
-	21096, 21249, 21403, 21558, 21714, 21872, 22030, 22190,
-	22351, 22513, 22676, 22840, 23006, 23172, 23340, 23509,
-	23680, 23851, 24024, 24198, 24374, 24550, 24728, 24907,
-	25088, 25270, 25453, 25637, 25823, 26010, 26198, 26388,
-	26580, 26772, 26966, 27162, 27358, 27557, 27756, 27957,
-	28160, 28364, 28570, 28777, 28985, 29195, 29407, 29620,
-	29834, 30051, 30268, 30488, 30709, 30931, 31155, 31381,
-	31609, 31838, 32068, 32301, 32535, 32770, 33008, 33247,
-	33488
-};
-
 static const int exp2_table[] = {
 	32768, 32946, 33125, 33305, 33486, 33667, 33850, 34034,
 	34219, 34405, 34591, 34779, 34968, 35158, 35349, 35541,
@@ -2028,19 +2012,21 @@ static void write_int32le( int value, char *dest ) {
 }
 
 static int get_tmf_key( int freq ) {
-	int octave = 0, tone = 0;
-	freq = freq << 5;
-	while( freq >= tmf_freq_table[ 96 ] ) {
-		octave++;
-		freq = freq >> 1;
+	int key = 0;
+	if( freq > 523 ) {
+		key = 960 + ( ( ( log_2( freq ) - log_2( 16744 ) ) * 192 ) >> FP_SHIFT );
+		key = ( key >> 1 ) + ( key & 1 );
 	}
-	while( tmf_freq_table[ tone + 1 ] < freq ) {
-		tone++;
+	return key;
+}
+
+static int sqr_rt( int y ) {
+	int n, x = 256;
+	for( n = 0; n < 8; n++ ) {
+		x = ( x + y / x );
+		x = ( x >> 1 ) + ( x & 1 );
 	}
-	if( tmf_freq_table[ tone + 1 ] - freq <= freq - tmf_freq_table[ tone ] ) {
-		tone++;
-	}
-	return octave * 96 + tone;
+	return x;
 }
 
 static int write_sequence( struct replay *replay, char *dest ) {
@@ -2067,8 +2053,8 @@ static int write_sequence( struct replay *replay, char *dest ) {
 			sidx = replay->channels[ chn ].sample_idx;
 			tkey = get_tmf_key( replay->channels[ chn ].freq );
 			d_tkey = tkey - get_tmf_key( replay->channels[ chn ].prev_freq );
-			ampl = replay->channels[ chn ].ampl >> ( FP_SHIFT - 6 );
-			d_ampl = ampl - ( replay->channels[ chn ].prev_ampl >> ( FP_SHIFT - 6 ) );
+			ampl = sqr_rt( replay->channels[ chn ].ampl >> ( FP_SHIFT - 12 ) );
+			d_ampl = ampl - sqr_rt( replay->channels[ chn ].prev_ampl >> ( FP_SHIFT - 12 ) );
 			pann = replay->channels[ chn ].pann;
 			pann = ( pann > 4 ) ? ( pann >> 2 ) : 1;
 			d_pann = replay->channels[ chn ].prev_pann;
