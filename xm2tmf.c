@@ -1913,7 +1913,7 @@ static int replay_seek( struct replay *replay, int sample_pos ) {
 	return current_pos;
 }
 
-void replay_volume_ramp( struct replay *replay, int *mix_buf, int tick_len ) {
+static void replay_volume_ramp( struct replay *replay, int *mix_buf, int tick_len ) {
 	int idx, a1, a2, ramp_rate = 256 * 2048 / replay->sample_rate;
 	for( idx = 0, a1 = 0; a1 < 256; idx += 2, a1 += ramp_rate ) {
 		a2 = 256 - a1;
@@ -1924,7 +1924,7 @@ void replay_volume_ramp( struct replay *replay, int *mix_buf, int tick_len ) {
 }
 
 /* 2:1 downsampling with simple but effective anti-aliasing. Buf must contain count * 2 + 1 stereo samples. */
-void downsample( int *buf, int count ) {
+static void downsample( int *buf, int count ) {
 	int idx, out_idx, out_len = count * 2;
 	for( idx = 0, out_idx = 0; out_idx < out_len; idx += 4, out_idx += 2 ) {
 		buf[ out_idx     ] = ( buf[ idx     ] >> 2 ) + ( buf[ idx + 2 ] >> 1 ) + ( buf[ idx + 4 ] >> 2 );
