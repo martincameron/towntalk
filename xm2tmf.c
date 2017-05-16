@@ -2211,7 +2211,7 @@ static int xm_to_wav( struct module *module, char *wav ) {
 			write_int32le( 0x00100004, &wav[ 32 ] );
 			strcpy( &wav[ 36 ], "data" );
 			write_int32le( duration, &wav[ 40 ] );
-			replay_set_sequence_pos( replay, 0 );
+			replay_seek( replay, 0 );
 			offset = 40;
 			while( offset < length ) {
 				samples = replay_get_audio( replay, mix_buf ) * 2;
