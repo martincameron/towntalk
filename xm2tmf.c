@@ -2052,9 +2052,17 @@ static int write_sequence( struct replay *replay, char *dest ) {
 			swap = replay->channels[ chn ].swap_inst;
 			sidx = replay->channels[ chn ].sample_idx;
 			tkey = get_tmf_key( replay->channels[ chn ].freq );
-			d_tkey = tkey - get_tmf_key( replay->channels[ chn ].prev_freq );
+			if( replay->channels[ chn ].freq != replay->channels[ chn ].prev_freq ) {
+				d_tkey = tkey - get_tmf_key( replay->channels[ chn ].prev_freq );
+			} else {
+				d_tkey = 0;
+			}
 			ampl = sqr_rt( replay->channels[ chn ].ampl >> ( FP_SHIFT - 12 ) );
-			d_ampl = ampl - sqr_rt( replay->channels[ chn ].prev_ampl >> ( FP_SHIFT - 12 ) );
+			if( replay->channels[ chn ].ampl != replay->channels[ chn ].prev_ampl ) {
+				d_ampl = ampl - sqr_rt( replay->channels[ chn ].prev_ampl >> ( FP_SHIFT - 12 ) );
+			} else {
+				d_ampl = 0;
+			}
 			pann = replay->channels[ chn ].pann;
 			pann = ( pann > 4 ) ? ( pann >> 2 ) : 1;
 			d_pann = replay->channels[ chn ].prev_pann;
