@@ -26,7 +26,14 @@ public class XM2TMF {
 	}
 
 	public static int convert( Module module, IBXM ibxm, byte[] output ) {
-		if( module.numInstruments > 63 ) {
+		int idx = 1;
+		for( int ins = 1; ins <= module.numInstruments; ins++ ) {
+			Instrument instrument = module.instruments[ ins ];
+			for( int sam = 0; sam < instrument.numSamples; sam++ ) {
+				instrument.samples[ sam ].idx = idx++;
+			}
+		}
+		if( idx > 64 ) {
 			throw new IllegalArgumentException( "Module has too many instruments." );
 		}
 		int length = 32 * 64;
@@ -43,25 +50,27 @@ public class XM2TMF {
 			writeLatin1( output, 8, songName );
 			ibxm.writeSequence( output, length );
 		}
+		idx = 1;
 		length = length + seqlen;
-		int idx = 1;
-		while( idx <= module.numInstruments ) {
-			Instrument instrument = module.instruments[ idx ];
-			Sample sample = instrument.samples[ 0 ];
-			int loopStart = sample.getLoopStart();
-			int loopLength = sample.getLoopLength();
-			if( output != null ) {
-				writeInt32be( output, idx * 32, loopStart );
-				writeInt32be( output, idx * 32 + 4, loopLength );
-				String instrumentName = instrument.name;
-				if( instrumentName.length() > 24 ) {
-					instrumentName = instrumentName.substring( 0, 24 );
-				}
-				writeLatin1( output, idx * 32 + 8, instrumentName );
-				sample.getSampleData( output, length, loopStart + loopLength );
-			} 
-			length = length + loopStart + loopLength;
-			idx++;
+		for( int ins = 1; ins <= module.numInstruments; ins++ ) {
+			Instrument instrument = module.instruments[ ins ];
+			String instrumentName = instrument.name;
+			if( instrumentName.length() > 24 ) {
+				instrumentName = instrumentName.substring( 0, 24 );
+			}
+			for( int sam = 0; sam < instrument.numSamples; sam++ ) {
+				Sample sample = instrument.samples[ sam ];
+				int loopStart = sample.getLoopStart();
+				int loopLength = sample.getLoopLength();
+				if( output != null ) {
+					writeInt32be( output, idx * 32, loopStart );
+					writeInt32be( output, idx * 32 + 4, loopLength );
+					writeLatin1( output, idx * 32 + 8, instrumentName );
+					sample.getSampleData( output, length, loopStart + loopLength );
+				} 
+				length = length + loopStart + loopLength;
+				idx++;
+			}
 		}
 		return length;
 	}

@@ -2161,7 +2161,7 @@ static int xm_to_tmf( struct module *module, char *tmf ) {
 			instrument->samples[ sam ].idx = idx++;
 		}
 	}
-	if( ins > 64 ) {
+	if( idx > 64 ) {
 		fputs( "Module has too many instruments.", stderr );
 	} else {
 		struct replay *replay = new_replay( module, 24000, 0 );

@@ -36,7 +36,7 @@ public class Channel {
 	private boolean keyOn;
 	private int noteKey, noteIns, noteVol, noteEffect, noteParam;
 	public int sampleOffset, sampleIdx, sampleFra, freq, ampl, pann;
-	public int instIdx, trigInst, swapInst, prevInst, prevFreq, prevAmpl, prevPann;
+	public int trigInst, swapInst, prevInst, prevFreq, prevAmpl, prevPann;
 	private int volume, panning, fadeOutVol, volEnvTick, panEnvTick;
 	private int period, portaPeriod, retrigCount, fxCount, autoVibratoCount;
 	private int portaUpParam, portaDownParam, tonePortaParam, offsetParam;
@@ -92,7 +92,7 @@ public class Channel {
 		noteEffect = note.effect;
 		noteParam = note.param;
 		trigInst = swapInst = 0;
-		prevInst = instIdx;
+		prevInst = sample.idx;
 		prevFreq = freq;
 		prevAmpl = ampl;
 		prevPann = pann;
@@ -226,7 +226,7 @@ public class Channel {
 	
 	public void tick() {
 		trigInst = swapInst = 0;
-		prevInst = instIdx;
+		prevInst = sample.idx;
 		prevFreq = freq;
 		prevAmpl = ampl;
 		prevPann = pann;
@@ -310,7 +310,7 @@ public class Channel {
 				if( fxCount >= noteParam ) {
 					fxCount = 0;
 					sampleIdx = sampleFra = 0;
-					trigInst = instIdx;
+					trigInst = sample.idx;
 				}
 				break;
 			case 0x7C: case 0xFC: /* Note Cut. */
@@ -457,7 +457,7 @@ public class Channel {
 
 	private void retrigVolSlide() {
 		if( retrigCount >= retrigTicks ) {
-			trigInst = instIdx;
+			trigInst = sample.idx;
 			retrigCount = sampleIdx = sampleFra = 0;
 			switch( retrigVolume ) {
 				case 0x1: volume = volume -  1; break;
@@ -514,14 +514,13 @@ public class Channel {
 
 	private void trigger() {
 		if( noteIns > 0 && noteIns <= module.numInstruments ) {
-			instIdx = noteIns;
 			instrument = module.instruments[ noteIns ];
 			Sample sam = instrument.samples[ instrument.keyToSample[ noteKey < 97 ? noteKey : 0 ] ];
 			volume = sam.volume >= 64 ? 64 : sam.volume & 0x3F;
 			if( sam.panning >= 0 ) panning = sam.panning & 0xFF;
 			if( period > 0 && sam.looped() && sample != sam ) {
 				sample = sam; /* Amiga trigger.*/
-				swapInst = instIdx;
+				swapInst = sam.idx;
 			}
 			sampleOffset = volEnvTick = panEnvTick = 0;
 			fadeOutVol = 32768;
@@ -584,7 +583,7 @@ public class Channel {
 					if( vibratoType < 4 ) vibratoPhase = 0;
 					if( tremoloType < 4 ) tremoloPhase = 0;
 					retrigCount = autoVibratoCount = 0;
-					trigInst = instIdx;
+					trigInst = sample.idx;
 				}
 			}
 		}
