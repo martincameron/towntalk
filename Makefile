@@ -5,7 +5,7 @@ CFLAGS=-ansi -pedantic -Wall -g
 all: tt
 
 clean:
-	rm -f tt ttfx mod2tmf
+	rm -f tt ttfx mod2tmf xmtotmf
 
 tt: tt.c towntalk.c
 	$(CC) $(CFLAGS) tt.c -o tt

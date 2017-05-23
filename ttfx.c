@@ -793,7 +793,7 @@ static int evaluate_fxdir_expression( struct expression *this, struct variable *
 					result->integer_value = 0;
 					result->string_value = &head->str;
 				} else {
-					dispose_string( &head->str );
+					unref_string( &head->str );
 				}
 			} else {
 				strncpy( message, strerror( errno ), 63 );

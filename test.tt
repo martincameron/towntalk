@@ -6,7 +6,7 @@ const STR = "*";
 const ELE = ${ ( * ) };
 
 global g;
-array a;
+array a, b, c;
 
 include "hello.tt";
 
@@ -79,6 +79,12 @@ function testarray() {
 	call assert( =( $cmp( $child( $next( [ a 4 ] ) ) "4" ) 0 ), ${-} );
 	call assert( =( $cmp( $sub( a, 5, 2 ) "TT" ) 0 ), ${-} );
 	call assert( =( $cmp( a "#Array#" ) 0 ), ${-} );
+	dim [ b 2 ];
+	dim [ c 2 ];
+	set [ b 0 ] = b;
+	set [ b 1 ] = c;
+	set [ c 0 ] = c;
+	set [ c 1 ] = b;
 }
 
 function fact( x ) {

@@ -464,7 +464,7 @@ static int parse_child_element( char *buffer, int idx, struct element *parent, c
 	return idx;
 }
 
-static void dispose_string( struct string *str ) {
+static void unref_string( struct string *str ) {
 	int idx, len;
 	struct array *arr;
 	struct element *elem;
@@ -477,7 +477,7 @@ static void dispose_string( struct string *str ) {
 				if( str->reference_count == 1 ) {
 					elem = ( struct element * ) str;
 					if( elem->child ) {
-						dispose_string( &elem->child->str );
+						unref_string( &elem->child->str );
 					}
 					elem = elem->next;
 					free( str->string );
@@ -517,7 +517,7 @@ static struct element* parse_element( char *buffer, char *message ) {
 		}
 	}
 	if( idx < 0 ) {
-		dispose_string( &elem.child->str );
+		unref_string( &elem.child->str );
 		elem.child = NULL;
 	}
 	return elem.child;
@@ -563,6 +563,29 @@ static int save_file( char *file_name, char *buffer, int length, int append, cha
 	return count;
 }
 
+static int resize_array( struct array *arr, int len ) {
+	int idx, count;
+	struct variable *old = arr->array;
+	struct variable *new = calloc( len + 1, sizeof( struct variable ) );
+	if( new ) {
+		count = arr->length;
+		if( count > len ) {
+			memcpy( new, old, sizeof( struct variable ) * len );
+			idx = len;
+			while( idx < count ) {
+				dispose_variable( &old[ idx++ ] );
+			}
+		} else {
+			memcpy( new, old, sizeof( struct variable ) * count );
+		}
+		arr->array = new;
+		arr->length = len;
+		free( old );
+		return 1;
+	}
+	return 0;
+}
+
 static void dispose_string_list( struct string_list *str ) {
 	struct string_list *next;
 	while( str ) {
@@ -575,7 +598,7 @@ static void dispose_string_list( struct string_list *str ) {
 
 static void dispose_variable( struct variable *var ) {
 	if( var->string_value ) {
-		dispose_string( var->string_value );
+		unref_string( var->string_value );
 		var->string_value = NULL;
 	}
 }
@@ -638,9 +661,15 @@ static void dispose_function_declarations( struct function_declaration *function
 }
 
 static void dispose_environment( struct environment *env ) {
+	struct global_variable *global;
 	if( env ) {
 		dispose_global_variables( env->constants );
 		dispose_global_variables( env->globals );
+		global = env->arrays;
+		while( global ) {
+			resize_array( ( struct array * ) global->value.string_value, 0 );
+			global = global->next;
+		}
 		dispose_global_variables( env->arrays );
 		dispose_function_declarations( env->functions );
 		free( env );
@@ -1252,33 +1281,14 @@ static int execute_call_statement( struct statement *this, struct variable *vari
 
 static int execute_dim_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	int ret, idx, count;
-	struct array *arr;
-	struct variable var = { 0, NULL }, len = { 0, NULL }, *old, *new;
-	ret = this->destination->evaluate( this->destination, variables, &var, exception );
+	struct variable var = { 0, NULL }, len = { 0, NULL };
+	int ret = this->destination->evaluate( this->destination, variables, &var, exception );
 	if( ret ) {
 		ret = this->source->evaluate( this->source, variables, &len, exception );
 		if( ret ) {
 			if( var.string_value && var.string_value->line < 0 ) {
-				arr = ( struct array * ) var.string_value;
-				old = arr->array;
 				if( len.integer_value >= 0 ) {
-					new = calloc( len.integer_value + 1, sizeof( struct variable ) );
-					if( new ) {
-						count = arr->length;
-						if( count > len.integer_value ) {
-							memcpy( new, old, sizeof( struct variable ) * len.integer_value );
-							idx = len.integer_value;
-							while( idx < count ) {
-								dispose_variable( &old[ idx++ ] );
-							}
-						} else {
-							memcpy( new, old, sizeof( struct variable ) * count );
-						}
-						arr->array = new;
-						arr->length = len.integer_value;
-						free( old );
-					} else {
+					if( !resize_array( ( struct array * ) var.string_value, len.integer_value ) ) {
 						ret = throw( exception, this->source, 0, OUT_OF_MEMORY );
 					}
 				} else {
@@ -3544,7 +3554,7 @@ static int parse_tt_program( char *program, struct environment *env, char *messa
 			func->elem = NULL;
 			func = func->next;
 		}
-		dispose_string( &elem->str );
+		unref_string( &elem->str );
 	}
 	return message[ 0 ] == 0;
 }
