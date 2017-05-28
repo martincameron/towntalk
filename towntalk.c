@@ -268,8 +268,8 @@ static struct element* parse_case_statement( struct element *elem, struct enviro
 static struct element* parse_default_statement( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message );
 
-static int parse_string( char *buffer, int idx, struct element *elem, char *message ) {
-	int length, offset = idx;
+static int parse_string( char *buffer, int idx, struct element *elem, int line, char *message ) {
+	int offset = idx;
 	char chr = buffer[ idx++ ];
 	if( chr == '"' ) {
 		while( ( chr & 0x7F ) >= 32 ) {
@@ -281,25 +281,40 @@ static int parse_string( char *buffer, int idx, struct element *elem, char *mess
 			}
 		}
 		if( chr == '"' ) {
-			length = idx - offset;
-			elem->str.string = malloc( sizeof( char ) * ( length + 1 ) );
-			if( elem->str.string ) {
-				memcpy( &elem->str.string[ 0 ], &buffer[ offset ], length );
-				elem->str.string[ length ] = 0;
-				elem->str.length = length;
-			} else {
-				strcpy( message, OUT_OF_MEMORY );
-				idx = -1;
+			if( elem ) {
+				memcpy( &elem->str.string[ 0 ], &buffer[ offset ], idx - offset );
 			}
 		} else {
-			sprintf( message, "Unclosed string on line %d.", elem->str.line );
+			sprintf( message, "Unclosed string on line %d.", line );
 			idx = -3;
 		}
 	} else {
-		sprintf( message, "Expected '\"' on line %d.", elem->str.line );
+		sprintf( message, "Expected '\"' on line %d.", line );
 		idx = -3;
 	}
 	return idx;
+}
+
+static struct element* new_element( int str_len ) {
+	struct element *elem = malloc( sizeof( struct element ) + sizeof( char ) * ( str_len + 1 ) );
+	if( elem ) {
+		memset( elem, 0, sizeof( struct element ) );
+		elem->str.string = ( char * ) &elem[ 1 ];
+		elem->str.string[ str_len ] = 0;
+		elem->str.length = str_len;
+	}
+	return elem;
+}
+
+static struct string* new_string_value( int length ) {
+	struct string *str = malloc( sizeof( struct string ) + sizeof( char ) * ( length + 1 ) );
+	if( str ) {
+		memset( str, 0, sizeof( struct string ) );
+		str->string = ( char * ) &str[ 1 ];
+		str->string[ length ] = 0;
+		str->length = length;
+	}
+	return str;
 }
 
 static char* new_string( char *source ) {
@@ -363,32 +378,24 @@ static int unquote_string( char *string, char *output ) {
 
 static int parse_child_element( char *buffer, int idx, struct element *parent, char *message ) {
 	struct element *elem = NULL;
-	int offset = idx, length = 0, line = parent->str.line;
+	int offset = idx, length = 0, line = parent->str.line, end, str_len;
 	char *bracket, chr = '\n';
 	while( chr ) {
 		chr = buffer[ idx++ ];
 		if( chr <= 32 || strchr( "\"#(),;=[]{}", chr ) ) {
 			if( length > 0 ) {
 				if( elem == NULL ) {
-					elem = calloc( 1, sizeof( struct element ) );
+					elem = new_element( length );
 					parent->child = elem;
 				} else {
-					elem->next = calloc( 1, sizeof( struct element ) );
+					elem->next = new_element( length );
 					elem = elem->next;
 				}
 				if( elem ) {
 					elem->str.reference_count = 1;
 					elem->str.line = line;
-					elem->str.string = malloc( sizeof( char ) * ( length + 1 ) );
-					if( elem->str.string ) {
-						memcpy( elem->str.string, &buffer[ offset ], length );
-						elem->str.string[ length ] = 0;
-						elem->str.length = length;
-						/*printf("%d %d %c :%s\n",offset,length,chr,elem->str.string);*/
-					} else {
-						strcpy( message, OUT_OF_MEMORY );
-						return -1;
-					}
+					memcpy( elem->str.string, &buffer[ offset ], length );
+					/*printf("%d %d %c :%s\n",offset,length,chr,elem->str.string);*/
 				} else {
 					strcpy( message, OUT_OF_MEMORY );
 					return -1;
@@ -400,51 +407,53 @@ static int parse_child_element( char *buffer, int idx, struct element *parent, c
 				}
 				line++;
 			} else if( chr && strchr( "\"(,;=[{", chr ) ) {
+				if( chr == '"' ) {
+					end = parse_string( buffer, idx - 1, NULL, line, message );
+					if( end < 0 ) {
+						return end;
+					} else {
+						str_len = end - idx + 1;
+					}
+				} else {
+					str_len = 2;
+				}
 				if( elem == NULL ) {
-					elem = calloc( 1, sizeof( struct element ) );
+					elem = new_element( str_len );
 					parent->child = elem;
 				} else {
-					elem->next = calloc( 1, sizeof( struct element ) );
+					elem->next = new_element( str_len );
 					elem = elem->next;
 				}
 				if( elem ) {
 					elem->str.reference_count = 1;
 					elem->str.line = line;
 					if( chr == '"' ) {
-						idx = parse_string( buffer, idx - 1, elem, message );
+						idx = parse_string( buffer, idx - 1, elem, line, message );
 						if( idx < 0 ) {
 							return idx;
 						}
 					} else {
-						elem->str.string = malloc( sizeof( char ) * 3 );
-						if( elem->str.string ) {
-							bracket = strchr( "()[]{}", chr );
-							if( bracket ) {
-								elem->str.string[ 0 ] = bracket[ 0 ];
-								elem->str.string[ 1 ] = bracket[ 1 ];
-								elem->str.string[ 2 ] = 0;
-								elem->str.length = 2;
-								idx = parse_child_element( buffer, idx, elem, message );
-								if( idx > 0 ) {
-									/* Exchange line and elem->str.line. */
-									line = elem->str.line - line;
-									elem->str.line = elem->str.line - line;
-									line = elem->str.line + line;
-									if( buffer[ idx - 1 ] != bracket[ 1 ] ) {
-										sprintf( message, "Unclosed element on line %d.", line );
-										return -2;
-									}
-								} else {
-									return idx;
+						bracket = strchr( "()[]{}", chr );
+						if( bracket ) {
+							elem->str.string[ 0 ] = bracket[ 0 ];
+							elem->str.string[ 1 ] = bracket[ 1 ];
+							idx = parse_child_element( buffer, idx, elem, message );
+							if( idx > 0 ) {
+								/* Exchange line and elem->str.line. */
+								line = elem->str.line - line;
+								elem->str.line = elem->str.line - line;
+								line = elem->str.line + line;
+								if( buffer[ idx - 1 ] != bracket[ 1 ] ) {
+									sprintf( message, "Unclosed element on line %d.", line );
+									return -2;
 								}
 							} else {
-								elem->str.string[ 0 ] = chr;
-								elem->str.string[ 1 ] = 0;
-								elem->str.length = 1;
+								return idx;
 							}
 						} else {
-							strcpy( message, OUT_OF_MEMORY );
-							return -1;
+							elem->str.string[ 0 ] = chr;
+							elem->str.string[ 1 ] = 0;
+							elem->str.length = 1;
 						}
 					}
 				} else {
@@ -470,7 +479,6 @@ static void unref_string( struct string *str ) {
 	struct element *elem;
 	if( str->reference_count == 1 ) {
 		if( str->line == 0 ) {
-			free( str->string );
 			free( str );
 		} else if( str->line > 0 ) {
 			while( str ) {
@@ -480,7 +488,6 @@ static void unref_string( struct string *str ) {
 						unref_string( &elem->child->str );
 					}
 					elem = elem->next;
-					free( str->string );
 					free( str );
 					str = &elem->str;
 				} else {
@@ -495,7 +502,6 @@ static void unref_string( struct string *str ) {
 				dispose_variable( &arr->array[ idx++ ] );
 			}
 			free( arr->array );
-			free( str->string );
 			free( str );
 		}
 	} else {
@@ -703,21 +709,23 @@ static int get_string_list_index( struct string_list *list, char *value ) {
 }
 
 static int throw( struct variable *exception, struct expression *source, int integer, const char *string ) {
-	struct string *str = calloc( 1, sizeof( struct string ) );
-	if( str ) {
-		str->reference_count = 1;
-		if( string ) {
-			str->string = malloc( sizeof( char ) * ( strlen( string ) + 64 ) );
-			if( str->string ) {
-				if( sprintf( str->string, "%s (on line %d of '%.32s')",
-					string, source->line, source->function->file ) < 0 ) {
-					strcpy( str->string, string );
-				}
-				str->length = strlen( str->string );
-			} else {
-				free( str );
-				str = NULL;
+	struct string *str;
+	if( string ) {
+		str = new_string_value( strlen( string ) + 64 );
+		if( str ) {
+			str->reference_count = 1;
+			if( sprintf( str->string, "%s (on line %d of '%.32s')",
+			string, source->line, source->function->file ) < 0 ) {
+				strcpy( str->string, string );
 			}
+			str->length = strlen( str->string );
+		}
+	} else {
+		/* Uncatchable exception for exit statement. */
+		str = new_string_value( 0 );
+		if( str ) {
+			str->reference_count = 1;
+			str->string = NULL;
 		}
 	}
 	dispose_variable( exception );
@@ -881,20 +889,10 @@ static int write_array( struct array *arr, char *output ) {
 }
 
 static struct string* new_string_constant( char *source ) {
-	int length;
-	char *value;
-	struct string *str;
-	length = unquote_string( source, NULL );
-	value = malloc( sizeof( char ) * ( length + 1 ) );
-	str = calloc( 1, sizeof( struct string ) );
-	if( str && value ) {
+	struct string *str = new_string_value( unquote_string( source, NULL ) );
+	if( str ) {
 		str->reference_count = 1;
-		str->length = unquote_string( source, value );
-		str->string = value;
-	} else {
-		free( value );
-		free( str );
-		str = NULL;
+		str->length = unquote_string( source, str->string );
 	}
 	return str;
 }
@@ -1040,13 +1038,11 @@ static struct global_variable* new_array_variable( char *name, char *message ) {
 			arr = calloc( 1, sizeof( struct array ) );
 			if( arr ) {
 				global->value.string_value = &arr->str;
-				arr->str.string = new_string( "#Array#" );
-				if( arr->str.string ) {
-					arr->str.reference_count = 1;
-					arr->str.length = strlen( arr->str.string );
-					arr->str.line = -1;
-					arr->array = calloc( 1, sizeof( struct variable ) );
-				}
+				arr->str.string = "#Array#";
+				arr->str.reference_count = 1;
+				arr->str.length = strlen( arr->str.string );
+				arr->str.line = -1;
+				arr->array = calloc( 1, sizeof( struct variable ) );
 			}
 		}
 		if( !( global->name && arr && arr->str.string && arr->array ) ) {
@@ -1853,28 +1849,33 @@ static int evaluate_int_expression( struct expression *this, struct variable *va
 
 static int evaluate_str_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	int ret = 1, len = 0, newlen;
-	char num[ 24 ], *val = NULL, *new;
+	int ret = 1, str_len = 0, len;
+	char num[ 24 ], *val;
 	struct expression *parameter = this->parameters;
 	struct variable var = { 0, NULL };
-	struct string *str;
+	struct string *str = NULL, *new;
 	while( parameter && ret ) {
 		ret = parameter->evaluate( parameter, variables, &var, exception );
 		if( ret ) {
 			if( var.string_value && var.string_value->string ) {
-				newlen = var.string_value->length;
-				new = var.string_value->string;
+				len = var.string_value->length;
+				val = var.string_value->string;
 			} else {
 				sprintf( num, "%d", var.integer_value );
-				newlen = strlen( num );
-				new = num;
+				len = strlen( num );
+				val = num;
 			}
-			if( MAX_INTEGER - newlen > len ) {
-				new = cat_string( val, len, new, newlen );
-				free( val );
-				val = new;
-				if( val ) {
-					len += newlen;
+			if( MAX_INTEGER - len > str_len ) {
+				new = new_string_value( str_len + len );
+				if( new ) {
+					new->reference_count = 1;
+					if( str ) {
+						memcpy( new->string, str->string, str_len );
+						free( str );
+					}
+					memcpy( &new->string[ str_len ], val, len );
+					str_len += len;
+					str = new;
 				} else {
 					ret = throw( exception, this, 0, OUT_OF_MEMORY );
 				}
@@ -1886,19 +1887,11 @@ static int evaluate_str_expression( struct expression *this, struct variable *va
 		}
 	}
 	if( ret ) {
-		str = calloc( 1, sizeof( struct string ) );
-		if( str ) {
-			str->reference_count = 1;
-			str->string = val;
-			str->length = len;
-			dispose_variable( result );
-			result->integer_value = 0;
-			result->string_value = str;
-		} else {
-			ret = throw( exception, this, 0, OUT_OF_MEMORY );
-		}
+		dispose_variable( result );
+		result->integer_value = 0;
+		result->string_value = str;
 	} else {
-		free( val );
+		free( str );
 	}
 	return ret;
 }
@@ -1906,24 +1899,18 @@ static int evaluate_str_expression( struct expression *this, struct variable *va
 static int evaluate_asc_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	int ret;
-	char *chr;
 	struct string *str;
 	struct variable val = { 0, NULL };
 	ret = this->parameters->evaluate( this->parameters, variables, &val, exception );
 	if( ret ) {
-		str = calloc( 1, sizeof( struct string ) );
-		chr = malloc( sizeof( char ) * 2 );
-		if( str && chr ) {
-			str->reference_count = str->length = 1;
-			str->string = chr;
+		str = new_string_value( 1 );
+		if( str ) {
+			str->reference_count = 1;
 			str->string[ 0 ] = val.integer_value;
-			str->string[ 1 ] = 0;
 			dispose_variable( result );
 			result->integer_value = 0;
 			result->string_value = str;
 		} else {
-			free( chr );
-			free( str );
 			ret = throw( exception, this, 0, OUT_OF_MEMORY );
 		}
 		dispose_variable( &val );
@@ -1975,7 +1962,7 @@ static int evaluate_tup_expression( struct expression *this, struct variable *va
 static int evaluate_load_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	long len;
-	char message[ 64 ], *buf;
+	char message[ 64 ];
 	struct string *str;
 	struct variable file = { 0, NULL };
 	int ret = this->parameters->evaluate( this->parameters, variables, &file, exception );
@@ -1984,25 +1971,16 @@ static int evaluate_load_expression( struct expression *this, struct variable *v
 			len = load_file( file.string_value->string, NULL, message );
 			if( len >= 0 ) {
 				if( len < MAX_INTEGER ) {
-					buf = malloc( len + 1 );
-					if( buf ) {
-						len = load_file( file.string_value->string, buf, message );
+					str = new_string_value( len );
+					if( str ) {
+						str->reference_count = 1;
+						len = load_file( file.string_value->string, str->string, message );
 						if( len >= 0 ) {
-							buf[ len ] = 0;
-							str = calloc( 1, sizeof( struct string ) );
-							if( str ) {
-								str->reference_count = 1;
-								str->length = len;
-								str->string = buf;
-								dispose_variable( result );
-								result->integer_value = 0;
-								result->string_value = str;
-							} else {
-								free( buf );
-								ret = throw( exception, this, 0, OUT_OF_MEMORY );
-							}
+							dispose_variable( result );
+							result->integer_value = 0;
+							result->string_value = str;
 						} else {
-							free( buf );
+							free( str );
 							ret = throw( exception, this, 0, message );
 						}
 					} else {
@@ -2138,34 +2116,26 @@ static int evaluate_sub_expression( struct expression *this, struct variable *va
 						length = var.string_value->length;
 					}
 					if( idx.integer_value >= 0 && len.integer_value >= 0
-						&& MAX_INTEGER - len.integer_value >= idx.integer_value
-						&& idx.integer_value + len.integer_value <= length ) {
-						str = calloc( 1, sizeof( struct string ) );
+					&& MAX_INTEGER - len.integer_value >= idx.integer_value
+					&& idx.integer_value + len.integer_value <= length ) {
+						str = new_string_value( len.integer_value );
 						if( str ) {
 							str->reference_count = 1;
-							str->string = malloc( sizeof( char ) * ( len.integer_value + 1 ) );
-							if( str->string ) {
-								str->length = len.integer_value;
-								if( var.string_value->line < 0 ) {
-									data = str->string;
-									arr = ( ( struct array * ) var.string_value )->array;
-									offset = 0;
-									while( offset < len.integer_value ) {
-										data[ offset ] = arr[ offset + idx.integer_value ].integer_value;
-										offset++;
-									}
-								} else {
-									memcpy( str->string, &var.string_value->string[ idx.integer_value ],
-										sizeof( char ) * len.integer_value );
+							if( var.string_value->line < 0 ) {
+								data = str->string;
+								arr = ( ( struct array * ) var.string_value )->array;
+								offset = 0;
+								while( offset < len.integer_value ) {
+									data[ offset ] = arr[ offset + idx.integer_value ].integer_value;
+									offset++;
 								}
-								str->string[ len.integer_value ] = 0;
-								dispose_variable( result );
-								result->integer_value = 0;
-								result->string_value = str;
 							} else {
-								free( str );
-								ret = throw( exception, this, 0, OUT_OF_MEMORY );
+								memcpy( str->string, &var.string_value->string[ idx.integer_value ],
+									sizeof( char ) * len.integer_value );
 							}
+							dispose_variable( result );
+							result->integer_value = 0;
+							result->string_value = str;
 						} else {
 							ret = throw( exception, this, 0, OUT_OF_MEMORY );
 						}
@@ -2196,20 +2166,13 @@ static int evaluate_arr_expression( struct expression *this, struct variable *va
 			arr = ( struct array * ) input.string_value;
 			len = write_array( arr, NULL );
 			if( len >= 0 ) {
-				str = calloc( 1, sizeof( struct string ) );
+				str = new_string_value( len );
 				if( str ) {
 					str->reference_count = 1;
-					str->string = malloc( sizeof( char ) * ( len + 1 ) );
-					if( str->string ) {
-						str->length = write_array( arr, str->string );
-						str->string[ str->length ] = 0;
-						dispose_variable( result );
-						result->integer_value = 0;
-						result->string_value = str;
-					} else {
-						free( str );
-						ret = throw( exception, this, 0, OUT_OF_MEMORY );
-					}
+					write_array( arr, str->string );
+					dispose_variable( result );
+					result->integer_value = 0;
+					result->string_value = str;
 				} else {
 					ret = throw( exception, this, 0, OUT_OF_MEMORY );
 				}
@@ -2235,25 +2198,21 @@ static int evaluate_argc_expression( struct expression *this, struct variable *v
 static int evaluate_argv_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	int ret;
+	char *val;
 	struct string *str;
 	struct expression *parameter = this->parameters;
 	struct variable idx = { 0, NULL };
 	ret = parameter->evaluate( parameter, variables, &idx, exception );
 	if( ret ) {
 		if( idx.integer_value >= 0 && idx.integer_value < this->function->env->argc ) {
-			str = calloc( 1, sizeof( struct string ) );
+			val = this->function->env->argv[ idx.integer_value ];
+			str = new_string_value( strlen( val ) );
 			if( str ) {
 				str->reference_count = 1;
-				str->string = new_string( this->function->env->argv[ idx.integer_value ] );
-				if( str->string ) {
-					str->length = strlen( str->string );
-					dispose_variable( result );
-					result->integer_value = 0;
-					result->string_value = str;
-				} else {
-					free( str );
-					ret = throw( exception, this, 0, OUT_OF_MEMORY );
-				}
+				memcpy( str->string, val, str->length );
+				dispose_variable( result );
+				result->integer_value = 0;
+				result->string_value = str;
 			} else {
 				ret = throw( exception, this, 0, OUT_OF_MEMORY );
 			}
@@ -2269,20 +2228,15 @@ static int evaluate_time_expression( struct expression *this, struct variable *v
 	struct variable *result, struct variable *exception ) {
 	int ret = 1;
 	time_t seconds = time( NULL );
-	struct string *str = calloc( 1, sizeof( struct string ) );
+	char *time_str = ctime( &seconds );
+	struct string *str = new_string_value( strlen( time_str ) );
 	if( str ) {
 		str->reference_count = 1;
-		str->string = new_string( ctime( &seconds ) );
-		if( str->string ) {
-			str->length = strlen( str->string );
-			str->string[ str->length - 1 ] = 0;
-			dispose_variable( result );
-			result->integer_value = seconds;
-			result->string_value = str;
-		} else {
-			free( str );
-			ret = throw( exception, this, 0, OUT_OF_MEMORY );
-		}
+		strcpy( str->string, time_str );
+		str->string[ str->length - 1 ] = 0;
+		dispose_variable( result );
+		result->integer_value = seconds;
+		result->string_value = str;
 	} else {
 		ret = throw( exception, this, 0, OUT_OF_MEMORY );
 	}
@@ -2372,21 +2326,14 @@ static int evaluate_quote_expression( struct expression *this, struct variable *
 			length = write_byte_string( var.string_value->string,
 				var.string_value->length, NULL );
 			if( length >= 0 ) {
-				str = calloc( 1, sizeof( struct string ) );
+				str = new_string_value( length );
 				if( str ) {
-					str->string = malloc( sizeof( char ) * ( length + 1 ) );
-					if( str->string ) {
-						str->reference_count = 1;
-						str->length = write_byte_string( var.string_value->string,
-							var.string_value->length, str->string );
-						str->string[ length ] = 0;
-						dispose_variable( result );
-						result->integer_value = 0;
-						result->string_value = str;
-					} else {
-						free( str );
-						ret = throw( exception, this, 0, OUT_OF_MEMORY );
-					}
+					str->reference_count = 1;
+					write_byte_string( var.string_value->string,
+						var.string_value->length, str->string );
+					dispose_variable( result );
+					result->integer_value = 0;
+					result->string_value = str;
 				} else {
 					ret = throw( exception, this, 0, OUT_OF_MEMORY );
 				}
@@ -2446,32 +2393,28 @@ static int evaluate_line_expression( struct expression *this, struct variable *v
 static int evaluate_hex_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	int ret, len;
-	char *hex;
 	struct string *str;
 	struct variable val = { 0, NULL };
 	ret = this->parameters->evaluate( this->parameters, variables, &val, exception );
 	if( ret ) {
-		str = calloc( 1, sizeof( struct string ) );
-		hex = malloc( ( sizeof( int ) * 2 + 4 ) * sizeof( char ) );
-		if( str && hex ) {
+		str = new_string_value( sizeof( int ) * 2 + 4 );
+		if( str ) {
 			if( val.integer_value < 0 ) {
-				len = sprintf( hex, "-0x%08x", ( ~val.integer_value ) + 1 );
+				len = sprintf( str->string, "-0x%08x", ( ~val.integer_value ) + 1 );
 			} else {
-				len = sprintf( hex, " 0x%08x", val.integer_value );
+				len = sprintf( str->string, " 0x%08x", val.integer_value );
 			}
 			if( len > 0 ) {
 				str->reference_count = 1;
 				str->length = len;
-				str->string = hex;
 				dispose_variable( result );
 				result->integer_value = 0;
 				result->string_value = str;
 			} else {
+				free( str );
 				ret = throw( exception, this, len, "Output error." );
 			}
 		} else {
-			free( hex );
-			free( str );
 			ret = throw( exception, this, 0, OUT_OF_MEMORY );
 		}
 		dispose_variable( &val );
@@ -2494,10 +2437,10 @@ static int evaluate_pack_expression( struct expression *this, struct variable *v
 			src = &val;
 			len = 4;
 		}
-		str = calloc( 1, sizeof( struct string ) );
-		out = malloc( ( len + 1 ) * sizeof( char ) );
-		if( str && out ) {
+		str = new_string_value( len );
+		if( str ) {
 			idx = 0;
+			out = str->string;
 			while( idx < len ) {
 				in = src[ idx >> 2 ].integer_value;
 				out[ idx ] = in >> 24;
@@ -2508,14 +2451,10 @@ static int evaluate_pack_expression( struct expression *this, struct variable *v
 			}
 			out[ idx ] = 0;
 			str->reference_count = 1;
-			str->length = len;
-			str->string = out;
 			dispose_variable( result );
 			result->integer_value = 0;
 			result->string_value = str;
 		} else {
-			free( out );
-			free( str );
 			ret = throw( exception, this, 0, OUT_OF_MEMORY );
 		}
 		dispose_variable( &val );

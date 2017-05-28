@@ -759,32 +759,25 @@ static int evaluate_fxdir_expression( struct expression *this, struct variable *
 			if( dir ) {
 				dentry = readdir( dir );
 				while( dentry && ret ) {
-					elem = calloc( 1, sizeof( struct element ) );
-					if( elem ) {
-						elem->str.reference_count = 1;
-						elem->str.line = line++;
-						len = write_byte_string( dentry->d_name, strlen( dentry->d_name ), NULL );
-						if( len >= 0 ) {
-							elem->str.string = malloc( len + 1 );
-							if( elem->str.string ) {
-								write_byte_string( dentry->d_name, strlen( dentry->d_name ), elem->str.string );
-								elem->str.string[ len ] = 0;
-								elem->str.length = len;
-								if( head ) {
-									tail->next = elem;
-									tail = tail->next;
-								} else {
-									head = tail = elem;
-								}
-								dentry = readdir( dir );
+					len = write_byte_string( dentry->d_name, strlen( dentry->d_name ), NULL );
+					if( len >= 0 ) {
+						elem = new_element( len );
+						if( elem ) {
+							write_byte_string( dentry->d_name, strlen( dentry->d_name ), elem->str.string );
+							elem->str.reference_count = 1;
+							elem->str.line = line++;
+							if( head ) {
+								tail->next = elem;
+								tail = tail->next;
 							} else {
-								ret = throw( exception, this, 0, OUT_OF_MEMORY );
+								head = tail = elem;
 							}
+							dentry = readdir( dir );
 						} else {
-							ret = throw( exception, this, 0, "String too large." );
+							ret = throw( exception, this, 0, OUT_OF_MEMORY );
 						}
 					} else {
-						ret = throw( exception, this, 0, OUT_OF_MEMORY );
+						ret = throw( exception, this, 0, "String too large." );
 					}
 				}
 				closedir( dir );
