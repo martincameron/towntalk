@@ -648,18 +648,18 @@ function gradient( c1, c2, out, off, len ) {
 	}
 }
 
-function parse_rws( rws, arr ) {
+function parse_rws( rws, out ) {
 	var elem, idx, c, r, g, b;
 	let elem = $parse( rws );
 	if !( $cmp( elem, "RW.SCN" ) ) {
 		let elem = $next( elem );
 		while $cmp( elem, "EOF" ) {
-			if <( idx $len( arr ) ) {
+			if <( idx $len( out ) ) {
 				let c = $int( elem );
 				let r = *( &( >>( c 8 ) 0xF ) 17 );
 				let g = *( &( >>( c 4 ) 0xF ) 17 ); 
 				let b = *( &( c 0xF ) 17 ); 
-				set [ arr idx ] = +( *( r 65536 ) +( *( g 256 ) b ) );
+				set [ out idx ] = +( *( r 65536 ) +( *( g 256 ) b ) );
 				inc idx;
 			}
 			let elem = $next( elem );
@@ -669,17 +669,17 @@ function parse_rws( rws, arr ) {
 	}
 }
 
-function sort( arr ) {
+function sort( vals ) {
 	var progress, idx, tmp;
 	let progress = TRUE;
 	while progress {
 		let idx = 1;
 		let progress = FALSE;
-		while <( idx $len( arr ) ) {
-			let tmp = [ arr -( idx 1 ) ];
-			if >( $cmp( tmp [ arr idx ] ) 0 ) {
-				set [ arr -( idx 1 ) ] = [ arr idx ];
-				set [ arr idx ] = tmp;
+		while <( idx $len( vals ) ) {
+			let tmp = [ vals -( idx 1 ) ];
+			if >( $cmp( tmp [ vals idx ] ) 0 ) {
+				set [ vals -( idx 1 ) ] = [ vals idx ];
+				set [ vals idx ] = tmp;
 				let progress = TRUE;
 			}
 			inc idx;
@@ -689,7 +689,7 @@ function sort( arr ) {
 
 program tgads {
 	var selected;
-	let palette = ${ 0x000000, 0xFFFFFF, 0xA0A0A0, 0x6080B0 };
+	arr palette = ${ 0x000000, 0xFFFFFF, 0xA0A0A0, 0x6080B0 };
 
 	dim [ background 240 ];
 	call parse_rws( $load( "rws/demo5.rws" ), background );
@@ -723,7 +723,7 @@ program tgads {
 	call tg_anchor( 19, 0, 1, 1, 1 );
 	call tg_sizegad( 20, 15, 380, 180, 16, 16 );
 
-	let listitems = $fxdir( "." );
+	arr listitems = $fxdir( "." );
 	call sort( listitems );
 
 	call tg_listbox( 21, 15, 100, 32, 260, 120, listitems );

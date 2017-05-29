@@ -67,8 +67,8 @@ function testarray() {
 	call assert( =( err 2 ), ${-} );
 	dim [ a 1 ];
 	call assert( =( $cmp( [ a 0 ] "a" ) 0 ), ${-} );
-	let a = ${ 0, $str( "\"one" "\"" ), $tup( "\\two\\"2 ), "\063", ${ four(4) }, 84, 84 };
-	let a = $parse( $arr( a ) );
+	arr a = ${ 0, $str( "\"one" "\"" ), $tup( "\\two\\"2 ), "\063", ${ four(4) }, 84, 84 };
+	arr a = $parse( $arr( a ) );
 	call assert( =( $len( a ) 7 ), ${-} );
 	call assert( =( [ a 0 ] 0 ), ${-} );
 	call assert( =( $cmp( [ a 1 ] "\"one\"" ) 0 ), ${-} );
@@ -359,7 +359,7 @@ function testsub() {
 	try { call $sub( "a" 0 -1 ); } catch err {}
 	call assert( err, ${-} );
 	call assert( =( $cmp( $sub( "abc" 1 1 ) "b" ) 0 ), ${-} );
-	let a = ${ 65, 66, 67 };
+	arr a = ${ 65, 66, 67 };
 	call assert( =( $cmp( $sub( a 0 3 ) "ABC" ) 0 ), ${-} );
 }
 
@@ -536,7 +536,7 @@ function testpack() {
 	call assert( =( $cmp( $pack( 0 ), "\0\0\0\0" ) 0 ), ${-} );
 	call assert( =( $cmp( $pack( 1 ), "\0\0\0\1" ) 0 ), ${-} );
 	call assert( =( $cmp( $pack( 0x01020304 ), "\1\2\3\4" ) 0 ), ${-} );
-	let a = ${ 0, 0x1020304 };
+	arr a = ${ 0, 0x1020304 };
 	call assert( =( $cmp( $pack( a ), "\0\0\0\0\1\2\3\4" ) 0 ), ${-} );
 }
 
