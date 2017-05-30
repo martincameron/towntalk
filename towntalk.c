@@ -15,7 +15,6 @@
 
 	A program file consists of a list of declarations.
 	Variables are integers, strings, elements or array references.
-	Arrays are held in separate global variables to avoid reference cycles.
 	When a '#' character is encountered, the rest of the line is ignored.
 	Variable/Function/Array names must match "[A-Za-Z][A-Za-z0-9_]*".
 	Strings have value-semantics and are immutable, can be used as byte arrays.
@@ -198,6 +197,7 @@ struct statement {
 struct environment {
 	int argc;
 	char **argv, *file;
+	struct array *arrays;
 	struct keyword *statements;
 	struct operator *operators;
 	struct global_variable *constants, *globals;
@@ -305,6 +305,35 @@ static struct element* new_element( int str_len ) {
 		elem->str.length = str_len;
 	}
 	return elem;
+}
+
+static struct array *new_array( struct environment *env, int length ) {
+	struct array *arr;
+	if( env->arrays == NULL ) {
+		env->arrays = calloc( 1, sizeof( struct array ) );
+	}
+	if( env->arrays ) {
+		arr = calloc( 1, sizeof( struct array ) );
+		if( arr ) {
+			arr->str.string = "#Array#";
+			arr->str.reference_count = 1;
+			arr->str.length = strlen( arr->str.string );
+			arr->str.line = -1;
+			arr->array = calloc( length + 1, sizeof( struct variable ) );
+			if( arr->array ) {
+				arr->prev = env->arrays;
+				arr->next = env->arrays->next;
+				if( arr->next ) {
+					arr->next->prev = arr;
+				} 
+				env->arrays->next = arr;
+			} else {
+				free( arr );
+				arr = NULL;
+			}
+		}
+	}
+	return arr;
 }
 
 static struct string* new_string_value( int length ) {
@@ -499,11 +528,15 @@ static void unref_string( struct string *str ) {
 		} else {
 			arr = ( struct array * ) str;
 			idx = 0, len = arr->length;
+			arr->prev->next = arr->next;
+			if( arr->next ) {
+				arr->next->prev = arr->prev;
+			}
 			while( idx < len ) {
 				dispose_variable( &arr->array[ idx++ ] );
 			}
 			free( arr->array );
-			free( str );
+			free( arr );
 		}
 	} else {
 		str->reference_count--;
@@ -620,14 +653,9 @@ static void assign_variable( struct variable *src, struct variable *dest ) {
 }
 
 static void dispose_global_variables( struct global_variable *global ) {
-	struct string *str;
 	struct global_variable *next;
 	while( global ) {
 		next = global->next;
-		str = global->value.string_value;
-		if( str && str->line < 0 ) {
-			resize_array( ( struct array * ) str, 0 );
-		}
 		free( global->name );
 		dispose_variable( &global->value );
 		free( global );
@@ -673,10 +701,21 @@ static void dispose_function_declarations( struct function_declaration *function
 }
 
 static void dispose_environment( struct environment *env ) {
+	struct array *arr;
 	if( env ) {
 		dispose_global_variables( env->constants );
 		dispose_global_variables( env->globals );
 		dispose_function_declarations( env->functions );
+		arr = env->arrays->next;
+		while( arr ) {
+			arr->str.reference_count++;
+			resize_array( arr, 0 );
+			arr = arr->next;
+		}
+		while( env->arrays->next ) {
+			unref_string( &env->arrays->next->str );
+		}
+		free( env->arrays );
 		free( env );
 	}
 }
@@ -1027,24 +1066,17 @@ static struct global_variable* new_global_variable( char *name, char *message ) 
 	return global;
 }
 
-static struct global_variable* new_array_variable( char *name, char *message ) {
+static struct global_variable* new_array_variable( struct environment *env,
+	char *name, char *message ) {
 	struct array *arr;
 	struct global_variable *global = calloc( 1, sizeof( struct global_variable ) );
 	if( global ) {
 		/*printf("Array '%s'\n", name);*/
 		global->name = new_string( name );
-		if( global->name ) {
-			arr = calloc( 1, sizeof( struct array ) );
-			if( arr ) {
-				global->value.string_value = &arr->str;
-				arr->str.string = "#Array#";
-				arr->str.reference_count = 1;
-				arr->str.length = strlen( arr->str.string );
-				arr->str.line = -1;
-				arr->array = calloc( 1, sizeof( struct variable ) );
-			}
-		}
-		if( !( global->name && arr && arr->str.string && arr->array ) ) {
+		arr = new_array( env, 0 );
+		if( global->name && arr ) {
+			global->value.string_value = &arr->str;
+		} else {
 			dispose_global_variables( global );
 			strcpy( message, OUT_OF_MEMORY );
 			global = NULL;
@@ -1581,7 +1613,7 @@ static int add_global_variable( struct environment *env, struct element *elem, c
 }
 
 static int add_array_variable( struct environment *env, struct element *elem, char *message ) {
-	struct global_variable *array = new_array_variable( elem->str.string, message );
+	struct global_variable *array = new_array_variable( env, elem->str.string, message );
 	if( array ) {
 		array->next = env->globals;
 		env->globals = array;

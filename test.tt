@@ -85,6 +85,8 @@ function testarray() {
 	set [ b 1 ] = c;
 	set [ c 0 ] = c;
 	set [ c 1 ] = b;
+	let b = 0;
+	let c = 0;
 }
 
 function fact( x ) {
