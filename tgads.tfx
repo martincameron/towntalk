@@ -689,7 +689,7 @@ function sort( vals ) {
 
 program tgads {
 	var selected;
-	arr palette = ${ 0x000000, 0xFFFFFF, 0xA0A0A0, 0x6080B0 };
+	let palette = $array( ${ 0x000000, 0xFFFFFF, 0xA0A0A0, 0x6080B0 } );
 
 	dim [ background 240 ];
 	call parse_rws( $load( "rws/demo5.rws" ), background );
@@ -723,7 +723,7 @@ program tgads {
 	call tg_anchor( 19, 0, 1, 1, 1 );
 	call tg_sizegad( 20, 15, 380, 180, 16, 16 );
 
-	arr listitems = $fxdir( "." );
+	let listitems = $array( $fxdir( "." ) );
 	call sort( listitems );
 
 	call tg_listbox( 21, 15, 100, 32, 260, 120, listitems );

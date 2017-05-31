@@ -6,7 +6,7 @@ const STR = "*";
 const ELE = ${ ( * ) };
 
 global g;
-array a, b, c;
+array a;
 
 include "hello.tt";
 
@@ -40,7 +40,7 @@ function testvars( x ) {
 }
 
 function testarray() {
-	var err;
+	var b, c, err;
 	call setg( 0 );
 	try { dim [ except( ${ 1 } ) setg( 2 ) ]; } catch err {}
 	call assert( =( $cmp( err "1" ) 0 ), ${-} );
@@ -67,8 +67,8 @@ function testarray() {
 	call assert( =( err 2 ), ${-} );
 	dim [ a 1 ];
 	call assert( =( $cmp( [ a 0 ] "a" ) 0 ), ${-} );
-	arr a = ${ 0, $str( "\"one" "\"" ), $tup( "\\two\\"2 ), "\063", ${ four(4) }, 84, 84 };
-	arr a = $parse( $astr( a ) );
+	let a = $array( ${ 0, $str( "\"one" "\"" ), $tup( "\\two\\"2 ), "\063", ${ four(4) }, 84, 84 } );
+	let a = $array( $parse( $astr( a ) ) );
 	call assert( =( $len( a ) 7 ), ${-} );
 	call assert( =( [ a 0 ] 0 ), ${-} );
 	call assert( =( $cmp( [ a 1 ] "\"one\"" ) 0 ), ${-} );
@@ -79,14 +79,17 @@ function testarray() {
 	call assert( =( $cmp( $child( $next( [ a 4 ] ) ) "4" ) 0 ), ${-} );
 	call assert( =( $cmp( $sub( a, 5, 2 ) "TT" ) 0 ), ${-} );
 	call assert( =( $cmp( a "#Array#" ) 0 ), ${-} );
-	dim [ b 2 ];
-	dim [ c 2 ];
+	let err = 0;
+	try { let b = $array( -1 ); } catch err {}
+	call assert( err, ${-} );
+	let b = $array( 2 );
+	let c = $array( ${ "a" 1 } );
+	call assert( =( $cmp( [ c 0 ] "a" ) 0 ), ${-} );
+	call assert( =( [ c 1 ] 1 ), ${-} );
 	set [ b 0 ] = b;
 	set [ b 1 ] = c;
 	set [ c 0 ] = c;
 	set [ c 1 ] = b;
-	let b = 0;
-	let c = 0;
 }
 
 function fact( x ) {
@@ -361,7 +364,7 @@ function testsub() {
 	try { call $sub( "a" 0 -1 ); } catch err {}
 	call assert( err, ${-} );
 	call assert( =( $cmp( $sub( "abc" 1 1 ) "b" ) 0 ), ${-} );
-	arr a = ${ 65, 66, 67 };
+	let a = $array( ${ 65, 66, 67 } );
 	call assert( =( $cmp( $sub( a 0 3 ) "ABC" ) 0 ), ${-} );
 }
 
@@ -538,7 +541,7 @@ function testpack() {
 	call assert( =( $cmp( $pack( 0 ), "\0\0\0\0" ) 0 ), ${-} );
 	call assert( =( $cmp( $pack( 1 ), "\0\0\0\1" ) 0 ), ${-} );
 	call assert( =( $cmp( $pack( 0x01020304 ), "\1\2\3\4" ) 0 ), ${-} );
-	arr a = ${ 0, 0x1020304 };
+	let a = $array( ${ 0, 0x1020304 } );
 	call assert( =( $cmp( $pack( a ), "\0\0\0\0\1\2\3\4" ) 0 ), ${-} );
 }
 

@@ -55,7 +55,6 @@
 		rem {}                   Comment.
 		var a,b,c;               Local variable.
 		let a = expr;            Variable assignment.
-		arr a = ${0,"a"};        Initialize array from element.
 		print expr;              Write integer or string to standard output.
 		write expr;              Same as print, but do not add a newline.
 		error expr;              Same as print, but write to standard error.
@@ -118,6 +117,8 @@
 		$int(str)                String to integer.
 		$len(str/arr)            String/Array length.
 		$tup(str int)            String/Integer tuple.
+		$array(len)              Create array of specified length.
+		$array(${0,"a"})         Create array with values from element.
 		$astr(arr)               Array to element string.
 		$load("abc.bin")         Load raw bytes into string.
 		$flen("file")            Get the length of a file.
@@ -319,6 +320,7 @@ static struct array *new_array( struct environment *env, int length ) {
 			arr->str.reference_count = 1;
 			arr->str.length = strlen( arr->str.string );
 			arr->str.line = -1;
+			arr->length = length;
 			arr->array = calloc( length + 1, sizeof( struct variable ) );
 			if( arr->array ) {
 				arr->prev = env->arrays;
@@ -1371,51 +1373,6 @@ static int parse_constant_list( struct element *elem, struct global_variable *pr
 		}
 	}
 	return count;
-}
-
-static int execute_array_assignment( struct statement *this, struct variable *variables,
-	struct variable *result, struct variable *exception ) {
-	int ret, idx, length;
-	char msg[ 128 ] = "";
-	struct array *arr;
-	struct global_variable inputs, *input;
-	struct variable src = { 0, NULL }, dest = { 0, NULL }, *values;
-	ret = this->source->evaluate( this->source, variables, &src, exception );
-	if( ret ) {
-		if( src.string_value && src.string_value->line > 0 ) {
-			ret = this->destination->evaluate( this->destination, variables, &dest, exception );
-			if( ret ) {
-				if( dest.string_value->line < 0 ) {
-					arr = ( struct array * ) dest.string_value;
-					inputs.next = NULL;
-					length = parse_constant_list( ( struct element * ) src.string_value, &inputs, msg );
-					if( msg[ 0 ] == 0 ) {
-						if( resize_array( arr, 0 ) && resize_array( arr, length ) ) {
-							idx = 0;
-							input = inputs.next;
-							values = arr->array;
-							while( idx < length ) {
-								assign_variable( &input->value, &values[ idx++ ] );
-								input = input->next;
-							}
-						} else {
-							ret = throw( exception, this->source, 0, OUT_OF_MEMORY );
-						}
-					} else {
-						ret = throw( exception, this->source, 0, msg );
-					}
-					dispose_global_variables( inputs.next );
-				} else {
-					ret = throw( exception, this->destination, 0, "Not an array." );
-				}
-				dispose_variable( &dest );
-			}
-		} else {
-			ret = throw( exception, this->source, 0, "Not an element." );
-		}
-		dispose_variable( &src );
-	}
-	return ret;
 }
 
 static int execute_switch_statement( struct statement *this, struct variable *variables,
@@ -2492,6 +2449,55 @@ static int evaluate_pack_expression( struct expression *this, struct variable *v
 	return ret;
 }
 
+static int evaluate_array_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	int idx, len;
+	char msg[ 128 ] = "";
+	struct variable var = { 0, NULL }, *values;
+	struct global_variable inputs, *input;
+	struct array *arr;
+	int ret = this->parameters->evaluate( this->parameters, variables, &var, exception );
+	if( ret ) {
+		if( var.string_value && var.string_value->line > 0 ) {
+			inputs.next = NULL;
+			len = parse_constant_list( ( struct element * ) var.string_value, &inputs, msg );
+			if( msg[ 0 ] == 0 ) {
+				arr = new_array( this->function->env, len );
+				if( arr ) {
+					idx = 0;
+					input = inputs.next;
+					values = arr->array;
+					while( idx < len ) {
+						assign_variable( &input->value, &values[ idx++ ] );
+						input = input->next;
+					}
+					dispose_variable( result );
+					result->integer_value = 0;
+					result->string_value = &arr->str;
+				} else {
+					ret = throw( exception, this, 0, OUT_OF_MEMORY );
+				}
+			} else {
+				ret = throw( exception, this, 0, msg );
+			}
+			dispose_global_variables( inputs.next );
+		} else if( var.integer_value >= 0 ) {
+			arr = new_array( this->function->env, var.integer_value );
+			if( arr ) {
+				dispose_variable( result );
+				result->integer_value = 0;
+				result->string_value = &arr->str;
+			} else {
+				ret = throw( exception, this, 0, OUT_OF_MEMORY );
+			}
+		} else {
+			ret = throw( exception, this, var.integer_value, "Invalid array length." );
+		}
+		dispose_variable( &var );
+	}
+	return ret;
+}
+
 static struct operator operators[] = {
 	{ "%", '%', 2, &evaluate_arithmetic_expression, &operators[ 1 ] },
 	{ "&", '&', 2, &evaluate_arithmetic_expression, &operators[ 2 ] },
@@ -2533,7 +2539,8 @@ static struct operator operators[] = {
 	{ "$unquote",'$', 1, &evaluate_unquote_expression, &operators[ 38 ] },
 	{ "$line",'$', 1, &evaluate_line_expression, &operators[ 39 ] },
 	{ "$hex",'$', 1, &evaluate_hex_expression, &operators[ 40 ] },
-	{ "$pack",'$', 1, &evaluate_pack_expression, NULL }
+	{ "$pack",'$', 1, &evaluate_pack_expression, &operators[ 41 ] },
+	{ "$array",'$', 1, &evaluate_array_expression, NULL }
 };
 
 static struct operator* get_operator( char *name, struct environment *env ) {
@@ -2996,29 +3003,6 @@ static struct element* parse_set_statement( struct element *elem, struct environ
 	return next;
 }
 
-static struct element* parse_array_statement( struct element *elem, struct environment *env,
-	struct function_declaration *func, struct statement *prev, char *message ) {
-	struct expression expr;
-	struct element *next = elem->next;
-	struct statement *stmt = new_statement( message );
-	if( stmt ) {
-		prev->next = stmt;
-		expr.next = NULL;
-		next = parse_expression( next, env, func, &expr, message );
-		if( expr.next ) {
-			stmt->destination = expr.next;
-			expr.next = NULL;
-			next = parse_expression( next->next, env, func, &expr, message );
-			if( expr.next ) {
-				stmt->source = expr.next;
-				stmt->execute = &execute_array_assignment;
-				next = next->next;
-			}
-		}
-	}
-	return next;
-}
-
 static struct keyword switch_stmts[] = {
 	{ "rem", "{", &parse_comment, &switch_stmts[ 1 ] },
 	{ "case", "x{", &parse_case_statement, &switch_stmts[ 2 ] },
@@ -3091,8 +3075,7 @@ static struct keyword statements[] = {
 	{ "switch", "x{", &parse_switch_statement, &statements[ 18 ] },
 	{ "inc", "n;", &parse_increment_statement, &statements[ 19 ] },
 	{ "save", "xx;", &parse_save_statement, &statements[ 20 ] },
-	{ "append", "xx;", &parse_append_statement, &statements[ 21 ] },
-	{ "arr", "x=x;", &parse_array_statement, NULL }
+	{ "append", "xx;", &parse_append_statement, NULL }
 };
 
 static struct element* parse_case_statement( struct element *elem, struct environment *env,
