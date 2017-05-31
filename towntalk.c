@@ -118,7 +118,7 @@
 		$int(str)                String to integer.
 		$len(str/arr)            String/Array length.
 		$tup(str int)            String/Integer tuple.
-		$arr(arr)                Array to element string.
+		$astr(arr)               Array to element string.
 		$load("abc.bin")         Load raw bytes into string.
 		$flen("file")            Get the length of a file.
 		$argc                    Number of command-line arguments.
@@ -2184,7 +2184,7 @@ static int evaluate_sub_expression( struct expression *this, struct variable *va
 	return ret;
 }
 
-static int evaluate_arr_expression( struct expression *this, struct variable *variables,
+static int evaluate_astr_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct string *str;
 	struct array *arr;
@@ -2520,7 +2520,7 @@ static struct operator operators[] = {
 	{ "$chr", '$', 2, &evaluate_chr_expression, &operators[ 25 ] },
 	{ "$tup", '$', 2, &evaluate_tup_expression, &operators[ 26 ] },
 	{ "$sub", '$', 3, &evaluate_sub_expression, &operators[ 27 ] },
-	{ "$arr", '$', 1, &evaluate_arr_expression, &operators[ 28 ] },
+	{ "$astr",'$', 1, &evaluate_astr_expression, &operators[ 28 ] },
 	{ "$load",'$', 1, &evaluate_load_expression, &operators[ 29 ] },
 	{ "$flen",'$', 1, &evaluate_flen_expression, &operators[ 30 ] },
 	{ "$argc",'$', 0, &evaluate_argc_expression, &operators[ 31 ] },
