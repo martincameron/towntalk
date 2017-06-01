@@ -167,6 +167,13 @@ struct string_list {
 	struct string_list *next;
 };
 
+struct structure {
+	char *name;
+	int length;
+	struct string_list *fields;
+	struct structure *next;
+};
+
 /* Global variables. */
 struct global_variable {
 	char *name;
@@ -198,9 +205,10 @@ struct statement {
 struct environment {
 	int argc;
 	char **argv, *file;
-	struct array *arrays;
+	struct array arrays;
 	struct keyword *statements;
 	struct operator *operators;
+	struct structure *structures;
 	struct global_variable *constants, *globals;
 	struct function_declaration *functions, *entry_point;
 };
@@ -309,30 +317,24 @@ static struct element* new_element( int str_len ) {
 }
 
 static struct array *new_array( struct environment *env, int length ) {
-	struct array *arr;
-	if( env->arrays == NULL ) {
-		env->arrays = calloc( 1, sizeof( struct array ) );
-	}
-	if( env->arrays ) {
-		arr = calloc( 1, sizeof( struct array ) );
-		if( arr ) {
-			arr->str.string = "#Array#";
-			arr->str.reference_count = 1;
-			arr->str.length = strlen( arr->str.string );
-			arr->str.line = -1;
-			arr->length = length;
-			arr->array = calloc( length + 1, sizeof( struct variable ) );
-			if( arr->array ) {
-				arr->prev = env->arrays;
-				arr->next = env->arrays->next;
-				if( arr->next ) {
-					arr->next->prev = arr;
-				} 
-				env->arrays->next = arr;
-			} else {
-				free( arr );
-				arr = NULL;
-			}
+	struct array *arr = calloc( 1, sizeof( struct array ) );
+	if( arr ) {
+		arr->str.string = "#Array#";
+		arr->str.reference_count = 1;
+		arr->str.length = strlen( arr->str.string );
+		arr->str.line = -1;
+		arr->length = length;
+		arr->array = calloc( length + 1, sizeof( struct variable ) );
+		if( arr->array ) {
+			arr->prev = &env->arrays;
+			arr->next = env->arrays.next;
+			if( arr->next ) {
+				arr->next->prev = arr;
+			} 
+			env->arrays.next = arr;
+		} else {
+			free( arr );
+			arr = NULL;
 		}
 	}
 	return arr;
@@ -530,12 +532,12 @@ static void unref_string( struct string *str ) {
 		} else {
 			arr = ( struct array * ) str;
 			idx = 0, len = arr->length;
+			while( idx < len ) {
+				dispose_variable( &arr->array[ idx++ ] );
+			}
 			arr->prev->next = arr->next;
 			if( arr->next ) {
 				arr->next->prev = arr->prev;
-			}
-			while( idx < len ) {
-				dispose_variable( &arr->array[ idx++ ] );
 			}
 			free( arr->array );
 			free( arr );
@@ -702,22 +704,36 @@ static void dispose_function_declarations( struct function_declaration *function
 	}
 }
 
+static void dispose_arrays( struct array *head ) {
+	struct array *arr = head->next;
+	while( arr ) {
+		arr->str.reference_count++;
+		resize_array( arr, 0 );
+		arr = arr->next;
+	}
+	while( head->next ) {
+		unref_string( &head->next->str );
+	}
+}
+
+static void dispose_structure_declarations( struct structure *sct ) {
+	struct structure *next;
+	while( sct ) {
+		next = sct->next;
+		free( sct->name );
+		dispose_string_list( sct->fields );
+		free( sct );
+		sct = next;
+	}
+}
+
 static void dispose_environment( struct environment *env ) {
-	struct array *arr;
 	if( env ) {
 		dispose_global_variables( env->constants );
 		dispose_global_variables( env->globals );
+		dispose_arrays( &env->arrays );
 		dispose_function_declarations( env->functions );
-		arr = env->arrays->next;
-		while( arr ) {
-			arr->str.reference_count++;
-			resize_array( arr, 0 );
-			arr = arr->next;
-		}
-		while( env->arrays->next ) {
-			unref_string( &env->arrays->next->str );
-		}
-		free( env->arrays );
+		dispose_structure_declarations( env->structures );
 		free( env );
 	}
 }
@@ -1574,6 +1590,18 @@ static int add_array_variable( struct environment *env, struct element *elem, ch
 	if( array ) {
 		array->next = env->globals;
 		env->globals = array;
+	}
+	return message[ 0 ] == 0;
+}
+
+static int add_struct_field( struct environment *env, struct element *elem, char *message ) {
+	struct string_list *field = new_string_list( elem->str.string );
+	if( field ) {
+		field->next = env->structures->fields;
+		env->structures->fields = field;
+		env->structures->length++;
+	} else {
+		strcpy( message, OUT_OF_MEMORY );
 	}
 	return message[ 0 ] == 0;
 }
@@ -3400,6 +3428,28 @@ static struct element* parse_include( struct element *elem, struct environment *
 	return next;
 }
 
+static struct element* parse_struct_declaration( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct statement *prev, char *message ) {
+	struct element *next = elem->next;
+	char *name = new_string( next->str.string );
+	struct structure *sct = calloc( 1, sizeof( struct structure ) );
+	if( name && sct ) {
+		sct->next = env->structures;
+		env->structures = sct;
+		sct->name = name;
+		next = next->next;
+		parse_decl_list( next->child, env, add_struct_field, message );
+		if( message[ 0 ] == 0 ) {
+			next = next->next;
+		}
+	} else {
+		free( sct );
+		free( name );
+		strcpy( message, OUT_OF_MEMORY );
+	}
+	return next;
+}
+
 static struct keyword declarations[] = {
 	{ "rem", "{", &parse_comment, &declarations[ 1 ] },
 	{ "include", "\";", &parse_include, &declarations[ 2 ] },
@@ -3407,7 +3457,8 @@ static struct keyword declarations[] = {
 	{ "program", "n{",&parse_program_declaration, &declarations[ 4 ] },
 	{ "global", "l;", &parse_global_declaration, &declarations[ 5 ] },
 	{ "array", "l;", &parse_array_declaration, &declarations[ 6 ] },
-	{ "const", "n=v;", &parse_const_declaration, NULL }
+	{ "const", "n=v;", &parse_const_declaration, &declarations[ 7 ] },
+	{ "struct", "n{", &parse_struct_declaration, NULL }
 };
 
 static int validate_name( char *name, struct environment *env ) {
