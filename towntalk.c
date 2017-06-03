@@ -170,7 +170,7 @@ struct string_list {
 struct structure {
 	char *name;
 	int length;
-	struct string_list *fields;
+	struct string_list *fields, *fields_tail;
 	struct structure *next;
 };
 
@@ -1128,8 +1128,8 @@ static int add_constants( struct constant *constants, struct environment *env, c
 					strcpy( message, OUT_OF_MEMORY );
 				}
 			} else {
-				global->next = env->globals;
-				env->globals = global;
+				global->next = env->constants;
+				env->constants = global;
 			}
 		}
 		con = &constants[ idx++ ];
@@ -1562,6 +1562,13 @@ static int evaluate_index_expression( struct expression *this, struct variable *
 	return ret;
 }
 
+static struct structure* get_structure( struct structure *structures, char *name ) {
+	while( structures && strcmp( structures->name, name ) ) {
+		structures = structures->next;
+	}
+	return structures;
+}
+
 static struct function_declaration* get_function_declaration( struct function_declaration *functions, char *name ) {
 	while( functions && strcmp( functions->name, name ) ) {
 		functions = functions->next;
@@ -1590,18 +1597,6 @@ static int add_array_variable( struct environment *env, struct element *elem, ch
 	if( array ) {
 		array->next = env->globals;
 		env->globals = array;
-	}
-	return message[ 0 ] == 0;
-}
-
-static int add_struct_field( struct environment *env, struct element *elem, char *message ) {
-	struct string_list *field = new_string_list( elem->str.string );
-	if( field ) {
-		field->next = env->structures->fields;
-		env->structures->fields = field;
-		env->structures->length++;
-	} else {
-		strcpy( message, OUT_OF_MEMORY );
 	}
 	return message[ 0 ] == 0;
 }
@@ -3428,24 +3423,85 @@ static struct element* parse_include( struct element *elem, struct environment *
 	return next;
 }
 
-static struct element* parse_struct_declaration( struct element *elem, struct environment *env,
-	struct function_declaration *func, struct statement *prev, char *message ) {
-	struct element *next = elem->next;
-	char *name = new_string( next->str.string );
-	struct structure *sct = calloc( 1, sizeof( struct structure ) );
-	if( name && sct ) {
-		sct->next = env->structures;
-		env->structures = sct;
-		sct->name = name;
-		next = next->next;
-		parse_decl_list( next->child, env, add_struct_field, message );
-		if( message[ 0 ] == 0 ) {
-			next = next->next;
+static int add_structure_field( struct environment *env, char *name, int line, char *message ) {
+	struct string_list *field;
+	struct structure *struc = env->structures;
+	if( validate_name( name, env ) ) {
+		if( struc->fields && get_string_list_index( struc->fields, name ) >= 0 ) {
+			sprintf( message, "Field '%.16s' already defined on line %d.", name, line );
+		} else {
+			field = new_string_list( name );
+			if( field ) {
+				if( struc->fields ) {
+					struc->fields_tail->next = field;
+				} else {
+					struc->fields = field;
+				}
+				struc->fields_tail = field;
+				struc->length++;
+			} else {
+				strcpy( message, OUT_OF_MEMORY );
+			}
 		}
 	} else {
-		free( sct );
-		free( name );
-		strcpy( message, OUT_OF_MEMORY );
+		sprintf( message, "Invalid name '%.16s' on line %d.", name, line );
+	}
+	return message[ 0 ] == 0;
+}
+
+static struct element* parse_struct_declaration( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct statement *prev, char *message ) {
+	char *name;
+	struct structure *struc;
+	struct string_list *field;
+	struct element *child, *next = elem->next;
+	if( validate_decl( next, env, message ) ) {
+		name = new_string( next->str.string );
+		struc = calloc( 1, sizeof( struct structure ) );
+		if( name && struc ) {
+			struc->next = env->structures;
+			env->structures = struc;
+			struc->name = name;
+			next = next->next;
+			if( next && next->str.string[ 0 ] == '(' ) {
+				child = next->child;
+				if( child ) {
+					struc = get_structure( env->structures, child->str.string );
+					if( struc ) {
+						field = struc->fields;
+						while( field && message[ 0 ] == 0 ) {
+							if( add_structure_field( env, field->value, child->str.line, message ) ) {
+								field = field->next;
+							}
+						}
+					}
+				}
+				next = next->next;
+			}
+			if( next && next->str.string[ 0 ] == '{' ) {
+				child = next->child;
+				while( child && message[ 0 ] == 0 ) {
+					if( add_structure_field( env, child->str.string, child->str.line, message ) ) {
+						child = child->next;
+						if( child && ( child->str.string[ 0 ] == ',' || child->str.string[ 0 ] == ';' ) ) {
+							child = child->next;
+						}
+					}
+				}
+				next = next->next;
+				if( next && next->str.string[ 0 ] == ';' ) {
+					next = next->next;
+				} else {
+					sprintf( message, "Expected ';' after 'struct' on line %d.", elem->str.line );
+				}
+			} else {
+				sprintf( message, "Expected '{' after 'struct' on line %d.", elem->str.line );
+			}
+		} else {
+			free( name );
+			free( struc );
+			strcpy( message, OUT_OF_MEMORY );
+		}
 	}
 	return next;
 }
@@ -3458,7 +3514,7 @@ static struct keyword declarations[] = {
 	{ "global", "l;", &parse_global_declaration, &declarations[ 5 ] },
 	{ "array", "l;", &parse_array_declaration, &declarations[ 6 ] },
 	{ "const", "n=v;", &parse_const_declaration, &declarations[ 7 ] },
-	{ "struct", "n{", &parse_struct_declaration, NULL }
+	{ "struct", "n", &parse_struct_declaration, NULL }
 };
 
 static int validate_name( char *name, struct environment *env ) {
@@ -3494,32 +3550,15 @@ static int validate_name( char *name, struct environment *env ) {
 }
 
 static int validate_decl( struct element *elem, struct environment *env, char *message ) {
-	int result = 1;
 	char *name = elem->str.string;
-	struct global_variable *global;
-	struct function_declaration *func;
-	global = env->globals;
-	while( global ) {
-		if( strcmp( name, global->name ) == 0 ) {
-			/* Existing global variable name not permitted. */
-			result = 0;
-		}
-		global = global->next;
-	}
-	if( result ) {
-		func = env->functions;
-		while( func ) {
-			if( strcmp( name, func->name ) == 0 ) {
-				/* Existing function name not permitted. */
-				result = 0;
-			}
-			func = func->next;
-		}
-	}
-	if( !result ) {
+	if( get_global_variable( env->globals, name )
+	|| get_global_variable( env->constants, name )
+	|| get_function_declaration( env->functions, name )
+	|| get_structure( env->structures, name ) ) {
 		sprintf( message, "Name '%.16s' already defined on line %d.", elem->str.string, elem->str.line );
+		return 0;
 	}
-	return result;
+	return 1;
 }
 
 static struct element* parse_decl_list( struct element *elem, struct environment *env,

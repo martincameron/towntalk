@@ -8,6 +8,14 @@ const ELE = ${ ( * ) };
 global g;
 array a;
 
+struct struc {
+	a,b,c,d,e;
+};
+
+struct exten( struc ) {
+	f,g;
+};
+
 include "hello.tt";
 
 function assert( value, elem ) {
