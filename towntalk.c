@@ -1562,8 +1562,23 @@ static int evaluate_index_expression( struct expression *this, struct variable *
 	return ret;
 }
 
+static int evaluate_integer_constant_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	dispose_variable( result );
+	result->string_value = NULL;
+	result->integer_value = this->index;
+	return 1;
+}
+
 static struct structure* get_structure( struct structure *structures, char *name ) {
-	while( structures && strcmp( structures->name, name ) ) {
+	int len;
+	char *chr = strchr( name, '.' );
+	if( chr ) {
+		len = chr - name;
+	} else {
+		len = strlen( name );
+	}
+	while( structures && ( strlen( structures->name ) != len || strncmp( structures->name, name, len ) ) ) {
 		structures = structures->next;
 	}
 	return structures;
@@ -2695,12 +2710,31 @@ static struct element* parse_index_expression( struct element *elem, struct envi
 	return elem->next;
 }
 
+static struct element* parse_struct_expression( struct element *elem, struct environment *env,
+	struct structure *struc, struct expression *expr, char *message ) {
+	int idx;
+	char *field = strchr( elem->str.string, '.' );
+	if( field ) {
+		idx = get_string_list_index( struc->fields, &field[ 1 ] );
+		if( idx >= 0 ) {
+			expr->index = idx;
+		} else {
+			sprintf( message, "Field '%.16s' not declared on line %d.", elem->str.string, elem->str.line );
+		}
+	} else {
+		expr->index = struc->length;
+	}
+	expr->evaluate = &evaluate_integer_constant_expression;
+	return elem->next;
+}
+
 static struct element* parse_expression( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct expression *prev, char *message ) {
 	struct element *next = elem->next;
 	struct global_variable *constant, *global;
 	char *value = elem->str.string;
 	int local;
+	struct structure *struc;
 	struct function_declaration *decl;
 	struct expression *expr = calloc( 1, sizeof( struct expression ) );
 	if( expr ) {
@@ -2745,8 +2779,14 @@ static struct element* parse_expression( struct element *elem, struct environmen
 						/* Function.*/
 						next = parse_function_expression( elem, env, func, decl, expr, message );
 					} else {
-						/* Prefix Operator. */
-						next = parse_operator_expression( elem, env, func, expr, message );
+						struc = get_structure( env->structures, elem->str.string );
+						if( struc ) {
+							/* Structure. */
+							next = parse_struct_expression( elem, env, struc, expr, message );
+						} else {
+							/* Prefix Operator. */
+							next = parse_operator_expression( elem, env, func, expr, message );
+						}
 					}
 				}
 			}
@@ -3465,8 +3505,8 @@ static struct element* parse_struct_declaration( struct element *elem, struct en
 			next = next->next;
 			if( next && next->str.string[ 0 ] == '(' ) {
 				child = next->child;
-				if( child ) {
-					struc = get_structure( env->structures, child->str.string );
+				if( child && child->next == NULL ) {
+					struc = get_structure( env->structures->next, child->str.string );
 					if( struc ) {
 						field = struc->fields;
 						while( field && message[ 0 ] == 0 ) {
@@ -3474,28 +3514,34 @@ static struct element* parse_struct_declaration( struct element *elem, struct en
 								field = field->next;
 							}
 						}
+						next = next->next;
+					} else {
+						sprintf( message, "Structure '%.16s' not declared on line %d.", child->str.string, child->str.line );
 					}
+				} else {
+					sprintf( message, "Invalid parent structure declaration on line %d.", next->str.line );
 				}
-				next = next->next;
 			}
-			if( next && next->str.string[ 0 ] == '{' ) {
-				child = next->child;
-				while( child && message[ 0 ] == 0 ) {
-					if( add_structure_field( env, child->str.string, child->str.line, message ) ) {
-						child = child->next;
-						if( child && ( child->str.string[ 0 ] == ',' || child->str.string[ 0 ] == ';' ) ) {
+			if( message[ 0 ] == 0 ) {
+				if( next && next->str.string[ 0 ] == '{' ) {
+					child = next->child;
+					while( child && message[ 0 ] == 0 ) {
+						if( add_structure_field( env, child->str.string, child->str.line, message ) ) {
 							child = child->next;
+							if( child && ( child->str.string[ 0 ] == ',' || child->str.string[ 0 ] == ';' ) ) {
+								child = child->next;
+							}
 						}
 					}
-				}
-				next = next->next;
-				if( next && next->str.string[ 0 ] == ';' ) {
 					next = next->next;
+					if( next && next->str.string[ 0 ] == ';' ) {
+						next = next->next;
+					} else {
+						sprintf( message, "Expected ';' after 'struct' on line %d.", elem->str.line );
+					}
 				} else {
-					sprintf( message, "Expected ';' after 'struct' on line %d.", elem->str.line );
+					sprintf( message, "Expected '{' after 'struct' on line %d.", elem->str.line );
 				}
-			} else {
-				sprintf( message, "Expected '{' after 'struct' on line %d.", elem->str.line );
 			}
 		} else {
 			free( name );
