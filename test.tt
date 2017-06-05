@@ -561,6 +561,10 @@ function teststruct() {
 	call assert( =( exten.g 6 ), ${-} );
 }
 
+function testfuncref() {
+	call assert( =( $cmp( @testfuncref "testfuncref" ) 0 ), ${-} );
+}
+
 program test {
 	call hello();
 	call assert( =( testvoid() 0 ), ${-} );
@@ -596,5 +600,6 @@ program test {
 	call testunquote();
 	call testpack();
 	call teststruct();
+	call testfuncref();
 	print "Tests passed.";
 }

@@ -88,6 +88,7 @@
 		name                     Value of named local or global variable.
 		name(expr, expr)         Call named function with specified args.
 		[arr idx]                Array element.
+		@function                Function reference.
 		'(expr operator ...)     Infix operator, eg '( 1 + 2 ).
 		+(int int)               Addition.
 		-(int int)               Subtraction.
@@ -242,6 +243,11 @@ struct function_declaration {
 	struct function_declaration *next;
 };
 
+struct function_reference {
+	struct string str;
+	struct function_declaration *func;
+};
+
 struct constant {
 	char *name;
 	int integer_value;
@@ -338,6 +344,18 @@ static struct array *new_array( struct environment *env, int length ) {
 		}
 	}
 	return arr;
+}
+
+static struct function_reference *new_function_reference( struct function_declaration *source ) {
+	struct function_reference *func = calloc( 1, sizeof( struct function_reference ) );
+	if( func ) {
+		func->str.string = source->name;
+		func->str.reference_count = 1;
+		func->str.length = strlen( func->str.string );
+		func->str.line = -2;
+		func->func = source;
+	}
+	return func;
 }
 
 static struct string* new_string_value( int length ) {
@@ -529,7 +547,7 @@ static void unref_string( struct string *str ) {
 					str = NULL;
 				}
 			}
-		} else {
+		} else if( str->line == -1 ) {
 			arr = ( struct array * ) str;
 			idx = 0, len = arr->length;
 			while( idx < len ) {
@@ -541,6 +559,8 @@ static void unref_string( struct string *str ) {
 			}
 			free( arr->array );
 			free( arr );
+		} else {
+			free( str );
 		}
 	} else {
 		str->reference_count--;
@@ -1331,7 +1351,7 @@ static int execute_dim_statement( struct statement *this, struct variable *varia
 	if( ret ) {
 		ret = this->source->evaluate( this->source, variables, &len, exception );
 		if( ret ) {
-			if( var.string_value && var.string_value->line < 0 ) {
+			if( var.string_value && var.string_value->line == -1 ) {
 				if( len.integer_value >= 0 ) {
 					if( !resize_array( ( struct array * ) var.string_value, len.integer_value ) ) {
 						ret = throw( exception, this->source, 0, OUT_OF_MEMORY );
@@ -1357,7 +1377,7 @@ static int execute_set_statement( struct statement *this, struct variable *varia
 	if( ret ) {
 		ret = this->index->evaluate( this->index, variables, &idx, exception );
 		if( ret ) {
-			if( var.string_value && var.string_value->line < 0 ) {
+			if( var.string_value && var.string_value->line == -1 ) {
 				arr = ( struct array * ) var.string_value;
 				if( idx.integer_value >= 0 && idx.integer_value < arr->length ) {
 					ret = this->source->evaluate( this->source, variables,
@@ -1545,7 +1565,7 @@ static int evaluate_index_expression( struct expression *this, struct variable *
 		parameter = parameter->next;
 		ret = parameter->evaluate( parameter, variables, &idx, exception );
 		if( ret ) {
-			if( var.string_value && var.string_value->line < 0 ) {
+			if( var.string_value && var.string_value->line == -1 ) {
 				arr = ( struct array * ) var.string_value;
 				if( idx.integer_value >= 0 && idx.integer_value < arr->length ) {
 					assign_variable( &arr->array[ idx.integer_value ], result );
@@ -1951,7 +1971,7 @@ static int evaluate_len_expression( struct expression *this, struct variable *va
 	if( ret ) {
 		if( len.string_value ) {
 			dispose_variable( result );
-			if( len.string_value->line < 0 ) {
+			if( len.string_value->line == -1 ) {
 				result->integer_value = ( ( struct array * ) len.string_value )->length;
 			} else {
 				result->integer_value = len.string_value->length;
@@ -2135,7 +2155,7 @@ static int evaluate_sub_expression( struct expression *this, struct variable *va
 			ret = parameter->evaluate( parameter, variables, &len, exception );
 			if( ret ) {
 				if( var.string_value && var.string_value->string ) {
-					if( var.string_value->line < 0 ) {
+					if( var.string_value->line == -1 ) {
 						length = ( ( struct array * ) var.string_value )->length;
 					} else {
 						length = var.string_value->length;
@@ -2146,7 +2166,7 @@ static int evaluate_sub_expression( struct expression *this, struct variable *va
 						str = new_string_value( len.integer_value );
 						if( str ) {
 							str->reference_count = 1;
-							if( var.string_value->line < 0 ) {
+							if( var.string_value->line == -1 ) {
 								data = str->string;
 								arr = ( ( struct array * ) var.string_value )->array;
 								offset = 0;
@@ -2187,7 +2207,7 @@ static int evaluate_astr_expression( struct expression *this, struct variable *v
 	struct variable input = { 0, NULL };
 	int len, ret = parameter->evaluate( parameter, variables, &input, exception );
 	if( ret ) {
-		if( input.string_value && input.string_value->line < 0 ) {
+		if( input.string_value && input.string_value->line == -1 ) {
 			arr = ( struct array * ) input.string_value;
 			len = write_array( arr, NULL );
 			if( len >= 0 ) {
@@ -2455,7 +2475,7 @@ static int evaluate_pack_expression( struct expression *this, struct variable *v
 	struct variable val = { 0, NULL }, *src;
 	ret = this->parameters->evaluate( this->parameters, variables, &val, exception );
 	if( ret ) {
-		if( val.string_value && val.string_value->line < 0 ) {
+		if( val.string_value && val.string_value->line == -1 ) {
 			src = ( ( struct array * ) val.string_value )->array;
 			len = ( ( struct array * ) val.string_value )->length * 4;
 		} else {
@@ -2532,6 +2552,20 @@ static int evaluate_array_expression( struct expression *this, struct variable *
 			ret = throw( exception, this, var.integer_value, "Invalid array length." );
 		}
 		dispose_variable( &var );
+	}
+	return ret;
+}
+
+static int evaluate_func_ref_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	int ret = 1;
+	struct function_reference *func = new_function_reference( this->function );
+	if( func ) {
+		dispose_variable( result );
+		result->integer_value = 0;
+		result->string_value = &func->str;
+	} else {
+		ret = throw( exception, this, 0, OUT_OF_MEMORY );
 	}
 	return ret;
 }
@@ -2693,6 +2727,19 @@ static struct element* parse_function_expression( struct element *elem, struct e
 	return next;
 }
 
+static struct element* parse_func_ref_expression( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct expression *expr, char *message ) {
+	char *name = &elem->str.string[ 1 ];
+	struct function_declaration *function = get_function_declaration( env->functions, name );
+	if( function ) {
+		expr->function = function;
+		expr->evaluate = &evaluate_func_ref_expression;
+	} else {
+		sprintf( message, "Function '%.16s' not defined on line %d.", name, elem->str.line );
+	}
+	return elem->next;
+}
+
 static struct element* parse_index_expression( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct expression *expr, char *message ) {
 	struct expression prev;
@@ -2758,6 +2805,9 @@ static struct element* parse_expression( struct element *elem, struct environmen
 		} else if( value[ 0 ] == '[' ) {
 			/* Array index operator. */
 			next = parse_index_expression( elem, env, func, expr, message );
+		} else if( value[ 0 ] == '@' ) {
+			/* Function reference operator. */
+			next = parse_func_ref_expression( elem, env, func, expr, message );
 		} else {
 			local = get_string_list_index( func->variable_decls, value );
 			if( local >= 0 ) {
