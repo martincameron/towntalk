@@ -86,9 +86,10 @@
 		"String"                 String literal.
 		${0,"1",$tup("2",3)}     Element literal.
 		name                     Value of named local or global variable.
-		name(expr, expr)         Call named function with specified args.
+		function(expr, expr)     Call function with specified args.
 		[arr idx]                Array element.
 		@function                Function reference.
+		:(func expr ...)         Call function reference with specified args.
 		'(expr operator ...)     Infix operator, eg '( 1 + 2 ).
 		+(int int)               Addition.
 		-(int int)               Subtraction.
@@ -1516,40 +1517,64 @@ static int evaluate_function_expression( struct expression *this, struct variabl
 	struct variable *result, struct variable *exception ) {
 	int idx, count, ret = 1;
 	struct statement *stmt;
-	struct variable *locals;
-	struct expression *parameter;
+	struct variable func = { 0, NULL }, *locals;
+	struct expression *parameter = this->parameters;
 	struct function_declaration *function = this->function;
-	count = sizeof( struct variable ) * function->num_variables;
-	locals = alloca( count );
-	memset( locals, 0, count );
-	parameter = this->parameters;
-	idx = 0, count = function->num_parameters;
-	while( idx < count ) {
-		ret = parameter->evaluate( parameter, variables, &locals[ idx++ ], exception );
+	if( this->index == ':' ) {
+		/* Reference call. */
+		ret = parameter->evaluate( parameter, variables, &func, exception );
 		if( ret ) {
-			parameter = parameter->next;
-		} else {
-			break;
+			if( func.string_value && func.string_value->line == -2 ) {
+				function = ( ( struct function_reference * ) func.string_value )->func;
+				parameter = parameter->next;
+				count = 0;
+				while( parameter ) {
+					count++;
+					parameter = parameter->next;
+				}
+				if( function->num_parameters == count ) {
+					parameter = this->parameters->next;
+				} else {
+					ret = throw( exception, this, count, "Incorrect number of parameters to function." );
+				}
+			} else {
+				ret = throw( exception, this, func.integer_value, "Not a function reference." );
+			}
+			dispose_variable( &func );
 		}
 	}
 	if( ret ) {
-		stmt = function->statements;
-		while( stmt ) {
-			ret = stmt->execute( stmt, locals, result, exception );
-			if( ret == 1 ) {
-				stmt = stmt->next;
+		count = sizeof( struct variable ) * function->num_variables;
+		locals = alloca( count );
+		memset( locals, 0, count );
+		idx = 0, count = function->num_parameters;
+		while( idx < count ) {
+			ret = parameter->evaluate( parameter, variables, &locals[ idx++ ], exception );
+			if( ret ) {
+				parameter = parameter->next;
 			} else {
-				if( ret > 2 ) {
-					ret = throw( exception, this, ret, "Unhandled 'break' or 'continue'." );
-				}
-				ret = ( ret > 0 );
 				break;
 			}
 		}
-	}
-	idx = 0, count = function->num_variables;
-	while( idx < count ) {
-		dispose_variable( &locals[ idx++ ] );
+		if( ret ) {
+			stmt = function->statements;
+			while( stmt ) {
+				ret = stmt->execute( stmt, locals, result, exception );
+				if( ret == 1 ) {
+					stmt = stmt->next;
+				} else {
+					if( ret > 2 ) {
+						ret = throw( exception, this, ret, "Unhandled 'break' or 'continue'." );
+					}
+					ret = ( ret > 0 );
+					break;
+				}
+			}
+		}
+		idx = 0, count = function->num_variables;
+		while( idx < count ) {
+			dispose_variable( &locals[ idx++ ] );
+		}
 	}
 	return ret;
 }
@@ -2612,7 +2637,8 @@ static struct operator operators[] = {
 	{ "$line",'$', 1, &evaluate_line_expression, &operators[ 39 ] },
 	{ "$hex",'$', 1, &evaluate_hex_expression, &operators[ 40 ] },
 	{ "$pack",'$', 1, &evaluate_pack_expression, &operators[ 41 ] },
-	{ "$array",'$', 1, &evaluate_array_expression, NULL }
+	{ "$array",'$', 1, &evaluate_array_expression, &operators[ 42 ] },
+	{ ":",':', -1, &evaluate_function_expression, NULL }
 };
 
 static struct operator* get_operator( char *name, struct environment *env ) {

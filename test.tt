@@ -562,7 +562,15 @@ function teststruct() {
 }
 
 function testfuncref() {
+	var err;
 	call assert( =( $cmp( @testfuncref "testfuncref" ) 0 ), ${-} );
+	try { call :( $tup( "a" 1 ) ); } catch err {}
+	call assert( =( err 1 ), ${-} );
+	try { call :( @setg 1 2 ); } catch err {}
+	call assert( =( err 2 ), ${-} );
+	call setg( 0 );
+	call :( @setg 1 );
+	call assert( =( g 1 ), ${-} );
 }
 
 program test {

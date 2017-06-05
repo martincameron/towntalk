@@ -841,8 +841,8 @@ int main( int argc, char **argv ) {
 	int exit_code = EXIT_FAILURE;
 	char *file_name, message[ 256 ] = "";
 	struct environment *env;
-	struct variable result, except;
-	struct expression expr;
+	struct variable result = { 0 }, except = { 0 };
+	struct expression expr = { 0 };
 	/* Handle command-line.*/
 	if( argc < 2 ) {
 		fprintf( stderr, "Usage: %s program.tt [args]\n", argv[ 0 ] );
@@ -863,11 +863,8 @@ int main( int argc, char **argv ) {
 					/* Initialize SDL. */
 					if( SDL_Init( SDL_INIT_VIDEO | SDL_INIT_TIMER ) == 0 ) {
 						/* Evaluate entry-point function. */
-						result.integer_value = except.integer_value = 0;
-						result.string_value = except.string_value = NULL;
 						expr.line = env->entry_point->line;
 						expr.function = env->entry_point;
-						expr.parameters = NULL;
 						expr.evaluate = &evaluate_function_expression;
 						if( expr.evaluate( &expr, NULL, &result, &except ) ) {
 							exit_code = EXIT_SUCCESS;
