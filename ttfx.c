@@ -34,7 +34,8 @@ struct fxsample {
 
 struct fxchannel {
 	struct fxsample *sample;
-	int sample_pos, frequency, volume, panning;
+	int sample_idx, sample_fra;
+	int frequency, volume, panning;
 	int sequence_offset, sequence_wait;
 	struct variable sequence;
 };
@@ -47,7 +48,7 @@ struct fxenvironment {
 	struct fxsample samples[ NUM_SAMPLES ];
 	struct fxchannel channels[ NUM_CHANNELS ];
 	int tick, tick_len, audio_idx, audio_end;
-	int audio[ MAX_TICK_LEN * 2 ];
+	int audio[ ( MAX_TICK_LEN + 33 ) * 4 ], ramp_buf[ 64 ];
 };
 
 static Uint32 timer_callback( Uint32 interval, void *param ) {
@@ -59,41 +60,79 @@ static Uint32 timer_callback( Uint32 interval, void *param ) {
 	return interval;
 }
 
+static void volume_ramp( int *mix_buf, int *ramp_buf, int tick_len ) {
+	int idx, a1, a2;
+	for( idx = 0, a1 = 0; a1 < 32; idx += 2, a1++ ) {
+		a2 = 32 - a1;
+		mix_buf[ idx     ] = ( mix_buf[ idx     ] * a1 + ramp_buf[ idx     ] * a2 ) >> 5;
+		mix_buf[ idx + 1 ] = ( mix_buf[ idx + 1 ] * a1 + ramp_buf[ idx + 1 ] * a2 ) >> 5;
+	}
+	memcpy( ramp_buf, &mix_buf[ tick_len * 2 ], 64 * sizeof( int ) );
+}
+
+/* 2:1 downsampling with simple but effective anti-aliasing.
+   Buf must contain count * 2 + 1 stereo samples. */
+static void downsample( int *buf, int count ) {
+	int idx, out_idx, out_len = count * 2;
+	for( idx = 0, out_idx = 0; out_idx < out_len; idx += 4, out_idx += 2 ) {
+		buf[ out_idx     ] = ( buf[ idx     ] >> 2 ) + ( buf[ idx + 2 ] >> 1 ) + ( buf[ idx + 4 ] >> 2 );
+		buf[ out_idx + 1 ] = ( buf[ idx + 1 ] >> 2 ) + ( buf[ idx + 3 ] >> 1 ) + ( buf[ idx + 5 ] >> 2 );
+	}
+}
+
 static void mix_channel( struct fxchannel *channel, int *output, int count ) {
-	int idx, end, loop, llen, lend, spos, lamp, ramp, step, sam;
+	int idx, end, loop, llen, lend, sidx, sfra, lamp, ramp, step, sam;
 	char *data;
 	if( channel->volume > 0 && channel->sample
 	&& channel->sample->sample_data.string_value ) {
-		loop = channel->sample->loop_start << 12;
-		llen = channel->sample->loop_length << 12;
+		loop = channel->sample->loop_start;
+		llen = channel->sample->loop_length;
 		lend = loop + llen;
-		spos = channel->sample_pos;
-		if( spos < lend || llen > 4096 ) {
+		sidx = channel->sample_idx;
+		sfra = channel->sample_fra;
+		if( sidx < lend || llen > 1 ) {
 			lamp = channel->volume * ( 32 - channel->panning );
 			ramp = channel->volume * ( 32 + channel->panning );
-			step = ( channel->frequency << 12 ) / SAMPLE_RATE;
+			step = ( channel->frequency << 12 ) / ( SAMPLE_RATE >> 2 );
 			data = channel->sample->sample_data.string_value->string;
 			idx = 0;
 			end = count << 1;
 			while( idx < end ) {
-				if( spos >= 0 ) {
-					if( spos >= lend ) {
-						if( llen > 4096 ) {
-							spos = loop + ( ( spos - loop ) % llen );
-						} else {
-							spos = lend;
-							break;
-						}
+				if( sidx >= lend ) {
+					if( llen > 1 ) {
+						sidx = loop + ( ( sidx - loop ) % llen );
+					} else {
+						sidx = lend;
+						break;
 					}
-					sam = data[ spos >> 12 ];
-					output[ idx ] += ( sam * lamp ) >> 11;
-					output[ idx + 1 ] += ( sam * ramp ) >> 11;
 				}
-				spos += step;
-				idx += 2;
+				sam = data[ sidx ];
+				output[ idx++ ] += ( sam * lamp ) >> 11;
+				output[ idx++ ] += ( sam * ramp ) >> 11;
+				sfra += step;
+				sidx += sfra >> 15;
+				sfra &= 0x7FFF;
 			}
-			channel->sample_pos = spos;
 		}
+	}
+}
+
+static void update_channel( struct fxchannel *channel, int *output, int count ) {
+	int step;
+	struct fxsample *sample = channel->sample;
+	if( sample && sample->sample_data.string_value ) {
+		step = ( channel->frequency << 12 ) / ( SAMPLE_RATE >> 2 );
+		channel->sample_fra += step * count;
+		channel->sample_idx += channel->sample_fra >> 15;
+		if( channel->sample_idx > sample->loop_start ) {
+			if( sample->loop_length > 1 ) {
+				channel->sample_idx = sample->loop_start
+					+ ( channel->sample_idx - sample->loop_start ) % sample->loop_length;
+			} else {
+				channel->sample_idx = sample->loop_start;
+			}
+		}
+		channel->sample_fra &= 0x7FFF;
 	}
 }
 
@@ -146,7 +185,8 @@ static void process_sequence( struct fxenvironment *fxenv, int channel_idx ) {
 						}
 					} else if( oper == 0x3 ) {
 						/* 0x3ssssscc sample offset + channel */
-						cmdchan->sample_pos = ( ( cmd & 0xFFFFF00 ) << 4 );
+						cmdchan->sample_idx = ( ( cmd & 0xFFFFF00 ) >> 8 );
+						cmdchan->sample_fra = 0;
 					} else if( oper > 0 ) {
 						/* 0x1kkkiicc / 0x2kkkiicc key + instrument + channel */
 						key = ( cmd >> 16 ) & 0xFFF;
@@ -165,7 +205,7 @@ static void process_sequence( struct fxenvironment *fxenv, int channel_idx ) {
 							}
 						}
 						if( oper == 1 ) {
-							cmdchan->sample_pos = 0;
+							cmdchan->sample_idx = cmdchan->sample_fra = 0;
 						}
 					}
 				}
@@ -216,11 +256,15 @@ static void audio_callback( void *userdata, Uint8 *stream, int len ) {
 			}
 			fxenv->audio_idx = 0;
 			fxenv->audio_end = fxenv->tick_len;
-			memset( fxenv->audio, 0, sizeof( int ) * fxenv->tick_len * 2 );
+			memset( fxenv->audio, 0, sizeof( int ) * ( fxenv->tick_len + 33 ) * 4 );
 			chan_idx = 0;
 			while( chan_idx < NUM_CHANNELS ) {
-				mix_channel( &fxenv->channels[ chan_idx++ ], fxenv->audio, fxenv->audio_end );
+				channel = &fxenv->channels[ chan_idx++ ];
+				mix_channel( channel, fxenv->audio, ( fxenv->tick_len + 33 ) * 2 );
+				update_channel( channel, fxenv->audio, fxenv->tick_len * 2 );
 			}
+			downsample( fxenv->audio, fxenv->tick_len + 32 );
+			volume_ramp( fxenv->audio, fxenv->ramp_buf, fxenv->tick_len );
 			fxenv->tick++;
 		}
 	}
