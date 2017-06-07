@@ -43,11 +43,13 @@
 		}
 
 	Declarations:
-		rem {}                   Comment (all brackets must be balanced).
+		rem {}                   Comment (all brackets inside must be balanced).
 		include "file.tt";       Include declarations from specified file.
 		const name = value;      Integer, string or tuple constant.
 		global a,b,c;            Global variables.
 		array a,b,c;             Global arrays.
+		struct s { a,b,c };      Layout for formatting arrays.
+		struct t(s) { d,e,f };   Struct with members included from s.
 		function f(param){stmts} Function declaration.
 		program name{statements} Entry point function (no arguments).
 
@@ -88,6 +90,8 @@
 		name                     Value of named local or global variable.
 		function(expr, expr)     Call function with specified args.
 		[arr idx]                Array element.
+		struct                   Length of structure.
+		struct.member            Index of named struct member.
 		@function                Function reference.
 		:(func expr ...)         Call function reference with specified args.
 		'(expr operator ...)     Infix operator, eg '( 1 + 2 ).
