@@ -59,16 +59,7 @@ public class Data {
 	}
 
 	public String strCp850( int offset, int length ) throws java.io.IOException {
-		load( offset, length );
-		try {
-			char[] str = new String( buffer, offset, length, "Cp850" ).toCharArray();
-			for( int idx = 0; idx < str.length; idx++ ) {
-				str[ idx ] = str[ idx ] < 32 ? 32 : str[ idx ];
-			}
-			return new String( str );
-		} catch( java.io.UnsupportedEncodingException e ) {
-			return strLatin1( offset, length );
-		}
+		return strLatin1( offset, length );
 	}
 
 	public short[] samS8( int offset, int length ) throws java.io.IOException {
