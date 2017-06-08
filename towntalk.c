@@ -237,20 +237,21 @@ struct operator {
 	struct operator *next;
 };
 
+struct function_reference {
+	struct string str;
+	struct function_declaration *func;
+};
+
 /* Function declaration list. */
 struct function_declaration {
 	char *name, *file;
 	int line, num_parameters, num_variables;
+	struct function_reference ref;
 	struct element *elem;
 	struct environment *env;
 	struct string_list *variable_decls, *variable_decls_tail;
 	struct statement *statements, *statements_tail;
 	struct function_declaration *next;
-};
-
-struct function_reference {
-	struct string str;
-	struct function_declaration *func;
 };
 
 struct constant {
@@ -349,18 +350,6 @@ static struct array *new_array( struct environment *env, int length ) {
 		}
 	}
 	return arr;
-}
-
-static struct function_reference *new_function_reference( struct function_declaration *source ) {
-	struct function_reference *func = calloc( 1, sizeof( struct function_reference ) );
-	if( func ) {
-		func->str.string = source->name;
-		func->str.reference_count = 1;
-		func->str.length = strlen( func->str.string );
-		func->str.line = -2;
-		func->func = source;
-	}
-	return func;
 }
 
 static struct string* new_string_value( int length ) {
@@ -1084,6 +1073,11 @@ static struct function_declaration* new_function_declaration( char *name, char *
 		/*printf("Function '%s'\n", name);*/
 		func->name = new_string( name );
 		if( func->name ) {
+			func->ref.str.reference_count = 1;
+			func->ref.str.length = strlen( func->name );
+			func->ref.str.line = -2;
+			func->ref.str.string = func->name;
+			func->ref.func = func;
 			func->file = new_string( file );
 		}
 		if( !( func->name && func->file ) ) {
@@ -2587,16 +2581,10 @@ static int evaluate_array_expression( struct expression *this, struct variable *
 
 static int evaluate_func_ref_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	int ret = 1;
-	struct function_reference *func = new_function_reference( this->function );
-	if( func ) {
-		dispose_variable( result );
-		result->integer_value = 0;
-		result->string_value = &func->str;
-	} else {
-		ret = throw( exception, this, 0, OUT_OF_MEMORY );
-	}
-	return ret;
+	struct variable src = { 0 };
+	src.string_value = &this->function->ref.str;
+	assign_variable( &src, result );
+	return 1;
 }
 
 static struct operator operators[] = {
