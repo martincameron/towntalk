@@ -2799,16 +2799,21 @@ static struct element* parse_expression( struct element *elem, struct environmen
 	struct global_variable *constant, *global;
 	char *value = elem->str.string;
 	int local;
+	struct variable var;
 	struct structure *struc;
 	struct function_declaration *decl;
 	struct expression *expr = calloc( 1, sizeof( struct expression ) );
 	if( expr ) {
 		expr->line = elem->str.line;
 		expr->function = func;
-		if( value[ 0 ] == '"' || ( value[ 0 ] >= '0' && value[ 0 ] <= '9' )
-			|| ( value[ 0 ] == '-' && ( value[ 1 ] >= '0' && value[ 1 ] <= '9' ) )
-			|| ( value[ 0 ] == '$' && value[ 1 ] == 0 ) ) {
-			/* Constant. */
+		if( ( value[ 0 ] >= '0' && value[ 0 ] <= '9' )
+			|| ( value[ 0 ] == '-' && ( value[ 1 ] >= '0' && value[ 1 ] <= '9' ) ) ) {
+			/* Integer constant. */
+			next = parse_constant( elem, &var, message );
+			expr->index = var.integer_value;
+			expr->evaluate = &evaluate_integer_constant_expression;
+		} else if( value[ 0 ] == '"' || ( value[ 0 ] == '$' && value[ 1 ] == 0 ) ) {
+			/* String or tuple constant. */
 			constant = new_global_variable( "#Const#", message );
 			if( constant ) {
 				constant->next = env->constants;
