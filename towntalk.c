@@ -113,6 +113,7 @@
 		!(expr)                  Evaluates to 1 if argument is null.
 		&&(expr)                 Evaluates to 1 if both arguments are non-null.
 		||(expr)                 Evaluates to 1 if either argument is non-null.
+		$eq(expr expr)           Evaluates to 1 if arguments have the same value.
 		$str(str int ...)        Integer to string and string concatenation.
 		$cmp(str str)            String/Tuple comparison, returns 0 if equal.
 		$cat(str str ...)        String concatenation (same as $str).
@@ -669,6 +670,30 @@ static void assign_variable( struct variable *src, struct variable *dest ) {
 	if( dest->string_value ) {
 		dest->string_value->reference_count++;
 	}
+}
+
+static int compare_variables( struct variable *var1, struct variable *var2 ) {
+	struct string *str1, *str2;
+	int result = var1->integer_value - var2->integer_value;
+	if( result == 0 && var1->string_value != var2->string_value ) {
+		if( var1->string_value && var2->string_value ) {
+			str1 = var1->string_value;
+			str2 = var2->string_value;
+			if( str1->length > str2->length ) {
+				result = memcmp( str1->string, str2->string, str2->length );
+			} else {
+				result = memcmp( str1->string, str2->string, str1->length );
+			}
+			if( result == 0 ) {
+				result = str1->length - str2->length;
+			}
+		} else if( var2->string_value ) {
+			result = -var2->string_value->length;
+		} else {
+			result = var1->string_value->length;
+		}
+	}
+	return result;
 }
 
 static void dispose_global_variables( struct global_variable *global ) {
@@ -1413,7 +1438,7 @@ static int parse_constant_list( struct element *elem, struct global_variable *pr
 
 static int execute_switch_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	int ret, length, matched = 0;
+	int ret, matched = 0;
 	struct statement *stmt = this->if_block;
 	struct variable switch_value = { 0, NULL }, case_value = { 0, NULL };
 	ret = this->source->evaluate( this->source, variables, &switch_value, exception );
@@ -1421,17 +1446,7 @@ static int execute_switch_statement( struct statement *this, struct variable *va
 		while( stmt && ret && !matched ) {
 			ret = stmt->source->evaluate( stmt->source, variables, &case_value, exception );
 			if( ret ) {
-				if( case_value.string_value ) {
-					length = case_value.string_value->length;
-					matched = switch_value.string_value
-						&& switch_value.string_value->length == length
-						&& !memcmp( switch_value.string_value->string,
-							case_value.string_value->string, length )
-						&& switch_value.integer_value == case_value.integer_value;
-				} else {
-					matched = ( switch_value.string_value == NULL )
-						&& switch_value.integer_value == case_value.integer_value;
-				}
+				matched = compare_variables( &switch_value, &case_value ) == 0;
 				dispose_variable( &case_value );
 				if( matched ) {
 					ret = stmt->execute( stmt, variables, result, exception );
@@ -2100,35 +2115,15 @@ static int evaluate_flen_expression( struct expression *this, struct variable *v
 
 static int evaluate_cmp_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	int ret, val;
-	struct string *str1, *str2;
 	struct expression *parameter = this->parameters;
 	struct variable var1 = { 0, NULL }, var2 = { 0, NULL };
-	ret = parameter->evaluate( parameter, variables, &var1, exception );
+	int ret = parameter->evaluate( parameter, variables, &var1, exception );
 	if( ret ) {
 		parameter = parameter->next;
 		ret = parameter->evaluate( parameter, variables, &var2, exception );
 		if( ret ) {
-			str1 = var1.string_value;
-			str2 = var2.string_value;
-			if( str1 && str1->string && str2 && str2->string ) {
-				dispose_variable( result );
-				if( str1->length > str2->length ) {
-					val = memcmp( str1->string, str2->string, str2->length );
-					if( val == 0 ) {
-						val = 1;
-					}
-				} else {
-					val = memcmp( str1->string, str2->string, str1->length );
-					if( val == 0 && str1->length < str2->length ) {
-						val = -1;
-					}
-				}
-				result->integer_value = val;
-				result->string_value = NULL;
-			} else {
-				ret = throw( exception, this, 0, "Not a string." );
-			}
+			result->integer_value = compare_variables( &var1, &var2 );
+			result->string_value = NULL;
 			dispose_variable( &var2 );
 		}
 		dispose_variable( &var1 );
@@ -2583,10 +2578,29 @@ static int evaluate_array_expression( struct expression *this, struct variable *
 
 static int evaluate_func_ref_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	struct variable src = { 0 };
+	struct variable src = { 0, NULL };
 	src.string_value = &this->function->ref.str;
 	assign_variable( &src, result );
 	return 1;
+}
+
+static int evaluate_eq_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	struct variable lhs = { 0, NULL }, rhs = { 0, NULL };
+	struct expression *parameter = this->parameters;
+	int ret = parameter->evaluate( parameter, variables, &lhs, exception );
+	if( ret ) {
+		parameter = parameter->next;
+		ret = parameter->evaluate( parameter, variables, &rhs, exception );
+		if( ret ) {
+			dispose_variable( result );
+			result->integer_value = compare_variables( &lhs, &rhs ) == 0;
+			result->string_value = NULL;
+			dispose_variable( &rhs );
+		}
+		dispose_variable( &lhs );
+	}
+	return ret;
 }
 
 static struct operator operators[] = {
@@ -2633,6 +2647,7 @@ static struct operator operators[] = {
 	{ "$pack",'$', 1, &evaluate_pack_expression, &operators[ 41 ] },
 	{ "$array",'$', 1, &evaluate_array_expression, &operators[ 42 ] },
 	{ "$new",'$', 1, &evaluate_array_expression, &operators[ 43 ] },
+	{ "$eq",'$', 2, &evaluate_eq_expression, &operators[ 44 ] },
 	{ ":",':', -1, &evaluate_function_expression, NULL }
 };
 
