@@ -1811,84 +1811,78 @@ static int evaluate_logical_expression( struct expression *this, struct variable
 	return ret;
 }
 
-static int calculate_arithmetic_operation( struct expression *expr,
-	int lhs, int rhs, struct variable *result, struct variable *exception ) {
-	int value, ret = 1;
-	switch( expr->index ) {
-		case '%':
-			if( rhs != 0 ) {
-				value = lhs % rhs;
-			} else {
-				value = 0;
-				ret = throw( exception, expr, 0, "Modulo division by zero." );
-			}
-			break;
-		case '&': value = lhs  & rhs; break;
-		case '*': value = lhs  * rhs; break;
-		case '+': value = lhs  + rhs; break;
-		case '-': value = lhs  - rhs; break;
-		case '/':
-			if( rhs != 0 ) {
-				value = lhs / rhs;
-			} else {
-				value = 0;
-				ret = throw( exception, expr, 0, "Integer division by zero." );
-			}
-			break;
-		case '<': value = lhs  < rhs; break;
-		case '>': value = lhs  > rhs; break;
-		case 'A': value = lhs >> rhs; break;
-		case 'G': value = lhs >= rhs; break;
-		case 'L': value = lhs <= rhs; break;
-		case '^': value = lhs  ^ rhs; break;
-		case '=': value = lhs == rhs; break;
-		case '|': value = lhs  | rhs; break;
-		default :
-			value = 0;
-			ret = throw( exception, expr, 0, "Unhandled integer operator." );
-			break;
-	}
-	if( ret ) {
-		dispose_variable( result );
-		result->integer_value = value;
-		result->string_value = NULL;
-	}
-	return ret;
-}
-
 static int evaluate_arithmetic_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	struct variable lhs = { 0, NULL }, rhs = { 0, NULL };
+	struct variable var = { 0, NULL };
 	struct expression *parameter = this->parameters;
-	int ret = parameter->evaluate( parameter, variables, &lhs, exception );
-	if( ret ) {
-		parameter = parameter->next;
-		ret = parameter->evaluate( parameter, variables, &rhs, exception );
-		if( ret ) {
-			ret = calculate_arithmetic_operation( this, lhs.integer_value, rhs.integer_value, result, exception );
-			dispose_variable( &rhs );
-		}
-		dispose_variable( &lhs );
-	}
-	return ret;
-}
-
-static int evaluate_fast_arithmetic_expr( struct expression *this, struct variable *variables,
-	struct variable *result, struct variable *exception ) {
-	int lhs, rhs;
-	struct expression *parameter = this->parameters;
-	if( parameter->global ) {
+	int lhs, rhs, value, ret = 1;
+	if( parameter->evaluate == &evaluate_integer_constant_expression ) {
+		lhs = parameter->index;
+	} else if( parameter->evaluate == &evaluate_local ) {
+		lhs = variables[ parameter->index ].integer_value;
+	} else if( parameter->evaluate == &evaluate_global ) {
 		lhs = parameter->global->value.integer_value;
 	} else {
-		lhs = variables[ parameter->index ].integer_value;
+		ret = parameter->evaluate( parameter, variables, &var, exception );
+		lhs = var.integer_value;
+		dispose_variable( &var );
 	}
-	parameter = parameter->next;
-	if( parameter->global ) {
-		rhs = parameter->global->value.integer_value;
-	} else {
-		rhs = variables[ parameter->index ].integer_value;
+	if( ret ) {
+		parameter = parameter->next;
+		if( parameter->evaluate == &evaluate_integer_constant_expression ) {
+			rhs = parameter->index;
+		} else if( parameter->evaluate == &evaluate_local ) {
+			rhs = variables[ parameter->index ].integer_value;
+		} else if( parameter->evaluate == &evaluate_global ) {
+			rhs = parameter->global->value.integer_value;
+		} else {
+			ret = parameter->evaluate( parameter, variables, &var, exception );
+			rhs = var.integer_value;
+			dispose_variable( &var );
+		}
+		if( ret ) {
+			switch( this->index ) {
+				case '%':
+					if( rhs != 0 ) {
+						value = lhs % rhs;
+					} else {
+						value = 0;
+						ret = throw( exception, this, 0, "Modulo division by zero." );
+					}
+					break;
+				case '&': value = lhs  & rhs; break;
+				case '*': value = lhs  * rhs; break;
+				case '+': value = lhs  + rhs; break;
+				case '-': value = lhs  - rhs; break;
+				case '/':
+					if( rhs != 0 ) {
+						value = lhs / rhs;
+					} else {
+						value = 0;
+						ret = throw( exception, this, 0, "Integer division by zero." );
+					}
+					break;
+				case '<': value = lhs  < rhs; break;
+				case '>': value = lhs  > rhs; break;
+				case 'A': value = lhs >> rhs; break;
+				case 'G': value = lhs >= rhs; break;
+				case 'L': value = lhs <= rhs; break;
+				case '^': value = lhs  ^ rhs; break;
+				case '=': value = lhs == rhs; break;
+				case '|': value = lhs  | rhs; break;
+				default :
+					value = 0;
+					ret = throw( exception, this, 0, "Unhandled integer operator." );
+					break;
+			}
+			if( ret ) {
+				dispose_variable( result );
+				result->integer_value = value;
+				result->string_value = NULL;
+			}
+		}
 	}
-	return calculate_arithmetic_operation( this, lhs, rhs, result, exception );
+	return ret;
 }
 
 static int evaluate_int_expression( struct expression *this, struct variable *variables,
@@ -2699,13 +2693,6 @@ static struct element* parse_operator_expression( struct element *elem, struct e
 				expr->parameters = prev.next;
 				if( message[ 0 ] == 0 ) {
 					if( num_operands == oper->num_operands || ( oper->num_operands < 0 && num_operands > 0 ) ) {
-						if( expr->evaluate == &evaluate_arithmetic_expression ) {
-							if( ( prev.next->evaluate == &evaluate_local || prev.next->evaluate == &evaluate_global )
-							&& ( prev.next->next->evaluate == &evaluate_local || prev.next->next->evaluate == &evaluate_global ) ) {
-								/* Optimization for local/global/constant operands. */
-								expr->evaluate = &evaluate_fast_arithmetic_expr;
-							}
-						}
 						next = next->next;
 					} else {
 						sprintf( message, "Wrong number of arguments to '%.16s()' on line %d.", oper->name, next->str.line );
