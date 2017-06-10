@@ -125,6 +125,7 @@
 		$tup(str int)            String/Integer tuple.
 		$array(len)              Create array of specified length.
 		$array(${0,"a"})         Create array with values from element.
+		$new(struct)             Same as $array(struct).
 		$astr(arr)               Array to element string.
 		$load("abc.bin")         Load raw bytes into string.
 		$flen("file")            Get the length of a file.
@@ -1558,15 +1559,22 @@ static int evaluate_function_expression( struct expression *this, struct variabl
 			stmt = function->statements;
 			while( stmt ) {
 				ret = stmt->execute( stmt, locals, result, exception );
-				if( ret == 1 ) {
+				if( ret == 0 ) {
+					break;
+				} else if( ret == 1 ) {
 					stmt = stmt->next;
-				} else {
-					if( ret > 2 ) {
-						ret = throw( exception, this, ret, "Unhandled 'break' or 'continue'." );
-					}
-					ret = ( ret > 0 );
+				} else if( ret == 2 ) {
+					ret = 1;
+					break;
+				} else if( ret > 2 ) {
+					ret = throw( exception, this, ret, "Unhandled 'break' or 'continue'." );
 					break;
 				}
+			}
+			if( ret && stmt == NULL ) {
+				dispose_variable( result );
+				result->integer_value = 0;
+				result->string_value = NULL;
 			}
 		}
 		idx = 0, count = function->num_variables;
@@ -2624,6 +2632,7 @@ static struct operator operators[] = {
 	{ "$hex",'$', 1, &evaluate_hex_expression, &operators[ 40 ] },
 	{ "$pack",'$', 1, &evaluate_pack_expression, &operators[ 41 ] },
 	{ "$array",'$', 1, &evaluate_array_expression, &operators[ 42 ] },
+	{ "$new",'$', 1, &evaluate_array_expression, &operators[ 43 ] },
 	{ ":",':', -1, &evaluate_function_expression, NULL }
 };
 
@@ -2800,7 +2809,7 @@ static struct element* parse_expression( struct element *elem, struct environmen
 			expr->index = var.integer_value;
 			expr->evaluate = &evaluate_integer_constant_expression;
 		} else if( value[ 0 ] == '"' || ( value[ 0 ] == '$' && value[ 1 ] == 0 ) ) {
-			/* String or tuple constant. */
+			/* String or element constant. */
 			constant = new_global_variable( "#Const#", message );
 			if( constant ) {
 				constant->next = env->constants;
