@@ -328,10 +328,10 @@ function tg_draw_listbox( n ) {
 	if >( +( [ tg_b n ] th ) $len( [ tg_a n ] ) ) {
 		let th = -( $len( [ tg_a n ] ) [ tg_b n ] );
 	}
+	let ty = +( y 6 );
 	let idx = [ tg_b n ];
 	let end = +( idx th );
 	while <( idx end ) {
-		let ty = +( +( y *( idx 16 ) ) 6 );
 		let tc = 0;
 		if =( [ tg_c n ] idx ) {
 			fxrect +( x 8 ), ty, -( [ tg_w n ] 16 ), 16, [ palette 3 ];
@@ -342,6 +342,7 @@ function tg_draw_listbox( n ) {
 			let txt = $sub( txt, 0, tw );
 		}
 		call tg_text( txt, +( x 8 ), ty, tc );
+		let ty = +( ty 16 );
 		inc idx;
 	}
 }
@@ -475,6 +476,7 @@ function tg_scan( event ) {
 							-( +( [ tg_h w ] y ) tg_sely ) );
 						let tg_selx = +( tg_getx( n ) o );
 						let tg_sely = +( tg_gety( n ) p );
+						let selected = w;
 						call tg_draw( 0 );
 					}
 					case 7 {
@@ -728,14 +730,31 @@ program tgads {
 
 	call tg_listbox( 21, 15, 100, 32, 260, 120, listitems );
 	call tg_anchor( 21, 1, 1, 1, 1 );
+	
+	set [ tg_b 17 ] = /( -( [ tg_h 21 ] 12 ) 16 );
+	set [ tg_c 17 ] = $len( listitems );
+	
 	call tg_draw( 0 );
-
 	fxshow;
 
 	while TRUE {
 		let selected = tg_scan( $fxwait );
-		if >( selected 0 ) {
-			print $cat( selected, " ", [ tg_a selected ] );
+		switch selected {
+			case 17 {
+				set [ tg_b 21 ] = [ tg_a selected ];
+				call tg_draw( 21 );
+			}
+			case 15 {
+				set [ tg_a 17 ] = 0;
+				set [ tg_b 17 ] = /( -( [ tg_h 21 ] 12 ) 16 );
+				set [ tg_c 17 ] = $len( listitems );
+				call tg_draw( 21 );
+			}
+			default {
+				if >( selected 0 ) {
+					print $cat( selected, " ", [ tg_a selected ] );
+				}
+			}
 		}
 		fxshow;
 	}
