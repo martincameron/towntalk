@@ -2197,7 +2197,7 @@ static int xm_to_tmf( struct module *module, char *tmf ) {
 		}
 	}
 	if( idx > 64 ) {
-		fputs( "Module has too many instruments.", stderr );
+		fputs( "Module has too many instruments.\n", stderr );
 	} else {
 		struct replay *replay = new_replay( module, 24000, 0 );
 		if( replay ) {
@@ -2236,10 +2236,10 @@ static int xm_to_tmf( struct module *module, char *tmf ) {
 }
 
 static int xm_to_wav( struct module *module, char *wav ) {
-	int mix_buf[ 16384 ];
 	int idx, duration, samples, ampl, offset, length = 0;
+	int *mix_buf = malloc( calculate_mix_buf_len( 48000 ) * sizeof( int ) );
 	struct replay *replay = new_replay( module, 48000, 0 );
-	if( replay ) {
+	if( replay && mix_buf ) {
 		duration = replay_calculate_duration( replay );
 		length = duration * 4 + 40;
 		if( wav ) {
@@ -2273,6 +2273,7 @@ static int xm_to_wav( struct module *module, char *wav ) {
 		}
 		dispose_replay( replay );
 	}
+	free( mix_buf );
 	return length;
 }
 
