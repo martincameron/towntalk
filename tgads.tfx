@@ -745,9 +745,15 @@ program tgads {
 				call tg_draw( 21 );
 			}
 			case 15 {
-				set [ tg_a 17 ] = 0;
 				set [ tg_b 17 ] = /( -( [ tg_h 21 ] 12 ) 16 );
 				set [ tg_c 17 ] = $len( listitems );
+				if >( +( [ tg_a 17 ] [ tg_b 17 ] ) [ tg_c 17 ] ) {
+					set [ tg_a 17 ] = -( [ tg_c 17 ] [ tg_b 17 ] );
+				}
+				if <( [ tg_a 17 ] 0 ) {
+					set [ tg_a 17 ] = 0;
+				}
+				set [ tg_b 21 ] = [ tg_a 17 ];
 				call tg_draw( 21 );
 			}
 			default {
