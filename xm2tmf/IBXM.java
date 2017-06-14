@@ -280,6 +280,15 @@ public class IBXM {
 			wait++;
 			songEnd = tick();
 		}
+		if( wait > 0 ) {
+			if( wait > 0xFFF ) {
+				wait = 0xFFF;
+			}
+			if( output != null ) {
+				writeInt16be( output, offset, 0xF000 + wait );
+			}
+			offset += 2;
+		}
 		return offset;
 	}
 

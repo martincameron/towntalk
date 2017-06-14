@@ -2181,6 +2181,15 @@ static int write_sequence( struct replay *replay, char *dest ) {
 		wait++;
 		song_end = replay_tick( replay );
 	}
+	if( wait > 0 ) {
+		if( wait > 0xFFF ) {
+			wait = 0xFFF;
+		}
+		if( dest ) {
+			write_int16be( 0xF000 + wait, &dest[ idx ] );
+		}
+		idx += 2;
+	}
 	return idx;
 }
 

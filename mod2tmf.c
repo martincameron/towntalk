@@ -836,6 +836,15 @@ static int write_sequence( char *dest ) {
 		wait++;
 		song_end = sequence_tick();
 	}
+	if( wait > 0 ) {
+		if( wait > 0xFFF ) {
+			wait = 0xFFF;
+		}
+		if( dest ) {
+			write_int16be( 0xF000 + wait, &dest[ idx ] );
+		}
+		idx += 2;
+	}
 	return idx;
 }
 
