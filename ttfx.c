@@ -138,6 +138,7 @@ static void update_channel( struct fxchannel *channel, int *output, int count ) 
 
 static void process_sequence( struct fxenvironment *fxenv, int channel_idx ) {
 	int off, len, cmd, oper, tick, chan, key, ins, vol;
+	SDL_Event event = { SDL_USEREVENT + 1 };
 	struct fxchannel *channel, *cmdchan;
 	char *seq;
 	channel = &fxenv->channels[ channel_idx ];
@@ -160,6 +161,10 @@ static void process_sequence( struct fxenvironment *fxenv, int channel_idx ) {
 			} else {
 				oper = cmd = 0;
 				off = len;
+			}
+			if( off >= len ) {
+				/* Signal sequence end. */
+				SDL_PushEvent( &event );
 			}
 			if( oper == 0xF ) {
 				/* 0xFwww wait w ticks. */
@@ -846,12 +851,13 @@ static int evaluate_fxdir_expression( struct expression *this, struct variable *
 }
 
 static struct constant fxconstants[] = {
-	{ "FX_KEYDOWN", 2, NULL },
-	{ "FX_KEYUP", 3, NULL },
-	{ "FX_MOUSEMOTION", 4, NULL },
-	{ "FX_MOUSEKEYDOWN", 5, NULL },
-	{ "FX_MOUSEKEYUP", 6, NULL },
-	{ "FX_TIMER", 24, NULL },
+	{ "FX_KEYDOWN", SDL_KEYDOWN, NULL },
+	{ "FX_KEYUP", SDL_KEYUP, NULL },
+	{ "FX_MOUSEMOTION", SDL_MOUSEMOTION, NULL },
+	{ "FX_MOUSEKEYDOWN", SDL_MOUSEBUTTONDOWN, NULL },
+	{ "FX_MOUSEKEYUP", SDL_MOUSEBUTTONUP, NULL },
+	{ "FX_TIMER", SDL_USEREVENT, NULL },
+	{ "FX_SEQUENCER", SDL_USEREVENT + 1, NULL },
 	{ NULL }
 };
 

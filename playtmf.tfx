@@ -50,7 +50,7 @@ function load_song( tmf, names ) {
 }
 
 program playtmf {
-	var sequence, idx, name;
+	var sequence, idx, name, event;
 	if >( $argc 1 ) {
 		let sequence = load_song( $load( $argv( 1 ) ), strings );
 		print $cat( "Song name: " [ strings 0 ] );
@@ -68,7 +68,12 @@ program playtmf {
 		fxplay 0, sequence;
 
 		while TRUE {
-			print $fxwait;
+			let event = $fxwait;
+			if =( event FX_SEQUENCER ) {
+				exit 0;
+			} else {
+				print event;
+			}
 		}
 
 	} else {
