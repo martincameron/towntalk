@@ -162,10 +162,6 @@ static void process_sequence( struct fxenvironment *fxenv, int channel_idx ) {
 				oper = cmd = 0;
 				off = len;
 			}
-			if( off >= len ) {
-				/* Signal sequence end. */
-				SDL_PushEvent( &event );
-			}
 			if( oper == 0xF ) {
 				/* 0xFwww wait w ticks. */
 				channel->sequence_wait = cmd & 0xFFF;
@@ -216,6 +212,12 @@ static void process_sequence( struct fxenvironment *fxenv, int channel_idx ) {
 				}
 			}
 		}
+		if( channel->sequence_wait < 1 && off >= len ) {
+			/* Signal sequence end. */
+			SDL_PushEvent( &event );
+			dispose_variable( &channel->sequence );
+			off = len = 0;
+		}
 		channel->sequence_offset = off;
 	}
 }
@@ -252,11 +254,13 @@ static void audio_callback( void *userdata, Uint8 *stream, int len ) {
 			chan_idx = 0;
 			while( chan_idx < NUM_CHANNELS ) {
 				channel = &fxenv->channels[ chan_idx ];
+				channel->sequence_wait--;
 				if( channel->sequence_wait < 1 ) {
 					channel->sequence_wait = 0;
-					process_sequence( fxenv, chan_idx );
+					if( channel->sequence.string_value ) {
+						process_sequence( fxenv, chan_idx );
+					}
 				}
-				channel->sequence_wait--;
 				chan_idx++;
 			}
 			fxenv->audio_idx = 0;
@@ -784,10 +788,27 @@ static int evaluate_keyshift_expression( struct expression *this, struct variabl
 	return 1;
 }
 
+/* Returns a value incremented every sequencer tick while the audio device is running. */
 static int evaluate_fxtick_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	dispose_variable( result );
 	result->integer_value = ( ( struct fxenvironment * ) this->function->env )->tick;
+	result->string_value = NULL;
+	return 1;
+}
+
+/* Returns an integer containing one bit for every channel running a sequence. */
+static int evaluate_fxseq_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	struct fxenvironment *env = ( struct fxenvironment * ) this->function->env;
+	int idx, seq = 0;
+	dispose_variable( result );
+	for( idx = 0; idx < NUM_CHANNELS; idx++ ) {
+		if( env->channels[ idx ].sequence.string_value ) {
+			seq = seq | ( 1 << idx );
+		}
+	}
+	result->integer_value = seq;
 	result->string_value = NULL;
 	return 1;
 }
@@ -871,6 +892,7 @@ static struct operator fxoperators[] = {
 	{ "$keyboard",'$', 0, &evaluate_keyboard_expression, &fxoperators[ 7 ] },
 	{ "$keyshift",'$', 0, &evaluate_keyshift_expression, &fxoperators[ 8 ] },
 	{ "$fxtick",'$', 0, &evaluate_fxtick_expression, &fxoperators[ 9 ] },
+	{ "$fxseq",'$', 0, &evaluate_fxseq_expression, &fxoperators[ 10 ] },
 	{ "$fxdir",'$', 1, &evaluate_fxdir_expression, operators }
 };
 
