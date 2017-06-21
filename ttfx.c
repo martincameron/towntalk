@@ -37,7 +37,7 @@ struct fxchannel {
 	int sample_idx, sample_fra;
 	int frequency, volume, panning;
 	int sequence_offset, sequence_wait;
-	struct variable sequence;
+	struct variable sequence, next_sequence;
 };
 
 struct fxenvironment {
@@ -216,6 +216,7 @@ static void process_sequence( struct fxenvironment *fxenv, int channel_idx ) {
 			/* Signal sequence end. */
 			SDL_PushEvent( &event );
 			dispose_variable( &channel->sequence );
+			channel->sequence.string_value = NULL;
 			off = len = 0;
 		}
 		channel->sequence_offset = off;
@@ -282,22 +283,17 @@ static void audio_callback( void *userdata, Uint8 *stream, int len ) {
 static void dispose_fxenvironment( struct fxenvironment *fxenv ) {
 	int idx;
 	if( fxenv ) {
-		idx = 0;
-		while( idx < NUM_SURFACES ) {
+		for( idx = 0; idx < NUM_SURFACES; idx++ ) {
 			if( fxenv->surfaces[ idx ] ) {
 				SDL_FreeSurface( fxenv->surfaces[ idx ] );
 			}
-			idx++;
 		}
-		idx = 0;
-		while( idx < NUM_SAMPLES ) {
+		for( idx = 0; idx < NUM_SAMPLES; idx++ ) {
 			dispose_variable( &fxenv->samples[ idx ].sample_data );
-			idx++;
 		}
-		idx = 0;
-		while( idx < NUM_CHANNELS ) {
+		for( idx = 0; idx < NUM_CHANNELS; idx++ ) {
 			dispose_variable( &fxenv->channels[ idx ].sequence );
-			idx++;
+			dispose_variable( &fxenv->channels[ idx ].next_sequence );
 		}
 		if( fxenv->timer ) {
 			SDL_RemoveTimer( fxenv->timer );
@@ -600,7 +596,8 @@ static int execute_fxsample_statement( struct statement *this, struct variable *
 static int execute_fxplay_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	/*
-		fxplay channel sequence$;
+		Play sequence: fxplay channel sequence$;
+		Queue sequence: fxqueue channel sequence$;
 		2 and 4-byte sequencer commands packed into byte string:
 			0x0xxx do nothing (used to pad 2-byte cmds to 4).
 			0x1kkkiicc set key k, instrument i and sample offset 0 on channel c.
@@ -616,37 +613,31 @@ static int execute_fxplay_statement( struct statement *this, struct variable *va
 		If instrument >= 0x40, set volume / panning instead.
 		Keys specified in 96ths of an octave (480 = 16744hz).
 	*/
-	int ret, idx = 0;
-	struct variable params[ 2 ];
 	struct expression *expr = this->source;
+	struct variable channel = { 0, NULL }, sequence = { 0, NULL };
 	struct fxenvironment *fxenv = ( struct fxenvironment * ) this->source->function->env;
-	memset( params, 0, 2 * sizeof( struct variable ) );
-	ret = expr->evaluate( expr, variables, &params[ idx++ ], exception );
-	expr = expr->next;
-	while( ret && expr ) {
-		ret = expr->evaluate( expr, variables, &params[ idx++ ], exception );
-		expr = expr->next;
-	}
+	int ret = expr->evaluate( expr, variables, &channel, exception );
 	if( ret ) {
-		idx = params[ 0 ].integer_value;
-		if( idx >= 0 && idx < NUM_CHANNELS ) {
-			if( params[ 1 ].string_value ) {
-				SDL_LockAudio();
-				fxenv->channels[ idx ].sequence_offset = 0;
-				fxenv->channels[ idx ].sequence_wait = 0;
-				assign_variable( &params[ 1 ], &fxenv->channels[ idx ].sequence );
-				process_sequence( fxenv, idx );
-				SDL_UnlockAudio();
+		expr = expr->next;
+		ret = expr->evaluate( expr, variables, &sequence, exception );
+		if( ret ) {
+			if( channel.integer_value >= 0 && channel.integer_value < NUM_CHANNELS ) {
+				if( sequence.string_value ) {
+					SDL_LockAudio();
+					fxenv->channels[ channel.integer_value ].sequence_offset = 0;
+					fxenv->channels[ channel.integer_value ].sequence_wait = 0;
+					assign_variable( &sequence, &fxenv->channels[ channel.integer_value ].sequence );
+					process_sequence( fxenv, channel.integer_value );
+					SDL_UnlockAudio();
+				} else {
+					ret = throw( exception, this->source, sequence.integer_value, "Not a string." );
+				}
 			} else {
-				ret = throw( exception, this->source, 0, "Not a string." );
+				ret = throw( exception, this->source, channel.integer_value, "Invalid channel index." );
 			}
-		} else {
-			ret = throw( exception, this->source, idx, "Invalid channel index." );
+			dispose_variable( &sequence );
 		}
-	}
-	idx = 0;
-	while( idx < 2 ) {
-		dispose_variable( &params[ idx++ ] );
+		dispose_variable( &channel );
 	}
 	return ret;
 }
@@ -706,6 +697,15 @@ static struct element* parse_fxsample_statement( struct element *elem, struct en
 static struct element* parse_fxplay_statement( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message ) {
 	return parse_expr_list_statement( elem, env, func, prev, &execute_fxplay_statement, message );
+}
+
+static struct element* parse_fxqueue_statement( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct statement *prev, char *message ) {
+	struct element *next = parse_expr_list_statement( elem, env, func, prev, &execute_fxplay_statement, message );
+	if( prev->next ) {
+		prev->next->local = 1;
+	}
+	return next;
 }
 
 static int handle_event_expression( struct expression *this, SDL_Event *event,
@@ -906,6 +906,7 @@ static struct keyword fxstatements[] = {
 	{ "fxtimer", "x;", &parse_fxtimer_statement, &fxstatements[ 7 ] },
 	{ "fxaudio", "x;", &parse_fxaudio_statement, &fxstatements[ 8 ] },
 	{ "fxsample", "xxxx;", &parse_fxsample_statement, &fxstatements[ 9 ] },
+	{ "fxqueue", "xx;", &parse_fxqueue_statement, &fxstatements[ 10 ] },
 	{ "fxplay", "xx;", &parse_fxplay_statement, statements }
 };
 
