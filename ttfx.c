@@ -138,7 +138,6 @@ static void update_channel( struct fxchannel *channel, int *output, int count ) 
 
 static void process_sequence( struct fxenvironment *fxenv, int channel_idx ) {
 	int off, len, cmd, oper, tick, chan, key, ins, vol;
-	SDL_Event event = { SDL_USEREVENT + 1 };
 	struct fxchannel *channel, *cmdchan;
 	char *seq;
 	channel = &fxenv->channels[ channel_idx ];
@@ -212,19 +211,13 @@ static void process_sequence( struct fxenvironment *fxenv, int channel_idx ) {
 				}
 			}
 		}
-		if( channel->sequence_wait < 1 && off >= len ) {
-			/* Signal sequence end. */
-			SDL_PushEvent( &event );
-			dispose_variable( &channel->sequence );
-			channel->sequence.string_value = NULL;
-			off = len = 0;
-		}
 		channel->sequence_offset = off;
 	}
 }
 
 static void audio_callback( void *userdata, Uint8 *stream, int len ) {
 	struct fxenvironment *fxenv = ( struct fxenvironment * ) userdata;
+	SDL_Event event = { SDL_USEREVENT + 1 };
 	Sint16 *output = ( Sint16 * ) stream;
 	struct fxchannel *channel;
 	int samples = len >> 2;
@@ -255,11 +248,20 @@ static void audio_callback( void *userdata, Uint8 *stream, int len ) {
 			chan_idx = 0;
 			while( chan_idx < NUM_CHANNELS ) {
 				channel = &fxenv->channels[ chan_idx ];
-				channel->sequence_wait--;
-				if( channel->sequence_wait < 1 ) {
-					channel->sequence_wait = 0;
-					if( channel->sequence.string_value ) {
+				if( channel->sequence.string_value ) {
+					channel->sequence_wait--;
+					if( channel->sequence_wait < 1 ) {
+						channel->sequence_wait = 0;
 						process_sequence( fxenv, chan_idx );
+						while( channel->sequence.string_value && channel->sequence_wait == 0 ) {
+							/* Signal sequence end. */
+							SDL_PushEvent( &event );
+							assign_variable( &channel->next_sequence, &channel->sequence );
+							dispose_variable( &channel->next_sequence );
+							channel->next_sequence.string_value = NULL;
+							channel->sequence_offset = 0;
+							process_sequence( fxenv, chan_idx );
+						}
 					}
 				}
 				chan_idx++;
@@ -624,10 +626,16 @@ static int execute_fxplay_statement( struct statement *this, struct variable *va
 			if( channel.integer_value >= 0 && channel.integer_value < NUM_CHANNELS ) {
 				if( sequence.string_value ) {
 					SDL_LockAudio();
-					fxenv->channels[ channel.integer_value ].sequence_offset = 0;
-					fxenv->channels[ channel.integer_value ].sequence_wait = 0;
-					assign_variable( &sequence, &fxenv->channels[ channel.integer_value ].sequence );
-					process_sequence( fxenv, channel.integer_value );
+					if( this->local && fxenv->channels[ channel.integer_value ].sequence.string_value ) {
+						assign_variable( &sequence, &fxenv->channels[ channel.integer_value ].next_sequence );
+					} else {
+						fxenv->channels[ channel.integer_value ].sequence_offset = 0;
+						fxenv->channels[ channel.integer_value ].sequence_wait = 0;
+						assign_variable( &sequence, &fxenv->channels[ channel.integer_value ].sequence );
+						dispose_variable( &fxenv->channels[ channel.integer_value ].next_sequence );
+						fxenv->channels[ channel.integer_value ].next_sequence.string_value = NULL;
+						process_sequence( fxenv, channel.integer_value );
+					}
 					SDL_UnlockAudio();
 				} else {
 					ret = throw( exception, this->source, sequence.integer_value, "Not a string." );
@@ -797,20 +805,30 @@ static int evaluate_fxtick_expression( struct expression *this, struct variable 
 	return 1;
 }
 
-/* Returns an integer containing one bit for every channel running a sequence. */
+/* Returns the number of sequences playing and/or queued on the specified channel. */
 static int evaluate_fxseq_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct fxenvironment *env = ( struct fxenvironment * ) this->function->env;
-	int idx, seq = 0;
-	dispose_variable( result );
-	for( idx = 0; idx < NUM_CHANNELS; idx++ ) {
-		if( env->channels[ idx ].sequence.string_value ) {
-			seq = seq | ( 1 << idx );
+	struct expression *parameter = this->parameters;
+	struct variable chan = { 0, NULL };
+	int ret = parameter->evaluate( parameter, variables, &chan, exception );
+	if( ret ) {
+		if( chan.integer_value >= 0 && chan.integer_value < NUM_CHANNELS ) {
+			dispose_variable( result );
+			if( env->channels[ chan.integer_value ].sequence.string_value == NULL ) {
+				result->integer_value = 0;
+			} else if( env->channels[ chan.integer_value ].next_sequence.string_value == NULL ) {
+				result->integer_value = 1;
+			} else {
+				result->integer_value = 2;
+			}
+			result->string_value = NULL;
+		} else {
+			ret = throw( exception, this, chan.integer_value, "Invalid channel index." );
 		}
+		dispose_variable( &chan );
 	}
-	result->integer_value = seq;
-	result->string_value = NULL;
-	return 1;
+	return ret;
 }
 
 static int evaluate_fxdir_expression( struct expression *this, struct variable *variables,
@@ -892,7 +910,7 @@ static struct operator fxoperators[] = {
 	{ "$keyboard",'$', 0, &evaluate_keyboard_expression, &fxoperators[ 7 ] },
 	{ "$keyshift",'$', 0, &evaluate_keyshift_expression, &fxoperators[ 8 ] },
 	{ "$fxtick",'$', 0, &evaluate_fxtick_expression, &fxoperators[ 9 ] },
-	{ "$fxseq",'$', 0, &evaluate_fxseq_expression, &fxoperators[ 10 ] },
+	{ "$fxseq",'$', 1, &evaluate_fxseq_expression, &fxoperators[ 10 ] },
 	{ "$fxdir",'$', 1, &evaluate_fxdir_expression, operators }
 };
 

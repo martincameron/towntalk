@@ -65,10 +65,11 @@ program playtmf {
 		}
 		fxaudio 960;
 		fxplay 0, sequence;
+		fxqueue 0, sequence;
 		while TRUE {
 			let event = $fxwait;
 			if =( event FX_SEQUENCER ) {
-				if =( $fxseq 0 ) {
+				if =( $fxseq( 0 ) 0 ) {
 					exit 0;
 				}
 			} else {
