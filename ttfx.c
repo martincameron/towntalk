@@ -35,7 +35,7 @@ struct fxsample {
 struct fxchannel {
 	struct fxsample *sample;
 	int sample_idx, sample_fra;
-	int frequency, volume, panning;
+	int frequency, volume, panning, gain, transpose;
 	int sequence_offset, sequence_wait;
 	struct variable sequence, next_sequence;
 };
@@ -137,7 +137,7 @@ static void update_channel( struct fxchannel *channel, int *output, int count ) 
 }
 
 static void process_sequence( struct fxenvironment *fxenv, int channel_idx ) {
-	int off, len, cmd, oper, tick, chan, key, ins, vol;
+	int off, len, cmd, oper, tick, chan, key, ins, vol, gain;
 	struct fxchannel *channel, *cmdchan;
 	char *seq;
 	channel = &fxenv->channels[ channel_idx ];
@@ -170,6 +170,13 @@ static void process_sequence( struct fxenvironment *fxenv, int channel_idx ) {
 				if( tick >= MIN_TICK_LEN && tick <= MAX_TICK_LEN ) {
 					fxenv->tick_len = tick;
 				}
+			} else if( oper == 0xC ) {
+				/* 0xCxxx set gain. */
+				gain = cmd & 0xFFF;
+				fxenv->channels[ channel_idx ].gain = gain * gain;
+			} else if( oper == 0xD ) {
+				/* 0xDxxx set transpose. */
+				fxenv->channels[ channel_idx ].transpose = ( cmd & 0xFFF ) - 0x800;
 			} else if( oper < 0xC ) {
 				chan = cmd & 0xFF;
 				if( chan + channel_idx < NUM_CHANNELS ) {
@@ -181,7 +188,8 @@ static void process_sequence( struct fxenvironment *fxenv, int channel_idx ) {
 						} else if( cmd >= 0x4000 ) {
 							/* 0xvvcc set volume */
 							vol = ( cmd >> 8 ) - 0x40;
-							cmdchan->volume = vol * vol;
+							gain = fxenv->channels[ channel_idx ].gain;
+							cmdchan->volume = ( gain * vol * vol ) >> 12;
 						}
 					} else if( oper == 0x3 ) {
 						/* 0x3ssssscc sample offset + channel */
@@ -190,6 +198,7 @@ static void process_sequence( struct fxenvironment *fxenv, int channel_idx ) {
 					} else if( oper > 0 ) {
 						/* 0x1kkkiicc / 0x2kkkiicc key + instrument + channel */
 						key = ( cmd >> 16 ) & 0xFFF;
+						key = key + fxenv->channels[ channel_idx ].transpose;
 						if( key > 0 && key < 957 ) {
 							cmdchan->frequency = ( FREQ_TABLE[ key % 96 ] << 4 ) >> ( 9 - key / 96 );
 						}
@@ -199,7 +208,8 @@ static void process_sequence( struct fxenvironment *fxenv, int channel_idx ) {
 								cmdchan->panning = ( ins - 0x80 ) - 32;
 							} else if( ins >= 0x40 ) {
 								vol = ins - 0x40;
-								cmdchan->volume = vol * vol;
+								gain = fxenv->channels[ channel_idx ].gain;
+								cmdchan->volume = ( gain * vol * vol ) >> 12;
 							} else {
 								cmdchan->sample = &fxenv->samples[ ins - 1 ];
 							}
@@ -280,6 +290,15 @@ static void audio_callback( void *userdata, Uint8 *stream, int len ) {
 			fxenv->tick++;
 		}
 	}
+}
+
+static struct fxenvironment* new_fxenvironment() {
+	int idx;
+	struct fxenvironment *fxenv = calloc( 1, sizeof( struct fxenvironment ) );
+	for( idx = 0; idx < NUM_CHANNELS; idx++ ) {
+		fxenv->channels[ idx ].gain = 4096;
+	}
+	return fxenv;
 }
 
 static void dispose_fxenvironment( struct fxenvironment *fxenv ) {
@@ -607,8 +626,8 @@ static int execute_fxplay_statement( struct statement *this, struct variable *va
 			0x3ssssscc set sample offset s on channel c.
 			0xvvcc set volume (0x40-0x80) on channel c.
 			0xppcc set panning (0x81-0xBF) on channel c.
-			0xCxxx do nothing.
-			0xDxxx do nothing.
+			0xCxxx set sequence gain (default 0x40).
+			0xDxxx set sequence transpose (default 0x800).
 			0xEttt set tempo in samples per tick (at 24000hz).
 			0xFwww wait w ticks.
 		Instrument 0 / key 0 ignored.
@@ -932,6 +951,7 @@ int main( int argc, char **argv ) {
 	int exit_code = EXIT_FAILURE;
 	char *file_name, message[ 256 ] = "";
 	struct environment *env;
+	struct fxenvironment *fxenv;
 	struct variable result = { 0 }, except = { 0 };
 	struct expression expr = { 0 };
 	/* Handle command-line.*/
@@ -941,8 +961,9 @@ int main( int argc, char **argv ) {
 	}
 	file_name = argv[ 1 ];
 	/* Parse program file. */
-	env = calloc( 1, sizeof( struct fxenvironment ) );
-	if( env ) {
+	fxenv = new_fxenvironment();
+	if( fxenv ) {
+		env = &fxenv->env;
 		env->argc = argc - 1;
 		env->argv = &argv[ 1 ];
 		if( add_constants( fxconstants, env, message )
