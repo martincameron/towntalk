@@ -1913,7 +1913,8 @@ int calculate_mix_buf_len( int sample_rate ) {
 	return ( calculate_tick_len( 32, sample_rate ) + 65 ) * 4;
 }
 
-static int replay_calculate_duration( struct replay *replay ) {
+/* Returns the song duration in samples at the current sampling rate. */
+int replay_calculate_duration( struct replay *replay ) {
 	int count = 0, duration = 0;
 	replay_set_sequence_pos( replay, 0 );
 	while( count < 1 ) {
