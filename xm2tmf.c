@@ -1922,11 +1922,11 @@ static int calculate_mix_buf_len( int sample_rate ) {
 }
 
 static int replay_calculate_duration( struct replay *replay ) {
-	int song_end = 0, duration = 0;
+	int count = 0, duration = 0;
 	replay_set_sequence_pos( replay, 0 );
-	while( !song_end ) {
+	while( count < 1 ) {
 		duration += calculate_tick_len( replay->tempo, replay->sample_rate );
-		song_end = replay_tick( replay );
+		count = replay_tick( replay );
 	}
 	replay_set_sequence_pos( replay, 0 );
 	return duration;
@@ -2065,7 +2065,7 @@ static int sqr_rt( int y ) {
 }
 
 static int write_sequence( struct replay *replay, char *dest ) {
-	int chn, idx = 0, song_end = 0, bpm = 0, wait = 0;
+	int chn, idx = 0, count = 0, bpm = 0, wait = 0;
 	int len, inst, swap, sidx, tkey, d_tkey;
 	int vol, ampl, d_ampl, pann, d_pann;
 	int num_chn = replay->module->num_channels;
@@ -2073,7 +2073,7 @@ static int write_sequence( struct replay *replay, char *dest ) {
 	for( chn = 0; chn < num_chn; chn++ ) {
 		replay->channels[ chn ].prev_pann = -1;
 	}
-	while( !song_end ) {
+	while( count < 1 ) {
 		if( bpm != replay->tempo ) {
 			if( dest ) {
 				len = calculate_tick_len( replay->tempo, 24000 );
@@ -2179,7 +2179,7 @@ static int write_sequence( struct replay *replay, char *dest ) {
 			}
 		}
 		wait++;
-		song_end = replay_tick( replay );
+		count = replay_tick( replay );
 	}
 	if( wait > 0 ) {
 		if( wait > 0xFFF ) {
