@@ -271,7 +271,8 @@ static void sample_ping_pong( struct sample *sample ) {
 	}
 }
 
-static void dispose_module( struct module *module ) {
+/* Deallocate the specified module. */
+void dispose_module( struct module *module ) {
 	int idx, sam;
 	struct instrument *instrument;
 	free( module->default_panning );
@@ -297,7 +298,7 @@ static void dispose_module( struct module *module ) {
 	free( module );
 }
 
-static struct module* module_load_xm( struct data *data ) {
+static struct module* module_load_xm( struct data *data, char *message ) {
 	int delta_env, offset, next_offset, idx, entry;
 	int num_rows, num_notes, pat_data_len, pat_data_offset;
 	int sam, sam_head_offset, sam_data_bytes, sam_data_samples;
@@ -311,7 +312,7 @@ static struct module* module_load_xm( struct data *data ) {
 	struct module *module = calloc( 1, sizeof( struct module ) );
 	if( module ) {
 		if( data_u16le( data, 58 ) != 0x0104 ) {
-			fputs( "XM format version must be 0x0104!\n", stderr );
+			strcpy( message, "XM format version must be 0x0104!" );
 			dispose_module( module );
 			return NULL;
 		}
@@ -353,7 +354,7 @@ static struct module* module_load_xm( struct data *data ) {
 		}
 		for( idx = 0; idx < module->num_patterns; idx++ ) {
 			if( data_u8( data, offset + 4 ) ) {
-				fputs( "Unknown pattern packing type!\n", stderr );
+				strcpy( message, "Unknown pattern packing type!" );
 				dispose_module( module );
 				return NULL;
 			}
@@ -522,7 +523,7 @@ static struct module* module_load_xm( struct data *data ) {
 	return module;
 }
 
-static struct module* module_load_s3m( struct data *data ) {
+static struct module* module_load_s3m( struct data *data, char *message ) {
 	int idx, module_data_idx, inst_offset, flags;
 	int version, sixteen_bit, tune, signed_samples;
 	int stereo_mode, default_pan, channel_map[ 32 ];
@@ -543,7 +544,7 @@ static struct module* module_load_s3m( struct data *data ) {
 		module->fast_vol_slides = ( ( flags & 0x40 ) == 0x40 ) || version == 0x1300;
 		signed_samples = data_u16le( data, 42 ) == 1;
 		if( data_u32le( data, 44 ) != 0x4d524353 ) {
-			fputs( "Not an S3M file!\n", stderr );
+			strcpy( message, "Not an S3M file!" );
 			dispose_module( module );
 			return NULL;
 		}
@@ -602,7 +603,7 @@ static struct module* module_load_s3m( struct data *data ) {
 				sample->volume = data_u8( data, inst_offset + 28 );
 				sample->panning = -1;
 				if( data_u8( data, inst_offset + 30 ) != 0 ) {
-					fputs( "Packed samples not supported!\n", stderr );
+					strcpy( message, "Packed samples not supported!" );
 					dispose_module( module );
 					return NULL;
 				}
@@ -731,7 +732,7 @@ static struct module* module_load_s3m( struct data *data ) {
 	return module;
 }
 
-static struct module* module_load_mod( struct data *data ) {
+static struct module* module_load_mod( struct data *data, char *message ) {
 	int idx, pat, module_data_idx, pat_data_len, pat_data_idx;
 	int period, key, ins, effect, param, fine_tune;
 	int sample_length, loop_start, loop_length;
@@ -778,7 +779,7 @@ static struct module* module_load_mod( struct data *data ) {
 				module->gain = 32;
 				break;
 			default:
-				fputs( "MOD Format not recognised!\n", stderr );
+				strcpy( message, "MOD Format not recognised!" );
 				dispose_module( module );
 				return NULL;
 		}
@@ -895,15 +896,17 @@ static struct module* module_load_mod( struct data *data ) {
 	return module;
 }
 
-static struct module* module_load( struct data *data ) {
+/* Allocate and initialize a module from the specified data, returns NULL on error.
+   Message should point to a 64-character buffer to receive error messages. */
+struct module* module_load( struct data *data, char *message ) {
 	char ascii[ 16 ];
 	struct module* module;
 	if( !memcmp( data_ascii( data, 0, 16, ascii ), "Extended Module:", 16 ) ) {
-		module = module_load_xm( data );
+		module = module_load_xm( data, message );
 	} else if( !memcmp( data_ascii( data, 44, 4, ascii ), "SCRM", 4 ) ) {
-		module = module_load_s3m( data );
+		module = module_load_s3m( data, message );
 	} else {
-		module = module_load_mod( data );
+		module = module_load_mod( data, message );
 	}
 	return module;
 }
@@ -918,21 +921,6 @@ static void pattern_get_note( struct pattern *pattern, int row, int chan, struct
 		dest->param = pattern->data[ offset + 4 ];
 	} else {
 		memset( dest, 0, sizeof( struct note ) );
-	}
-}
-
-static void sample_quantize( struct sample *sample, char *output ) {
-	int sam, offset = 0;
-	int idx = 0, end = sample->loop_start + sample->loop_length;
-	short *sample_data = sample->data;
-	while( idx < end ) {
-		sam = ( sample_data[ idx++ ] + 32768 ) >> 7;
-		if( sam < 510 ) {
-			sam = ( sam >> 1 ) + ( sam & 1 );
-		} else {
-			sam = 255;
-		}
-		output[ offset++ ] = sam - 128;
 	}
 }
 
@@ -1856,7 +1844,8 @@ static int module_init_play_count( struct module *module, char **play_count ) {
 	return len;
 }
 
-static void replay_set_sequence_pos( struct replay *replay, int pos ) {
+/* Set the pattern in the sequence to play. The tempo is reset to the default. */
+void replay_set_sequence_pos( struct replay *replay, int pos ) {
 	int idx;
 	struct module *module = replay->module;
 	if( pos >= module->sequence_len ) {
@@ -1885,7 +1874,8 @@ static void replay_set_sequence_pos( struct replay *replay, int pos ) {
 	replay_tick( replay );
 }
 
-static void dispose_replay( struct replay *replay ) {
+/* Deallocate the specified replay. */
+void dispose_replay( struct replay *replay ) {
 	if( replay->play_count ) {
 		free( replay->play_count[ 0 ] );
 		free( replay->play_count );
@@ -1895,7 +1885,8 @@ static void dispose_replay( struct replay *replay ) {
 	free( replay );
 }
 
-static struct replay* new_replay( struct module *module, int sample_rate, int interpolation ) {
+/* Allocate and initialize a replay with the specified sampling rate and interpolation. */
+struct replay* new_replay( struct module *module, int sample_rate, int interpolation ) {
 	struct replay *replay = calloc( 1, sizeof( struct replay ) );
 	if( replay ) {
 		replay->module = module;
@@ -1917,7 +1908,8 @@ static int calculate_tick_len( int tempo, int sample_rate ) {
 	return ( sample_rate * 5 ) / ( tempo * 2 );
 }
 
-static int calculate_mix_buf_len( int sample_rate ) {
+/* Returns the length of the output buffer required by replay_get_audio(). */
+int calculate_mix_buf_len( int sample_rate ) {
 	return ( calculate_tick_len( 32, sample_rate ) + 65 ) * 4;
 }
 
@@ -1932,7 +1924,9 @@ static int replay_calculate_duration( struct replay *replay ) {
 	return duration;
 }
 
-static int replay_seek( struct replay *replay, int sample_pos ) {
+/* Seek to approximately the specified sample position.
+   The actual sample position reached is returned. */
+int replay_seek( struct replay *replay, int sample_pos ) {
 	int idx, tick_len, current_pos = 0;
 	replay_set_sequence_pos( replay, 0 );
 	tick_len = calculate_tick_len( replay->tempo, replay->sample_rate );
@@ -1967,7 +1961,8 @@ static void downsample( int *buf, int count ) {
 	}
 }
 
-static int replay_get_audio( struct replay *replay, int *mix_buf ) {
+/* Generates audio and returns the number of stereo samples written into mix_buf. */
+int replay_get_audio( struct replay *replay, int *mix_buf ) {
 	struct channel *channel;
 	int idx, num_channels, tick_len = calculate_tick_len( replay->tempo, replay->sample_rate );
 	/* Clear output buffer. */
@@ -1984,6 +1979,21 @@ static int replay_get_audio( struct replay *replay, int *mix_buf ) {
 	replay_volume_ramp( replay, mix_buf, tick_len );
 	replay_tick( replay );
 	return tick_len;
+}
+
+static void sample_quantize( struct sample *sample, char *output ) {
+	int sam, offset = 0;
+	int idx = 0, end = sample->loop_start + sample->loop_length;
+	short *sample_data = sample->data;
+	while( idx < end ) {
+		sam = ( sample_data[ idx++ ] + 32768 ) >> 7;
+		if( sam < 510 ) {
+			sam = ( sam >> 1 ) + ( sam & 1 );
+		} else {
+			sam = 255;
+		}
+		output[ offset++ ] = sam - 128;
+	}
 }
 
 static long read_file( char *file_name, void *buffer ) {
@@ -2289,6 +2299,7 @@ static int xm_to_wav( struct module *module, char *wav ) {
 int main( int argc, char **argv ) {
 	int result, length;
 	char *input, *output, *ext;
+	char message[ 64 ] = "";
 	struct data data;
 	struct module *module;
 	result = EXIT_FAILURE;
@@ -2310,7 +2321,7 @@ int main( int argc, char **argv ) {
 				if( read_file( argv[ 1 ], input ) >= 0 ) {
 					data.buffer = input;
 					data.length = length;
-					module = module_load( &data );
+					module = module_load( &data, message );
 					if( module ) {
 						/* Perform conversion. */
 						if( strcmp( ext, "tmf" ) == 0 ) {
@@ -2333,6 +2344,9 @@ int main( int argc, char **argv ) {
 							}
 						}
 						dispose_module( module );
+					} else {
+						fputs( message, stderr );
+						fputs( "\n", stderr );
 					}
 				}
 				free( input );
