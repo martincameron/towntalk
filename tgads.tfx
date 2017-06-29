@@ -1,8 +1,8 @@
 
 array palette, charset, listitems, background;
 
-array tg_o, tg_t, tg_p;
-array tg_x, tg_y, tg_w, tg_h, tg_m, tg_k, tg_a, tg_b, tg_c;
+array tg_zorder, tg_type, tg_parent;
+array tg_x, tg_y, tg_w, tg_h, tg_min, tg_anchor, tg_a, tg_b, tg_c;
 
 global tg_selx, tg_sely, tg_focus;
 
@@ -74,21 +74,21 @@ function tg_bevel_box( x, y, w, h ) {
 
 function tg_resize( n, x, y, w, h ) {
 	var g, k, a;
-	if <( w [ tg_m n ] ) {
-		let w = [ tg_m n ];
+	if <( w [ tg_min n ] ) {
+		let w = [ tg_min n ];
 	}
-	if <( h [ tg_m n ] ) {
-		let h = [ tg_m n ];
+	if <( h [ tg_min n ] ) {
+		let h = [ tg_min n ];
 	}
-	if =( [ tg_t n ] 1 ) {
-		while <( g $len( tg_t ) ) {
-			if =( [ tg_p g ] n ) {
-				let k = [ tg_k g ];
+	if =( [ tg_type n ] 1 ) {
+		while <( g $len( tg_type ) ) {
+			if =( [ tg_parent g ] n ) {
+				let k = [ tg_anchor g ];
 				if &( k 4 ) {
 					if &( k 1 ) {
 						let a = +( [ tg_h g ] -( h [ tg_h n ] ) );
-						if <( a [ tg_m g ] ) {
-							let a = [ tg_m g ];
+						if <( a [ tg_min g ] ) {
+							let a = [ tg_min g ];
 						}
 						set [ tg_h g ] = a;
 					} else {
@@ -98,8 +98,8 @@ function tg_resize( n, x, y, w, h ) {
 				if &( k 8 ) {
 					if &( k 2 ) {
 						let a = +( [ tg_w g ] -( w [ tg_w n ] ) );
-						if <( a [ tg_m g ] ) {
-							let a = [ tg_m g ];
+						if <( a [ tg_min g ] ) {
+							let a = [ tg_min g ];
 						}
 						set [ tg_w g ] = a;
 					} else {
@@ -117,77 +117,77 @@ function tg_resize( n, x, y, w, h ) {
 }
 
 function tg_minsize( n, size ) {
-	set [ tg_m n ] = size;
+	set [ tg_min n ] = size;
 }
 
-function tg_anchor( n, top, left, bottom, right ) {
+function tg_anchors( n, top, left, bottom, right ) {
 	var a;
 	if top { let a = |( a 1 ); }
 	if left { let a = |( a 2 ); }
 	if bottom { let a = |( a 4 ); }
 	if right { let a = |( a 8 ); }
-	set [ tg_k n ] = a;
+	set [ tg_anchor n ] = a;
 }
 
 function tg_window( n, parent, x, y, w, h, text ) {
-	set [ tg_t n ] = 1;
-	set [ tg_p n ] = parent;
-	set [ tg_m n ] = 16;
+	set [ tg_type n ] = 1;
+	set [ tg_parent n ] = parent;
+	set [ tg_min n ] = 16;
 	call tg_resize( n, x, y, w, h );
 	set [ tg_a n ] = text;
 }
 
 function tg_button( n, parent, x, y, w, h, text ) {
 	call tg_window( n, parent, x, y, w, h, text );
-	set [ tg_t n ] = 2;
+	set [ tg_type n ] = 2;
 }
 
 function tg_vslider( n, parent, x, y, w, h, page, count ) {
 	call tg_window( n, parent, x, y, w, h, 0 );
-	set [ tg_t n ] = 3;
+	set [ tg_type n ] = 3;
 	set [ tg_b n ] = page;
 	set [ tg_c n ] = count;
 }
 
 function tg_hslider( n, parent, x, y, w, h, page, count ) {
 	call tg_window( n, parent, x, y, w, h, 0 );
-	set [ tg_t n ] = 7;
+	set [ tg_type n ] = 7;
 	set [ tg_b n ] = page;
 	set [ tg_c n ] = count;
 }
 
 function tg_textbox( n, parent, x, y, w, h, text ) {
 	call tg_window( n, parent, x, y, w, h, text );
-	set [ tg_t n ] = 4;
+	set [ tg_type n ] = 4;
 }
 
 function tg_sizegad( n, parent, x, y, w, h ) {
 	call tg_window( n, parent, x, y, w, h, 0 );
-	call tg_anchor( n, 0, 0, 1, 1 );
-	set [ tg_t n ] = 5;
+	call tg_anchors( n, 0, 0, 1, 1 );
+	set [ tg_type n ] = 5;
 }
 
 function tg_listbox( n, parent, x, y, w, h, list ) {
 	call tg_window( n, parent, x, y, w, h, list );
-	set [ tg_t n ] = 6;
+	set [ tg_type n ] = 6;
 }
 
 function tg_init( gadcount ) {
 	var idx;
-	dim [ tg_o gadcount ];
-	dim [ tg_t gadcount ];
-	dim [ tg_p gadcount ];
+	dim [ tg_zorder gadcount ];
+	dim [ tg_type gadcount ];
+	dim [ tg_parent gadcount ];
 	dim [ tg_x gadcount ];
 	dim [ tg_y gadcount ];
 	dim [ tg_w gadcount ];
 	dim [ tg_h gadcount ];
-	dim [ tg_m gadcount ];
-	dim [ tg_k gadcount ];
+	dim [ tg_min gadcount ];
+	dim [ tg_anchor gadcount ];
 	dim [ tg_a gadcount ];
 	dim [ tg_b gadcount ];
 	dim [ tg_c gadcount ];
 	while <( idx gadcount ) {
-		set [ tg_o idx ] = idx;
+		set [ tg_zorder idx ] = idx;
 		inc idx;
 	}
 }
@@ -206,7 +206,7 @@ function tg_getx( n ) {
 	var x;
 	let x = [ tg_x n ];
 	if >( n 0 ) {
-		let x = +( x tg_getx( [ tg_p n ] ) );
+		let x = +( x tg_getx( [ tg_parent n ] ) );
 	}
 	return x;
 }
@@ -215,7 +215,7 @@ function tg_gety( n ) {
 	var y;
 	let y = [ tg_y n ];
 	if >( n 0 ) {
-		let y = +( y tg_gety( [ tg_p n ] ) );
+		let y = +( y tg_gety( [ tg_parent n ] ) );
 	}
 	return y;
 }
@@ -352,7 +352,7 @@ function tg_draw( n ) {
 	if <( n 1 ) {
 		call tg_draw_background();
 	} else {
-		switch [ tg_t n ] {
+		switch [ tg_type n ] {
 			case 1 { call tg_draw_window( n ); }
 			case 2 { call tg_draw_button( n ); }
 			case 3 { call tg_draw_vslider( n ); }
@@ -363,10 +363,10 @@ function tg_draw( n ) {
 		}
 	}
 	let idx = 1;
-	let len = $len( tg_o );
+	let len = $len( tg_zorder );
 	while <( idx len ) {
-		if =( [ tg_p [ tg_o idx ] ] n ) {
-			call tg_draw( [ tg_o idx ] );
+		if =( [ tg_parent [ tg_zorder idx ] ] n ) {
+			call tg_draw( [ tg_zorder idx ] );
 		}
 		inc idx;
 	}
@@ -376,10 +376,10 @@ function tg_find( x, y, p ) {
 	var n, idx, len, g, x0, y0, x1, y1;
 	let n = p;
 	let idx = 1;
-	let len = $len( tg_o );
+	let len = $len( tg_zorder );
 	while <( idx len ) {
-		let g = [ tg_o idx ];
-		if =( [ tg_p g ] p ) {
+		let g = [ tg_zorder idx ];
+		if =( [ tg_parent g ] p ) {
 			let x0 = [ tg_x g ];
 			let y0 = [ tg_y g ];
 			let x1 = +( x0 [ tg_w g ] );
@@ -395,21 +395,21 @@ function tg_find( x, y, p ) {
 
 function tg_wintofront( n ) {
 	var idx, end, g;
-	while >( [ tg_t n ] 1 ) {
-		let n = [ tg_p n ];
+	while >( [ tg_type n ] 1 ) {
+		let n = [ tg_parent n ];
 	}
-	let end = -( $len( tg_o ) 1 );
-	if &&( >( n 0 ) !( =( [ tg_o end ] n ) ) ) {
+	let end = -( $len( tg_zorder ) 1 );
+	if &&( >( n 0 ) !( =( [ tg_zorder end ] n ) ) ) {
 		let idx = 1;
-		while <( idx $len( tg_o ) ) {
-			let g = [ tg_o -( idx 1 ) ];
+		while <( idx $len( tg_zorder ) ) {
+			let g = [ tg_zorder -( idx 1 ) ];
 			if =( g n ) {
-				set [ tg_o -( idx 1 ) ] = [ tg_o idx ];
-				set [ tg_o idx ] = g;
+				set [ tg_zorder -( idx 1 ) ] = [ tg_zorder idx ];
+				set [ tg_zorder idx ] = g;
 			}
 			inc idx;
 		}
-		call tg_draw( [ tg_o end ] );
+		call tg_draw( [ tg_zorder end ] );
 	}
 	return n;
 }
@@ -425,7 +425,7 @@ function tg_scan( event ) {
 				}
 				let n = tg_find( tg_selx, tg_sely, 0 );
 				let w = tg_wintofront( n );
-				switch [ tg_t n ] {
+				switch [ tg_type n ] {
 					case 1 {
 						let x = $xmouse;
 						let y = $ymouse;
@@ -509,13 +509,13 @@ function tg_scan( event ) {
 			let tg_selx = $xmouse;
 			let tg_sely = $ymouse;
 			let n = tg_find( tg_selx, tg_sely, 0 );
-			if =( [ tg_t tg_focus ] 4 ) {
+			if =( [ tg_type tg_focus ] 4 ) {
 				set [ tg_b tg_focus ] = 0;
 				call tg_draw( tg_focus );
 			}
 			let tg_focus = n;
 			let w = tg_wintofront( n );
-			switch [ tg_t n ] {
+			switch [ tg_type n ] {
 				case 2 {
 					set [ tg_b n ] = 1;
 					call tg_draw( n );
@@ -584,7 +584,7 @@ function tg_scan( event ) {
 		}
 		case FX_MOUSEKEYUP {
 			let n = tg_find( tg_selx, tg_sely, 0 );
-			if =( [ tg_t n ] 2 ) {
+			if =( [ tg_type n ] 2 ) {
 				set [ tg_b n ] = 0;
 				call tg_draw( n );
 				if =( tg_find( $xmouse, $ymouse, 0 ) n ) {
@@ -595,7 +595,7 @@ function tg_scan( event ) {
 			let tg_sely = 0;
 		}
 		case FX_KEYDOWN {
-			if =( [ tg_t tg_focus ] 4 ) {
+			if =( [ tg_type tg_focus ] 4 ) {
 				let t = [ tg_a tg_focus ];
 				let c = $keyboard;
 				if =( c 8 ) {
@@ -713,23 +713,23 @@ program tgads {
 	call tg_minsize( 10, 64 );
 	call tg_sizegad( 11, 10, 180, 180, 16, 16 );
 	call tg_hslider( 12, 10, 10, 170, 160, 20, 5, 15 );
-	call tg_anchor( 12, 0, 1, 1, 1 );
+	call tg_anchors( 12, 0, 1, 1, 1 );
 
 	call tg_window( 15, 0, 30, 30, 400, 200, "Window 6" );
 	call tg_minsize( 15, 150 );
 	call tg_button( 16, 15, 10, 32, 80, 26, "Button 7" );
 	call tg_vslider( 17, 15, 370, 32, 20, 120, 5, 15 );
-	call tg_anchor( 17, 1, 0, 1, 1 );
+	call tg_anchors( 17, 1, 0, 1, 1 );
 	call tg_textbox( 18, 15, 10, 64, 80, 28, "Text 9" );
 	call tg_textbox( 19, 15, 100, 160, 260, 28, "Text 10" );
-	call tg_anchor( 19, 0, 1, 1, 1 );
+	call tg_anchors( 19, 0, 1, 1, 1 );
 	call tg_sizegad( 20, 15, 380, 180, 16, 16 );
 
 	let listitems = $array( $fxdir( "." ) );
 	call sort( listitems );
 
 	call tg_listbox( 21, 15, 100, 32, 260, 120, listitems );
-	call tg_anchor( 21, 1, 1, 1, 1 );
+	call tg_anchors( 21, 1, 1, 1, 1 );
 	
 	set [ tg_b 17 ] = /( -( [ tg_h 21 ] 12 ) 16 );
 	set [ tg_c 17 ] = $len( listitems );
