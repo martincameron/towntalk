@@ -16,7 +16,7 @@ struct exten( struc ) {
 	f,g;
 };
 
-include "hello.tt";
+include "programs/hello.tt";
 
 function assert( value, elem ) {
 	if !( value ) {
@@ -447,8 +447,8 @@ function testload() {
 	let err = 0;
 	try { call $load( 0 ); } catch err {}
 	call assert( err, ${-} );
-	let str = $load( "test.tt" );
-	call assert( =( $len( str ) $flen( "test.tt" ) ), ${-} );
+	let str = $load( "programs/test.tt" );
+	call assert( =( $len( str ) $flen( "programs/test.tt" ) ), ${-} );
 	call assert( >( $chr( str 0 ) 0 ), ${-} );
 }
 
@@ -459,7 +459,7 @@ function testflen() {
 	let err = 0;
 	try { call $load( 0 ); } catch err {}
 	call assert( err, ${-} );
-	call assert( =( $len( $load( "test.tt" ) ) $flen( "test.tt" ) ), ${-} );
+	call assert( =( $len( $load( "programs/test.tt" ) ) $flen( "programs/test.tt" ) ), ${-} );
 }
 
 function testargc() {
@@ -473,7 +473,7 @@ function testargv() {
 	let err = 0;
 	try { call $argv( -1 ); } catch err {}
 	call assert( err, ${-} );
-	call assert( =( $cmp( $argv( 0 ) "test.tt" ) 0 ), ${-} );
+	call assert( =( $cmp( $argv( 0 ) "programs/test.tt" ) 0 ), ${-} );
 }
 
 function testtime() {
@@ -487,7 +487,7 @@ function testparse() {
 	let err = 0;
 	try { call $parse( 0 ); } catch err {}
 	call assert( err, ${-} );
-	let elem = $parse( $load( "test.tt" ) );
+	let elem = $parse( $load( "programs/test.tt" ) );
 	call assert( =( $cmp( elem "rem" ) 0 ), ${-} );
 	call assert( =( $cmp( $child( $next( elem ) ) "Test" ) 0 ), ${-} );
 }
