@@ -130,6 +130,7 @@
 		$astr(arr)               Array to element string.
 		$load("abc.bin")         Load raw bytes into string.
 		$flen("file")            Get the length of a file.
+		$src                     Path of current source file.
 		$argc                    Number of command-line arguments.
 		$argv(idx)               Command-line argument as string.
 		$time                    Current time as seconds/date tuple.
@@ -2819,12 +2820,12 @@ static struct element* parse_expression( struct element *elem, struct environmen
 		expr->function = func;
 		if( ( value[ 0 ] >= '0' && value[ 0 ] <= '9' )
 			|| ( value[ 0 ] == '-' && ( value[ 1 ] >= '0' && value[ 1 ] <= '9' ) ) ) {
-			/* Integer constant. */
+			/* Integer literal. */
 			next = parse_constant( elem, &var, message );
 			expr->index = var.integer_value;
 			expr->evaluate = &evaluate_integer_constant_expression;
 		} else if( value[ 0 ] == '"' || ( value[ 0 ] == '$' && value[ 1 ] == 0 ) ) {
-			/* String or element constant. */
+			/* String or element literal. */
 			constant = new_global_variable( "#Const#", message );
 			if( constant ) {
 				constant->next = env->constants;
@@ -2832,6 +2833,18 @@ static struct element* parse_expression( struct element *elem, struct environmen
 				expr->global = constant;
 				expr->evaluate = &evaluate_global;
 				next = parse_constant( elem, &constant->value, message );
+			}
+		} else if( strcmp( value, "$src" ) == 0 ) {
+			/* Source file. */
+			constant = new_global_variable( "#Const#", message );
+			if( constant ) {
+				constant->next = env->constants;
+				env->constants = constant;
+				expr->global = constant;
+				expr->evaluate = &evaluate_global;
+				constant->value.string_value = new_string_value( strlen( env->file ) );
+				constant->value.string_value->reference_count = 1;
+				strcpy( constant->value.string_value->string, env->file );
 			}
 		} else if( value[ 0 ] == '\'' ) {
 			/* Infix operator.*/
