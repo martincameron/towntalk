@@ -3,6 +3,7 @@ rem { Test }
 
 const ONE = 1;
 const STR = "*";
+const CAT = $str( "*" "*" );
 const ELE = ${ ( * ) };
 
 global g;
@@ -297,6 +298,7 @@ function testcmp() {
 	call assert( =( $cmp( "" "" ) 0 ), ${-} );
 	call assert( =( $cmp( "0" "0" ) 0 ), ${-} );
 	call assert( =( $cmp( STR "*" ) 0 ), ${-} );
+	call assert( =( $cmp( CAT "**" ) 0 ), ${-} );
 	call assert( =( $cmp( $tup( "a" 1 ) $tup( "a" 1 ) ) 0 ), ${-} );
 	call assert( >( $cmp( 1 0 ) 0 ), ${-} );
 	call assert( >( $cmp( "1" "0" ) 0 ), ${-} );
