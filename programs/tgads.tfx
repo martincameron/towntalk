@@ -372,6 +372,23 @@ function tg_draw( n ) {
 	}
 }
 
+function tg_listbox_scroll( listbox, slider ) {
+	# Adjust slider to listbox size (if changed).
+	set [ tg_b slider ] = /( -( [ tg_h 21 ] 12 ) 16 );
+	set [ tg_c slider ] = $len( listitems );
+	if >( [ tg_b slider ] [ tg_c slider ] ) {
+		set [ tg_b slider ] = [ tg_c slider ];
+	}
+	if >( +( [ tg_a slider ] [ tg_b slider ] ) [ tg_c slider ] ) {
+		set [ tg_a slider ] = -( [ tg_c slider ] [ tg_b slider ] );
+	}
+	if <( [ tg_a slider ] 0 ) {
+		set [ tg_a slider ] = 0;
+	}
+	# Set listbox offset.
+	set [ tg_b listbox ] = [ tg_a slider ];
+}
+
 function tg_find( x, y, p ) {
 	var n, idx, len, g, x0, y0, x1, y1;
 	let n = p;
@@ -694,10 +711,10 @@ program tgads {
 	let palette = $array( ${ 0x000000, 0xFFFFFF, 0xA0A0A0, 0x6080B0 } );
 
 	dim [ background 240 ];
-	call parse_rws( $load( "rws/demo5.rws" ), background );
+	call parse_rws( $load( "programs/rws/demo5.rws" ), background );
 	#call gradient( 0x008000, 0x000080, background, 0, 240 );
 
-	call tg_charset( $load( "topaz8.txt" ) );
+	call tg_charset( $load( "programs/topaz8.txt" ) );
 
 	fxopen 640, 480, "tgads";
 
@@ -730,9 +747,7 @@ program tgads {
 
 	call tg_listbox( 21, 15, 100, 32, 260, 120, listitems );
 	call tg_anchors( 21, 1, 1, 1, 1 );
-	
-	set [ tg_b 17 ] = /( -( [ tg_h 21 ] 12 ) 16 );
-	set [ tg_c 17 ] = $len( listitems );
+	call tg_listbox_scroll( 21, 17 );
 	
 	call tg_draw( 0 );
 	fxshow;
@@ -741,19 +756,11 @@ program tgads {
 		let selected = tg_scan( $fxwait );
 		switch selected {
 			case 17 {
-				set [ tg_b 21 ] = [ tg_a selected ];
+				call tg_listbox_scroll( 21, 17 );
 				call tg_draw( 21 );
 			}
 			case 15 {
-				set [ tg_b 17 ] = /( -( [ tg_h 21 ] 12 ) 16 );
-				set [ tg_c 17 ] = $len( listitems );
-				if >( +( [ tg_a 17 ] [ tg_b 17 ] ) [ tg_c 17 ] ) {
-					set [ tg_a 17 ] = -( [ tg_c 17 ] [ tg_b 17 ] );
-				}
-				if <( [ tg_a 17 ] 0 ) {
-					set [ tg_a 17 ] = 0;
-				}
-				set [ tg_b 21 ] = [ tg_a 17 ];
+				call tg_listbox_scroll( 21, 17 );
 				call tg_draw( 21 );
 			}
 			default {
