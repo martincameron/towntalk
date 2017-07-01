@@ -871,7 +871,6 @@ static int evaluate_fxdir_expression( struct expression *this, struct variable *
 						elem = new_element( len );
 						if( elem ) {
 							write_byte_string( dentry->d_name, strlen( dentry->d_name ), elem->str.string );
-							elem->str.reference_count = 1;
 							elem->str.line = line++;
 							if( head ) {
 								tail->next = elem;

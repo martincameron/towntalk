@@ -326,6 +326,7 @@ static struct element* new_element( int str_len ) {
 		memset( elem, 0, sizeof( struct element ) );
 		elem->str.string = ( char * ) &elem[ 1 ];
 		elem->str.string[ str_len ] = 0;
+		elem->str.reference_count = 1;
 		elem->str.length = str_len;
 	}
 	return elem;
@@ -361,6 +362,7 @@ static struct string* new_string_value( int length ) {
 		memset( str, 0, sizeof( struct string ) );
 		str->string = ( char * ) &str[ 1 ];
 		str->string[ length ] = 0;
+		str->reference_count = 1;
 		str->length = length;
 	}
 	return str;
@@ -425,6 +427,14 @@ static int unquote_string( char *string, char *output ) {
 	return length;
 }
 
+static struct string* new_string_literal( char *source ) {
+	struct string *str = new_string_value( unquote_string( source, NULL ) );
+	if( str ) {
+		str->length = unquote_string( source, str->string );
+	}
+	return str;
+}
+
 static int parse_child_element( char *buffer, int idx, struct element *parent, char *message ) {
 	struct element *elem = NULL;
 	int offset = idx, length = 0, line = parent->str.line, end, str_len;
@@ -441,7 +451,6 @@ static int parse_child_element( char *buffer, int idx, struct element *parent, c
 					elem = elem->next;
 				}
 				if( elem ) {
-					elem->str.reference_count = 1;
 					elem->str.line = line;
 					memcpy( elem->str.string, &buffer[ offset ], length );
 					/*printf("%d %d %c :%s\n",offset,length,chr,elem->str.string);*/
@@ -474,7 +483,6 @@ static int parse_child_element( char *buffer, int idx, struct element *parent, c
 					elem = elem->next;
 				}
 				if( elem ) {
-					elem->str.reference_count = 1;
 					elem->str.line = line;
 					if( chr == '"' ) {
 						idx = parse_string( buffer, idx - 1, elem, line, message );
@@ -810,7 +818,6 @@ static int throw( struct variable *exception, struct expression *source, int int
 	if( string ) {
 		str = new_string_value( strlen( string ) + 64 );
 		if( str ) {
-			str->reference_count = 1;
 			if( sprintf( str->string, "%s (on line %d of '%.32s')",
 			string, source->line, source->function->file ) < 0 ) {
 				strcpy( str->string, string );
@@ -821,7 +828,6 @@ static int throw( struct variable *exception, struct expression *source, int int
 		/* Uncatchable exception for exit statement. */
 		str = new_string_value( 0 );
 		if( str ) {
-			str->reference_count = 1;
 			str->string = NULL;
 		}
 	}
@@ -985,15 +991,6 @@ static int write_array( struct array *arr, char *output ) {
 	return length;
 }
 
-static struct string* new_string_constant( char *source ) {
-	struct string *str = new_string_value( unquote_string( source, NULL ) );
-	if( str ) {
-		str->reference_count = 1;
-		str->length = unquote_string( source, str->string );
-	}
-	return str;
-}
-
 static struct element* parse_constant( struct element *elem, struct variable *constant, char *message ) {
 	int len = 0, integer_value = 0;
 	struct string *string_value = NULL;
@@ -1001,7 +998,7 @@ static struct element* parse_constant( struct element *elem, struct variable *co
 	char *end, *str = NULL;
 	if( elem->str.string[ 0 ] == '"' ) {
 		/* String literal. */
-		string_value = new_string_constant( elem->str.string );
+		string_value = new_string_literal( elem->str.string );
 		if( string_value == NULL ) {
 			strcpy( message, OUT_OF_MEMORY );
 		}
@@ -1039,7 +1036,7 @@ static struct element* parse_constant( struct element *elem, struct variable *co
 				child = child->next;
 			}
 			if( str ) {
-				string_value = new_string_constant( str );
+				string_value = new_string_literal( str );
 				if( string_value ) {
 					next = next->next;
 				} else {
@@ -1057,7 +1054,7 @@ static struct element* parse_constant( struct element *elem, struct variable *co
 		if( next && next->str.string[ 0 ] == '(' ) {
 			child = next->child;
 			if( child && child->str.string[ 0 ] == '"' ) {
-				string_value = new_string_constant( child->str.string );
+				string_value = new_string_literal( child->str.string );
 				if( string_value ) {
 					child = child->next;
 					if( child && child->str.string[ 0 ] == ',' ) {
@@ -1166,7 +1163,7 @@ static int add_constants( struct constant *constants, struct environment *env, c
 		if( global ) {
 			global->value.integer_value = con->integer_value;
 			if( con->string_value ) {
-				global->value.string_value = new_string_constant( con->string_value );
+				global->value.string_value = new_string_literal( con->string_value );
 				if( global->value.string_value ) {
 					global->next = env->globals;
 					env->globals = global;
@@ -1954,7 +1951,6 @@ static int evaluate_str_expression( struct expression *this, struct variable *va
 			if( MAX_INTEGER - len > str_len ) {
 				new = new_string_value( str_len + len );
 				if( new ) {
-					new->reference_count = 1;
 					if( str ) {
 						memcpy( new->string, str->string, str_len );
 						free( str );
@@ -1991,7 +1987,6 @@ static int evaluate_asc_expression( struct expression *this, struct variable *va
 	if( ret ) {
 		str = new_string_value( 1 );
 		if( str ) {
-			str->reference_count = 1;
 			str->string[ 0 ] = val.integer_value;
 			dispose_variable( result );
 			result->integer_value = 0;
@@ -2059,7 +2054,6 @@ static int evaluate_load_expression( struct expression *this, struct variable *v
 				if( len < MAX_INTEGER ) {
 					str = new_string_value( len );
 					if( str ) {
-						str->reference_count = 1;
 						len = load_file( file.string_value->string, str->string, message );
 						if( len >= 0 ) {
 							dispose_variable( result );
@@ -2186,7 +2180,6 @@ static int evaluate_sub_expression( struct expression *this, struct variable *va
 					&& idx.integer_value + len.integer_value <= length ) {
 						str = new_string_value( len.integer_value );
 						if( str ) {
-							str->reference_count = 1;
 							if( var.string_value->line == -1 ) {
 								data = str->string;
 								arr = ( ( struct array * ) var.string_value )->array;
@@ -2234,7 +2227,6 @@ static int evaluate_astr_expression( struct expression *this, struct variable *v
 			if( len >= 0 ) {
 				str = new_string_value( len );
 				if( str ) {
-					str->reference_count = 1;
 					write_array( arr, str->string );
 					dispose_variable( result );
 					result->integer_value = 0;
@@ -2274,7 +2266,6 @@ static int evaluate_argv_expression( struct expression *this, struct variable *v
 			val = this->function->env->argv[ idx.integer_value ];
 			str = new_string_value( strlen( val ) );
 			if( str ) {
-				str->reference_count = 1;
 				memcpy( str->string, val, str->length );
 				dispose_variable( result );
 				result->integer_value = 0;
@@ -2297,7 +2288,6 @@ static int evaluate_time_expression( struct expression *this, struct variable *v
 	char *time_str = ctime( &seconds );
 	struct string *str = new_string_value( strlen( time_str ) );
 	if( str ) {
-		str->reference_count = 1;
 		strcpy( str->string, time_str );
 		str->string[ str->length - 1 ] = 0;
 		dispose_variable( result );
@@ -2394,7 +2384,6 @@ static int evaluate_quote_expression( struct expression *this, struct variable *
 			if( length >= 0 ) {
 				str = new_string_value( length );
 				if( str ) {
-					str->reference_count = 1;
 					write_byte_string( var.string_value->string,
 						var.string_value->length, str->string );
 					dispose_variable( result );
@@ -2422,7 +2411,7 @@ static int evaluate_unquote_expression( struct expression *this, struct variable
 	int ret = parameter->evaluate( parameter, variables, &var, exception );
 	if( ret ) {
 		if( var.string_value ) {
-			str = new_string_constant( var.string_value->string );
+			str = new_string_literal( var.string_value->string );
 			if( str ) {
 				dispose_variable( result );
 				result->integer_value = 0;
@@ -2471,7 +2460,6 @@ static int evaluate_hex_expression( struct expression *this, struct variable *va
 				len = sprintf( str->string, " 0x%08x", val.integer_value );
 			}
 			if( len > 0 ) {
-				str->reference_count = 1;
 				str->length = len;
 				dispose_variable( result );
 				result->integer_value = 0;
@@ -2516,7 +2504,6 @@ static int evaluate_pack_expression( struct expression *this, struct variable *v
 				idx += 4;
 			}
 			out[ idx ] = 0;
-			str->reference_count = 1;
 			dispose_variable( result );
 			result->integer_value = 0;
 			result->string_value = str;
@@ -2843,7 +2830,6 @@ static struct element* parse_expression( struct element *elem, struct environmen
 				expr->global = constant;
 				expr->evaluate = &evaluate_global;
 				constant->value.string_value = new_string_value( strlen( env->file ) );
-				constant->value.string_value->reference_count = 1;
 				strcpy( constant->value.string_value->string, env->file );
 			}
 		} else if( value[ 0 ] == '\'' ) {
