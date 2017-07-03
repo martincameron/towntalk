@@ -17,7 +17,7 @@ struct exten( struc ) {
 	f,g;
 };
 
-include "programs/hello.tt";
+include "hello.tt";
 
 function assert( value, elem ) {
 	if !( value ) {
@@ -591,6 +591,7 @@ function testeq() {
 	try { call $eq( 0 except( ${ 2 } ) ); } catch err {}
 	call assert( =( $cmp( $str( err ) "2" ) 0 ), ${-} );
 	call assert( =( $eq( 0 0 ) 1 ), ${-} );
+	call assert( =( $eq( "" "" ) 1 ), ${-} );
 	call assert( =( $eq( "a" "a" ) 1 ), ${-} );
 	call assert( =( $eq( STR STR ) 1 ), ${-} );
 	call assert( =( $eq( @testeq @testeq ) 1 ), ${-} );
@@ -602,6 +603,21 @@ function testeq() {
 
 function testsrc() {
 	call assert( $eq( $sub( $src, -( $len( $src ) 7 ), 7 ) "test.tt" ), ${-} );
+}
+
+function testpath() {
+	var err;
+	try { call $path( except( ${ 1 } ) ); } catch err {}
+	call assert( =( $cmp( $str( err ) "1" ) 0 ), ${-} );
+	let err = 0;
+	try { call $path( 0 ); } catch err { let err = 1; }
+	call assert( =( err 1 ), ${-} );
+	call assert( =( $cmp( $path( "" ), "" ) 0 ), ${-} );
+	call assert( =( $cmp( $path( "file" ), "" ) 0 ), ${-} );
+	call assert( =( $cmp( $path( "dir/file" ), "dir/" ) 0 ), ${-} );
+	call assert( =( $cmp( $path( "c:file" ), "c:" ) 0 ), ${-} );
+	call assert( =( $cmp( $path( "dir\\file" ), "dir\\" ) 0 ), ${-} );
+	call assert( =( $cmp( $path( "c:\\dir\\file" ), "c:\\dir\\" ) 0 ), ${-} );
 }
 
 program test {
@@ -642,5 +658,6 @@ program test {
 	call teststruct();
 	call testfuncref();
 	call testeq();
+	call testpath();
 	print "Tests passed.";
 }
