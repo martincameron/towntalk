@@ -130,6 +130,7 @@ static int log_2( int x ) {
 
 static char* data_ascii( struct data *data, int offset, int length, char *dest ) {
 	int idx, chr;
+	memset( dest, 32, length );
 	if( offset > data->length ) {
 		offset = data->length;
 	}
@@ -138,9 +139,7 @@ static char* data_ascii( struct data *data, int offset, int length, char *dest )
 	}
 	for( idx = 0; idx < length; idx++ ) {
 		chr = data->buffer[ offset + idx ] & 0xFF;
-		if( chr < 32 ) {
-			dest[ idx ] = 32;
-		} else {
+		if( chr > 32 ) {
 			dest[ idx ] = chr;
 		}
 	}
