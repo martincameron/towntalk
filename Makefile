@@ -5,7 +5,7 @@ CFLAGS=-ansi -pedantic -Wall -g
 all: tt
 
 clean:
-	rm -f tt ttfx mod2tmf xmtotmf
+	rm -f tt ttfx xm2tmf
 
 tt: tt.c towntalk.c
 	$(CC) $(CFLAGS) tt.c -o tt
@@ -13,8 +13,5 @@ tt: tt.c towntalk.c
 ttfx: ttfx.c towntalk.c
 	$(CC) $(CFLAGS) ttfx.c -o ttfx `sdl-config --cflags --libs`
 
-mod2tmf: mod2tmf.c
-	$(CC) $(CFLAGS) mod2tmf.c -o mod2tmf
-
-xmtotmf: xm2tmf.c
-	$(CC) $(CFLAGS) xm2tmf.c -o xmtotmf
+xm2tmf: xm2tmf.c
+	$(CC) $(CFLAGS) xm2tmf.c -o xm2tmf
