@@ -129,13 +129,12 @@ static int log_2( int x ) {
 }
 
 static char* data_ascii( struct data *data, int offset, int length, char *dest ) {
-	int idx, end, chr;
+	int idx, chr;
 	memset( dest, 32, length );
 	if( offset > data->length ) {
 		offset = data->length;
 	}
-	end = offset + length;
-	if( end < 0 || end > data->length ) {
+	if( ( unsigned int ) offset + length > ( unsigned int ) data->length ) {
 		length = data->length - offset;
 	}
 	for( idx = 0; idx < length; idx++ ) {
@@ -871,7 +870,12 @@ static struct module* module_load_mod( struct data *data, char *message ) {
 			loop_start = data_u16be( data, ins * 30 + 16 ) * 2;
 			loop_length = data_u16be( data, ins * 30 + 18 ) * 2;
 			if( loop_start + loop_length > sample_length ) {
-				loop_length = sample_length - loop_start;
+				if( loop_start / 2 + loop_length <= sample_length ) {
+					/* Some old modules have loop start in bytes. */
+					loop_start = loop_start / 2;
+				} else {
+					loop_length = sample_length - loop_start;
+				}
 			}
 			if( loop_length < 4 ) {
 				loop_start = sample_length;
