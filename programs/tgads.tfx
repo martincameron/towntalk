@@ -374,8 +374,8 @@ function tg_draw( n ) {
 
 function tg_listbox_scroll( listbox, slider ) {
 	# Adjust slider to listbox size (if changed).
-	set [ tg_b slider ] = /( -( [ tg_h 21 ] 12 ) 16 );
-	set [ tg_c slider ] = $len( listitems );
+	set [ tg_b slider ] = /( -( [ tg_h listbox ] 12 ) 16 );
+	set [ tg_c slider ] = $len( [ tg_a listbox ] );
 	if >( [ tg_b slider ] [ tg_c slider ] ) {
 		set [ tg_b slider ] = [ tg_c slider ];
 	}
