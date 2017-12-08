@@ -348,27 +348,34 @@ function tg_draw_listbox( n ) {
 }
 
 function tg_draw( n ) {
-	var idx, len;
+	var type, idx, len;
 	if <( n 1 ) {
-		call tg_draw_background();
+		let type = 1;
 	} else {
-		switch [ tg_type n ] {
-			case 1 { call tg_draw_window( n ); }
-			case 2 { call tg_draw_button( n ); }
-			case 3 { call tg_draw_vslider( n ); }
-			case 4 { call tg_draw_textbox( n ); }
-			case 5 { call tg_draw_sizegad( n ); }
-			case 6 { call tg_draw_listbox( n ); }
-			case 7 { call tg_draw_hslider( n ); }
-		}
+		let type = [ tg_type n ];
 	}
-	let idx = 1;
-	let len = $len( tg_zorder );
-	while <( idx len ) {
-		if =( [ tg_parent [ tg_zorder idx ] ] n ) {
-			call tg_draw( [ tg_zorder idx ] );
+	switch type {
+		case 1 {
+			if <( n 1 ) {
+				call tg_draw_background();
+			} else {
+				call tg_draw_window( n );
+			}
+			let idx = 1;
+			let len = $len( tg_zorder );
+			while <( idx len ) {
+				if =( [ tg_parent [ tg_zorder idx ] ] n ) {
+					call tg_draw( [ tg_zorder idx ] );
+				}
+				inc idx;
+			}
 		}
-		inc idx;
+		case 2 { call tg_draw_button( n ); }
+		case 3 { call tg_draw_vslider( n ); }
+		case 4 { call tg_draw_textbox( n ); }
+		case 5 { call tg_draw_sizegad( n ); }
+		case 6 { call tg_draw_listbox( n ); }
+		case 7 { call tg_draw_hslider( n ); }
 	}
 }
 
