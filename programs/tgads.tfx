@@ -2,7 +2,7 @@
 array palette, charset, listitems, background;
 
 array tg_zorder, tg_type, tg_parent;
-array tg_x, tg_y, tg_w, tg_h, tg_min, tg_anchor, tg_a, tg_b, tg_c;
+array tg_x, tg_y, tg_w, tg_h, tg_min, tg_anchor, tg_mode, tg_a, tg_b, tg_c;
 
 global tg_selx, tg_sely, tg_focus;
 
@@ -133,6 +133,7 @@ function tg_window( n, parent, x, y, w, h, text ) {
 	set [ tg_type n ] = 1;
 	set [ tg_parent n ] = parent;
 	set [ tg_min n ] = 16;
+	set [ tg_mode n ] = 1;
 	call tg_resize( n, x, y, w, h );
 	set [ tg_a n ] = text;
 }
@@ -183,6 +184,7 @@ function tg_init( gadcount ) {
 	dim [ tg_h gadcount ];
 	dim [ tg_min gadcount ];
 	dim [ tg_anchor gadcount ];
+	dim [ tg_mode gadcount ];
 	dim [ tg_a gadcount ];
 	dim [ tg_b gadcount ];
 	dim [ tg_c gadcount ];
@@ -348,34 +350,38 @@ function tg_draw_listbox( n ) {
 }
 
 function tg_draw( n ) {
-	var type, idx, len;
+	var type, mode, idx, len;
 	if <( n 1 ) {
 		let type = 1;
+		let mode = 1;
 	} else {
 		let type = [ tg_type n ];
+		let mode = [ tg_mode n ];
 	}
-	switch type {
-		case 1 {
-			if <( n 1 ) {
-				call tg_draw_background();
-			} else {
-				call tg_draw_window( n );
-			}
-			let idx = 1;
-			let len = $len( tg_zorder );
-			while <( idx len ) {
-				if =( [ tg_parent [ tg_zorder idx ] ] n ) {
-					call tg_draw( [ tg_zorder idx ] );
+	if >( mode 0 ) {
+		switch type {
+			case 1 {
+				if <( n 1 ) {
+					call tg_draw_background();
+				} else {
+					call tg_draw_window( n );
 				}
-				inc idx;
+				let idx = 1;
+				let len = $len( tg_zorder );
+				while <( idx len ) {
+					if =( [ tg_parent [ tg_zorder idx ] ] n ) {
+						call tg_draw( [ tg_zorder idx ] );
+					}
+					inc idx;
+				}
 			}
+			case 2 { call tg_draw_button( n ); }
+			case 3 { call tg_draw_vslider( n ); }
+			case 4 { call tg_draw_textbox( n ); }
+			case 5 { call tg_draw_sizegad( n ); }
+			case 6 { call tg_draw_listbox( n ); }
+			case 7 { call tg_draw_hslider( n ); }
 		}
-		case 2 { call tg_draw_button( n ); }
-		case 3 { call tg_draw_vslider( n ); }
-		case 4 { call tg_draw_textbox( n ); }
-		case 5 { call tg_draw_sizegad( n ); }
-		case 6 { call tg_draw_listbox( n ); }
-		case 7 { call tg_draw_hslider( n ); }
 	}
 }
 
@@ -397,10 +403,25 @@ function tg_listbox_scroll( listbox, slider ) {
 }
 
 function tg_find( x, y, p ) {
-	var n, idx, len, g, x0, y0, x1, y1;
+	var n, idx, len, g, x0, y0, x1, y1, mode, wins;
 	let n = p;
-	let idx = 1;
 	let len = $len( tg_zorder );
+	let idx = 1;
+	while <( idx len ) {
+		let g = [ tg_zorder idx ];
+		if =( [ tg_parent g ] p ) {
+			if >( [ tg_mode g ] 0 ) {
+				if <( mode [ tg_mode g ] ) {
+					let mode = [ tg_mode g ];
+				}
+				if =( [ tg_type g ] 1 ) {
+					inc wins;
+				}
+			}
+		}
+		inc idx;
+	}
+	let idx = 1;
 	while <( idx len ) {
 		let g = [ tg_zorder idx ];
 		if =( [ tg_parent g ] p ) {
@@ -409,7 +430,19 @@ function tg_find( x, y, p ) {
 			let x1 = +( x0 [ tg_w g ] );
 			let y1 = +( y0 [ tg_h g ] );
 			if &&( &&( >e( x x0 ) >e( y y0 ) ) &&( <( x x1 ) <( y y1 ) ) ) {
-				let n = tg_find( -( x x0 ), -( y y0 ), g );
+				if =( [ tg_mode g ] mode ) {
+					if >( [ tg_parent g ] 0 ) {
+						let n = g;
+					} else {
+						if =( [ tg_type g ] 1 ) {
+							let n = tg_find( -( x x0 ), -( y y0 ), g );
+						} else {
+							if =( wins 0 ) {
+								let n = g;
+							}
+						}
+					}
+				}
 			}
 		}
 		inc idx;
@@ -727,21 +760,21 @@ program tgads {
 
 	call tg_init( 25 );
 
-	call tg_button( 1, 0, 10, 32, 80, 26, "Button 1" );
+	call tg_button( 1, 0, 10, 32, 80, 26, "Windows" );
 
 	call tg_window( 2, 0, 10, 10, 200, 100, "Window 2" );
 	call tg_button( 3, 2, 10, 32, 80, 26, "Button 3" );
-	call tg_button( 4, 2, 10, 64, 80, 26, "Button 4" );
+	call tg_button( 4, 2, 10, 64, 80, 26, "Close" );
 
-	call tg_window( 10, 0, 40, 40, 200, 200, "Window 5" );
+	call tg_window( 10, 0, 40, 40, 200, 200, "Window 10" );
 	call tg_minsize( 10, 64 );
 	call tg_sizegad( 11, 10, 180, 180, 16, 16 );
 	call tg_hslider( 12, 10, 10, 170, 160, 20, 5, 15 );
 	call tg_anchors( 12, 0, 1, 1, 1 );
 
-	call tg_window( 15, 0, 30, 30, 400, 200, "Window 6" );
+	call tg_window( 15, 0, 30, 30, 400, 200, "Files" );
 	call tg_minsize( 15, 150 );
-	call tg_button( 16, 15, 10, 32, 80, 26, "Button 7" );
+	call tg_button( 16, 15, 10, 32, 80, 26, "Close" );
 	call tg_vslider( 17, 15, 370, 32, 20, 120, 5, 15 );
 	call tg_anchors( 17, 1, 0, 1, 1 );
 	call tg_textbox( 18, 15, 10, 64, 80, 28, "Text 9" );
@@ -756,12 +789,33 @@ program tgads {
 	call tg_anchors( 21, 1, 1, 1, 1 );
 	call tg_listbox_scroll( 21, 17 );
 	
+	set [tg_mode 2] = 0;
+	set [tg_mode 4] = 2;
+	set [tg_mode 10] = 0;
+	set [tg_mode 15] = 0;
+	
 	call tg_draw( 0 );
 	fxshow;
 
 	while TRUE {
 		let selected = tg_scan( $fxwait );
 		switch selected {
+			case 1 {
+			set [tg_mode 2] = 1;
+			set [tg_mode 10] = 1;
+			set [tg_mode 15] = 2;
+			call tg_wintofront( 15 );
+			call tg_draw( 0 );
+			}
+			case 4 {
+			set [tg_mode 2] = 0;
+			set [tg_mode 10] = 0;
+			call tg_draw( 0 );
+			}
+			case 16 {
+			set [tg_mode 15] = 0;
+			call tg_draw( 0 );
+			}
 			case 17 {
 				call tg_listbox_scroll( 21, 17 );
 				call tg_draw( 21 );
