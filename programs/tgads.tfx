@@ -409,14 +409,12 @@ function tg_find( x, y, p ) {
 	let idx = 1;
 	while <( idx len ) {
 		let g = [ tg_zorder idx ];
-		if =( [ tg_parent g ] p ) {
-			if >( [ tg_mode g ] 0 ) {
-				if <( mode [ tg_mode g ] ) {
-					let mode = [ tg_mode g ];
-				}
-				if =( [ tg_type g ] 1 ) {
-					inc wins;
-				}
+		if &&( =( [ tg_parent g ] p ) >( [ tg_mode g ] 0 ) ) {
+			if <( mode [ tg_mode g ] ) {
+				let mode = [ tg_mode g ];
+			}
+			if =( [ tg_type g ] 1 ) {
+				inc wins;
 			}
 		}
 		inc idx;
@@ -424,22 +422,18 @@ function tg_find( x, y, p ) {
 	let idx = 1;
 	while <( idx len ) {
 		let g = [ tg_zorder idx ];
-		if =( [ tg_parent g ] p ) {
+		if &&( =( [ tg_parent g ] p ) >( [ tg_mode g ] 0 ) ) {
 			let x0 = [ tg_x g ];
 			let y0 = [ tg_y g ];
 			let x1 = +( x0 [ tg_w g ] );
 			let y1 = +( y0 [ tg_h g ] );
 			if &&( &&( >e( x x0 ) >e( y y0 ) ) &&( <( x x1 ) <( y y1 ) ) ) {
 				if =( [ tg_mode g ] mode ) {
-					if >( [ tg_parent g ] 0 ) {
-						let n = g;
+					if =( [ tg_type g ] 1 ) {
+						let n = tg_find( -( x x0 ), -( y y0 ), g );
 					} else {
-						if =( [ tg_type g ] 1 ) {
-							let n = tg_find( -( x x0 ), -( y y0 ), g );
-						} else {
-							if =( wins 0 ) {
-								let n = g;
-							}
+						if ||( >( [ tg_parent g ] 0 ) =( wins 0 ) ) {
+							let n = g;
 						}
 					}
 				}
@@ -801,20 +795,20 @@ program tgads {
 		let selected = tg_scan( $fxwait );
 		switch selected {
 			case 1 {
-			set [tg_mode 2] = 1;
-			set [tg_mode 10] = 1;
-			set [tg_mode 15] = 2;
-			call tg_wintofront( 15 );
-			call tg_draw( 0 );
+				set [tg_mode 2] = 1;
+				set [tg_mode 10] = 1;
+				set [tg_mode 15] = 2;
+				call tg_wintofront( 15 );
+				call tg_draw( 0 );
 			}
 			case 4 {
-			set [tg_mode 2] = 0;
-			set [tg_mode 10] = 0;
-			call tg_draw( 0 );
+				set [tg_mode 2] = 0;
+				set [tg_mode 10] = 0;
+				call tg_draw( 0 );
 			}
 			case 16 {
-			set [tg_mode 15] = 0;
-			call tg_draw( 0 );
+				set [tg_mode 15] = 0;
+				call tg_draw( 0 );
 			}
 			case 17 {
 				call tg_listbox_scroll( 21, 17 );
