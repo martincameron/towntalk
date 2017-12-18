@@ -2,7 +2,7 @@
 array palette, charset, listitems, background;
 
 array tg_zorder, tg_type, tg_parent;
-array tg_x, tg_y, tg_w, tg_h, tg_min, tg_anchor, tg_mode, tg_a, tg_b, tg_c;
+array tg_x, tg_y, tg_w, tg_h, tg_min, tg_anchor, tg_mode, tg_link, tg_a, tg_b, tg_c;
 
 global tg_selx, tg_sely, tg_focus;
 
@@ -168,9 +168,13 @@ function tg_sizegad( n, parent, x, y, w, h ) {
 	set [ tg_type n ] = 5;
 }
 
-function tg_listbox( n, parent, x, y, w, h, list ) {
+function tg_listbox( n, parent, x, y, w, h, list, slider ) {
 	call tg_window( n, parent, x, y, w, h, list );
 	set [ tg_type n ] = 6;
+	if >( slider 0 ) {
+		set [ tg_link n ] = slider;
+		set [ tg_link slider ] = n;
+	}
 }
 
 function tg_init( gadcount ) {
@@ -185,6 +189,7 @@ function tg_init( gadcount ) {
 	dim [ tg_min gadcount ];
 	dim [ tg_anchor gadcount ];
 	dim [ tg_mode gadcount ];
+	dim [ tg_link gadcount ];
 	dim [ tg_a gadcount ];
 	dim [ tg_b gadcount ];
 	dim [ tg_c gadcount ];
@@ -321,6 +326,10 @@ function tg_draw_sizegad( n ) {
 
 function tg_draw_listbox( n ) {
 	var x, y, tw, th, idx, end, ty, tc, txt;
+	if >( [ tg_link n ] 0 ) {
+		call tg_listbox_scroll( n, [ tg_link n ] );
+		call tg_draw( [ tg_link n ] );
+	}
 	let x = tg_getx( n );
 	let y = tg_gety( n );
 	fxrect x, y, [ tg_w n ], [ tg_h n ], [ palette 2 ];
@@ -514,7 +523,11 @@ function tg_scan( event ) {
 							}
 							let tg_sely = +( tg_sely -( tg_slider_offset( n, [ tg_h n ] ) o ) );
 							let selected = n;
-							call tg_draw( n );
+							if >( [ tg_link n ] 0 ) {
+								call tg_draw( [ tg_link n ] );
+							} else {
+								call tg_draw( n );
+							}
 						}
 					}
 					case 5 {
@@ -583,7 +596,11 @@ function tg_scan( event ) {
 						}
 						set [ tg_a n ] = t;
 						let selected = n;
-						call tg_draw( n );
+						if >( [ tg_link n ] 0 ) {
+							call tg_draw( [ tg_link n ] );
+						} else {
+							call tg_draw( n );
+						}
 					}
 					if >( tg_sely +( y s ) ) {
 						let t = +( [ tg_a n ] [ tg_b n ] );
@@ -592,7 +609,11 @@ function tg_scan( event ) {
 						}
 						set [ tg_a n ] = t;
 						let selected = n;
-						call tg_draw( n );
+						if >( [ tg_link n ] 0 ) {
+							call tg_draw( [ tg_link n ] );
+						} else {
+							call tg_draw( n );
+						}
 					}
 				}
 				case 4 {
@@ -779,7 +800,7 @@ program tgads {
 	let listitems = $array( $fxdir( "." ) );
 	call sort( listitems );
 
-	call tg_listbox( 21, 15, 100, 32, 260, 120, listitems );
+	call tg_listbox( 21, 15, 100, 32, 260, 120, listitems, 17 );
 	call tg_anchors( 21, 1, 1, 1, 1 );
 	call tg_listbox_scroll( 21, 17 );
 	
@@ -793,6 +814,9 @@ program tgads {
 
 	while TRUE {
 		let selected = tg_scan( $fxwait );
+		if >( selected 0 ) {
+			print $cat( selected, " ", [ tg_a selected ] );
+		}
 		switch selected {
 			case 1 {
 				set [tg_mode 2] = 1;
@@ -809,19 +833,6 @@ program tgads {
 			case 16 {
 				set [tg_mode 15] = 0;
 				call tg_draw( 0 );
-			}
-			case 17 {
-				call tg_listbox_scroll( 21, 17 );
-				call tg_draw( 21 );
-			}
-			case 15 {
-				call tg_listbox_scroll( 21, 17 );
-				call tg_draw( 21 );
-			}
-			default {
-				if >( selected 0 ) {
-					print $cat( selected, " ", [ tg_a selected ] );
-				}
 			}
 		}
 		fxshow;
