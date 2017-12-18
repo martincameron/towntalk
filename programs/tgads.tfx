@@ -133,6 +133,7 @@ function tg_window( n, parent, x, y, w, h, text ) {
 	set [ tg_type n ] = 1;
 	set [ tg_parent n ] = parent;
 	set [ tg_min n ] = 16;
+	set [ tg_anchor n ] = 0;
 	set [ tg_mode n ] = 1;
 	call tg_resize( n, x, y, w, h );
 	set [ tg_a n ] = text;
@@ -472,6 +473,50 @@ function tg_wintofront( n ) {
 		call tg_draw( [ tg_zorder end ] );
 	}
 	return n;
+}
+
+function tg_dispose( n ) {
+	var idx, end;
+	let idx = 1;
+	let end = $len( tg_parent );
+	while <( idx end ) {
+		if =( [ tg_parent n ] n ) {
+			call tg_dispose( n );
+		}
+		inc idx;
+	}
+	set [ tg_type n ] = 0;
+	set [ tg_parent n ] = 0;
+	set [ tg_mode n ] = 0;
+	set [ tg_link n ] = 0;
+	set [ tg_a n ] = 0;
+	set [ tg_b n ] = 0;
+	set [ tg_c n ] = 0;
+}
+
+function tg_num_unused() {
+	var idx, end, num;
+	let idx = 1;
+	let end = $len( tg_type );
+	while <( idx end ) {
+		if =( [ tg_type idx ] 0 ) {
+			inc num;
+		}
+		inc idx;
+	}
+	return num;
+}
+
+function tg_unused() {
+	var idx, end;
+	let idx = 1;
+	let end = $len( tg_type );
+	while <( idx end ) {
+		if =( [ tg_type idx ] 0 ) {
+			return idx;
+		}
+		inc idx;
+	}
 }
 
 function tg_scan( event ) {
@@ -815,6 +860,8 @@ program tgads {
 	set [tg_mode 10] = 0;
 	set [tg_mode 15] = 0;
 	
+	print $cat( tg_num_unused() " unused gadgets at " tg_unused() );
+		
 	call tg_draw( 0 );
 	fxshow;
 
