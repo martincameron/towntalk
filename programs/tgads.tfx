@@ -570,101 +570,107 @@ function tg_scan( event ) {
 			}
 		}
 		case FX_MOUSEKEYDOWN {
-			let tg_selx = $xmouse;
-			let tg_sely = $ymouse;
-			let n = tg_find( tg_selx, tg_sely, 0 );
-			if =( [ tg_type tg_focus ] 4 ) {
-				set [ tg_b tg_focus ] = 0;
-				call tg_draw( tg_focus );
-			}
-			let tg_focus = n;
-			let w = tg_wintofront( n );
-			switch [ tg_type n ] {
-				case 2 {
-					set [ tg_b n ] = 1;
-					call tg_draw( n );
+			let tg_selx = 0;
+			let tg_sely = 0;
+			if =( $mousekey 1 ) {
+				let tg_selx = $xmouse;
+				let tg_sely = $ymouse;
+				let n = tg_find( tg_selx, tg_sely, 0 );
+				if =( [ tg_type tg_focus ] 4 ) {
+					set [ tg_b tg_focus ] = 0;
+					call tg_draw( tg_focus );
 				}
-				case 3 {
-					let s = tg_slider_size( n, [ tg_h n ] );
-					let o = tg_slider_offset( n, [ tg_h n ] );
-					let e = -( -( [ tg_h n ] 4 ) s );
-					let y = +( +( tg_gety( n ) o ) 2 );
-					if <( tg_sely y ) {
-						let t = -( [ tg_a n ] [ tg_b n ] );
-						if <( t 0 ) {
-							let t = 0;
+				let tg_focus = n;
+				let w = tg_wintofront( n );
+				switch [ tg_type n ] {
+					case 2 {
+						set [ tg_b n ] = 1;
+						call tg_draw( n );
+					}
+					case 3 {
+						let s = tg_slider_size( n, [ tg_h n ] );
+						let o = tg_slider_offset( n, [ tg_h n ] );
+						let e = -( -( [ tg_h n ] 4 ) s );
+						let y = +( +( tg_gety( n ) o ) 2 );
+						if <( tg_sely y ) {
+							let t = -( [ tg_a n ] [ tg_b n ] );
+							if <( t 0 ) {
+								let t = 0;
+							}
+							set [ tg_a n ] = t;
+							let selected = n;
+							if >( [ tg_link n ] 0 ) {
+								call tg_draw( [ tg_link n ] );
+							} else {
+								call tg_draw( n );
+							}
 						}
-						set [ tg_a n ] = t;
-						let selected = n;
-						if >( [ tg_link n ] 0 ) {
-							call tg_draw( [ tg_link n ] );
-						} else {
-							call tg_draw( n );
+						if >( tg_sely +( y s ) ) {
+							let t = +( [ tg_a n ] [ tg_b n ] );
+							if >( t -( [ tg_c n ] [ tg_b n ] ) ) {
+								let t = -( [ tg_c n ] [ tg_b n ] );
+							}
+							set [ tg_a n ] = t;
+							let selected = n;
+							if >( [ tg_link n ] 0 ) {
+								call tg_draw( [ tg_link n ] );
+							} else {
+								call tg_draw( n );
+							}
 						}
 					}
-					if >( tg_sely +( y s ) ) {
-						let t = +( [ tg_a n ] [ tg_b n ] );
-						if >( t -( [ tg_c n ] [ tg_b n ] ) ) {
-							let t = -( [ tg_c n ] [ tg_b n ] );
-						}
-						set [ tg_a n ] = t;
-						let selected = n;
-						if >( [ tg_link n ] 0 ) {
-							call tg_draw( [ tg_link n ] );
-						} else {
-							call tg_draw( n );
-						}
+					case 4 {
+						set [ tg_b n ] = 1;
+						call tg_draw( n );
 					}
-				}
-				case 4 {
-					set [ tg_b n ] = 1;
-					call tg_draw( n );
-				}
-				case 6 {
-					let s = +( [ tg_b n ] /( -( tg_sely +( tg_gety( n ) 6 ) ) 16 ) );
-					if <( s $len( [ tg_a n ] ) ) {
-						set [ tg_c n ] = s;
-					}
-					let selected = n;
-					call tg_draw( n );
-				}
-				case 7 {
-					let s = tg_slider_size( n, [ tg_w n ] );
-					let o = tg_slider_offset( n, [ tg_w n ] );
-					let e = -( -( [ tg_w n ] 4 ) s );
-					let x = +( +( tg_getx( n ) o ) 2 );
-					if <( tg_selx x ) {
-						let t = -( [ tg_a n ] [ tg_b n ] );
-						if <( t 0 ) {
-							let t = 0;
+					case 6 {
+						let s = +( [ tg_b n ] /( -( tg_sely +( tg_gety( n ) 6 ) ) 16 ) );
+						if <( s $len( [ tg_a n ] ) ) {
+							set [ tg_c n ] = s;
 						}
-						set [ tg_a n ] = t;
 						let selected = n;
 						call tg_draw( n );
 					}
-					if >( tg_selx +( x s ) ) {
-						let t = +( [ tg_a n ] [ tg_b n ] );
-						if >( t -( [ tg_c n ] [ tg_b n ] ) ) {
-							let t = -( [ tg_c n ] [ tg_b n ] );
+					case 7 {
+						let s = tg_slider_size( n, [ tg_w n ] );
+						let o = tg_slider_offset( n, [ tg_w n ] );
+						let e = -( -( [ tg_w n ] 4 ) s );
+						let x = +( +( tg_getx( n ) o ) 2 );
+						if <( tg_selx x ) {
+							let t = -( [ tg_a n ] [ tg_b n ] );
+							if <( t 0 ) {
+								let t = 0;
+							}
+							set [ tg_a n ] = t;
+							let selected = n;
+							call tg_draw( n );
 						}
-						set [ tg_a n ] = t;
-						let selected = n;
-						call tg_draw( n );
+						if >( tg_selx +( x s ) ) {
+							let t = +( [ tg_a n ] [ tg_b n ] );
+							if >( t -( [ tg_c n ] [ tg_b n ] ) ) {
+								let t = -( [ tg_c n ] [ tg_b n ] );
+							}
+							set [ tg_a n ] = t;
+							let selected = n;
+							call tg_draw( n );
+						}
 					}
 				}
 			}
 		}
 		case FX_MOUSEKEYUP {
-			let n = tg_find( tg_selx, tg_sely, 0 );
-			if =( [ tg_type n ] 2 ) {
-				set [ tg_b n ] = 0;
-				call tg_draw( n );
-				if =( tg_find( $xmouse, $ymouse, 0 ) n ) {
-					let selected = n;
+			if ||( tg_selx tg_sely ) {
+				let n = tg_find( tg_selx, tg_sely, 0 );
+				if =( [ tg_type n ] 2 ) {
+					set [ tg_b n ] = 0;
+					call tg_draw( n );
+					if =( tg_find( $xmouse, $ymouse, 0 ) n ) {
+						let selected = n;
+					}
 				}
+				let tg_selx = 0;
+				let tg_sely = 0;
 			}
-			let tg_selx = 0;
-			let tg_sely = 0;
 		}
 		case FX_KEYDOWN {
 			if =( [ tg_type tg_focus ] 4 ) {
