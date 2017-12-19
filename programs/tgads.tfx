@@ -1,10 +1,12 @@
 
-array palette, charset, listitems, background;
+array palette, charset, background;
 
 array tg_zorder, tg_type, tg_parent;
 array tg_x, tg_y, tg_w, tg_h, tg_min, tg_anchor, tg_mode, tg_link, tg_a, tg_b, tg_c;
 
 global tg_selx, tg_sely, tg_focus;
+
+global fs_win, fs_path, fs_slider, fs_list, fs_file, fs_cancel, fs_okay;
 
 function tg_charset( str ) {
 	var w, h, clr, chr, y, x;
@@ -129,9 +131,9 @@ function tg_anchors( n, top, left, bottom, right ) {
 	set [ tg_anchor n ] = a;
 }
 
-function tg_window( n, parent, x, y, w, h, text ) {
+function tg_window( n, x, y, w, h, text ) {
 	set [ tg_type n ] = 1;
-	set [ tg_parent n ] = parent;
+	set [ tg_parent n ] = 0;
 	set [ tg_min n ] = 16;
 	set [ tg_anchor n ] = 0;
 	set [ tg_mode n ] = 1;
@@ -140,37 +142,43 @@ function tg_window( n, parent, x, y, w, h, text ) {
 }
 
 function tg_button( n, parent, x, y, w, h, text ) {
-	call tg_window( n, parent, x, y, w, h, text );
+	call tg_window( n, x, y, w, h, text );
+	set [ tg_parent n ] = parent;
 	set [ tg_type n ] = 2;
 }
 
 function tg_vslider( n, parent, x, y, w, h, page, count ) {
-	call tg_window( n, parent, x, y, w, h, 0 );
+	call tg_window( n, x, y, w, h, 0 );
+	set [ tg_parent n ] = parent;
 	set [ tg_type n ] = 3;
 	set [ tg_b n ] = page;
 	set [ tg_c n ] = count;
 }
 
 function tg_hslider( n, parent, x, y, w, h, page, count ) {
-	call tg_window( n, parent, x, y, w, h, 0 );
+	call tg_window( n, x, y, w, h, 0 );
+	set [ tg_parent n ] = parent;
 	set [ tg_type n ] = 7;
 	set [ tg_b n ] = page;
 	set [ tg_c n ] = count;
 }
 
 function tg_textbox( n, parent, x, y, w, h, text ) {
-	call tg_window( n, parent, x, y, w, h, text );
+	call tg_window( n, x, y, w, h, text );
+	set [ tg_parent n ] = parent;
 	set [ tg_type n ] = 4;
 }
 
 function tg_sizegad( n, parent, x, y, w, h ) {
-	call tg_window( n, parent, x, y, w, h, 0 );
+	call tg_window( n, x, y, w, h, 0 );
 	call tg_anchors( n, 0, 0, 1, 1 );
+	set [ tg_parent n ] = parent;
 	set [ tg_type n ] = 5;
 }
 
 function tg_listbox( n, parent, x, y, w, h, list, slider ) {
-	call tg_window( n, parent, x, y, w, h, list );
+	call tg_window( n, x, y, w, h, list );
+	set [ tg_parent n ] = parent;
 	set [ tg_type n ] = 6;
 	if >( slider 0 ) {
 		set [ tg_link n ] = slider;
@@ -812,6 +820,41 @@ function sort( vals ) {
 	}
 }
 
+function tg_file_selector( title ) {
+	if fs_win {
+		call tg_dispose( fs_win );
+	}
+	if <( tg_num_unused() 8 ) {
+		throw "Not enough free gadgets.";
+	}
+	let fs_win = tg_unused();
+	call tg_window( fs_win, 50, 50, 510, 270, title );
+	set [ tg_mode fs_win ] = 2;
+	set [ tg_min fs_win ] = 200;
+	call tg_sizegad( tg_unused(), fs_win, 490, 250, 16, 16 );
+	let fs_path = tg_unused();
+	call tg_textbox( fs_path, fs_win, 10, 32, 380, 28, $path( $src ) );
+	call tg_anchors( fs_path, 1, 1, 0, 1 );
+	let fs_slider = tg_unused();
+	call tg_vslider( fs_slider, fs_win, 396, 32, 20, 226, 10, 100 );
+	call tg_anchors( fs_slider, 1, 0, 1, 1 );
+	let fs_list = tg_unused();
+	call tg_listbox( fs_list, fs_win, 10, 64, 380, 160, $array( $fxdir( "." ) ), fs_slider );
+	call tg_anchors( fs_list, 1, 1, 1, 1 );
+	call sort( [ tg_a fs_list ] );
+	let fs_file = tg_unused();
+	call tg_textbox( fs_file, fs_win, 10, 230, 380, 28, "" );
+	call tg_anchors( fs_file, 0, 1, 1, 1 );
+	let fs_cancel = tg_unused();
+	call tg_button( fs_cancel, fs_win, 422, 32, 80, 28, "Cancel" );
+	call tg_anchors( fs_cancel, fs_win, 0, 0, 1 );
+	let fs_okay = tg_unused();
+	call tg_button( fs_okay, fs_win, 422, 64, 80, 28, "Okay" );
+	call tg_anchors( fs_okay, 1, 0, 0, 1 );
+	call tg_wintofront( fs_win );
+	call tg_draw( 0 );
+}
+
 program tgads {
 	var selected;
 	let palette = $array( ${ 0x000000, 0xFFFFFF, 0xA0A0A0, 0x6080B0 } );
@@ -828,38 +871,20 @@ program tgads {
 
 	call tg_button( 1, 0, 10, 32, 80, 26, "Windows" );
 
-	call tg_window( 2, 0, 10, 10, 200, 100, "Window 2" );
+	call tg_window( 2, 10, 10, 200, 100, "Window 2" );
 	call tg_button( 3, 2, 10, 32, 80, 26, "Button 3" );
 	call tg_button( 4, 2, 10, 64, 80, 26, "Close" );
 
-	call tg_window( 10, 0, 40, 40, 200, 200, "Window 10" );
+	call tg_window( 10, 40, 40, 200, 200, "Window 10" );
 	call tg_minsize( 10, 64 );
 	call tg_sizegad( 11, 10, 180, 180, 16, 16 );
 	call tg_hslider( 12, 10, 10, 170, 160, 20, 5, 15 );
 	call tg_anchors( 12, 0, 1, 1, 1 );
 
-	call tg_window( 15, 0, 30, 30, 400, 200, "Files" );
-	call tg_minsize( 15, 150 );
-	call tg_button( 16, 15, 10, 32, 80, 26, "Close" );
-	call tg_vslider( 17, 15, 370, 32, 20, 120, 5, 15 );
-	call tg_anchors( 17, 1, 0, 1, 1 );
-	call tg_textbox( 18, 15, 10, 64, 80, 28, "Text 9" );
-	call tg_textbox( 19, 15, 100, 160, 260, 28, "Text 10" );
-	call tg_anchors( 19, 0, 1, 1, 1 );
-	call tg_sizegad( 20, 15, 380, 180, 16, 16 );
-
-	let listitems = $array( $fxdir( "." ) );
-	call sort( listitems );
-
-	call tg_listbox( 21, 15, 100, 32, 260, 120, listitems, 17 );
-	call tg_anchors( 21, 1, 1, 1, 1 );
-	call tg_listbox_scroll( 21, 17 );
-	
 	set [tg_mode 2] = 0;
 	set [tg_mode 4] = 2;
 	set [tg_mode 10] = 0;
-	set [tg_mode 15] = 0;
-	
+
 	print $cat( tg_num_unused() " unused gadgets at " tg_unused() );
 		
 	call tg_draw( 0 );
@@ -869,23 +894,21 @@ program tgads {
 		let selected = tg_scan( $fxwait );
 		if >( selected 0 ) {
 			print $cat( selected, " ", [ tg_a selected ] );
-		}
-		switch selected {
-			case 1 {
-				set [tg_mode 2] = 1;
-				set [tg_mode 10] = 1;
-				set [tg_mode 15] = 2;
-				call tg_wintofront( 15 );
-				call tg_draw( 0 );
-			}
-			case 4 {
-				set [tg_mode 2] = 0;
-				set [tg_mode 10] = 0;
-				call tg_draw( 0 );
-			}
-			case 16 {
-				set [tg_mode 15] = 0;
-				call tg_draw( 0 );
+			switch selected {
+				case 1 {
+					set [tg_mode 2] = 1;
+					set [tg_mode 10] = 1;
+					call tg_file_selector( "Files" );
+				}
+				case 4 {
+					set [tg_mode 2] = 0;
+					set [tg_mode 10] = 0;
+					call tg_draw( 0 );
+				}
+				case fs_cancel {
+					call tg_dispose( fs_win );
+					call tg_draw( 0 );
+				}
 			}
 		}
 		fxshow;
