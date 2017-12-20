@@ -605,19 +605,28 @@ function testsrc() {
 	call assert( $eq( $sub( $src, -( $len( $src ) 7 ), 7 ) "test.tt" ), ${-} );
 }
 
-function testpath() {
+function testchop() {
 	var err;
-	try { call $path( except( ${ 1 } ) ); } catch err {}
+	call setg( 0 );
+	try { call $chop( except( ${ 1 } ), setg( 2 ) ); } catch err {}
 	call assert( =( $cmp( $str( err ) "1" ) 0 ), ${-} );
+	call assert( =( g 0 ), ${-} );
 	let err = 0;
-	try { call $path( 0 ); } catch err { let err = 1; }
+	try { call $chop( setg( 1 ), except( ${ 2 } ) ); } catch err {}
+	call assert( =( $cmp( $str( err ) "2" ) 0 ), ${-} );
+	call assert( =( g 1 ), ${-} );
+	let err = 0;
+	try { call $chop( 0, "" ); } catch err { let err = 1; }
 	call assert( =( err 1 ), ${-} );
-	call assert( =( $cmp( $path( "" ), "" ) 0 ), ${-} );
-	call assert( =( $cmp( $path( "file" ), "" ) 0 ), ${-} );
-	call assert( =( $cmp( $path( "dir/file" ), "dir/" ) 0 ), ${-} );
-	call assert( =( $cmp( $path( "c:file" ), "c:" ) 0 ), ${-} );
-	call assert( =( $cmp( $path( "dir\\file" ), "dir\\" ) 0 ), ${-} );
-	call assert( =( $cmp( $path( "c:\\dir\\file" ), "c:\\dir\\" ) 0 ), ${-} );
+	try { call $chop( "", 0 ); } catch err { let err = 1; }
+	call assert( =( err 1 ), ${-} );
+	call assert( =( $cmp( $chop( "", "" ), "" ) 0 ), ${-} );
+	call assert( =( $cmp( $chop( "file", "" ), "" ) 0 ), ${-} );
+	call assert( =( $cmp( $chop( "file", "/" ), "" ) 0 ), ${-} );
+	call assert( =( $cmp( $chop( "dir/file", "/" ), "dir/" ) 0 ), ${-} );
+	call assert( =( $cmp( $chop( "c:file", "/:" ), "c:" ) 0 ), ${-} );
+	call assert( =( $cmp( $chop( "dir\\file", "/:\\" ), "dir\\" ) 0 ), ${-} );
+	call assert( =( $cmp( $chop( "c:\\dir\\file", "/:\\" ), "c:\\dir\\" ) 0 ), ${-} );
 }
 
 program test {
@@ -658,6 +667,6 @@ program test {
 	call teststruct();
 	call testfuncref();
 	call testeq();
-	call testpath();
+	call testchop();
 	print "Tests passed.";
 }

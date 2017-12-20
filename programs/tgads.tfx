@@ -833,7 +833,7 @@ function tg_file_selector( title ) {
 	set [ tg_min fs_win ] = 200;
 	call tg_sizegad( tg_unused(), fs_win, 490, 250, 16, 16 );
 	let fs_path = tg_unused();
-	call tg_textbox( fs_path, fs_win, 10, 32, 380, 28, $path( $src ) );
+	call tg_textbox( fs_path, fs_win, 10, 32, 380, 28, $chop( $src, "/:\\" ) );
 	call tg_anchors( fs_path, 1, 1, 0, 1 );
 	let fs_slider = tg_unused();
 	call tg_vslider( fs_slider, fs_win, 396, 32, 20, 226, 10, 100 );
@@ -860,10 +860,10 @@ program tgads {
 	let palette = $array( ${ 0x000000, 0xFFFFFF, 0xA0A0A0, 0x6080B0 } );
 
 	dim [ background 240 ];
-	call parse_rws( $load( $str( $path( $src ) "rws/demo5.rws" ) ), background );
+	call parse_rws( $load( $str( $chop( $src, "/:\\" ) "rws/demo5.rws" ) ), background );
 	#call gradient( 0x008000, 0x000080, background, 0, 240 );
 
-	call tg_charset( $load( $str( $path( $src ) "topaz8.txt" ) ) );
+	call tg_charset( $load( $str( $chop( $src, "/:\\" ) "topaz8.txt" ) ) );
 
 	fxopen 640, 480, "tgads";
 

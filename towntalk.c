@@ -131,7 +131,7 @@
 		$load("abc.bin")         Load raw bytes into string.
 		$flen("file")            Get the length of a file.
 		$src                     Path of current source file.
-		$path(str)               Directory part of specified file path.
+		$chop(str,"sepchars")    Return a substring up to the last separator.
 		$argc                    Number of command-line arguments.
 		$argv(idx)               Command-line argument as string.
 		$time                    Current time as seconds/date tuple.
@@ -294,14 +294,14 @@ static struct element* parse_case_statement( struct element *elem, struct enviro
 static struct element* parse_default_statement( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message );
 
-static int file_name_offset( char *path ) {
+static int chop( char *str, const char *separators ) {
 	int idx = 0, offset = 0;
-	char chr = path[ idx++ ];
+	char chr = str[ idx++ ];
 	while( chr ) {
-		if( strchr( "/:\\", chr ) ) {
+		if( strchr( separators, chr ) ) {
 			offset = idx;
 		}
-		chr = path[ idx++ ];
+		chr = str[ idx++ ];
 	}
 	return offset;
 }
@@ -2604,25 +2604,30 @@ static int evaluate_eq_expression( struct expression *this, struct variable *var
 	return ret;
 }
 
-static int evaluate_path_expression( struct expression *this, struct variable *variables,
+static int evaluate_chop_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct expression *parameter = this->parameters;
-	struct variable var = { 0, NULL };
+	struct variable var = { 0, NULL }, sep = { 0, NULL };
 	struct string *str;
 	int ret = parameter->evaluate( parameter, variables, &var, exception );
 	if( ret ) {
-		if( var.string_value ) {
-			str = new_string_value( file_name_offset( var.string_value->string ) );
-			if( str ) {
-				memcpy( str->string, var.string_value->string, str->length );
-				dispose_variable( result );
-				result->integer_value = 0;
-				result->string_value = str;
+		parameter = parameter->next;
+		ret = parameter->evaluate( parameter, variables, &sep, exception );
+		if( ret ) {
+			if( var.string_value && sep.string_value ) {
+				str = new_string_value( chop( var.string_value->string, sep.string_value->string ) );
+				if( str ) {
+					memcpy( str->string, var.string_value->string, str->length );
+					dispose_variable( result );
+					result->integer_value = 0;
+					result->string_value = str;
+				} else {
+					ret = throw( exception, this, 0, OUT_OF_MEMORY );
+				}
 			} else {
-				ret = throw( exception, this, 0, OUT_OF_MEMORY );
+				ret = throw( exception, this, 0, "Not a string." );
 			}
-		} else {
-			ret = throw( exception, this, 0, "Not a string." );
+			dispose_variable( &sep );
 		}
 		dispose_variable( &var );
 	}
@@ -2674,7 +2679,7 @@ static struct operator operators[] = {
 	{ "$array",'$', 1, &evaluate_array_expression, &operators[ 42 ] },
 	{ "$new",'$', 1, &evaluate_array_expression, &operators[ 43 ] },
 	{ "$eq",'$', 2, &evaluate_eq_expression, &operators[ 44 ] },
-	{ "$path",'$', 1, &evaluate_path_expression, &operators[ 45 ] },
+	{ "$chop",'$', 2, &evaluate_chop_expression, &operators[ 45 ] },
 	{ ":",':', -1, &evaluate_function_expression, NULL }
 };
 
@@ -3572,7 +3577,7 @@ static struct element* parse_program_declaration( struct element *elem, struct e
 static struct element* parse_include( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message ) {
 	struct element *next = elem->next;
-	int path_len = file_name_offset( env->file );
+	int path_len = chop( env->file, "/:\\" );
 	int name_len = unquote_string( next->str.string, NULL );
 	char *path = malloc( path_len + name_len + 1 );
 	if( path ) {
