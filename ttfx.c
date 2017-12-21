@@ -3,6 +3,7 @@
 
 #include "SDL.h"
 #include "dirent.h"
+#include "sys/stat.h"
 
 #define NUM_SURFACES 16
 #define NUM_CHANNELS 32
@@ -853,56 +854,89 @@ static int evaluate_fxseq_expression( struct expression *this, struct variable *
 static int evaluate_fxdir_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	DIR *dir;
-	char message[ 64 ];
+	struct array *arr;
+	struct string *str;
+	struct stat status;
 	struct dirent *dentry;
-	struct variable path = { 0, NULL };
-	struct element *elem, *tail, *head = NULL;
+	int len, idx, pathlen;
+	char *path, *file, sep;
+	struct variable var = { 0, NULL };
 	struct expression *parameter = this->parameters;
-	int len, line = 1;
-	int ret = parameter->evaluate( parameter, variables, &path, exception );
+	int ret = parameter->evaluate( parameter, variables, &var, exception );
 	if( ret ) {
-		if( path.string_value && path.string_value->string ) {
-			dir = opendir( path.string_value->string );
-			if( dir ) {
-				dentry = readdir( dir );
-				while( dentry && ret ) {
-					len = write_byte_string( dentry->d_name, strlen( dentry->d_name ), NULL );
-					if( len >= 0 ) {
-						elem = new_element( len );
-						if( elem ) {
-							write_byte_string( dentry->d_name, strlen( dentry->d_name ), elem->str.string );
-							elem->str.line = line++;
-							if( head ) {
-								tail->next = elem;
-								tail = tail->next;
-							} else {
-								head = tail = elem;
-							}
+		if( var.string_value && var.string_value->string ) {
+			path = canonicalize_file_name( var.string_value->string );
+			if( path ) {
+				pathlen = strlen( path );
+				sep = path[ chop( path, "/:\\" ) - 1 ];
+				dir = opendir( path );
+				if( dir ) {
+					errno = len = 0;
+					dentry = readdir( dir );
+					while( dentry ) {
+						len++;
+						dentry = readdir( dir );
+					}
+					if( errno == 0 ) {
+						arr = new_array( this->function->env, len );
+						if( arr ) {
+							rewinddir( dir );
+							errno = idx = 0;
 							dentry = readdir( dir );
+							while( dentry && ret && idx < len ) {
+								str = new_string_value( strlen( dentry->d_name ) );
+								if( str ) {
+									file = malloc( pathlen + 1 + str->length + 1 );
+									if( file ) {
+										strcpy( file, path );
+										file[ pathlen ] = sep;
+										strcpy( &file[ pathlen + 1 ], dentry->d_name );
+										stat( file, &status );
+										if( status.st_mode & S_IFDIR ) {
+											arr->array[ idx ].integer_value = -1;
+										} else {
+											arr->array[ idx ].integer_value = status.st_size & MAX_INTEGER;
+										}
+										memcpy( str->string, dentry->d_name, str->length );
+										arr->array[ idx++ ].string_value = str;
+										dentry = readdir( dir );
+										free( file );
+									} else {
+										unref_string( str );
+										ret = throw( exception, this, 0, OUT_OF_MEMORY );
+									}
+								} else {
+									ret = throw( exception, this, 0, OUT_OF_MEMORY );
+								}
+							}
+							if( errno ) {
+								ret = throw( exception, this, errno, strerror( errno ) );
+							}
+							if( ret ) {
+								dispose_variable( result );
+								result->integer_value = 0;
+								result->string_value = &arr->str;
+							} else {
+								unref_string( &arr->str );
+							}
 						} else {
 							ret = throw( exception, this, 0, OUT_OF_MEMORY );
 						}
 					} else {
-						ret = throw( exception, this, 0, "String too large." );
+						ret = throw( exception, this, errno, strerror( errno ) );
 					}
-				}
-				closedir( dir );
-				if( ret ) {
-					dispose_variable( result );
-					result->integer_value = 0;
-					result->string_value = &head->str;
+					closedir( dir );
 				} else {
-					unref_string( &head->str );
+					ret = throw( exception, this, errno, strerror( errno ) );
 				}
+				free( path );
 			} else {
-				strncpy( message, strerror( errno ), 63 );
-				message[ 63 ] = 0;
-				ret = throw( exception, this, 0, message );
+				ret = throw( exception, this, errno, strerror( errno ) );
 			}
 		} else {
 			ret = throw( exception, this, 0, "Not a string." );
 		}
-		dispose_variable( &path );
+		dispose_variable( &var );
 	}
 	return ret;
 }

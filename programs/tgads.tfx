@@ -839,7 +839,7 @@ function tg_file_selector( title ) {
 	call tg_vslider( fs_slider, fs_win, 396, 32, 20, 226, 10, 100 );
 	call tg_anchors( fs_slider, 1, 0, 1, 1 );
 	let fs_list = tg_unused();
-	call tg_listbox( fs_list, fs_win, 10, 64, 380, 160, $array( $fxdir( "." ) ), fs_slider );
+	call tg_listbox( fs_list, fs_win, 10, 64, 380, 160, $fxdir( "." ), fs_slider );
 	call tg_anchors( fs_list, 1, 1, 1, 1 );
 	call sort( [ tg_a fs_list ] );
 	let fs_file = tg_unused();
