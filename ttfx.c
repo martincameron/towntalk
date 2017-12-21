@@ -907,6 +907,38 @@ static int evaluate_fxdir_expression( struct expression *this, struct variable *
 	return ret;
 }
 
+static int evaluate_fxpath_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	struct expression *parameter = this->parameters;
+	struct variable var = { 0, NULL };
+	struct string *str;
+	char *path;
+	int ret = parameter->evaluate( parameter, variables, &var, exception );
+	if( ret ) {
+		if( var.string_value ) {
+			path = canonicalize_file_name( var.string_value->string );
+			if( path ) {
+				str = new_string_value( strlen( path ) );
+				if( str ) {
+					memcpy( str->string, path, str->length );
+					dispose_variable( result );
+					result->integer_value = 0;
+					result->string_value = str;
+				} else {
+					ret = throw( exception, this, 0, OUT_OF_MEMORY );
+				}
+				free( path );
+			} else {
+				ret = throw( exception, this, errno, strerror( errno ) );
+			}
+		} else {
+			ret = throw( exception, this, 0, "Not a string." );
+		}
+		dispose_variable( &var );
+	}
+	return ret;
+}
+
 static struct constant fxconstants[] = {
 	{ "FX_KEYDOWN", SDL_KEYDOWN, NULL },
 	{ "FX_KEYUP", SDL_KEYUP, NULL },
@@ -929,7 +961,8 @@ static struct operator fxoperators[] = {
 	{ "$keyshift",'$', 0, &evaluate_keyshift_expression, &fxoperators[ 8 ] },
 	{ "$fxtick",'$', 0, &evaluate_fxtick_expression, &fxoperators[ 9 ] },
 	{ "$fxseq",'$', 1, &evaluate_fxseq_expression, &fxoperators[ 10 ] },
-	{ "$fxdir",'$', 1, &evaluate_fxdir_expression, operators }
+	{ "$fxdir",'$', 1, &evaluate_fxdir_expression, &fxoperators[ 11 ] },
+	{ "$fxpath",'$', 1, &evaluate_fxpath_expression, operators }
 };
 
 static struct keyword fxstatements[] = {
