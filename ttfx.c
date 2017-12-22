@@ -5,6 +5,10 @@
 #include "dirent.h"
 #include "sys/stat.h"
 
+#if defined( __MINGW32__ )
+#define canonicalize_file_name( path ) _fullpath( NULL, ( path ), 0 )
+#endif
+
 #define NUM_SURFACES 16
 #define NUM_CHANNELS 32
 #define NUM_SAMPLES 64

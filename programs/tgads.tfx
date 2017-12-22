@@ -352,12 +352,12 @@ function tg_draw_listbox( n ) {
 	let idx = [ tg_b n ];
 	let end = +( idx th );
 	while <( idx end ) {
-		let tc = 0;
+		let txt = [ [ tg_a n ] idx ];
+		let tc = $tup( 0, txt );
 		if =( [ tg_c n ] idx ) {
 			fxrect +( x 8 ), ty, -( [ tg_w n ] 16 ), 16, [ palette 3 ];
 			let tc = 1;
 		}
-		let txt = [ [ tg_a n ] idx ];
 		if >( $len( txt ) tw ) {
 			let txt = $sub( txt, 0, tw );
 		}
@@ -802,21 +802,60 @@ function parse_rws( rws, out ) {
 	}
 }
 
-function sort( vals ) {
-	var progress, idx, tmp;
+function sort_dir( vals ) {
+	var progress, idx, tmp, lhs, rhs;
 	let progress = TRUE;
 	while progress {
 		let idx = 1;
 		let progress = FALSE;
 		while <( idx $len( vals ) ) {
 			let tmp = [ vals -( idx 1 ) ];
-			if >( $cmp( tmp [ vals idx ] ) 0 ) {
+			if <( tmp 0 ) {
+				let lhs = tmp;
+			} else {
+				let lhs = $tup( tmp, 0 );
+			}
+			if <( [ vals idx ] 0 ) {
+				let rhs = [ vals idx ];
+			} else {
+				let rhs = $tup( [ vals idx ] 0 );
+			}
+			if >( $cmp( lhs rhs ) 0 ) {
 				set [ vals -( idx 1 ) ] = [ vals idx ];
 				set [ vals idx ] = tmp;
 				let progress = TRUE;
 			}
 			inc idx;
 		}
+	}
+}
+
+function format_dir( vals ) {
+	var idx, len;
+	while <( idx $len( vals ) ) {
+		if <( [ vals idx ] 0 ) {
+			set [ vals idx ] = $tup( $str( "[Dir] " [ vals idx ] ) 1 ); 
+		} else {
+			let len = $tup( 0 [ vals idx ] );
+			if >( len 9999 ) {
+				if >( len *( 1048576 999 ) ) {
+					let len = $str( /( len 1073741824 ) "g");
+				} else {
+					if >( len *( 1024 999 ) ) {
+						let len = $str( /( len 1048576 ) "m");
+					} else {
+						let len = $str( /( len 1024 ) "k");
+					}
+				}
+			} else {
+				let len = $str( len );
+			}
+			while <( $len( len ) 5 ) {
+				let len = $str( " " len );
+			}
+			set [ vals idx ] = $tup( $str( len " " [ vals idx ] ) 0 ); 
+		}
+		inc idx;
 	}
 }
 
@@ -841,7 +880,8 @@ function tg_file_selector( title ) {
 	let fs_list = tg_unused();
 	call tg_listbox( fs_list, fs_win, 10, 64, 380, 160, $fxdir( "." ), fs_slider );
 	call tg_anchors( fs_list, 1, 1, 1, 1 );
-	call sort( [ tg_a fs_list ] );
+	call sort_dir( [ tg_a fs_list ] );
+	call format_dir( [ tg_a fs_list ] );
 	let fs_file = tg_unused();
 	call tg_textbox( fs_file, fs_win, 10, 230, 380, 28, "" );
 	call tg_anchors( fs_file, 0, 1, 1, 1 );
