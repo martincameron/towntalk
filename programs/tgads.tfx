@@ -838,10 +838,10 @@ function format_dir( vals ) {
 		} else {
 			let len = $tup( 0 [ vals idx ] );
 			if >( len 9999 ) {
-				if >( len *( 1048576 999 ) ) {
+				if >( len *( 1048576 9999 ) ) {
 					let len = $str( /( len 1073741824 ) "g");
 				} else {
-					if >( len *( 1024 999 ) ) {
+					if >( len *( 1024 9999 ) ) {
 						let len = $str( /( len 1048576 ) "m");
 					} else {
 						let len = $str( /( len 1024 ) "k");
