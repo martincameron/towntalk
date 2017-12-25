@@ -869,13 +869,14 @@ static int evaluate_fxdir_expression( struct expression *this, struct variable *
 	int ret = parameter->evaluate( parameter, variables, &var, exception );
 	if( ret ) {
 		if( var.string_value && var.string_value->string ) {
+			errno = 0;
 			path = canonicalize_file_name( var.string_value->string );
 			if( path ) {
 				pathlen = strlen( path );
 				sep = path[ chop( path, "/:\\" ) - 1 ];
 				dir = opendir( path );
 				if( dir ) {
-					errno = len = 0;
+					len = 0;
 					dentry = readdir( dir );
 					while( dentry ) {
 						len++;
@@ -935,7 +936,11 @@ static int evaluate_fxdir_expression( struct expression *this, struct variable *
 				}
 				free( path );
 			} else {
-				ret = throw( exception, this, errno, strerror( errno ) );
+				if( errno ) {
+					ret = throw( exception, this, errno, strerror( errno ) );
+				} else {
+					ret = throw( exception, this, 0, "Invalid path." );
+				}
 			}
 		} else {
 			ret = throw( exception, this, 0, "Not a string." );
@@ -954,6 +959,7 @@ static int evaluate_fxpath_expression( struct expression *this, struct variable 
 	int ret = parameter->evaluate( parameter, variables, &var, exception );
 	if( ret ) {
 		if( var.string_value ) {
+			errno = 0;
 			path = canonicalize_file_name( var.string_value->string );
 			if( path ) {
 				str = new_string_value( strlen( path ) );
@@ -967,7 +973,11 @@ static int evaluate_fxpath_expression( struct expression *this, struct variable 
 				}
 				free( path );
 			} else {
-				ret = throw( exception, this, errno, strerror( errno ) );
+				if( errno ) {
+					ret = throw( exception, this, errno, strerror( errno ) );
+				} else {
+					ret = throw( exception, this, 0, "Invalid path." );
+				}
 			}
 		} else {
 			ret = throw( exception, this, 0, "Not a string." );

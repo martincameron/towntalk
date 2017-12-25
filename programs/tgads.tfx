@@ -2,9 +2,10 @@
 array palette, charset, background;
 
 array tg_zorder, tg_type, tg_parent;
-array tg_x, tg_y, tg_w, tg_h, tg_min, tg_anchor, tg_mode, tg_link, tg_a, tg_b, tg_c;
+array tg_x, tg_y, tg_w, tg_h, tg_min, tg_anchor, tg_mode, tg_link;
+array tg_a, tg_b, tg_c, tg_d;
 
-global tg_selx, tg_sely, tg_focus;
+global tg_selx, tg_sely, tg_focus, tg_time;
 
 global fs_win, fs_path, fs_slider, fs_list, fs_file, fs_cancel, fs_okay;
 
@@ -131,6 +132,10 @@ function tg_anchors( n, top, left, bottom, right ) {
 	set [ tg_anchor n ] = a;
 }
 
+function tg_double_click( n, target ) {
+	set [ tg_d n ] = target;
+}
+
 function tg_window( n, x, y, w, h, text ) {
 	set [ tg_type n ] = 1;
 	set [ tg_parent n ] = 0;
@@ -202,6 +207,7 @@ function tg_init( gadcount ) {
 	dim [ tg_a gadcount ];
 	dim [ tg_b gadcount ];
 	dim [ tg_c gadcount ];
+	dim [ tg_d gadcount ];
 	while <( idx gadcount ) {
 		set [ tg_zorder idx ] = idx;
 		inc idx;
@@ -488,8 +494,8 @@ function tg_dispose( n ) {
 	let idx = 1;
 	let end = $len( tg_parent );
 	while <( idx end ) {
-		if =( [ tg_parent n ] n ) {
-			call tg_dispose( n );
+		if =( [ tg_parent idx ] n ) {
+			call tg_dispose( idx );
 		}
 		inc idx;
 	}
@@ -500,6 +506,7 @@ function tg_dispose( n ) {
 	set [ tg_a n ] = 0;
 	set [ tg_b n ] = 0;
 	set [ tg_c n ] = 0;
+	set [ tg_d n ] = 0;
 }
 
 function tg_num_unused() {
@@ -678,10 +685,16 @@ function tg_scan( event ) {
 					}
 					case 6 {
 						let s = +( [ tg_b n ] /( -( tg_sely +( tg_gety( n ) 6 ) ) 16 ) );
-						if <( s $len( [ tg_a n ] ) ) {
-							set [ tg_c n ] = s;
+						if =( s [ tg_c n ] ) {
+							if <( -( $millis tg_time ) 500 ) {
+								let selected = [ tg_d n ];
+							}
+						} else {
+							if <( s $len( [ tg_a n ] ) ) {
+								set [ tg_c n ] = s;
+								let selected = n;
+							}
 						}
-						let selected = n;
 						call tg_draw( n );
 					}
 					case 7 {
@@ -710,6 +723,7 @@ function tg_scan( event ) {
 					}
 				}
 			}
+			let tg_time = $millis;
 		}
 		case FX_MOUSEKEYUP {
 			if ||( tg_selx tg_sely ) {
@@ -883,7 +897,7 @@ function tg_file_selector( title ) {
 	call sort_dir( [ tg_a fs_list ] );
 	call format_dir( [ tg_a fs_list ] );
 	let fs_file = tg_unused();
-	call tg_textbox( fs_file, fs_win, 10, 230, 380, 28, "" );
+	call tg_textbox( fs_file, fs_win, 10, 230, 380, 28, $tup( "." 1 ) );
 	call tg_anchors( fs_file, 0, 1, 1, 1 );
 	let fs_cancel = tg_unused();
 	call tg_button( fs_cancel, fs_win, 422, 32, 80, 28, "Cancel" );
@@ -891,12 +905,25 @@ function tg_file_selector( title ) {
 	let fs_okay = tg_unused();
 	call tg_button( fs_okay, fs_win, 422, 64, 80, 28, "Okay" );
 	call tg_anchors( fs_okay, 1, 0, 0, 1 );
+	call tg_double_click( fs_list, fs_okay );
 	call tg_wintofront( fs_win );
 	call tg_draw( 0 );
 }
 
+function fs_dispose() {
+	call tg_dispose( fs_win );
+	let fs_win = 0;
+	let fs_path = 0;
+	let fs_slider = 0;
+	let fs_list = 0;
+	let fs_file = 0;
+	let fs_cancel = 0;
+	let fs_okay = 0;
+	call tg_draw( 0 );
+}
+
 program tgads {
-	var selected;
+	var selected, file, sep, err;
 	let palette = $array( ${ 0x000000, 0xFFFFFF, 0xA0A0A0, 0x6080B0 } );
 
 	dim [ background 240 ];
@@ -921,9 +948,9 @@ program tgads {
 	call tg_hslider( 12, 10, 10, 170, 160, 20, 5, 15 );
 	call tg_anchors( 12, 0, 1, 1, 1 );
 
-	set [tg_mode 2] = 0;
-	set [tg_mode 4] = 2;
-	set [tg_mode 10] = 0;
+	set [ tg_mode 2 ] = 0;
+	set [ tg_mode 4 ] = 2;
+	set [ tg_mode 10 ] = 0;
 
 	print $cat( tg_num_unused() " unused gadgets at " tg_unused() );
 		
@@ -936,18 +963,45 @@ program tgads {
 			print $cat( selected, " ", [ tg_a selected ] );
 			switch selected {
 				case 1 {
-					set [tg_mode 2] = 1;
-					set [tg_mode 10] = 1;
+					set [ tg_mode 2 ] = 1;
+					set [ tg_mode 10 ] = 1;
 					call tg_file_selector( "Files" );
 				}
 				case 4 {
-					set [tg_mode 2] = 0;
-					set [tg_mode 10] = 0;
+					set [ tg_mode 2 ] = 0;
+					set [ tg_mode 10 ] = 0;
 					call tg_draw( 0 );
 				}
+				case fs_list {
+					let file = [ [ tg_a fs_list ] [ tg_c fs_list ] ];
+					set [ tg_a fs_file ] = $tup( $sub( file, 6, -( $len( file ) 6 ) ), file );
+					call tg_draw( fs_file );
+				}
 				case fs_cancel {
-					call tg_dispose( fs_win );
-					call tg_draw( 0 );
+					call fs_dispose();
+				}
+				case fs_okay {
+					if >( [ tg_a fs_file ] 0 ) {
+						try {
+							let sep = $chop( [ tg_a fs_path ], "/:\\" );
+							let sep = $sub( sep, -( $len( sep ) 1 ), 1 );
+							set [ tg_a fs_path ] = $fxpath( $str( [ tg_a fs_path ] sep [ tg_a fs_file ] ) );
+							set [ tg_a fs_slider ] = 0;
+							set [ tg_a fs_list ] = $fxdir( [ tg_a fs_path ] );
+							call sort_dir( [ tg_a fs_list ] );
+							call format_dir( [ tg_a fs_list ] );
+							set [ tg_b fs_list ] = 0;
+							set [ tg_c fs_list ] = 0;
+							let file = [ [ tg_a fs_list ] 0 ];
+							set [ tg_a fs_file ] = $tup( $sub( file, 6, -( $len( file ) 6 ) ) file );
+						} catch err {
+							let err = $chop( $str( err ) "(" );
+							set [ tg_a fs_file ] = $sub( err, 0, -( $len( err ) 2 ) );
+						}
+						call tg_draw( fs_win );
+					} else {
+						call fs_dispose();
+					}
 				}
 			}
 		}
