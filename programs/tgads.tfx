@@ -922,8 +922,42 @@ function fs_dispose() {
 	call tg_draw( 0 );
 }
 
+function fs_list_selected() {
+	var file;
+	let file = [ [ tg_a fs_list ] [ tg_c fs_list ] ];
+	set [ tg_a fs_file ] = $tup( $sub( file, 6, -( $len( file ) 6 ) ), file );
+	call tg_draw( fs_file );
+}
+
+function fs_okay_selected() {
+	var sep, file, err;
+	let sep = $chop( [ tg_a fs_path ], "/:\\" );
+	let sep = $sub( sep, -( $len( sep ) 1 ), 1 );
+	if >( [ tg_a fs_file ] 0 ) {
+		try {
+			set [ tg_a fs_path ] = $fxpath( $str( [ tg_a fs_path ] sep [ tg_a fs_file ] ) );
+			set [ tg_a fs_slider ] = 0;
+			set [ tg_a fs_list ] = $fxdir( [ tg_a fs_path ] );
+			call sort_dir( [ tg_a fs_list ] );
+			call format_dir( [ tg_a fs_list ] );
+			set [ tg_b fs_list ] = 0;
+			set [ tg_c fs_list ] = 0;
+			let file = [ [ tg_a fs_list ] 0 ];
+			set [ tg_a fs_file ] = $tup( $sub( file, 6, -( $len( file ) 6 ) ) file );
+		} catch err {
+			let err = $chop( $str( err ) "(" );
+			set [ tg_a fs_file ] = $sub( err, 0, -( $len( err ) 2 ) );
+		}
+		call tg_draw( fs_win );
+	} else {
+		let file = $str( [ tg_a fs_path ] sep [ tg_a fs_file ] );
+		call fs_dispose();
+		return file;
+	}
+}
+
 program tgads {
-	var selected, file, sep, err;
+	var selected, file, err;
 	let palette = $array( ${ 0x000000, 0xFFFFFF, 0xA0A0A0, 0x6080B0 } );
 
 	dim [ background 240 ];
@@ -973,39 +1007,20 @@ program tgads {
 					call tg_draw( 0 );
 				}
 				case fs_list {
-					let file = [ [ tg_a fs_list ] [ tg_c fs_list ] ];
-					set [ tg_a fs_file ] = $tup( $sub( file, 6, -( $len( file ) 6 ) ), file );
-					call tg_draw( fs_file );
+					call fs_list_selected();
 				}
 				case fs_cancel {
 					call fs_dispose();
 				}
 				case fs_okay {
-					let sep = $chop( [ tg_a fs_path ], "/:\\" );
-					let sep = $sub( sep, -( $len( sep ) 1 ), 1 );
-					if >( [ tg_a fs_file ] 0 ) {
+					let file = fs_okay_selected();
+					if file {
 						try {
-							set [ tg_a fs_path ] = $fxpath( $str( [ tg_a fs_path ] sep [ tg_a fs_file ] ) );
-							set [ tg_a fs_slider ] = 0;
-							set [ tg_a fs_list ] = $fxdir( [ tg_a fs_path ] );
-							call sort_dir( [ tg_a fs_list ] );
-							call format_dir( [ tg_a fs_list ] );
-							set [ tg_b fs_list ] = 0;
-							set [ tg_c fs_list ] = 0;
-							let file = [ [ tg_a fs_list ] 0 ];
-							set [ tg_a fs_file ] = $tup( $sub( file, 6, -( $len( file ) 6 ) ) file );
-						} catch err {
-							let err = $chop( $str( err ) "(" );
-							set [ tg_a fs_file ] = $sub( err, 0, -( $len( err ) 2 ) );
-						}
-						call tg_draw( fs_win );
-					} else {
-						try {
-							call parse_rws( $load( $str( [ tg_a fs_path ] sep [ tg_a fs_file ] ) ), background );
+							call parse_rws( $load( file ), background );
+							call tg_draw( 0 );
 						} catch err {
 							print err;
 						}
-						call fs_dispose();
 					}
 				}
 			}
