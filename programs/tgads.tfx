@@ -525,10 +525,10 @@ function tg_num_unused() {
 function tg_unused() {
 	var idx, end;
 	let idx = 1;
-	let end = $len( tg_type );
+	let end = $len( tg_zorder );
 	while <( idx end ) {
-		if =( [ tg_type idx ] 0 ) {
-			return idx;
+		if =( [ tg_type [ tg_zorder idx ] ] 0 ) {
+			return [ tg_zorder idx ];
 		}
 		inc idx;
 	}
@@ -721,6 +721,10 @@ function tg_scan( event ) {
 							call tg_draw( n );
 						}
 					}
+				}
+				if &&( selected !( =( selected n ) ) ) {
+					let tg_selx = 0;
+					let tg_sely = 0;
 				}
 			}
 			let tg_time = $millis;
