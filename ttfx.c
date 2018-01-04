@@ -899,8 +899,10 @@ static int evaluate_fxdir_expression( struct expression *this, struct variable *
 										stat( file, &status );
 										if( status.st_mode & S_IFDIR ) {
 											arr->array[ idx ].integer_value = -1;
+										} else if( status.st_size > MAX_INTEGER ) {
+											arr->array[ idx ].integer_value = MAX_INTEGER;
 										} else {
-											arr->array[ idx ].integer_value = status.st_size & MAX_INTEGER;
+											arr->array[ idx ].integer_value = status.st_size;
 										}
 										memcpy( str->string, dentry->d_name, str->length );
 										arr->array[ idx++ ].string_value = str;
