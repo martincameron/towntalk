@@ -896,7 +896,9 @@ static int evaluate_fxdir_expression( struct expression *this, struct variable *
 										strcpy( file, path );
 										file[ pathlen ] = sep;
 										strcpy( &file[ pathlen + 1 ], dentry->d_name );
-										stat( file, &status );
+										if( stat( file, &status ) ) {
+											errno = status.st_mode = status.st_size = 0;
+										}
 										if( status.st_mode & S_IFDIR ) {
 											arr->array[ idx ].integer_value = -1;
 										} else if( status.st_size > MAX_INTEGER ) {
