@@ -685,15 +685,15 @@ function tg_scan( event ) {
 					}
 					case 6 {
 						let s = +( [ tg_b n ] /( -( tg_sely +( tg_gety( n ) 6 ) ) 16 ) );
-						if =( s [ tg_c n ] ) {
-							if <( -( $millis tg_time ) 500 ) {
-								let selected = [ tg_d n ];
-							}
+						if &&( =( s [ tg_c n ] ) <( -( $millis tg_time ) 500 ) ){
+							let selected = [ tg_d n ];
+							let tg_time = 0;
 						} else {
 							if <( s $len( [ tg_a n ] ) ) {
 								set [ tg_c n ] = s;
 								let selected = n;
 							}
+							let tg_time = $millis;
 						}
 						call tg_draw( n );
 					}
@@ -727,7 +727,6 @@ function tg_scan( event ) {
 					let tg_sely = 0;
 				}
 			}
-			let tg_time = $millis;
 		}
 		case FX_MOUSEKEYUP {
 			if ||( tg_selx tg_sely ) {
@@ -934,19 +933,20 @@ function fs_list_selected() {
 }
 
 function fs_okay_selected() {
-	var sep, file, err;
+	var sep, path, file, err;
 	let sep = $chop( [ tg_a fs_path ], "/:\\" );
 	let sep = $sub( sep, -( $len( sep ) 1 ), 1 );
 	if >( [ tg_a fs_file ] 0 ) {
 		try {
-			set [ tg_a fs_path ] = $fxpath( $str( [ tg_a fs_path ] sep [ tg_a fs_file ] ) );
-			set [ tg_a fs_slider ] = 0;
-			set [ tg_a fs_list ] = $fxdir( [ tg_a fs_path ] );
+			let path = $fxpath( $str( [ tg_a fs_path ] sep [ tg_a fs_file ] ) );
+			set [ tg_a fs_list ] = $fxdir( path );
 			call sort_dir( [ tg_a fs_list ] );
 			call format_dir( [ tg_a fs_list ] );
 			set [ tg_b fs_list ] = 0;
 			set [ tg_c fs_list ] = 0;
+			set [ tg_a fs_slider ] = 0;
 			let file = [ [ tg_a fs_list ] 0 ];
+			set [ tg_a fs_path ] = path;
 			set [ tg_a fs_file ] = $tup( $sub( file, 6, -( $len( file ) 6 ) ) file );
 		} catch err {
 			let err = $chop( $str( err ) "(" );
