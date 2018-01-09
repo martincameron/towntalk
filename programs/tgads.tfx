@@ -1,5 +1,5 @@
 
-array palette, charset, background;
+array palette, charset, foreground, background;
 
 array tg_zorder, tg_type, tg_parent;
 array tg_x, tg_y, tg_w, tg_h, tg_min, tg_anchor, tg_mode, tg_link;
@@ -218,7 +218,11 @@ function tg_draw_background() {
 	var y, h;
 	let h = $len( background );
 	while <( y h ) {
-		fxrect 0, *( y 2 ), 640, 2, [ background y ];
+		if <( [ foreground y ] 0 ) {
+			fxrect 0, *( y 2 ), 640, 2, [ background y ];
+		} else {
+			fxrect 0, *( y 2 ), 640, 2, [ foreground y ];
+		}
 		inc y;
 	}
 	fxblit 0, 0, 0, 640, 480, 0, 128;
@@ -731,11 +735,13 @@ function tg_scan( event ) {
 		case FX_MOUSEKEYUP {
 			if ||( tg_selx tg_sely ) {
 				let n = tg_find( tg_selx, tg_sely, 0 );
-				if =( [ tg_type n ] 2 ) {
-					set [ tg_b n ] = 0;
-					call tg_draw( n );
-					if =( tg_find( $xmouse, $ymouse, 0 ) n ) {
-						let selected = n;
+				switch [ tg_type n ] {
+					case 2 {
+						set [ tg_b n ] = 0;
+						call tg_draw( n );
+						if =( tg_find( $xmouse, $ymouse, 0 ) n ) {
+							let selected = n;
+						}
 					}
 				}
 				let tg_selx = 0;
@@ -960,13 +966,34 @@ function fs_okay_selected() {
 	}
 }
 
+function fill_array( arr, value ) {
+	var idx;
+	while <( idx $len( arr ) ) {
+		set [ arr idx ] = -1;
+		inc idx;
+	}
+}
+
+function fore_to_back() {
+	var y;
+	while <( y $len( foreground ) ) {
+		if >( [ foreground y ] -1 ) {
+			set [ background y ] = [ foreground y ];
+			set [ foreground y ] = -1;
+		}
+		inc y;
+	}
+}
+
 program tgads {
-	var selected, file, err;
+	var idx, event, selected, file, err, y, c1, c2;
 	let palette = $array( ${ 0x000000, 0xFFFFFF, 0xA0A0A0, 0x6080B0 } );
+
+	dim [ foreground 240 ];
+	call fill_array( foreground, -1 );
 
 	dim [ background 240 ];
 	call parse_rws( $load( $str( $chop( $src, "/:\\" ) "rws/demo5.rws" ) ), background );
-	#call gradient( 0x008000, 0x000080, background, 0, 240 );
 
 	call tg_charset( $load( $str( $chop( $src, "/:\\" ) "topaz8.txt" ) ) );
 
@@ -974,21 +1001,16 @@ program tgads {
 
 	call tg_init( 25 );
 
-	call tg_button( 1, 0, 10, 32, 80, 26, "Windows" );
-
-	call tg_window( 2, 10, 10, 200, 100, "Window 2" );
-	call tg_button( 3, 2, 10, 32, 80, 26, "Button 3" );
-	call tg_button( 4, 2, 10, 64, 80, 26, "Close" );
-
-	call tg_window( 10, 40, 40, 200, 200, "Window 10" );
-	call tg_minsize( 10, 64 );
-	call tg_sizegad( 11, 10, 180, 180, 16, 16 );
-	call tg_hslider( 12, 10, 10, 170, 160, 20, 5, 15 );
-	call tg_anchors( 12, 0, 1, 1, 1 );
-
-	set [ tg_mode 2 ] = 0;
-	set [ tg_mode 4 ] = 2;
-	set [ tg_mode 10 ] = 0;
+	call tg_window( 1, 10, 10, 200, 256, "Window" );
+	call tg_button( 2, 1, 10, 32, 80, 26, "Load" );
+	call tg_button( 3, 1, 10, 64, 80, 26, "Quit" );
+	
+	call tg_hslider( 4, 1, 10,  95, 128, 20, 32, 287 );
+	call tg_hslider( 5, 1, 10, 120, 128, 20, 32, 287 );
+	call tg_hslider( 6, 1, 10, 145, 128, 20, 32, 287 );
+	call tg_hslider( 7, 1, 10, 170, 128, 20, 32, 287 );
+	call tg_hslider( 8, 1, 10, 195, 128, 20, 32, 287 );
+	call tg_hslider( 9, 1, 10, 220, 128, 20, 32, 287 );
 
 	print $cat( tg_num_unused() " unused gadgets at " tg_unused() );
 		
@@ -996,19 +1018,34 @@ program tgads {
 	fxshow;
 
 	while TRUE {
-		let selected = tg_scan( $fxwait );
+		let event = $fxwait;
+		let selected = tg_scan( event );
 		if >( selected 0 ) {
 			print $cat( selected, " ", [ tg_a selected ] );
 			switch selected {
-				case 1 {
-					set [ tg_mode 2 ] = 1;
-					set [ tg_mode 10 ] = 1;
-					call tg_file_selector( "Files" );
+				case 2 {
+					call tg_file_selector( "Select file" );
+				}
+				case 3 {
+					break;
 				}
 				case 4 {
-					set [ tg_mode 2 ] = 0;
-					set [ tg_mode 10 ] = 0;
-					call tg_draw( 0 );
+					let c1 = +( +( *( [ tg_a 4 ] 65536 ) *( [ tg_a 5 ] 256 ) ) [ tg_a 6 ] );
+				}
+				case 5 {
+					let c1 = +( +( *( [ tg_a 4 ] 65536 ) *( [ tg_a 5 ] 256 ) ) [ tg_a 6 ] );
+				}
+				case 6 {
+					let c1 = +( +( *( [ tg_a 4 ] 65536 ) *( [ tg_a 5 ] 256 ) ) [ tg_a 6 ] );
+				}
+				case 7 {
+					let c2 = +( +( *( [ tg_a 7 ] 65536 ) *( [ tg_a 8 ] 256 ) ) [ tg_a 9 ] );
+				}
+				case 8 {
+					let c2 = +( +( *( [ tg_a 7 ] 65536 ) *( [ tg_a 8 ] 256 ) ) [ tg_a 9 ] );
+				}
+				case 9 {
+					let c2 = +( +( *( [ tg_a 7 ] 65536 ) *( [ tg_a 8 ] 256 ) ) [ tg_a 9 ] );
 				}
 				case fs_list {
 					call fs_list_selected();
@@ -1028,7 +1065,27 @@ program tgads {
 					}
 				}
 			}
+		} else {
+			if =( $mousekey 1 ) {
+				switch event {
+					case FX_MOUSEMOTION {
+						let y = $ymouse;
+						call fill_array( foreground, -1 );
+						if <( tg_sely y ) {
+							call gradient( c1, c2, foreground, /( tg_sely 2 ), /( -( y tg_sely ) 2 ) );
+						} else {
+							call gradient( c2, c1, foreground, /( y 2 ), /( -( tg_sely y ) 2 ) );
+						}
+						call tg_draw(0);
+					}
+					case FX_MOUSEKEYDOWN {
+						call fore_to_back();
+						call tg_draw(0);
+					}
+				}
+			}
 		}
 		fxshow;
 	}
+	print "Bye!";
 }
