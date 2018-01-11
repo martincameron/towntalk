@@ -787,44 +787,6 @@ function tg_scan( event ) {
 	return selected;
 }
 
-function gradient( c1, c2, out, off, len ) {
-	var r1, r2, g1, g2, b1, b2, r, g, b, idx;
-	let r1 = &( >>( c1 16 ) 0xFF );
-	let r2 = &( >>( c2 16 ) 0xFF );
-	let g1 = &( >>( c1 8 ) 0xFF );
-	let g2 = &( >>( c2 8 ) 0xFF );
-	let b1 = &( c1 0xFF );
-	let b2 = &( c2 0xFF );
-	while <( idx len ) {
-		let r = +( r1 /( *( -( r2 r1 ) idx ) len ) );
-		let g = +( g1 /( *( -( g2 g1 ) idx ) len ) );
-		let b = +( b1 /( *( -( b2 b1 ) idx ) len ) );
-		set [ out +( off idx ) ] = +( *( r 65536 ) +( *( g 256 ) b ) );
-		inc idx;
-	}
-}
-
-function parse_rws( rws, out ) {
-	var elem, idx, c, r, g, b;
-	let elem = $parse( rws );
-	if !( $cmp( elem, "RW.SCN" ) ) {
-		let elem = $next( elem );
-		while $cmp( elem, "EOF" ) {
-			if <( idx $len( out ) ) {
-				let c = $int( elem );
-				let r = *( &( >>( c 8 ) 0xF ) 17 );
-				let g = *( &( >>( c 4 ) 0xF ) 17 ); 
-				let b = *( &( c 0xF ) 17 ); 
-				set [ out idx ] = +( *( r 65536 ) +( *( g 256 ) b ) );
-				inc idx;
-			}
-			let elem = $next( elem );
-		}
-	} else {
-		throw "Not an RWS file.";
-	}
-}
-
 function sort_dir( vals ) {
 	var progress, idx, tmp, lhs, rhs;
 	let progress = TRUE;
@@ -966,10 +928,48 @@ function fs_okay_selected() {
 	}
 }
 
+function gradient( c1, c2, out, off, len ) {
+	var r1, r2, g1, g2, b1, b2, r, g, b, idx;
+	let r1 = &( >>( c1 16 ) 0xFF );
+	let r2 = &( >>( c2 16 ) 0xFF );
+	let g1 = &( >>( c1 8 ) 0xFF );
+	let g2 = &( >>( c2 8 ) 0xFF );
+	let b1 = &( c1 0xFF );
+	let b2 = &( c2 0xFF );
+	while <( idx len ) {
+		let r = +( r1 /( *( -( r2 r1 ) idx ) len ) );
+		let g = +( g1 /( *( -( g2 g1 ) idx ) len ) );
+		let b = +( b1 /( *( -( b2 b1 ) idx ) len ) );
+		set [ out +( off idx ) ] = +( *( r 65536 ) +( *( g 256 ) b ) );
+		inc idx;
+	}
+}
+
+function parse_rws( rws, out ) {
+	var elem, idx, c, r, g, b;
+	let elem = $parse( rws );
+	if !( $cmp( elem, "RW.SCN" ) ) {
+		let elem = $next( elem );
+		while $cmp( elem, "EOF" ) {
+			if <( idx $len( out ) ) {
+				let c = $int( elem );
+				let r = *( &( >>( c 8 ) 0xF ) 16 );
+				let g = *( &( >>( c 4 ) 0xF ) 16 ); 
+				let b = *( &( c 0xF ) 16 ); 
+				set [ out idx ] = +( *( r 65536 ) +( *( g 256 ) b ) );
+				inc idx;
+			}
+			let elem = $next( elem );
+		}
+	} else {
+		throw "Not an RWS file.";
+	}
+}
+
 function fill_array( arr, value ) {
 	var idx;
 	while <( idx $len( arr ) ) {
-		set [ arr idx ] = -1;
+		set [ arr idx ] = value;
 		inc idx;
 	}
 }
@@ -985,8 +985,31 @@ function fore_to_back() {
 	}
 }
 
+function dither( source, dest ) {
+	var y, r, g, b;
+	while <( y $len( source ) ) {
+		let r = +( r &( [ source y ] 0xFF0000 ) );
+		if >( r 0xFF0000 ) {
+			let r = 0xFF0000;
+		}
+		let g = +( g &( [ source y ] 0xFF00 ) );
+		if >( g 0xFF00 ) {
+			let g = 0xFF00;
+		}
+		let b = +( b &( [ source y ] 0xFF ) );
+		if >( b 0xFF ) {
+			let b = 0xFF;
+		}
+		set [ dest y ] = &( +( r +( g b ) ) 0xF0F0F0 );
+		let r = &( r 0xF0000 );
+		let g = &( g 0xF00 );
+		let b = &( b 0xF );
+		inc y;
+	}
+}
+
 program tgads {
-	var idx, event, selected, file, err, y, c1, c2;
+	var idx, event, selected, file, err, y, c1, c2, paint;
 	let palette = $array( ${ 0x000000, 0xFFFFFF, 0xA0A0A0, 0x6080B0 } );
 
 	dim [ foreground 240 ];
@@ -1001,16 +1024,20 @@ program tgads {
 
 	call tg_init( 25 );
 
-	call tg_window( 1, 10, 10, 200, 256, "Window" );
-	call tg_button( 2, 1, 10, 32, 80, 26, "Load" );
-	call tg_button( 3, 1, 10, 64, 80, 26, "Quit" );
+	call tg_window( 1, 10, 10, 256, 256, "Window" );
 	
-	call tg_hslider( 4, 1, 10,  95, 128, 20, 32, 287 );
-	call tg_hslider( 5, 1, 10, 120, 128, 20, 32, 287 );
-	call tg_hslider( 6, 1, 10, 145, 128, 20, 32, 287 );
-	call tg_hslider( 7, 1, 10, 170, 128, 20, 32, 287 );
-	call tg_hslider( 8, 1, 10, 195, 128, 20, 32, 287 );
-	call tg_hslider( 9, 1, 10, 220, 128, 20, 32, 287 );
+	call tg_button( 2, 1, 10, 32, 80, 26, "Load" );
+	call tg_button( 3, 1, 10, 64, 80, 26, "Save" );
+	call tg_button( 4, 1, 10, 96, 80, 26, "Undo" );
+	call tg_button( 5, 1, 10, 128, 80, 26, "Dither" );
+	call tg_button( 6, 1, 10, 160, 80, 26, "Quit" );
+	
+	call tg_hslider( 10, 1, 100,  35, 128, 20, 32, 287 );
+	call tg_hslider( 11, 1, 100,  60, 128, 20, 32, 287 );
+	call tg_hslider( 12, 1, 100,  85, 128, 20, 32, 287 );
+	call tg_hslider( 13, 1, 100, 110, 128, 20, 32, 287 );
+	call tg_hslider( 14, 1, 100, 135, 128, 20, 32, 287 );
+	call tg_hslider( 15, 1, 100, 160, 128, 20, 32, 287 );
 
 	print $cat( tg_num_unused() " unused gadgets at " tg_unused() );
 		
@@ -1021,31 +1048,40 @@ program tgads {
 		let event = $fxwait;
 		let selected = tg_scan( event );
 		if >( selected 0 ) {
-			print $cat( selected, " ", [ tg_a selected ] );
+			#print $cat( selected, " ", [ tg_a selected ] );
 			switch selected {
 				case 2 {
 					call tg_file_selector( "Select file" );
 				}
-				case 3 {
-					break;
-				}
 				case 4 {
-					let c1 = +( +( *( [ tg_a 4 ] 65536 ) *( [ tg_a 5 ] 256 ) ) [ tg_a 6 ] );
+					call fill_array( foreground, -1 );
+					call tg_draw( 0 );
 				}
 				case 5 {
-					let c1 = +( +( *( [ tg_a 4 ] 65536 ) *( [ tg_a 5 ] 256 ) ) [ tg_a 6 ] );
+					call fore_to_back();
+					call dither( background, foreground );
+					call tg_draw( 0 );
 				}
 				case 6 {
-					let c1 = +( +( *( [ tg_a 4 ] 65536 ) *( [ tg_a 5 ] 256 ) ) [ tg_a 6 ] );
+					break;
 				}
-				case 7 {
-					let c2 = +( +( *( [ tg_a 7 ] 65536 ) *( [ tg_a 8 ] 256 ) ) [ tg_a 9 ] );
+				case 10 {
+					let c1 = +( +( *( [ tg_a 10 ] 65536 ) *( [ tg_a 11 ] 256 ) ) [ tg_a 12 ] );
 				}
-				case 8 {
-					let c2 = +( +( *( [ tg_a 7 ] 65536 ) *( [ tg_a 8 ] 256 ) ) [ tg_a 9 ] );
+				case 11 {
+					let c1 = +( +( *( [ tg_a 10 ] 65536 ) *( [ tg_a 11 ] 256 ) ) [ tg_a 12 ] );
 				}
-				case 9 {
-					let c2 = +( +( *( [ tg_a 7 ] 65536 ) *( [ tg_a 8 ] 256 ) ) [ tg_a 9 ] );
+				case 12 {
+					let c1 = +( +( *( [ tg_a 10 ] 65536 ) *( [ tg_a 11 ] 256 ) ) [ tg_a 12 ] );
+				}
+				case 13 {
+					let c2 = +( +( *( [ tg_a 13 ] 65536 ) *( [ tg_a 14 ] 256 ) ) [ tg_a 15 ] );
+				}
+				case 14 {
+					let c2 = +( +( *( [ tg_a 13 ] 65536 ) *( [ tg_a 14 ] 256 ) ) [ tg_a 15 ] );
+				}
+				case 15 {
+					let c2 = +( +( *( [ tg_a 13 ] 65536 ) *( [ tg_a 14 ] 256 ) ) [ tg_a 15 ] );
 				}
 				case fs_list {
 					call fs_list_selected();
@@ -1067,22 +1103,22 @@ program tgads {
 			}
 		} else {
 			if =( $mousekey 1 ) {
-				switch event {
-					case FX_MOUSEMOTION {
-						let y = $ymouse;
-						call fill_array( foreground, -1 );
-						if <( tg_sely y ) {
-							call gradient( c1, c2, foreground, /( tg_sely 2 ), /( -( y tg_sely ) 2 ) );
-						} else {
-							call gradient( c2, c1, foreground, /( y 2 ), /( -( tg_sely y ) 2 ) );
-						}
-						call tg_draw(0);
-					}
-					case FX_MOUSEKEYDOWN {
+				if &&( tg_selx =( tg_find( tg_selx, tg_sely, 0 ) 0 ) ) {
+					if =( paint FALSE ) {
 						call fore_to_back();
-						call tg_draw(0);
+						let paint = TRUE;
 					}
+					let y = $ymouse;
+					call fill_array( foreground, -1 );
+					if <( tg_sely y ) {
+						call gradient( c1, c2, foreground, /( tg_sely 2 ), /( -( y tg_sely ) 2 ) );
+					} else {
+						call gradient( c2, c1, foreground, /( y 2 ), /( -( tg_sely y ) 2 ) );
+					}
+					call tg_draw(0);
 				}
+			} else {
+				let paint = FALSE;
 			}
 		}
 		fxshow;
