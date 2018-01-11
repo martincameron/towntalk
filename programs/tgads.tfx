@@ -1093,6 +1093,7 @@ program tgads {
 					let file = fs_okay_selected();
 					if file {
 						try {
+							call fill_array( foreground, -1 );
 							call parse_rws( $load( file ), background );
 							call tg_draw( 0 );
 						} catch err {
