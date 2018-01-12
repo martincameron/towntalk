@@ -946,23 +946,29 @@ function gradient( c1, c2, out, off, len ) {
 }
 
 function parse_rws( rws, out ) {
-	var elem, idx, c, r, g, b;
+	var elem, idx, a, c, r, g, b;
 	let elem = $parse( rws );
-	if !( $cmp( elem, "RW.SCN" ) ) {
-		let elem = $next( elem );
-		while $cmp( elem, "EOF" ) {
-			if <( idx $len( out ) ) {
-				let c = $int( elem );
+	if $cmp( elem, "RM.AGA" ) {
+		if $cmp( elem, "RW.SCN" ) {
+			throw "Not an RWS file.";
+		}
+	} else {
+		let a = TRUE;
+	}
+	let elem = $next( elem );
+	while $cmp( elem, "EOF" ) {
+		if <( idx $len( out ) ) {
+			let c = $int( elem );
+			if !( a ) {
 				let r = *( &( >>( c 8 ) 0xF ) 16 );
 				let g = *( &( >>( c 4 ) 0xF ) 16 ); 
 				let b = *( &( c 0xF ) 16 ); 
-				set [ out idx ] = +( *( r 65536 ) +( *( g 256 ) b ) );
-				inc idx;
+				let c = +( *( r 65536 ) +( *( g 256 ) b ) );
 			}
-			let elem = $next( elem );
+			set [ out idx ] = c;
+			inc idx;
 		}
-	} else {
-		throw "Not an RWS file.";
+		let elem = $next( elem );
 	}
 }
 
@@ -1051,7 +1057,10 @@ program tgads {
 			#print $cat( selected, " ", [ tg_a selected ] );
 			switch selected {
 				case 2 {
-					call tg_file_selector( "Select file" );
+					call tg_file_selector( "Load RMS/RWS" );
+				}
+				case 3 {
+					call tg_file_selector( $tup( "Save RMS" 1 ) );
 				}
 				case 4 {
 					call fill_array( foreground, -1 );
@@ -1090,15 +1099,23 @@ program tgads {
 					call fs_dispose();
 				}
 				case fs_okay {
-					let file = fs_okay_selected();
-					if file {
-						try {
-							call fill_array( foreground, -1 );
-							call parse_rws( $load( file ), background );
-							call tg_draw( 0 );
-						} catch err {
-							print err;
+					try {
+						if =( [ tg_a fs_win ] 1 ) {
+							let file = fs_okay_selected();
+							if file {
+								call fore_to_back();
+								save $str( "RM.AGA\012" $astr( background ) "EOF" ), file;
+							}
+						} else {
+							let file = fs_okay_selected();
+							if file {
+								call fill_array( foreground, -1 );
+								call parse_rws( $load( file ), background );
+								call tg_draw( 0 );
+							}
 						}
+					} catch err {
+						print err;
 					}
 				}
 			}
