@@ -55,24 +55,23 @@ function tg_text( text, x, y, clr ) {
 	}
 }
 
-function tg_box( x, y, w, h, c1, c2 ) {
-	fxrect x, y, 2, h, c1;
-	fxrect +( x -( w 2 ) ), y, 2, h, c2;
-	fxrect x, y, -( w 1 ), 2, c1;
-	fxrect +( x 1 ), +( y -( h 2 ) ), -( w 1 ), 2, c2;
-}
-
 function tg_raise_box( x, y, w, h ) {
-	call tg_box( x, y, w, h, [ palette 1 ], [ palette 0 ] );
+	fxrect x, y, 2, h, [ palette 1 ];
+	fxrect +( x -( w 2 ) ), y, 2, h, [ palette 0 ];
+	fxrect x, y, -( w 1 ), 2, [ palette 1 ];
+	fxrect +( x 1 ), +( y -( h 2 ) ), -( w 1 ), 2, [ palette 0 ];
 }
 
 function tg_lower_box( x, y, w, h ) {
-	call tg_box( x, y, w, h, [ palette 0 ], [ palette 1 ] );
+	fxrect x, y, 2, h, [ palette 0 ];
+	fxrect +( x -( w 2 ) ), y, 2, h, [ palette 1 ];
+	fxrect x, y, -( w 1 ), 2, [ palette 0 ];
+	fxrect +( x 1 ), +( y -( h 2 ) ), -( w 1 ), 2, [ palette 1 ];
 }
 
 function tg_bevel_box( x, y, w, h ) {
-	call tg_box( x, y, w, h, [ palette 1 ], [ palette 0 ] );
-	call tg_box( +( x 2 ), +( y 2 ), -( w 4 ), -( h 4 ), [ palette 0 ], [ palette 1 ] );
+	call tg_raise_box( x, y, w, h );
+	call tg_lower_box( +( x 2 ), +( y 2 ), -( w 4 ), -( h 4 ) );
 }
 
 function tg_resize( n, x, y, w, h ) {
@@ -160,14 +159,6 @@ function tg_vslider( n, parent, x, y, w, h, page, count ) {
 	set [ tg_c n ] = count;
 }
 
-function tg_hslider( n, parent, x, y, w, h, page, count ) {
-	call tg_window( n, x, y, w, h, 0 );
-	set [ tg_parent n ] = parent;
-	set [ tg_type n ] = 7;
-	set [ tg_b n ] = page;
-	set [ tg_c n ] = count;
-}
-
 function tg_textbox( n, parent, x, y, w, h, text ) {
 	call tg_window( n, x, y, w, h, text );
 	set [ tg_parent n ] = parent;
@@ -189,6 +180,22 @@ function tg_listbox( n, parent, x, y, w, h, list, slider ) {
 		set [ tg_link n ] = slider;
 		set [ tg_link slider ] = n;
 	}
+}
+
+function tg_hslider( n, parent, x, y, w, h, page, count ) {
+	call tg_window( n, x, y, w, h, 0 );
+	set [ tg_parent n ] = parent;
+	set [ tg_type n ] = 7;
+	set [ tg_b n ] = page;
+	set [ tg_c n ] = count;
+}
+
+function tg_box( n, parent, x, y, w, h, style, colour ) {
+	call tg_window( n, x, y, w, h, 0 );
+	set [ tg_parent n ] = parent;
+	set [ tg_type n ] = 8;
+	set [ tg_a n ] = style;
+	set [ tg_b n ] = colour;
 }
 
 function tg_init( gadcount ) {
@@ -296,24 +303,20 @@ function tg_draw_hslider( n ) {
 }
 
 function tg_draw_button( n ) {
-	var x, y, bg, hl, sh;
+	var x, y, c;
 	let x = tg_getx( n );
 	let y = tg_gety( n );
 	if =( [ tg_b n ] 1 ) {
-		let bg = 3;
-		let hl = 0;
-		let sh = 1;
+		let c = 1;
+		fxrect x, y, [ tg_w n ], [ tg_h n ], [ palette 3 ];
+		call tg_lower_box( x, y, [ tg_w n ], [ tg_h n ] );
 	} else {
-		let bg = 2;
-		let hl = 1;
-		let sh = 0;
+		fxrect x, y, [ tg_w n ], [ tg_h n ], [ palette 2 ];
+		call tg_raise_box( x, y, [ tg_w n ], [ tg_h n ] );
 	}
-	fxrect x, y, [ tg_w n ], [ tg_h n ], [ palette bg ];
-	call tg_box( x, y, [ tg_w n ], [ tg_h n ],
-		[ palette hl ], [ palette sh ] );
 	call tg_text( [ tg_a n ],
 		+( x /( -( [ tg_w n ] *( $len( [ tg_a n ] ) 8 ) ) 2 ) ),
-		+( y /( -( [ tg_h n ] 14 ) 2 ) ), sh );
+		+( y /( -( [ tg_h n ] 14 ) 2 ) ), c );
 }
 
 function tg_draw_textbox( n ) {
@@ -329,9 +332,7 @@ function tg_draw_textbox( n ) {
 	if =( [ tg_b n ] 1 ) {
 		fxrect +( x *( +( $len( t ) 1 ) 8 ) ), +( y 6 ), 8, 16, [ palette 3 ];
 	}
-	call tg_box( x, y, [ tg_w n ], [ tg_h n ], [ palette 1 ], [ palette 0 ] );
-	call tg_box( +( x 2 ), +( y 2 ), -( [ tg_w n ] 4 ), -( [ tg_h n ] 4 ),
-		[ palette 0 ], [ palette 1 ] );
+	call tg_bevel_box( x, y, [ tg_w n ], [ tg_h n ] );
 	call tg_text( t, +( x 8 ), +( y 6 ), 0 );
 }
 
@@ -340,7 +341,7 @@ function tg_draw_sizegad( n ) {
 	let x = tg_getx( n );
 	let y = tg_gety( n );
 	fxrect x, y, [ tg_w n ], [ tg_h n ], [ palette 2 ];
-	call tg_box( x, y, [ tg_w n ], [ tg_h n ], [ palette 1 ], [ palette 0 ] );
+	call tg_raise_box( x, y, [ tg_w n ], [ tg_h n ] );
 }
 
 function tg_draw_listbox( n ) {
@@ -352,7 +353,7 @@ function tg_draw_listbox( n ) {
 	let x = tg_getx( n );
 	let y = tg_gety( n );
 	fxrect x, y, [ tg_w n ], [ tg_h n ], [ palette 2 ];
-	call tg_box( x, y, [ tg_w n ], [ tg_h n ], [ palette 0 ], [ palette 1 ] );
+	call tg_lower_box( x, y, [ tg_w n ], [ tg_h n ] );
 	let tw = /( -( [ tg_w n ] 16 ) 8 );
 	let th = /( -( [ tg_h n ] 12 ) 16 );
 	if >( +( [ tg_b n ] th ) $len( [ tg_a n ] ) ) {
@@ -374,6 +375,26 @@ function tg_draw_listbox( n ) {
 		call tg_text( txt, +( x 8 ), ty, tc );
 		let ty = +( ty 16 );
 		inc idx;
+	}
+}
+
+function tg_draw_box( n ) {
+	var x, y;
+	let x = tg_getx( n );
+	let y = tg_gety( n );
+	if >e( [ tg_b n ] 0 ) {
+		fxrect x, y, [ tg_w n ], [ tg_h n ], [ tg_b n ];
+	}
+	switch [ tg_a n ] {
+		case 1 {
+			call tg_raise_box( x, y, [ tg_w n ], [ tg_h n ] );
+		}
+		case 2 {
+			call tg_lower_box( x, y, [ tg_w n ], [ tg_h n ] );
+		}
+		default {
+			call tg_bevel_box( x, y, [ tg_w n ], [ tg_h n ] );
+		}
 	}
 }
 
@@ -409,6 +430,7 @@ function tg_draw( n ) {
 			case 5 { call tg_draw_sizegad( n ); }
 			case 6 { call tg_draw_listbox( n ); }
 			case 7 { call tg_draw_hslider( n ); }
+			case 8 { call tg_draw_box( n ); }
 		}
 	}
 }
@@ -1038,12 +1060,15 @@ program tgads {
 	call tg_button( 5, 1, 10, 128, 80, 26, "Dither" );
 	call tg_button( 6, 1, 10, 160, 80, 26, "Quit" );
 	
-	call tg_hslider( 10, 1, 100,  35, 128, 20, 32, 287 );
-	call tg_hslider( 11, 1, 100,  60, 128, 20, 32, 287 );
-	call tg_hslider( 12, 1, 100,  85, 128, 20, 32, 287 );
-	call tg_hslider( 13, 1, 100, 110, 128, 20, 32, 287 );
-	call tg_hslider( 14, 1, 100, 135, 128, 20, 32, 287 );
-	call tg_hslider( 15, 1, 100, 160, 128, 20, 32, 287 );
+	#call tg_box( 9, 1, 100, 32, 144, 190, 0, [ palette 3 ] );
+	
+	call tg_hslider( 10, 1, 108,  40, 128, 20, 32, 287 );
+	call tg_hslider( 11, 1, 108,  65, 128, 20, 32, 287 );
+	call tg_hslider( 12, 1, 108,  90, 128, 20, 32, 287 );
+	
+	call tg_hslider( 13, 1, 108, 140, 128, 20, 32, 287 );
+	call tg_hslider( 14, 1, 108, 165, 128, 20, 32, 287 );
+	call tg_hslider( 15, 1, 108, 190, 128, 20, 32, 287 );
 
 	print $cat( tg_num_unused() " unused gadgets at " tg_unused() );
 		
