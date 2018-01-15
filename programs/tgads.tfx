@@ -1,13 +1,14 @@
 
-array palette, charset, foreground, background;
+array palette, charset;
 
 array tg_zorder, tg_type, tg_parent;
 array tg_x, tg_y, tg_w, tg_h, tg_min, tg_anchor, tg_mode, tg_link;
 array tg_a, tg_b, tg_c, tg_d;
 
 global tg_selx, tg_sely, tg_focus, tg_time;
-
 global fs_win, fs_path, fs_slider, fs_list, fs_file, fs_cancel, fs_okay;
+
+array foreground, background;
 
 function tg_charset( str ) {
 	var w, h, clr, chr, y, x;
@@ -190,12 +191,13 @@ function tg_hslider( n, parent, x, y, w, h, page, count ) {
 	set [ tg_c n ] = count;
 }
 
-function tg_box( n, parent, x, y, w, h, style, colour ) {
+function tg_box( n, parent, x, y, w, h, style, colour, text ) {
 	call tg_window( n, x, y, w, h, 0 );
 	set [ tg_parent n ] = parent;
 	set [ tg_type n ] = 8;
 	set [ tg_a n ] = style;
 	set [ tg_b n ] = colour;
+	set [ tg_c n ] = text;
 }
 
 function tg_init( gadcount ) {
@@ -228,11 +230,10 @@ function tg_draw_background() {
 		if <( [ foreground y ] 0 ) {
 			fxrect 0, *( y 2 ), 640, 2, [ background y ];
 		} else {
-			fxrect 0, *( y 2 ), 640, 2, [ foreground y ];
+			fxrect 0, *( y 2 ), 640, 2, blend( [ foreground y ], [ background y ], [ tg_a 17 ] );
 		}
 		inc y;
 	}
-	fxblit 0, 0, 0, 640, 480, 0, 128;
 }
 
 function tg_getx( n ) {
@@ -379,7 +380,7 @@ function tg_draw_listbox( n ) {
 }
 
 function tg_draw_box( n ) {
-	var x, y;
+	var x, y, t;
 	let x = tg_getx( n );
 	let y = tg_gety( n );
 	if >e( [ tg_b n ] 0 ) {
@@ -395,6 +396,13 @@ function tg_draw_box( n ) {
 		default {
 			call tg_bevel_box( x, y, [ tg_w n ], [ tg_h n ] );
 		}
+	}
+	let t = [ tg_c n ];
+	if t {
+		if >( *( $len( t ) 8 ) -( [ tg_w n ] 16 ) ) {
+			let t = $sub( t, 0, /( -( [ tg_w n ] 16 ) 8 ) );
+		}
+		call tg_text( t, +( x 8 ), +( y 8 ), =( &( [ tg_b n ] 0x8000 ) 0 ) );
 	}
 }
 
@@ -967,6 +975,20 @@ function gradient( c1, c2, out, off, len ) {
 	}
 }
 
+function blend( c1, c2, x ) {
+	var r1, r2, g1, g2, b1, b2, r, g, b;
+	let r1 = &( >>( c1 16 ) 0xFF );
+	let r2 = &( >>( c2 16 ) 0xFF );
+	let g1 = &( >>( c1 8 ) 0xFF );
+	let g2 = &( >>( c2 8 ) 0xFF );
+	let b1 = &( c1 0xFF );
+	let b2 = &( c2 0xFF );
+	let r = +( r1 /( *( -( r2 r1 ) x ) 255 ) );
+	let g = +( g1 /( *( -( g2 g1 ) x ) 255 ) );
+	let b = +( b1 /( *( -( b2 b1 ) x ) 255 ) );
+	return +( *( r 65536 ) +( *( g 256 ) b ) );
+}
+
 function parse_rws( rws, out ) {
 	var elem, idx, a, c, r, g, b;
 	let elem = $parse( rws );
@@ -1006,7 +1028,7 @@ function fore_to_back() {
 	var y;
 	while <( y $len( foreground ) ) {
 		if >( [ foreground y ] -1 ) {
-			set [ background y ] = [ foreground y ];
+			set [ background y ] = blend( [ foreground y ] [ background y ] [ tg_a 17 ] );
 			set [ foreground y ] = -1;
 		}
 		inc y;
@@ -1050,25 +1072,44 @@ program tgads {
 
 	fxopen 640, 480, "tgads";
 
-	call tg_init( 25 );
+	call tg_init( 26 );
 
-	call tg_window( 1, 10, 10, 256, 256, "Window" );
+	call tg_window( 1, 16, 16, 320, 320, "Raster Master 2.0" );
+	call tg_minsize( 1, 320 );
 	
-	call tg_button( 2, 1, 10, 32, 80, 26, "Load" );
-	call tg_button( 3, 1, 10, 64, 80, 26, "Save" );
-	call tg_button( 4, 1, 10, 96, 80, 26, "Undo" );
-	call tg_button( 5, 1, 10, 128, 80, 26, "Dither" );
-	call tg_button( 6, 1, 10, 160, 80, 26, "Quit" );
+	call tg_button( 2, 1, 8, 32, 80, 26, "Load" );
+	call tg_button( 3, 1, 8, 64, 80, 26, "Save" );
+	call tg_button( 4, 1, 8, 96, 80, 26, "Undo" );
+	call tg_button( 5, 1, 8, 128, 80, 26, "Dither" );
+	call tg_button( 6, 1, 8, 160, 80, 26, "Quit" );
 	
-	#call tg_box( 9, 1, 100, 32, 144, 190, 0, [ palette 3 ] );
+	call tg_sizegad( 7, 1, 300, 300, 16, 16 );
 	
-	call tg_hslider( 10, 1, 108,  40, 128, 20, 32, 287 );
-	call tg_hslider( 11, 1, 108,  65, 128, 20, 32, 287 );
-	call tg_hslider( 12, 1, 108,  90, 128, 20, 32, 287 );
+	call tg_box( 8, 1, 96, 32, 176, 112, 2, 0, "Colour 1" );
+	call tg_anchors( 8, 1, 1, 0, 1 );
 	
-	call tg_hslider( 13, 1, 108, 140, 128, 20, 32, 287 );
-	call tg_hslider( 14, 1, 108, 165, 128, 20, 32, 287 );
-	call tg_hslider( 15, 1, 108, 190, 128, 20, 32, 287 );
+	call tg_box( 9, 1, 96, 152, 176, 112, 2, 0, "Colour 2" );
+	call tg_anchors( 9, 1, 1, 0, 1 );
+	
+	call tg_hslider( 10, 1, 108,  64, 144, 20, 32, 287 );
+	call tg_anchors( 10, 1, 1, 0, 1 );
+	call tg_hslider( 11, 1, 108,  88, 144, 20, 32, 287 );
+	call tg_anchors( 11, 1, 1, 0, 1 );
+	call tg_hslider( 12, 1, 108,  112, 144, 20, 32, 287 );
+	call tg_anchors( 12, 1, 1, 0, 1 );
+	
+	call tg_hslider( 13, 1, 108, 184, 144, 20, 32, 287 );
+	call tg_anchors( 13, 1, 1, 0, 1 );
+	call tg_hslider( 14, 1, 108, 208, 144, 20, 32, 287 );
+	call tg_anchors( 14, 1, 1, 0, 1 );
+	call tg_hslider( 15, 1, 108, 232, 144, 20, 32, 287 );
+	call tg_anchors( 15, 1, 1, 0, 1 );
+
+	call tg_box( 16, 1, 16, 272, 256, 32, 2, -1, "Blend" );
+	call tg_anchors( 16, 1, 1, 0, 1 );
+
+	call tg_hslider( 17, 1, 108, 278, 144, 20, 32, 287 );
+	call tg_anchors( 17, 1, 1, 0, 1 );
 
 	print $cat( tg_num_unused() " unused gadgets at " tg_unused() );
 		
@@ -1101,21 +1142,36 @@ program tgads {
 				}
 				case 10 {
 					let c1 = +( +( *( [ tg_a 10 ] 65536 ) *( [ tg_a 11 ] 256 ) ) [ tg_a 12 ] );
+					set [ tg_b 8 ] = c1;
+					call tg_draw( 1 );
 				}
 				case 11 {
 					let c1 = +( +( *( [ tg_a 10 ] 65536 ) *( [ tg_a 11 ] 256 ) ) [ tg_a 12 ] );
+					set [ tg_b 8 ] = c1;
+					call tg_draw( 1 );
 				}
 				case 12 {
 					let c1 = +( +( *( [ tg_a 10 ] 65536 ) *( [ tg_a 11 ] 256 ) ) [ tg_a 12 ] );
+					set [ tg_b 8 ] = c1;
+					call tg_draw( 1 );
 				}
 				case 13 {
 					let c2 = +( +( *( [ tg_a 13 ] 65536 ) *( [ tg_a 14 ] 256 ) ) [ tg_a 15 ] );
+					set [ tg_b 9 ] = c2;
+					call tg_draw( 1 );
 				}
 				case 14 {
 					let c2 = +( +( *( [ tg_a 13 ] 65536 ) *( [ tg_a 14 ] 256 ) ) [ tg_a 15 ] );
+					set [ tg_b 9 ] = c2;
+					call tg_draw( 1 );
 				}
 				case 15 {
 					let c2 = +( +( *( [ tg_a 13 ] 65536 ) *( [ tg_a 14 ] 256 ) ) [ tg_a 15 ] );
+					set [ tg_b 9 ] = c2;
+					call tg_draw( 1 );
+				}
+				case 17 {
+					call tg_draw( 0 );
 				}
 				case fs_list {
 					call fs_list_selected();
