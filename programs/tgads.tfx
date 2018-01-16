@@ -1085,30 +1085,30 @@ program tgads {
 	
 	call tg_sizegad( 7, 1, 300, 300, 16, 16 );
 	
-	call tg_box( 8, 1, 96, 32, 176, 112, 2, 0, "Colour 1" );
+	call tg_box( 8, 1, 96, 32, 192, 112, 1, 0, "Colour 1" );
 	call tg_anchors( 8, 1, 1, 0, 1 );
 	
-	call tg_box( 9, 1, 96, 152, 176, 112, 2, 0, "Colour 2" );
+	call tg_box( 9, 1, 96, 152, 192, 112, 1, 0, "Colour 2" );
 	call tg_anchors( 9, 1, 1, 0, 1 );
 	
-	call tg_hslider( 10, 1, 108,  64, 144, 20, 32, 287 );
+	call tg_hslider( 10, 1, 108,  64, 160, 20, 32, 287 );
 	call tg_anchors( 10, 1, 1, 0, 1 );
-	call tg_hslider( 11, 1, 108,  88, 144, 20, 32, 287 );
+	call tg_hslider( 11, 1, 108,  88, 160, 20, 32, 287 );
 	call tg_anchors( 11, 1, 1, 0, 1 );
-	call tg_hslider( 12, 1, 108,  112, 144, 20, 32, 287 );
+	call tg_hslider( 12, 1, 108,  112, 160, 20, 32, 287 );
 	call tg_anchors( 12, 1, 1, 0, 1 );
 	
-	call tg_hslider( 13, 1, 108, 184, 144, 20, 32, 287 );
+	call tg_hslider( 13, 1, 108, 184, 160, 20, 32, 287 );
 	call tg_anchors( 13, 1, 1, 0, 1 );
-	call tg_hslider( 14, 1, 108, 208, 144, 20, 32, 287 );
+	call tg_hslider( 14, 1, 108, 208, 160, 20, 32, 287 );
 	call tg_anchors( 14, 1, 1, 0, 1 );
-	call tg_hslider( 15, 1, 108, 232, 144, 20, 32, 287 );
+	call tg_hslider( 15, 1, 108, 232, 160, 20, 32, 287 );
 	call tg_anchors( 15, 1, 1, 0, 1 );
 
-	call tg_box( 16, 1, 16, 272, 256, 32, 2, -1, "Blend" );
+	call tg_box( 16, 1, 16, 272, 272, 32, 1, -1, "Blend" );
 	call tg_anchors( 16, 1, 1, 0, 1 );
 
-	call tg_hslider( 17, 1, 108, 278, 144, 20, 32, 287 );
+	call tg_hslider( 17, 1, 108, 278, 160, 20, 32, 287 );
 	call tg_anchors( 17, 1, 1, 0, 1 );
 
 	print $cat( tg_num_unused() " unused gadgets at " tg_unused() );
