@@ -11,7 +11,7 @@
 #include "time.h"
 
 /*
-	Towntalk (c)2017 Martin Cameron.
+	Towntalk (c)2018 Martin Cameron.
 
 	A program file consists of a list of declarations.
 	Variables are integers, strings, elements or array references.
@@ -1850,11 +1850,11 @@ static int evaluate_arithmetic_expression( struct expression *this, struct varia
 	struct variable var = { 0, NULL };
 	struct expression *parameter = this->parameters;
 	int lhs, rhs, value, ret = 1;
-	if( parameter->evaluate == &evaluate_integer_constant_expression ) {
+	if( parameter->evaluate == evaluate_integer_constant_expression ) {
 		lhs = parameter->index;
-	} else if( parameter->evaluate == &evaluate_local ) {
+	} else if( parameter->evaluate == evaluate_local ) {
 		lhs = variables[ parameter->index ].integer_value;
-	} else if( parameter->evaluate == &evaluate_global ) {
+	} else if( parameter->evaluate == evaluate_global ) {
 		lhs = parameter->global->value.integer_value;
 	} else {
 		ret = parameter->evaluate( parameter, variables, &var, exception );
@@ -1863,11 +1863,11 @@ static int evaluate_arithmetic_expression( struct expression *this, struct varia
 	}
 	if( ret ) {
 		parameter = parameter->next;
-		if( parameter->evaluate == &evaluate_integer_constant_expression ) {
+		if( parameter->evaluate == evaluate_integer_constant_expression ) {
 			rhs = parameter->index;
-		} else if( parameter->evaluate == &evaluate_local ) {
+		} else if( parameter->evaluate == evaluate_local ) {
 			rhs = variables[ parameter->index ].integer_value;
-		} else if( parameter->evaluate == &evaluate_global ) {
+		} else if( parameter->evaluate == evaluate_global ) {
 			rhs = parameter->global->value.integer_value;
 		} else {
 			ret = parameter->evaluate( parameter, variables, &var, exception );
@@ -2635,52 +2635,52 @@ static int evaluate_chop_expression( struct expression *this, struct variable *v
 }
 
 static struct operator operators[] = {
-	{ "%", '%', 2, &evaluate_arithmetic_expression, &operators[ 1 ] },
-	{ "&", '&', 2, &evaluate_arithmetic_expression, &operators[ 2 ] },
-	{ "*", '*', 2, &evaluate_arithmetic_expression, &operators[ 3 ] },
-	{ "+", '+', 2, &evaluate_arithmetic_expression, &operators[ 4 ] },
-	{ "-", '-', 2, &evaluate_arithmetic_expression, &operators[ 5 ] },
-	{ "/", '/', 2, &evaluate_arithmetic_expression, &operators[ 6 ] },
-	{ "<", '<', 2, &evaluate_arithmetic_expression, &operators[ 7 ] },
-	{ "<e",'L', 2, &evaluate_arithmetic_expression, &operators[ 8 ] },
-	{ ">", '>', 2, &evaluate_arithmetic_expression, &operators[ 9 ] },
-	{ ">e",'G', 2, &evaluate_arithmetic_expression, &operators[ 10 ] },
-	{ ">>",'A', 2, &evaluate_arithmetic_expression, &operators[ 11 ] },
-	{ "^", '^', 2, &evaluate_arithmetic_expression, &operators[ 12 ] },
-	{ "=", '=', 2, &evaluate_arithmetic_expression, &operators[ 13 ] },
-	{ "|", '|', 2, &evaluate_arithmetic_expression, &operators[ 14 ] },
-	{ "~", '~', 1, &evaluate_logical_not_expression, &operators[ 15 ] },
-	{ "!", '!', 1, &evaluate_logical_expression, &operators[ 16 ] },
-	{ "&&",'&', 2, &evaluate_logical_expression, &operators[ 17 ] },
-	{ "||",'|', 2, &evaluate_logical_expression, &operators[ 18 ] },
-	{ "$int", '$', 1, &evaluate_int_expression, &operators[ 19 ] },
-	{ "$str", '$',-1, &evaluate_str_expression, &operators[ 20 ] },
-	{ "$len", '$', 1, &evaluate_len_expression, &operators[ 21 ] },
-	{ "$asc", '$', 1, &evaluate_asc_expression, &operators[ 22 ] },
-	{ "$cmp", '$', 2, &evaluate_cmp_expression, &operators[ 23 ] },
-	{ "$cat", '$',-1, &evaluate_str_expression, &operators[ 24 ] },
-	{ "$chr", '$', 2, &evaluate_chr_expression, &operators[ 25 ] },
-	{ "$tup", '$', 2, &evaluate_tup_expression, &operators[ 26 ] },
-	{ "$sub", '$', 3, &evaluate_sub_expression, &operators[ 27 ] },
-	{ "$astr",'$', 1, &evaluate_astr_expression, &operators[ 28 ] },
-	{ "$load",'$', 1, &evaluate_load_expression, &operators[ 29 ] },
-	{ "$flen",'$', 1, &evaluate_flen_expression, &operators[ 30 ] },
-	{ "$argc",'$', 0, &evaluate_argc_expression, &operators[ 31 ] },
-	{ "$argv",'$', 1, &evaluate_argv_expression, &operators[ 32 ] },
-	{ "$time",'$', 0, &evaluate_time_expression, &operators[ 33 ] },
-	{ "$next",'$', 1, &evaluate_next_expression, &operators[ 34 ] },
-	{ "$child",'$', 1, &evaluate_child_expression, &operators[ 35 ] },
-	{ "$parse",'$', 1, &evaluate_parse_expression, &operators[ 36 ] },
-	{ "$quote",'$', 1, &evaluate_quote_expression, &operators[ 37 ] },
-	{ "$unquote",'$', 1, &evaluate_unquote_expression, &operators[ 38 ] },
-	{ "$line",'$', 1, &evaluate_line_expression, &operators[ 39 ] },
-	{ "$hex",'$', 1, &evaluate_hex_expression, &operators[ 40 ] },
-	{ "$pack",'$', 1, &evaluate_pack_expression, &operators[ 41 ] },
-	{ "$array",'$', 1, &evaluate_array_expression, &operators[ 42 ] },
-	{ "$new",'$', 1, &evaluate_array_expression, &operators[ 43 ] },
-	{ "$eq",'$', 2, &evaluate_eq_expression, &operators[ 44 ] },
-	{ "$chop",'$', 2, &evaluate_chop_expression, &operators[ 45 ] },
-	{ ":",':', -1, &evaluate_function_expression, NULL }
+	{ "%", '%', 2, evaluate_arithmetic_expression, &operators[ 1 ] },
+	{ "&", '&', 2, evaluate_arithmetic_expression, &operators[ 2 ] },
+	{ "*", '*', 2, evaluate_arithmetic_expression, &operators[ 3 ] },
+	{ "+", '+', 2, evaluate_arithmetic_expression, &operators[ 4 ] },
+	{ "-", '-', 2, evaluate_arithmetic_expression, &operators[ 5 ] },
+	{ "/", '/', 2, evaluate_arithmetic_expression, &operators[ 6 ] },
+	{ "<", '<', 2, evaluate_arithmetic_expression, &operators[ 7 ] },
+	{ "<e",'L', 2, evaluate_arithmetic_expression, &operators[ 8 ] },
+	{ ">", '>', 2, evaluate_arithmetic_expression, &operators[ 9 ] },
+	{ ">e",'G', 2, evaluate_arithmetic_expression, &operators[ 10 ] },
+	{ ">>",'A', 2, evaluate_arithmetic_expression, &operators[ 11 ] },
+	{ "^", '^', 2, evaluate_arithmetic_expression, &operators[ 12 ] },
+	{ "=", '=', 2, evaluate_arithmetic_expression, &operators[ 13 ] },
+	{ "|", '|', 2, evaluate_arithmetic_expression, &operators[ 14 ] },
+	{ "~", '~', 1, evaluate_logical_not_expression, &operators[ 15 ] },
+	{ "!", '!', 1, evaluate_logical_expression, &operators[ 16 ] },
+	{ "&&",'&', 2, evaluate_logical_expression, &operators[ 17 ] },
+	{ "||",'|', 2, evaluate_logical_expression, &operators[ 18 ] },
+	{ "$int", '$', 1, evaluate_int_expression, &operators[ 19 ] },
+	{ "$str", '$',-1, evaluate_str_expression, &operators[ 20 ] },
+	{ "$len", '$', 1, evaluate_len_expression, &operators[ 21 ] },
+	{ "$asc", '$', 1, evaluate_asc_expression, &operators[ 22 ] },
+	{ "$cmp", '$', 2, evaluate_cmp_expression, &operators[ 23 ] },
+	{ "$cat", '$',-1, evaluate_str_expression, &operators[ 24 ] },
+	{ "$chr", '$', 2, evaluate_chr_expression, &operators[ 25 ] },
+	{ "$tup", '$', 2, evaluate_tup_expression, &operators[ 26 ] },
+	{ "$sub", '$', 3, evaluate_sub_expression, &operators[ 27 ] },
+	{ "$astr",'$', 1, evaluate_astr_expression, &operators[ 28 ] },
+	{ "$load",'$', 1, evaluate_load_expression, &operators[ 29 ] },
+	{ "$flen",'$', 1, evaluate_flen_expression, &operators[ 30 ] },
+	{ "$argc",'$', 0, evaluate_argc_expression, &operators[ 31 ] },
+	{ "$argv",'$', 1, evaluate_argv_expression, &operators[ 32 ] },
+	{ "$time",'$', 0, evaluate_time_expression, &operators[ 33 ] },
+	{ "$next",'$', 1, evaluate_next_expression, &operators[ 34 ] },
+	{ "$child",'$', 1, evaluate_child_expression, &operators[ 35 ] },
+	{ "$parse",'$', 1, evaluate_parse_expression, &operators[ 36 ] },
+	{ "$quote",'$', 1, evaluate_quote_expression, &operators[ 37 ] },
+	{ "$unquote",'$', 1, evaluate_unquote_expression, &operators[ 38 ] },
+	{ "$line",'$', 1, evaluate_line_expression, &operators[ 39 ] },
+	{ "$hex",'$', 1, evaluate_hex_expression, &operators[ 40 ] },
+	{ "$pack",'$', 1, evaluate_pack_expression, &operators[ 41 ] },
+	{ "$array",'$', 1, evaluate_array_expression, &operators[ 42 ] },
+	{ "$new",'$', 1, evaluate_array_expression, &operators[ 43 ] },
+	{ "$eq",'$', 2, evaluate_eq_expression, &operators[ 44 ] },
+	{ "$chop",'$', 2, evaluate_chop_expression, &operators[ 45 ] },
+	{ ":",':', -1, evaluate_function_expression, NULL }
 };
 
 static struct operator* get_operator( char *name, struct environment *env ) {
@@ -2771,7 +2771,7 @@ static struct element* parse_function_expression( struct element *elem, struct e
 	int num_params;
 	if( next && next->str.string[ 0 ] == '(' ) {
 		expr->function = decl;
-		expr->evaluate = &evaluate_function_expression;
+		expr->evaluate = evaluate_function_expression;
 		prev.next = NULL;
 		num_params = parse_expressions( next->child, env, func, &prev, message );
 		expr->parameters = prev.next;
@@ -2794,7 +2794,7 @@ static struct element* parse_func_ref_expression( struct element *elem, struct e
 	struct function_declaration *function = get_function_declaration( env->functions, name );
 	if( function ) {
 		expr->function = function;
-		expr->evaluate = &evaluate_func_ref_expression;
+		expr->evaluate = evaluate_func_ref_expression;
 	} else {
 		sprintf( message, "Function '%.16s' not defined on line %d.", name, elem->str.line );
 	}
@@ -2810,7 +2810,7 @@ static struct element* parse_index_expression( struct element *elem, struct envi
 	expr->parameters = prev.next;
 	if( message[ 0 ] == 0 ) {
 		if( num_params == 2 ) {
-			expr->evaluate = &evaluate_index_expression;
+			expr->evaluate = evaluate_index_expression;
 		} else {
 			sprintf( message, "Invalid index expression on line %d.", elem->str.line );
 		}
@@ -2832,7 +2832,7 @@ static struct element* parse_struct_expression( struct element *elem, struct env
 	} else {
 		expr->index = struc->length;
 	}
-	expr->evaluate = &evaluate_integer_constant_expression;
+	expr->evaluate = evaluate_integer_constant_expression;
 	return elem->next;
 }
 
@@ -2854,7 +2854,7 @@ static struct element* parse_expression( struct element *elem, struct environmen
 			/* Integer literal. */
 			next = parse_constant( elem, &var, message );
 			expr->index = var.integer_value;
-			expr->evaluate = &evaluate_integer_constant_expression;
+			expr->evaluate = evaluate_integer_constant_expression;
 		} else if( value[ 0 ] == '"' || ( value[ 0 ] == '$' && value[ 1 ] == 0 ) ) {
 			/* String or element literal. */
 			constant = new_global_variable( "#Const#", message );
@@ -2862,7 +2862,7 @@ static struct element* parse_expression( struct element *elem, struct environmen
 				constant->next = env->constants;
 				env->constants = constant;
 				expr->global = constant;
-				expr->evaluate = &evaluate_global;
+				expr->evaluate = evaluate_global;
 				next = parse_constant( elem, &constant->value, message );
 			}
 		} else if( strcmp( value, "$src" ) == 0 ) {
@@ -2872,7 +2872,7 @@ static struct element* parse_expression( struct element *elem, struct environmen
 				constant->next = env->constants;
 				env->constants = constant;
 				expr->global = constant;
-				expr->evaluate = &evaluate_global;
+				expr->evaluate = evaluate_global;
 				constant->value.string_value = new_string_value( strlen( env->file ) );
 				strcpy( constant->value.string_value->string, env->file );
 			}
@@ -2890,7 +2890,7 @@ static struct element* parse_expression( struct element *elem, struct environmen
 			if( local >= 0 ) {
 				/* Local variable reference.*/
 				expr->index = local;
-				expr->evaluate = &evaluate_local;
+				expr->evaluate = evaluate_local;
 			} else {
 				global = get_global_variable( env->constants, value );
 				if( global == NULL ) {
@@ -2899,7 +2899,7 @@ static struct element* parse_expression( struct element *elem, struct environmen
 				if( global ) {
 					/* Global variable reference.*/
 					expr->global = global;
-					expr->evaluate = &evaluate_global;
+					expr->evaluate = evaluate_global;
 				} else {
 					decl = get_function_declaration( env->functions, elem->str.string );
 					if( decl ) {
@@ -2968,7 +2968,7 @@ static struct element* parse_increment_statement( struct element *elem, struct e
 				stmt->local = local;
 				stmt->source->line = next->str.line;
 				stmt->source->function = func;
-				stmt->execute = &execute_increment_statement;
+				stmt->execute = execute_increment_statement;
 				next = next->next->next;
 			} else {
 				strcpy( message, OUT_OF_MEMORY );
@@ -2998,7 +2998,7 @@ static struct element* parse_save_statement( struct element *elem, struct enviro
 			next = parse_expression( next, env, func, &expr, message );
 			if( expr.next ) {
 				stmt->destination = expr.next;
-				stmt->execute = &execute_save_statement;
+				stmt->execute = execute_save_statement;
 				next = next->next;
 			}
 		}
@@ -3035,10 +3035,10 @@ static struct element* parse_assignment_statement( struct element *elem, struct 
 				stmt->source = expr.next;
 				if( global ) {
 					stmt->global = &global->value;
-					stmt->execute = &execute_global_assignment;
+					stmt->execute = execute_global_assignment;
 				} else {
 					stmt->local = local;
-					stmt->execute = &execute_local_assignment;
+					stmt->execute = execute_local_assignment;
 				}
 				next = next->next;
 			}
@@ -3079,32 +3079,32 @@ static struct element* parse_expr_list_statement( struct element *elem, struct e
 
 static struct element* parse_print_statement( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message ) {
-	return parse_expr_list_statement( elem, env, func, prev, &execute_print_statement, message );
+	return parse_expr_list_statement( elem, env, func, prev, execute_print_statement, message );
 }
 
 static struct element* parse_write_statement( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message ) {
-	return parse_expr_list_statement( elem, env, func, prev, &execute_write_statement, message );
+	return parse_expr_list_statement( elem, env, func, prev, execute_write_statement, message );
 }
 
 static struct element* parse_error_statement( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message ) {
-	return parse_expr_list_statement( elem, env, func, prev, &execute_error_statement, message );
+	return parse_expr_list_statement( elem, env, func, prev, execute_error_statement, message );
 }
 
 static struct element* parse_return_statement( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message ) {
-	return parse_expr_list_statement( elem, env, func, prev, &execute_return_statement, message );
+	return parse_expr_list_statement( elem, env, func, prev, execute_return_statement, message );
 }
 
 static struct element* parse_throw_statement( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message ) {
-	return parse_expr_list_statement( elem, env, func, prev, &execute_throw_statement, message );
+	return parse_expr_list_statement( elem, env, func, prev, execute_throw_statement, message );
 }
 
 static struct element* parse_exit_statement( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message ) {
-	return parse_expr_list_statement( elem, env, func, prev, &execute_exit_statement, message );
+	return parse_expr_list_statement( elem, env, func, prev, execute_exit_statement, message );
 }
 
 static struct element* parse_break_statement( struct element *elem, struct environment *env,
@@ -3112,7 +3112,7 @@ static struct element* parse_break_statement( struct element *elem, struct envir
 	struct element *next = elem->next;
 	struct statement *stmt = new_statement( message );
 	if( stmt ) {
-		stmt->execute = &execute_break_statement;
+		stmt->execute = execute_break_statement;
 		prev->next = stmt;
 		next = next->next;
 	}
@@ -3124,7 +3124,7 @@ static struct element* parse_continue_statement( struct element *elem, struct en
 	struct element *next = elem->next;
 	struct statement *stmt = new_statement( message );
 	if( stmt ) {
-		stmt->execute = &execute_continue_statement;
+		stmt->execute = execute_continue_statement;
 		prev->next = stmt;
 		next = next->next;
 	}
@@ -3133,7 +3133,7 @@ static struct element* parse_continue_statement( struct element *elem, struct en
 
 static struct element* parse_call_statement( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message ) {
-	return parse_expr_list_statement( elem, env, func, prev, &execute_call_statement, message );
+	return parse_expr_list_statement( elem, env, func, prev, execute_call_statement, message );
 }
 
 static struct element* parse_dim_statement( struct element *elem, struct environment *env,
@@ -3156,7 +3156,7 @@ static struct element* parse_dim_statement( struct element *elem, struct environ
 				stmt->source = expr.next;
 				next = next->next->next;
 			}
-			stmt->execute = &execute_dim_statement;
+			stmt->execute = execute_dim_statement;
 		}
 	}
 	return next;
@@ -3187,16 +3187,16 @@ static struct element* parse_set_statement( struct element *elem, struct environ
 					next = next->next;
 				}
 			}
-			stmt->execute = &execute_set_statement;
+			stmt->execute = execute_set_statement;
 		}
 	}
 	return next;
 }
 
 static struct keyword switch_stmts[] = {
-	{ "rem", "{", &parse_comment, &switch_stmts[ 1 ] },
-	{ "case", "x{", &parse_case_statement, &switch_stmts[ 2 ] },
-	{ "default", "{", &parse_default_statement, NULL }
+	{ "rem", "{", parse_comment, &switch_stmts[ 1 ] },
+	{ "case", "x{", parse_case_statement, &switch_stmts[ 2 ] },
+	{ "default", "{", parse_default_statement, NULL }
 };
 
 static struct element* parse_switch_statement( struct element *elem, struct environment *env,
@@ -3237,7 +3237,7 @@ static struct element* parse_switch_statement( struct element *elem, struct envi
 					}
 				}
 				next = next->next;
-				stmt->execute = &execute_switch_statement;
+				stmt->execute = execute_switch_statement;
 			}
 		}
 	}
@@ -3245,27 +3245,27 @@ static struct element* parse_switch_statement( struct element *elem, struct envi
 }
 
 static struct keyword statements[] = {
-	{ "rem", "{", &parse_comment, &statements[ 1 ] },
-	{ "var", "l;", &parse_local_declaration, &statements[ 2 ] },
-	{ "let", "n=x;", &parse_assignment_statement, &statements[ 3 ] },
-	{ "print", "x;", &parse_print_statement, &statements[ 4 ] },
-	{ "write", "x;", &parse_write_statement, &statements[ 5 ] },
-	{ "error", "x;", &parse_error_statement, &statements[ 6 ] },
-	{ "throw", "x;", &parse_throw_statement, &statements[ 7 ] },
-	{ "return", "x;", &parse_return_statement, &statements[ 8 ] },
-	{ "exit", "x;", &parse_exit_statement, &statements[ 9 ] },
-	{ "break", ";", &parse_break_statement, &statements[ 10 ] },
-	{ "continue", ";", &parse_continue_statement, &statements[ 11 ] },
-	{ "if", "x{", &parse_if_statement, &statements[ 12 ] },
-	{ "while", "x{", &parse_while_statement, &statements[ 13 ] },
-	{ "call", "x;", &parse_call_statement, &statements[ 14 ] },
-	{ "try", "{cn{", &parse_try_statement, &statements[ 15 ] },
-	{ "dim", "[;", &parse_dim_statement, &statements[ 16 ] },
-	{ "set", "[=x;", &parse_set_statement, &statements[ 17 ] },
-	{ "switch", "x{", &parse_switch_statement, &statements[ 18 ] },
-	{ "inc", "n;", &parse_increment_statement, &statements[ 19 ] },
-	{ "save", "xx;", &parse_save_statement, &statements[ 20 ] },
-	{ "append", "xx;", &parse_append_statement, NULL }
+	{ "rem", "{", parse_comment, &statements[ 1 ] },
+	{ "var", "l;", parse_local_declaration, &statements[ 2 ] },
+	{ "let", "n=x;", parse_assignment_statement, &statements[ 3 ] },
+	{ "print", "x;", parse_print_statement, &statements[ 4 ] },
+	{ "write", "x;", parse_write_statement, &statements[ 5 ] },
+	{ "error", "x;", parse_error_statement, &statements[ 6 ] },
+	{ "throw", "x;", parse_throw_statement, &statements[ 7 ] },
+	{ "return", "x;", parse_return_statement, &statements[ 8 ] },
+	{ "exit", "x;", parse_exit_statement, &statements[ 9 ] },
+	{ "break", ";", parse_break_statement, &statements[ 10 ] },
+	{ "continue", ";", parse_continue_statement, &statements[ 11 ] },
+	{ "if", "x{", parse_if_statement, &statements[ 12 ] },
+	{ "while", "x{", parse_while_statement, &statements[ 13 ] },
+	{ "call", "x;", parse_call_statement, &statements[ 14 ] },
+	{ "try", "{cn{", parse_try_statement, &statements[ 15 ] },
+	{ "dim", "[;", parse_dim_statement, &statements[ 16 ] },
+	{ "set", "[=x;", parse_set_statement, &statements[ 17 ] },
+	{ "switch", "x{", parse_switch_statement, &statements[ 18 ] },
+	{ "inc", "n;", parse_increment_statement, &statements[ 19 ] },
+	{ "save", "xx;", parse_save_statement, &statements[ 20 ] },
+	{ "append", "xx;", parse_append_statement, NULL }
 };
 
 static struct element* parse_case_statement( struct element *elem, struct environment *env,
@@ -3283,7 +3283,7 @@ static struct element* parse_case_statement( struct element *elem, struct enviro
 			parse_keywords( env->statements, next->child, env, func, &block, message );
 			stmt->if_block = block.next;
 			if( message[ 0 ] == 0 ) {
-				stmt->execute = &execute_case_statement;
+				stmt->execute = execute_case_statement;
 				next = next->next;
 			}
 		}
@@ -3301,7 +3301,7 @@ static struct element* parse_default_statement( struct element *elem, struct env
 		parse_keywords( env->statements, next->child, env, func, &block, message );
 		stmt->if_block = block.next;
 		if( message[ 0 ] == 0 ) {
-			stmt->execute = &execute_case_statement;
+			stmt->execute = execute_case_statement;
 			next = next->next;
 		}
 	}
@@ -3457,7 +3457,7 @@ static struct element* parse_if_statement( struct element *elem, struct environm
 		next = parse_expression( next, env, func, &expr, message );
 		if( expr.next ) {
 			stmt->source = expr.next;
-			stmt->execute = &execute_if_statement;
+			stmt->execute = execute_if_statement;
 			if( next->child ) {
 				block.next = NULL;
 				parse_keywords( env->statements, next->child, env, func, &block, message );
@@ -3505,7 +3505,7 @@ static struct element* parse_while_statement( struct element *elem, struct envir
 			if( message[ 0 ] == 0 ) {
 				next = next->next;
 			}
-			stmt->execute = &execute_while_statement;
+			stmt->execute = execute_while_statement;
 		}
 	}
 	return next;
@@ -3535,7 +3535,7 @@ static struct element* parse_try_statement( struct element *elem, struct environ
 				if( message[ 0 ] == 0 ) {
 					next = next->next;
 				}
-				stmt->execute = &execute_try_statement;
+				stmt->execute = execute_try_statement;
 			} else {
 				sprintf( message, "Undeclared local variable '%.16s' on line %d.", next->str.string, next->str.line );
 			}
@@ -3684,14 +3684,14 @@ static struct element* parse_struct_declaration( struct element *elem, struct en
 }
 
 static struct keyword declarations[] = {
-	{ "rem", "{", &parse_comment, &declarations[ 1 ] },
-	{ "include", "\";", &parse_include, &declarations[ 2 ] },
-	{ "function", "n({", &parse_function_declaration, &declarations[ 3 ] },
-	{ "program", "n{",&parse_program_declaration, &declarations[ 4 ] },
-	{ "global", "l;", &parse_global_declaration, &declarations[ 5 ] },
-	{ "array", "l;", &parse_array_declaration, &declarations[ 6 ] },
-	{ "const", "n=v;", &parse_const_declaration, &declarations[ 7 ] },
-	{ "struct", "n", &parse_struct_declaration, NULL }
+	{ "rem", "{", parse_comment, &declarations[ 1 ] },
+	{ "include", "\";", parse_include, &declarations[ 2 ] },
+	{ "function", "n({", parse_function_declaration, &declarations[ 3 ] },
+	{ "program", "n{", parse_program_declaration, &declarations[ 4 ] },
+	{ "global", "l;", parse_global_declaration, &declarations[ 5 ] },
+	{ "array", "l;", parse_array_declaration, &declarations[ 6 ] },
+	{ "const", "n=v;", parse_const_declaration, &declarations[ 7 ] },
+	{ "struct", "n", parse_struct_declaration, NULL }
 };
 
 static int validate_name( char *name, struct environment *env ) {

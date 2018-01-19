@@ -26,7 +26,7 @@ int main( int argc, char **argv ) {
 					/* Evaluate entry-point function. */
 					expr.line = env->entry_point->line;
 					expr.function = env->entry_point;
-					expr.evaluate = &evaluate_function_expression;
+					expr.evaluate = evaluate_function_expression;
 					if( expr.evaluate( &expr, NULL, &result, &except ) ) {
 						exit_code = EXIT_SUCCESS;
 					} else if( except.string_value && except.string_value->string == NULL ) {

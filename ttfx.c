@@ -676,7 +676,7 @@ static int execute_fxplay_statement( struct statement *this, struct variable *va
 
 static struct element* parse_fxopen_statement( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message ) {
-	return parse_expr_list_statement( elem, env, func, prev, &execute_fxopen_statement, message );
+	return parse_expr_list_statement( elem, env, func, prev, execute_fxopen_statement, message );
 }
 
 static struct element* parse_fxshow_statement( struct element *elem, struct environment *env,
@@ -684,7 +684,7 @@ static struct element* parse_fxshow_statement( struct element *elem, struct envi
 	struct element *next = elem->next;
 	struct statement *stmt = new_statement( message );
 	if( stmt ) {
-		stmt->execute = &execute_fxshow_statement;
+		stmt->execute = execute_fxshow_statement;
 		prev->next = stmt;
 		next = next->next;
 	}
@@ -693,47 +693,47 @@ static struct element* parse_fxshow_statement( struct element *elem, struct envi
 
 static struct element* parse_fxsurface_statement( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message ) {
-	return parse_expr_list_statement( elem, env, func, prev, &execute_fxsurface_statement, message );
+	return parse_expr_list_statement( elem, env, func, prev, execute_fxsurface_statement, message );
 }
 
 static struct element* parse_fxblit_statement( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message ) {
-	return parse_expr_list_statement( elem, env, func, prev, &execute_fxblit_statement, message );
+	return parse_expr_list_statement( elem, env, func, prev, execute_fxblit_statement, message );
 }
 
 static struct element* parse_fxrect_statement( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message ) {
-	return parse_expr_list_statement( elem, env, func, prev, &execute_fxrect_statement, message );
+	return parse_expr_list_statement( elem, env, func, prev, execute_fxrect_statement, message );
 }
 
 static struct element* parse_fxsleep_statement( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message ) {
-	return parse_expr_list_statement( elem, env, func, prev, &execute_fxsleep_statement, message );
+	return parse_expr_list_statement( elem, env, func, prev, execute_fxsleep_statement, message );
 }
 
 static struct element* parse_fxtimer_statement( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message ) {
-	return parse_expr_list_statement( elem, env, func, prev, &execute_fxtimer_statement, message );
+	return parse_expr_list_statement( elem, env, func, prev, execute_fxtimer_statement, message );
 }
 
 static struct element* parse_fxaudio_statement( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message ) {
-	return parse_expr_list_statement( elem, env, func, prev, &execute_fxaudio_statement, message );
+	return parse_expr_list_statement( elem, env, func, prev, execute_fxaudio_statement, message );
 }
 
 static struct element* parse_fxsample_statement( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message ) {
-	return parse_expr_list_statement( elem, env, func, prev, &execute_fxsample_statement, message );
+	return parse_expr_list_statement( elem, env, func, prev, execute_fxsample_statement, message );
 }
 
 static struct element* parse_fxplay_statement( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message ) {
-	return parse_expr_list_statement( elem, env, func, prev, &execute_fxplay_statement, message );
+	return parse_expr_list_statement( elem, env, func, prev, execute_fxplay_statement, message );
 }
 
 static struct element* parse_fxqueue_statement( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message ) {
-	struct element *next = parse_expr_list_statement( elem, env, func, prev, &execute_fxplay_statement, message );
+	struct element *next = parse_expr_list_statement( elem, env, func, prev, execute_fxplay_statement, message );
 	if( prev->next ) {
 		prev->next->local = 1;
 	}
@@ -1003,32 +1003,32 @@ static struct constant fxconstants[] = {
 };
 
 static struct operator fxoperators[] = {
-	{ "$millis",'$', 0, &evaluate_millis_expression, &fxoperators[ 1 ] },
-	{ "$fxpoll",'$', 0, &evaluate_fxpoll_expression, &fxoperators[ 2 ] },
-	{ "$fxwait",'$', 0, &evaluate_fxwait_expression, &fxoperators[ 3 ] },
-	{ "$xmouse",'$', 0, &evaluate_xmouse_expression, &fxoperators[ 4 ] },
-	{ "$ymouse",'$', 0, &evaluate_ymouse_expression, &fxoperators[ 5 ] },
-	{ "$mousekey",'$', 0, &evaluate_mousekey_expression, &fxoperators[ 6 ] },
-	{ "$keyboard",'$', 0, &evaluate_keyboard_expression, &fxoperators[ 7 ] },
-	{ "$keyshift",'$', 0, &evaluate_keyshift_expression, &fxoperators[ 8 ] },
-	{ "$fxtick",'$', 0, &evaluate_fxtick_expression, &fxoperators[ 9 ] },
-	{ "$fxseq",'$', 1, &evaluate_fxseq_expression, &fxoperators[ 10 ] },
-	{ "$fxdir",'$', 1, &evaluate_fxdir_expression, &fxoperators[ 11 ] },
-	{ "$fxpath",'$', 1, &evaluate_fxpath_expression, operators }
+	{ "$millis",'$', 0, evaluate_millis_expression, &fxoperators[ 1 ] },
+	{ "$fxpoll",'$', 0, evaluate_fxpoll_expression, &fxoperators[ 2 ] },
+	{ "$fxwait",'$', 0, evaluate_fxwait_expression, &fxoperators[ 3 ] },
+	{ "$xmouse",'$', 0, evaluate_xmouse_expression, &fxoperators[ 4 ] },
+	{ "$ymouse",'$', 0, evaluate_ymouse_expression, &fxoperators[ 5 ] },
+	{ "$mousekey",'$', 0, evaluate_mousekey_expression, &fxoperators[ 6 ] },
+	{ "$keyboard",'$', 0, evaluate_keyboard_expression, &fxoperators[ 7 ] },
+	{ "$keyshift",'$', 0, evaluate_keyshift_expression, &fxoperators[ 8 ] },
+	{ "$fxtick",'$', 0, evaluate_fxtick_expression, &fxoperators[ 9 ] },
+	{ "$fxseq",'$', 1, evaluate_fxseq_expression, &fxoperators[ 10 ] },
+	{ "$fxdir",'$', 1, evaluate_fxdir_expression, &fxoperators[ 11 ] },
+	{ "$fxpath",'$', 1, evaluate_fxpath_expression, operators }
 };
 
 static struct keyword fxstatements[] = {
-	{ "fxopen", "xxx;", &parse_fxopen_statement, &fxstatements[ 1 ] },
-	{ "fxshow", ";", &parse_fxshow_statement, &fxstatements[ 2 ] },
-	{ "fxsurface", "xxxx;", &parse_fxsurface_statement, &fxstatements[ 3 ] },
-	{ "fxblit", "xxxxxxx;", &parse_fxblit_statement, &fxstatements[ 4 ] },
-	{ "fxrect", "xxxxx;", &parse_fxrect_statement, &fxstatements[ 5 ] },
-	{ "fxsleep", "x;", &parse_fxsleep_statement, &fxstatements[ 6 ] },
-	{ "fxtimer", "x;", &parse_fxtimer_statement, &fxstatements[ 7 ] },
-	{ "fxaudio", "x;", &parse_fxaudio_statement, &fxstatements[ 8 ] },
-	{ "fxsample", "xxxx;", &parse_fxsample_statement, &fxstatements[ 9 ] },
-	{ "fxqueue", "xx;", &parse_fxqueue_statement, &fxstatements[ 10 ] },
-	{ "fxplay", "xx;", &parse_fxplay_statement, statements }
+	{ "fxopen", "xxx;", parse_fxopen_statement, &fxstatements[ 1 ] },
+	{ "fxshow", ";", parse_fxshow_statement, &fxstatements[ 2 ] },
+	{ "fxsurface", "xxxx;", parse_fxsurface_statement, &fxstatements[ 3 ] },
+	{ "fxblit", "xxxxxxx;", parse_fxblit_statement, &fxstatements[ 4 ] },
+	{ "fxrect", "xxxxx;", parse_fxrect_statement, &fxstatements[ 5 ] },
+	{ "fxsleep", "x;", parse_fxsleep_statement, &fxstatements[ 6 ] },
+	{ "fxtimer", "x;", parse_fxtimer_statement, &fxstatements[ 7 ] },
+	{ "fxaudio", "x;", parse_fxaudio_statement, &fxstatements[ 8 ] },
+	{ "fxsample", "xxxx;", parse_fxsample_statement, &fxstatements[ 9 ] },
+	{ "fxqueue", "xx;", parse_fxqueue_statement, &fxstatements[ 10 ] },
+	{ "fxplay", "xx;", parse_fxplay_statement, statements }
 };
 
 int main( int argc, char **argv ) {
@@ -1061,7 +1061,7 @@ int main( int argc, char **argv ) {
 						/* Evaluate entry-point function. */
 						expr.line = env->entry_point->line;
 						expr.function = env->entry_point;
-						expr.evaluate = &evaluate_function_expression;
+						expr.evaluate = evaluate_function_expression;
 						if( expr.evaluate( &expr, NULL, &result, &except ) ) {
 							exit_code = EXIT_SUCCESS;
 						} else if( except.string_value && except.string_value->string == NULL ) {
