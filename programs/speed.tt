@@ -1,0 +1,13 @@
+
+program Speed {
+	var time, iterations, count;
+	let time = $time;
+	while <( -( $time time ) 10 ) {
+		let count = 0;
+		while <( count 50000 ) {
+			inc count;
+		}
+		inc iterations;
+	}
+	print $str( /( *( 50000 iterations ) -( $time time ) ) " loops/sec." );
+}
