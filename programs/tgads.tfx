@@ -2,8 +2,9 @@
 array palette, charset;
 
 array tg_zorder, tg_type, tg_parent;
-array tg_x, tg_y, tg_w, tg_h, tg_min, tg_anchor, tg_mode, tg_link;
-array tg_a, tg_b, tg_c, tg_d;
+array tg_x, tg_y, tg_w, tg_h, tg_min;
+array tg_anchor, tg_mode, tg_link, tg_action;
+array tg_a, tg_b, tg_c;
 
 global tg_selx, tg_sely, tg_focus, tg_time, tg_draw_background;
 global fs_win, fs_path, fs_slider, fs_list, fs_file, fs_cancel, fs_okay;
@@ -132,8 +133,8 @@ function tg_anchors( n, top, left, bottom, right ) {
 	set [ tg_anchor n ] = a;
 }
 
-function tg_double_click( n, target ) {
-	set [ tg_d n ] = target;
+function tg_set_action( n, target ) {
+	set [ tg_action n ] = target;
 }
 
 function tg_window( n, x, y, w, h, text ) {
@@ -213,10 +214,10 @@ function tg_init( gadcount, width, height ) {
 	dim [ tg_anchor gadcount ];
 	dim [ tg_mode gadcount ];
 	dim [ tg_link gadcount ];
+	dim [ tg_action gadcount ];
 	dim [ tg_a gadcount ];
 	dim [ tg_b gadcount ];
 	dim [ tg_c gadcount ];
-	dim [ tg_d gadcount ];
 	set [ tg_w 0 ] = width;
 	set [ tg_h 0 ] = height;
 	while <( idx gadcount ) {
@@ -319,7 +320,7 @@ function tg_draw_textbox( n ) {
 		let t = $sub( t, -( $len( t ) c ), c );
 	}
 	fxrect x, y, [ tg_w n ], [ tg_h n ], [ palette 2 ];
-	if =( [ tg_b n ] 1 ) {
+	if =( tg_focus n ) {
 		fxrect +( x *( +( $len( t ) 1 ) 8 ) ), +( y 6 ), 8, 16, [ palette 3 ];
 	}
 	call tg_bevel_box( x, y, [ tg_w n ], [ tg_h n ] );
@@ -530,10 +531,10 @@ function tg_dispose( n ) {
 	set [ tg_parent n ] = 0;
 	set [ tg_mode n ] = 0;
 	set [ tg_link n ] = 0;
+	set [ tg_action n ] = 0;
 	set [ tg_a n ] = 0;
 	set [ tg_b n ] = 0;
 	set [ tg_c n ] = 0;
-	set [ tg_d n ] = 0;
 }
 
 function tg_num_unused() {
@@ -662,12 +663,12 @@ function tg_scan( event ) {
 			if =( $mousekey 1 ) {
 				let tg_selx = $xmouse;
 				let tg_sely = $ymouse;
-				let n = tg_find( tg_selx, tg_sely, 0 );
-				if =( [ tg_type tg_focus ] 4 ) {
-					set [ tg_b tg_focus ] = 0;
-					call tg_draw( tg_focus );
+				if tg_focus {
+					let t = tg_focus;
+					let tg_focus = 0;
+					call tg_draw( t );
 				}
-				let tg_focus = n;
+				let n = tg_find( tg_selx, tg_sely, 0 );
 				let w = tg_wintofront( n );
 				switch [ tg_type n ] {
 					case 2 {
@@ -707,13 +708,13 @@ function tg_scan( event ) {
 						}
 					}
 					case 4 {
-						set [ tg_b n ] = 1;
+						let tg_focus = n;
 						call tg_draw( n );
 					}
 					case 6 {
 						let s = +( [ tg_b n ] /( -( tg_sely +( tg_gety( n ) 6 ) ) 16 ) );
 						if &&( =( s [ tg_c n ] ) <( -( $millis tg_time ) 500 ) ){
-							let selected = [ tg_d n ];
+							let selected = [ tg_action n ];
 							let tg_time = 0;
 						} else {
 							if <( s $len( [ tg_a n ] ) ) {
@@ -772,8 +773,9 @@ function tg_scan( event ) {
 			}
 		}
 		case FX_KEYDOWN {
-			if =( [ tg_type tg_focus ] 4 ) {
-				let t = [ tg_a tg_focus ];
+			let n = tg_focus;
+			if =( [ tg_type n ] 4 ) {
+				let t = [ tg_a n ];
 				let c = $keyboard;
 				if =( c 8 ) {
 					if >( $len( t ) 0 ) {
@@ -782,28 +784,34 @@ function tg_scan( event ) {
 						} else {
 							let t = $sub( t, 0, -( $len( t ) 1 ) );
 						}
-						set [ tg_a tg_focus ] = t;
+						set [ tg_a n ] = t;
 					}
 				} else {
-					if >( c 31 ) {
-						if &( $keyshift 3 ) {
-							if <( c 64 ) {
-								let c = $chr( " !\"~$%&@()*+<_>?)!\"#$%^&*(::<+>?@", -( c 32 ) );
-							} else {
-								if <( c 96 ) {
-									let c = +( c 32 );
+					if =( c 13 ) {
+						let tg_focus = [ tg_action tg_focus ];
+						call tg_draw( n );
+						let n = tg_focus;
+					} else {
+						if >( c 31 ) {
+							if &( $keyshift 3 ) {
+								if <( c 64 ) {
+									let c = $chr( " !\"~$%&@()*+<_>?)!\"#$%^&*(::<+>?@", -( c 32 ) );
 								} else {
-									let c = -( c 32 );
+									if <( c 96 ) {
+										let c = +( c 32 );
+									} else {
+										let c = -( c 32 );
+									}
 								}
 							}
-						}
-						if <( c 127 ) {
-							set [ tg_a tg_focus ] = $str( t, $asc( c ) );
+							if <( c 127 ) {
+								set [ tg_a n ] = $str( t, $asc( c ) );
+							}
 						}
 					}
 				}
-				let selected = tg_focus;
-				call tg_draw( tg_focus );
+				let selected = n;
+				call tg_draw( n );
 			}
 		}
 	}
@@ -899,7 +907,9 @@ function tg_file_selector( title ) {
 	let fs_okay = tg_unused();
 	call tg_button( fs_okay, fs_win, 422, 64, 80, 28, "Okay" );
 	call tg_anchors( fs_okay, 1, 0, 0, 1 );
-	call tg_double_click( fs_list, fs_okay );
+	call tg_set_action( fs_path, fs_okay );
+	call tg_set_action( fs_list, fs_okay );
+	call tg_set_action( fs_file, fs_okay );
 	call tg_wintofront( fs_win );
 	call tg_draw( 0 );
 }
@@ -916,6 +926,11 @@ function fs_dispose() {
 	call tg_draw( 0 );
 }
 
+function fs_path_selected() {
+	set [ tg_a fs_file ] = "";
+	call tg_draw( fs_file );
+}
+
 function fs_list_selected() {
 	var file;
 	let file = [ [ tg_a fs_list ] [ tg_c fs_list ] ];
@@ -927,7 +942,8 @@ function fs_okay_selected() {
 	var sep, path, file, err;
 	let sep = $chop( [ tg_a fs_path ], "/:\\" );
 	let sep = $sub( sep, -( $len( sep ) 1 ), 1 );
-	if >( [ tg_a fs_file ] 0 ) {
+	let file = [ tg_a fs_file ];
+	if ||( >( file 0 ) =( $len( file ) 0 ) ) {
 		try {
 			let path = $fxpath( $str( [ tg_a fs_path ] sep [ tg_a fs_file ] ) );
 			set [ tg_a fs_list ] = $fxdir( path );
@@ -1173,6 +1189,9 @@ program raster {
 				}
 				case 17 {
 					call tg_draw( 0 );
+				}
+				case fs_path {
+					call fs_path_selected();
 				}
 				case fs_list {
 					call fs_list_selected();
