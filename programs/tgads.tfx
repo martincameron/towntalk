@@ -7,7 +7,7 @@ array tg_anchor, tg_mode, tg_link, tg_action;
 array tg_a, tg_b, tg_c;
 
 global tg_selx, tg_sely, tg_focus, tg_time, tg_draw_background;
-global fs_win, fs_path, fs_slider, fs_list, fs_file, fs_cancel, fs_okay;
+global fs_win, fs_dir, fs_slider, fs_list, fs_file, fs_cancel, fs_okay, fs_path;
 
 array foreground, background;
 
@@ -876,30 +876,36 @@ function format_dir( vals ) {
 }
 
 function tg_file_selector( title ) {
+	var err;
 	if fs_win {
 		call tg_dispose( fs_win );
 	}
 	if <( tg_num_unused() 8 ) {
 		throw "Not enough free gadgets.";
 	}
+	try {
+		let fs_path = $fxpath( fs_path );
+	} catch err {
+		let fs_path = $fxpath( "." );
+	}
 	let fs_win = tg_unused();
 	call tg_window( fs_win, 50, 50, 510, 270, title );
 	set [ tg_mode fs_win ] = 2;
 	set [ tg_min fs_win ] = 200;
 	call tg_sizegad( tg_unused(), fs_win, 490, 250, 16, 16 );
-	let fs_path = tg_unused();
-	call tg_textbox( fs_path, fs_win, 10, 32, 380, 28, $fxpath( "." ) );
-	call tg_anchors( fs_path, 1, 1, 0, 1 );
+	let fs_dir = tg_unused();
+	call tg_textbox( fs_dir, fs_win, 10, 32, 380, 28, fs_path );
+	call tg_anchors( fs_dir, 1, 1, 0, 1 );
 	let fs_slider = tg_unused();
 	call tg_vslider( fs_slider, fs_win, 396, 32, 20, 226, 10, 100 );
 	call tg_anchors( fs_slider, 1, 0, 1, 1 );
 	let fs_list = tg_unused();
-	call tg_listbox( fs_list, fs_win, 10, 64, 380, 160, $fxdir( "." ), fs_slider );
+	call tg_listbox( fs_list, fs_win, 10, 64, 380, 160, $fxdir( fs_path ), fs_slider );
 	call tg_anchors( fs_list, 1, 1, 1, 1 );
 	call sort_dir( [ tg_a fs_list ] );
 	call format_dir( [ tg_a fs_list ] );
 	let fs_file = tg_unused();
-	call tg_textbox( fs_file, fs_win, 10, 230, 380, 28, $tup( "." 1 ) );
+	call tg_textbox( fs_file, fs_win, 10, 230, 380, 28, "" );
 	call tg_anchors( fs_file, 0, 1, 1, 1 );
 	let fs_cancel = tg_unused();
 	call tg_button( fs_cancel, fs_win, 422, 32, 80, 28, "Cancel" );
@@ -907,7 +913,7 @@ function tg_file_selector( title ) {
 	let fs_okay = tg_unused();
 	call tg_button( fs_okay, fs_win, 422, 64, 80, 28, "Okay" );
 	call tg_anchors( fs_okay, 1, 0, 0, 1 );
-	call tg_set_action( fs_path, fs_okay );
+	call tg_set_action( fs_dir, fs_okay );
 	call tg_set_action( fs_list, fs_okay );
 	call tg_set_action( fs_file, fs_okay );
 	call tg_wintofront( fs_win );
@@ -917,7 +923,7 @@ function tg_file_selector( title ) {
 function fs_dispose() {
 	call tg_dispose( fs_win );
 	let fs_win = 0;
-	let fs_path = 0;
+	let fs_dir = 0;
 	let fs_slider = 0;
 	let fs_list = 0;
 	let fs_file = 0;
@@ -926,7 +932,7 @@ function fs_dispose() {
 	call tg_draw( 0 );
 }
 
-function fs_path_selected() {
+function fs_dir_selected() {
 	set [ tg_a fs_file ] = "";
 	call tg_draw( fs_file );
 }
@@ -940,12 +946,12 @@ function fs_list_selected() {
 
 function fs_okay_selected() {
 	var sep, path, file, err;
-	let sep = $chop( [ tg_a fs_path ], "/:\\" );
+	let sep = $chop( fs_path, "/:\\" );
 	let sep = $sub( sep, -( $len( sep ) 1 ), 1 );
 	let file = [ tg_a fs_file ];
 	if ||( >( file 0 ) =( $len( file ) 0 ) ) {
 		try {
-			let path = $fxpath( $str( [ tg_a fs_path ] sep [ tg_a fs_file ] ) );
+			let path = $fxpath( $str( [ tg_a fs_dir ] sep [ tg_a fs_file ] ) );
 			set [ tg_a fs_list ] = $fxdir( path );
 			call sort_dir( [ tg_a fs_list ] );
 			call format_dir( [ tg_a fs_list ] );
@@ -953,15 +959,17 @@ function fs_okay_selected() {
 			set [ tg_c fs_list ] = 0;
 			set [ tg_a fs_slider ] = 0;
 			let file = [ [ tg_a fs_list ] 0 ];
-			set [ tg_a fs_path ] = path;
+			set [ tg_a fs_dir ] = path;
 			set [ tg_a fs_file ] = $tup( $sub( file, 6, -( $len( file ) 6 ) ) file );
+			let fs_path = path;
 		} catch err {
 			let err = $chop( $str( err ) "(" );
 			set [ tg_a fs_file ] = $sub( err, 0, -( $len( err ) 2 ) );
+			set[ tg_a fs_dir ] = fs_path;
 		}
 		call tg_draw( fs_win );
 	} else {
-		let file = $str( [ tg_a fs_path ] sep [ tg_a fs_file ] );
+		let file = $str( [ tg_a fs_dir ] sep [ tg_a fs_file ] );
 		call fs_dispose();
 		return file;
 	}
@@ -1190,8 +1198,8 @@ program raster {
 				case 17 {
 					call tg_draw( 0 );
 				}
-				case fs_path {
-					call fs_path_selected();
+				case fs_dir {
+					call fs_dir_selected();
 				}
 				case fs_list {
 					call fs_list_selected();
