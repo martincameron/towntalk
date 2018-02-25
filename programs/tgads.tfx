@@ -901,6 +901,7 @@ function tg_file_selector( title ) {
 	call tg_anchors( fs_slider, 1, 0, 1, 1 );
 	let fs_list = tg_unused();
 	call tg_listbox( fs_list, fs_win, 10, 64, 380, 160, $fxdir( fs_path ), fs_slider );
+	set [ tg_c fs_list ] = -1;
 	call tg_anchors( fs_list, 1, 1, 1, 1 );
 	call sort_dir( [ tg_a fs_list ] );
 	call format_dir( [ tg_a fs_list ] );
@@ -932,35 +933,52 @@ function fs_dispose() {
 	call tg_draw( 0 );
 }
 
+function fs_file_selected() {
+	if >e( [ tg_c fs_list ] 0 ) {
+		set [ tg_c fs_list ] = -1;
+		call tg_draw( fs_list );
+	}
+}
+
 function fs_dir_selected() {
-	set [ tg_a fs_file ] = "";
-	call tg_draw( fs_file );
+	call fs_file_selected();
+	if $len( [ tg_a fs_file ] ) {
+		set [ tg_a fs_file ] = "";
+		call tg_draw( fs_file );
+	}
 }
 
 function fs_list_selected() {
 	var file;
 	let file = [ [ tg_a fs_list ] [ tg_c fs_list ] ];
-	set [ tg_a fs_file ] = $tup( $sub( file, 6, -( $len( file ) 6 ) ), file );
+	if =( file 0 ) {
+		set [ tg_a fs_file ] = $sub( file, 6, -( $len( file ) 6 ) );
+	} else {
+		set [ tg_a fs_file ] = "";
+	}
 	call tg_draw( fs_file );
 }
 
 function fs_okay_selected() {
-	var sep, path, file, err;
+	var sep, path, err;
 	let sep = $chop( fs_path, "/:\\" );
 	let sep = $sub( sep, -( $len( sep ) 1 ), 1 );
-	let file = [ tg_a fs_file ];
-	if ||( >( file 0 ) =( $len( file ) 0 ) ) {
+	if =( $len( [ tg_a fs_file ] ) 0 ) {
 		try {
-			let path = $fxpath( $str( [ tg_a fs_dir ] sep [ tg_a fs_file ] ) );
+			if <( [ tg_c fs_list ] 0 ) {
+				let path = $fxpath( $str( [ tg_a fs_dir ] sep [ tg_a fs_file ] ) );
+			} else {
+				let path = [ [ tg_a fs_list ] [ tg_c fs_list ] ];
+				let path = $sub( path, 6, -( $len( path ) 6 ) );
+				let path = $fxpath( $str( [ tg_a fs_dir ] sep path ) );
+			}
 			set [ tg_a fs_list ] = $fxdir( path );
 			call sort_dir( [ tg_a fs_list ] );
 			call format_dir( [ tg_a fs_list ] );
 			set [ tg_b fs_list ] = 0;
-			set [ tg_c fs_list ] = 0;
+			set [ tg_c fs_list ] = -1;
 			set [ tg_a fs_slider ] = 0;
-			let file = [ [ tg_a fs_list ] 0 ];
 			set [ tg_a fs_dir ] = path;
-			set [ tg_a fs_file ] = $tup( $sub( file, 6, -( $len( file ) 6 ) ) file );
 			let fs_path = path;
 		} catch err {
 			let err = $chop( $str( err ) "(" );
@@ -969,9 +987,9 @@ function fs_okay_selected() {
 		}
 		call tg_draw( fs_win );
 	} else {
-		let file = $str( [ tg_a fs_dir ] sep [ tg_a fs_file ] );
+		let path = $str( [ tg_a fs_dir ] sep [ tg_a fs_file ] );
 		call fs_dispose();
-		return file;
+		return path;
 	}
 }
 
@@ -1197,6 +1215,9 @@ program raster {
 				}
 				case 17 {
 					call tg_draw( 0 );
+				}
+				case fs_file {
+					call fs_file_selected();
 				}
 				case fs_dir {
 					call fs_dir_selected();
