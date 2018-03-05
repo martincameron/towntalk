@@ -8,8 +8,7 @@ array tg_a, tg_b, tg_c;
 
 global tg_selx, tg_sely, tg_focus, tg_time, tg_draw_background;
 global fs_win, fs_dir, fs_slider, fs_list, fs_file, fs_cancel, fs_okay, fs_path;
-
-array foreground, background;
+global req_win, req_msg1, req_msg2, req_msg3, req_but1, req_but2;
 
 function tg_charset( str ) {
 	var w, h, clr, chr, y, x;
@@ -193,12 +192,18 @@ function tg_hslider( n, parent, x, y, w, h, page, count ) {
 }
 
 function tg_box( n, parent, x, y, w, h, style, colour, text ) {
-	call tg_window( n, x, y, w, h, 0 );
+	call tg_window( n, x, y, w, h, text );
 	set [ tg_parent n ] = parent;
 	set [ tg_type n ] = 8;
-	set [ tg_a n ] = style;
-	set [ tg_b n ] = colour;
-	set [ tg_c n ] = text;
+	set [ tg_b n ] = style;
+	set [ tg_c n ] = colour;
+}
+
+function tg_label( n, parent, x, y, w, colour, text ) {
+	call tg_window( n, x, y, w, 16, text );
+	set [ tg_parent n ] = parent;
+	set [ tg_type n ] = 9;
+	set [ tg_c n ] = colour;
 }
 
 function tg_init( gadcount, width, height ) {
@@ -373,10 +378,10 @@ function tg_draw_box( n ) {
 	var x, y, t;
 	let x = tg_getx( n );
 	let y = tg_gety( n );
-	if >e( [ tg_b n ] 0 ) {
-		fxrect x, y, [ tg_w n ], [ tg_h n ], [ tg_b n ];
+	if >e( [ tg_c n ] 0 ) {
+		fxrect x, y, [ tg_w n ], [ tg_h n ], [ tg_c n ];
 	}
-	switch [ tg_a n ] {
+	switch [ tg_b n ] {
 		case 1 {
 			call tg_raise_box( x, y, [ tg_w n ], [ tg_h n ] );
 		}
@@ -387,12 +392,23 @@ function tg_draw_box( n ) {
 			call tg_bevel_box( x, y, [ tg_w n ], [ tg_h n ] );
 		}
 	}
-	let t = [ tg_c n ];
+	let t = [ tg_a n ];
 	if t {
 		if >( *( $len( t ) 8 ) -( [ tg_w n ] 16 ) ) {
 			let t = $sub( t, 0, /( -( [ tg_w n ] 16 ) 8 ) );
 		}
-		call tg_text( t, +( x 8 ), +( y 8 ), =( &( [ tg_b n ] 0x8000 ) 0 ) );
+		call tg_text( t, +( x 8 ), +( y 8 ), =( &( [ tg_c n ] 0x8000 ) 0 ) );
+	}
+}
+
+function tg_draw_label( n ) {
+	var t;
+	let t = [ tg_a n ];
+	if t {
+		if >( *( $len( t ) 8 ) [ tg_w n ] ) {
+			let t = $sub( t, 0, /( [ tg_w n ] 8 ) );
+		}
+		call tg_text( t, tg_getx( n ), tg_gety( n ), [ tg_c n ] );
 	}
 }
 
@@ -433,6 +449,7 @@ function tg_draw( n ) {
 			case 6 { call tg_draw_listbox( n ); }
 			case 7 { call tg_draw_hslider( n ); }
 			case 8 { call tg_draw_box( n ); }
+			case 9 { call tg_draw_label( n ); }
 		}
 	}
 }
@@ -993,283 +1010,99 @@ function fs_okay_selected() {
 	}
 }
 
-function gradient( c1, c2, out, off, len ) {
-	var r1, r2, g1, g2, b1, b2, r, g, b, idx;
-	let r1 = &( >>( c1 16 ) 0xFF );
-	let r2 = &( >>( c2 16 ) 0xFF );
-	let g1 = &( >>( c1 8 ) 0xFF );
-	let g2 = &( >>( c2 8 ) 0xFF );
-	let b1 = &( c1 0xFF );
-	let b2 = &( c2 0xFF );
-	while <( idx len ) {
-		let r = +( r1 /( *( -( r2 r1 ) idx ) len ) );
-		let g = +( g1 /( *( -( g2 g1 ) idx ) len ) );
-		let b = +( b1 /( *( -( b2 b1 ) idx ) len ) );
-		set [ out +( off idx ) ] = +( *( r 65536 ) +( *( g 256 ) b ) );
-		inc idx;
+function tg_request( title, msg1, msg2, msg3, but1, but2 ) {
+	var len1, len2, len3, len4, len5, width, x, y;
+	if req_win {
+		call tg_dispose( req_win );
 	}
-}
-
-function blend( c1, c2, x ) {
-	var r1, r2, g1, g2, b1, b2, r, g, b;
-	let r1 = &( >>( c1 16 ) 0xFF );
-	let r2 = &( >>( c2 16 ) 0xFF );
-	let g1 = &( >>( c1 8 ) 0xFF );
-	let g2 = &( >>( c2 8 ) 0xFF );
-	let b1 = &( c1 0xFF );
-	let b2 = &( c2 0xFF );
-	let r = +( r1 /( *( -( r2 r1 ) x ) 255 ) );
-	let g = +( g1 /( *( -( g2 g1 ) x ) 255 ) );
-	let b = +( b1 /( *( -( b2 b1 ) x ) 255 ) );
-	return +( *( r 65536 ) +( *( g 256 ) b ) );
-}
-
-function parse_rws( rws, out ) {
-	var elem, idx, a, c, r, g, b;
-	let elem = $parse( rws );
-	if $cmp( elem, "RM.AGA" ) {
-		if $cmp( elem, "RW.SCN" ) {
-			throw "Not an RWS file.";
-		}
+	if <( tg_num_unused() 6 ) {
+		throw "Not enough free gadgets.";
+	}
+	let len1 = *( $len( $str( msg1 ) ) 8 );
+	let len2 = *( $len( $str( msg2 ) ) 8 );
+	let len3 = *( $len( $str( msg3 ) ) 8 );
+	let len4 = *( +( $len( $str( but1 ) ) 2 ) 8 );
+	let len5 = *( +( $len( $str( but1 ) ) 2 ) 8 );
+	let width = len1;
+	if >( len2 width ) { let width = len2; }
+	if >( len3 width ) { let width = len3; }
+	if >( +( len4 len5 ) width ) { let width = +( len4 len5 ); }
+	let width = +( width 32 );
+	let x = /( -( [ tg_w 0 ] width ) 2 );
+	let y = /( -( [ tg_h 0 ] 128 ) 2 );
+	let req_win = tg_unused();
+	call tg_window( req_win, x, y, width, 128, title );
+	set [ tg_mode req_win ] = 2;
+	let req_msg1 = tg_unused();
+	call tg_label( req_msg1, req_win, /( -( width len1 ) 2 ), 32, len1, 1, msg1 );
+	let req_msg2 = tg_unused();
+	call tg_label( req_msg2, req_win, /( -( width len2 ) 2 ), 48, len2, 1, msg2 );
+	let req_msg3 = tg_unused();
+	call tg_label( req_msg3, req_win, /( -( width len3 ) 2 ), 64, len3, 1, msg3 );
+	if but1 {
+		let req_but1 = tg_unused();
+		call tg_button( req_but1, req_win, 16, 88, len4, 26, but1 );
 	} else {
-		let a = TRUE;
+		let req_but1 = 0;
 	}
-	let elem = $next( elem );
-	while $cmp( elem, "EOF" ) {
-		if <( idx $len( out ) ) {
-			let c = $int( elem );
-			if !( a ) {
-				let r = *( &( >>( c 8 ) 0xF ) 16 );
-				let g = *( &( >>( c 4 ) 0xF ) 16 ); 
-				let b = *( &( c 0xF ) 16 ); 
-				let c = +( *( r 65536 ) +( *( g 256 ) b ) );
-			}
-			set [ out idx ] = c;
-			inc idx;
-		}
-		let elem = $next( elem );
+	if but2 {
+		let req_but2 = tg_unused();
+		call tg_button( req_but2, req_win, -( -( width len5 ) 16 ), 88, len5, 26, but2 );
+	} else {
+		let req_but2 = 0;
 	}
+	call tg_wintofront( req_win );
+	call tg_draw( 0 );
 }
 
-function fill_array( arr, value ) {
-	var idx;
-	while <( idx $len( arr ) ) {
-		set [ arr idx ] = value;
-		inc idx;
-	}
-}
-
-function fore_to_back() {
-	var y;
-	while <( y $len( foreground ) ) {
-		if >( [ foreground y ] -1 ) {
-			set [ background y ] = blend( [ foreground y ] [ background y ] [ tg_a 17 ] );
-			set [ foreground y ] = -1;
-		}
-		inc y;
-	}
-}
-
-function dither( source, dest ) {
-	var y, r, g, b;
-	while <( y $len( source ) ) {
-		let r = +( r &( [ source y ] 0xFF0000 ) );
-		if >( r 0xFF0000 ) {
-			let r = 0xFF0000;
-		}
-		let g = +( g &( [ source y ] 0xFF00 ) );
-		if >( g 0xFF00 ) {
-			let g = 0xFF00;
-		}
-		let b = +( b &( [ source y ] 0xFF ) );
-		if >( b 0xFF ) {
-			let b = 0xFF;
-		}
-		set [ dest y ] = &( +( r +( g b ) ) 0xF0F0F0 );
-		let r = &( r 0xF0000 );
-		let g = &( g 0xF00 );
-		let b = &( b 0xF );
-		inc y;
-	}
-}
-
-function draw_background() {
-	var w, h, y;
-	let w = [ tg_w 0 ];
-	let h = $len( background );
-	while <( y h ) {
-		if <( [ foreground y ] 0 ) {
-			fxrect 0, *( y 2 ), w, 2, [ background y ];
-		} else {
-			fxrect 0, *( y 2 ), w, 2, blend( [ foreground y ], [ background y ], [ tg_a 17 ] );
-		}
-		inc y;
-	}
-}
-
-program raster {
-	var idx, event, selected, file, err, y, c1, c2, paint;
+program tgads {
+	var selected, file;
 	let palette = $array( ${ 0x000000, 0xFFFFFF, 0xA0A0A0, 0x6080B0 } );
 	call tg_charset( $load( $str( $chop( $src, "/:\\" ) "topaz8.txt" ) ) );
-	
-	dim [ foreground 240 ];
-	call fill_array( foreground, -1 );
-
-	dim [ background 240 ];
-	call parse_rws( $load( $str( $chop( $src, "/:\\" ) "rws/demo5.rws" ) ), background );
-
 	fxopen 640, 480, "tgads";
-
-	call tg_init( 26, 640, 480 );
-	let tg_draw_background = @draw_background;
-
-	call tg_window( 1, 16, 16, 320, 320, "Raster Master 2.0" );
-	call tg_sizegad( 2, 1, 300, 300, 16, 16 );
-	call tg_minsize( 1, 320 );
+	call tg_init( 16, 640, 480 );
 	
-	call tg_button( 3, 1, 8, 32, 80, 26, "Load" );
-	call tg_button( 4, 1, 8, 64, 80, 26, "Save" );
-	call tg_button( 5, 1, 8, 96, 80, 26, "Undo" );
-	call tg_button( 6, 1, 8, 128, 80, 26, "Dither" );
-	call tg_button( 7, 1, 8, 160, 80, 26, "Quit" );
+	call tg_window( 1, 16, 16, 320, 160, "Gadget Test" );
+	call tg_sizegad( 2, 1, 300, 140, 16, 16 );
+	call tg_minsize( 1, 160 );
 	
-	call tg_box( 8, 1, 96, 32, 192, 112, 1, 0, "Colour 1" );
-	call tg_anchors( 8, 1, 1, 0, 1 );
-	call tg_hslider(  9, 1, 108,  64, 160, 20, 32, 287 );
-	call tg_anchors(  9, 1, 1, 0, 1 );
-	call tg_hslider( 10, 1, 108,  88, 160, 20, 32, 287 );
-	call tg_anchors( 10, 1, 1, 0, 1 );
-	call tg_hslider( 11, 1, 108,  112, 160, 20, 32, 287 );
-	call tg_anchors( 11, 1, 1, 0, 1 );
-
-	call tg_box( 12, 1, 96, 152, 192, 112, 1, 0, "Colour 2" );
-	call tg_anchors( 12, 1, 1, 0, 1 );
-	call tg_hslider( 13, 1, 108, 184, 160, 20, 32, 287 );
-	call tg_anchors( 13, 1, 1, 0, 1 );
-	call tg_hslider( 14, 1, 108, 208, 160, 20, 32, 287 );
-	call tg_anchors( 14, 1, 1, 0, 1 );
-	call tg_hslider( 15, 1, 108, 232, 160, 20, 32, 287 );
-	call tg_anchors( 15, 1, 1, 0, 1 );
-
-	call tg_box( 16, 1, 16, 272, 272, 32, 1, -1, "Blend" );
-	call tg_anchors( 16, 1, 1, 0, 1 );
-	call tg_hslider( 17, 1, 108, 278, 160, 20, 32, 287 );
-	call tg_anchors( 17, 1, 1, 0, 1 );
-		
+	call tg_button( 3, 1, 8, 32, 120, 26, "Select File" );
+	call tg_button( 4, 1, 8, 64, 120, 26, "Quit" );
+	
+	call tg_textbox( 5, 1, 8, 96, 288, 26, "" );
+	call tg_anchors( 5, 0, 1, 0, 1 );
+	
 	call tg_draw( 0 );
 	fxshow;
 
 	while TRUE {
-		let event = $fxwait;
-		let selected = tg_scan( event );
-		if >( selected 0 ) {
-			#print $cat( selected, " ", [ tg_a selected ] );
-			switch selected {
-				case 3 {
-					call tg_file_selector( "Load RMS/RWS" );
-				}
-				case 4 {
-					call tg_file_selector( $tup( "Save RMS" 1 ) );
-				}
-				case 5 {
-					call fill_array( foreground, -1 );
-					call tg_draw( 0 );
-				}
-				case 6 {
-					call fore_to_back();
-					call dither( background, foreground );
-					call tg_draw( 0 );
-				}
-				case 7 {
-					break;
-				}
-				case 9 {
-					let c1 = +( +( *( [ tg_a 9 ] 65536 ) *( [ tg_a 10 ] 256 ) ) [ tg_a 11 ] );
-					set [ tg_b 8 ] = c1;
-					call tg_draw( 1 );
-				}
-				case 10 {
-					let c1 = +( +( *( [ tg_a 9 ] 65536 ) *( [ tg_a 10 ] 256 ) ) [ tg_a 11 ] );
-					set [ tg_b 8 ] = c1;
-					call tg_draw( 1 );
-				}
-				case 11 {
-					let c1 = +( +( *( [ tg_a 9 ] 65536 ) *( [ tg_a 10 ] 256 ) ) [ tg_a 11 ] );
-					set [ tg_b 8 ] = c1;
-					call tg_draw( 1 );
-				}
-				case 13 {
-					let c2 = +( +( *( [ tg_a 13 ] 65536 ) *( [ tg_a 14 ] 256 ) ) [ tg_a 15 ] );
-					set [ tg_b 12 ] = c2;
-					call tg_draw( 1 );
-				}
-				case 14 {
-					let c2 = +( +( *( [ tg_a 13 ] 65536 ) *( [ tg_a 14 ] 256 ) ) [ tg_a 15 ] );
-					set [ tg_b 12 ] = c2;
-					call tg_draw( 1 );
-				}
-				case 15 {
-					let c2 = +( +( *( [ tg_a 13 ] 65536 ) *( [ tg_a 14 ] 256 ) ) [ tg_a 15 ] );
-					set [ tg_b 12 ] = c2;
-					call tg_draw( 1 );
-				}
-				case 17 {
-					call tg_draw( 0 );
-				}
-				case fs_file {
-					call fs_file_selected();
-				}
-				case fs_dir {
-					call fs_dir_selected();
-				}
-				case fs_list {
-					call fs_list_selected();
-				}
-				case fs_cancel {
-					call fs_dispose();
-				}
-				case fs_okay {
-					try {
-						if =( [ tg_a fs_win ] 1 ) {
-							let file = fs_okay_selected();
-							if file {
-								call fore_to_back();
-								save $str( "RM.AGA\012" $astr( background ) "EOF" ), file;
-							}
-						} else {
-							let file = fs_okay_selected();
-							if file {
-								call parse_rws( $load( file ), background );
-								call fill_array( foreground, -1 );
-								call tg_draw( 0 );
-							}
-						}
-					} catch err {
-						print err;
-					}
-				}
+		switch tg_scan( $fxwait ) {
+			case 3 {
+				call tg_file_selector( "Select File" );
 			}
-		} else {
-			if =( $mousekey 1 ) {
-				if &&( tg_selx =( tg_find( tg_selx, tg_sely, 0 ) 0 ) ) {
-					if =( paint FALSE ) {
-						call fore_to_back();
-						let paint = TRUE;
-					}
-					let y = $ymouse;
-					call fill_array( foreground, -1 );
-					if <( tg_sely y ) {
-						call gradient( c1, c2, foreground, /( tg_sely 2 ), /( -( y tg_sely ) 2 ) );
-					} else {
-						call gradient( c2, c1, foreground, /( y 2 ), /( -( tg_sely y ) 2 ) );
-					}
-					call tg_draw(0);
+			case 4 {
+				break;
+			}
+			case fs_file {
+				call fs_file_selected();
+			}
+			case fs_dir {
+				call fs_dir_selected();
+			}
+			case fs_list {
+				call fs_list_selected();
+			}
+			case fs_cancel {
+				call fs_dispose();
+			}
+			case fs_okay {
+				let file = fs_okay_selected();
+				if file {
+					set[ tg_a 5 ] = file;
+					call tg_draw( 5 );
 				}
-			} else {
-				let paint = FALSE;
 			}
 		}
 		fxshow;
 	}
-	print "Bye!";
 }

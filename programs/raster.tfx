@@ -1,0 +1,285 @@
+
+include "tgads.tfx";
+
+array foreground, background;
+
+function gradient( c1, c2, out, off, len ) {
+	var r1, r2, g1, g2, b1, b2, r, g, b, idx;
+	let r1 = &( >>( c1 16 ) 0xFF );
+	let r2 = &( >>( c2 16 ) 0xFF );
+	let g1 = &( >>( c1 8 ) 0xFF );
+	let g2 = &( >>( c2 8 ) 0xFF );
+	let b1 = &( c1 0xFF );
+	let b2 = &( c2 0xFF );
+	while <( idx len ) {
+		let r = +( r1 /( *( -( r2 r1 ) idx ) len ) );
+		let g = +( g1 /( *( -( g2 g1 ) idx ) len ) );
+		let b = +( b1 /( *( -( b2 b1 ) idx ) len ) );
+		set [ out +( off idx ) ] = +( *( r 65536 ) +( *( g 256 ) b ) );
+		inc idx;
+	}
+}
+
+function blend( c1, c2, x ) {
+	var r1, r2, g1, g2, b1, b2, r, g, b;
+	let r1 = &( >>( c1 16 ) 0xFF );
+	let r2 = &( >>( c2 16 ) 0xFF );
+	let g1 = &( >>( c1 8 ) 0xFF );
+	let g2 = &( >>( c2 8 ) 0xFF );
+	let b1 = &( c1 0xFF );
+	let b2 = &( c2 0xFF );
+	let r = +( r1 /( *( -( r2 r1 ) x ) 255 ) );
+	let g = +( g1 /( *( -( g2 g1 ) x ) 255 ) );
+	let b = +( b1 /( *( -( b2 b1 ) x ) 255 ) );
+	return +( *( r 65536 ) +( *( g 256 ) b ) );
+}
+
+function parse_rws( rws, out ) {
+	var elem, idx, a, c, r, g, b;
+	let elem = $parse( rws );
+	if $cmp( elem, "RM.AGA" ) {
+		if $cmp( elem, "RW.SCN" ) {
+			throw "Not an RWS file.";
+		}
+	} else {
+		let a = TRUE;
+	}
+	let elem = $next( elem );
+	while $cmp( elem, "EOF" ) {
+		if <( idx $len( out ) ) {
+			let c = $int( elem );
+			if !( a ) {
+				let r = *( &( >>( c 8 ) 0xF ) 16 );
+				let g = *( &( >>( c 4 ) 0xF ) 16 ); 
+				let b = *( &( c 0xF ) 16 ); 
+				let c = +( *( r 65536 ) +( *( g 256 ) b ) );
+			}
+			set [ out idx ] = c;
+			inc idx;
+		}
+		let elem = $next( elem );
+	}
+}
+
+function fill_array( arr, value ) {
+	var idx;
+	while <( idx $len( arr ) ) {
+		set [ arr idx ] = value;
+		inc idx;
+	}
+}
+
+function fore_to_back() {
+	var y;
+	while <( y $len( foreground ) ) {
+		if >( [ foreground y ] -1 ) {
+			set [ background y ] = blend( [ foreground y ] [ background y ] [ tg_a 17 ] );
+			set [ foreground y ] = -1;
+		}
+		inc y;
+	}
+}
+
+function dither( source, dest ) {
+	var y, r, g, b;
+	while <( y $len( source ) ) {
+		let r = +( r &( [ source y ] 0xFF0000 ) );
+		if >( r 0xFF0000 ) {
+			let r = 0xFF0000;
+		}
+		let g = +( g &( [ source y ] 0xFF00 ) );
+		if >( g 0xFF00 ) {
+			let g = 0xFF00;
+		}
+		let b = +( b &( [ source y ] 0xFF ) );
+		if >( b 0xFF ) {
+			let b = 0xFF;
+		}
+		set [ dest y ] = &( +( r +( g b ) ) 0xF0F0F0 );
+		let r = &( r 0xF0000 );
+		let g = &( g 0xF00 );
+		let b = &( b 0xF );
+		inc y;
+	}
+}
+
+function draw_background() {
+	var w, h, y;
+	let w = [ tg_w 0 ];
+	let h = $len( background );
+	while <( y h ) {
+		if <( [ foreground y ] 0 ) {
+			fxrect 0, *( y 2 ), w, 2, [ background y ];
+		} else {
+			fxrect 0, *( y 2 ), w, 2, blend( [ foreground y ], [ background y ], [ tg_a 17 ] );
+		}
+		inc y;
+	}
+}
+
+program raster {
+	var idx, event, selected, file, err, y, c1, c2, paint;
+	let palette = $array( ${ 0x000000, 0xFFFFFF, 0xA0A0A0, 0x6080B0 } );
+	call tg_charset( $load( $str( $chop( $src, "/:\\" ) "topaz8.txt" ) ) );
+	
+	dim [ foreground 240 ];
+	call fill_array( foreground, -1 );
+
+	dim [ background 240 ];
+	call parse_rws( $load( $str( $chop( $src, "/:\\" ) "rws/demo5.rws" ) ), background );
+
+	fxopen 640, 480, "Raster Master 2.0";
+
+	call tg_init( 26, 640, 480 );
+	let tg_draw_background = @draw_background;
+
+	call tg_window( 1, 16, 16, 320, 320, "Raster Master 2.0" );
+	call tg_sizegad( 2, 1, 300, 300, 16, 16 );
+	call tg_minsize( 1, 320 );
+	
+	call tg_button( 3, 1, 8, 32, 80, 26, "Load" );
+	call tg_button( 4, 1, 8, 64, 80, 26, "Save" );
+	call tg_button( 5, 1, 8, 96, 80, 26, "Undo" );
+	call tg_button( 6, 1, 8, 128, 80, 26, "Dither" );
+	call tg_button( 7, 1, 8, 160, 80, 26, "Quit" );
+	
+	call tg_box( 8, 1, 96, 32, 192, 112, 1, 0, "Colour 1" );
+	call tg_anchors( 8, 1, 1, 0, 1 );
+	call tg_hslider(  9, 1, 108,  64, 160, 20, 32, 287 );
+	call tg_anchors(  9, 1, 1, 0, 1 );
+	call tg_hslider( 10, 1, 108,  88, 160, 20, 32, 287 );
+	call tg_anchors( 10, 1, 1, 0, 1 );
+	call tg_hslider( 11, 1, 108,  112, 160, 20, 32, 287 );
+	call tg_anchors( 11, 1, 1, 0, 1 );
+
+	call tg_box( 12, 1, 96, 152, 192, 112, 1, 0, "Colour 2" );
+	call tg_anchors( 12, 1, 1, 0, 1 );
+	call tg_hslider( 13, 1, 108, 184, 160, 20, 32, 287 );
+	call tg_anchors( 13, 1, 1, 0, 1 );
+	call tg_hslider( 14, 1, 108, 208, 160, 20, 32, 287 );
+	call tg_anchors( 14, 1, 1, 0, 1 );
+	call tg_hslider( 15, 1, 108, 232, 160, 20, 32, 287 );
+	call tg_anchors( 15, 1, 1, 0, 1 );
+
+	call tg_box( 16, 1, 16, 272, 272, 32, 1, -1, "Blend" );
+	call tg_anchors( 16, 1, 1, 0, 1 );
+	call tg_hslider( 17, 1, 108, 278, 160, 20, 32, 287 );
+	call tg_anchors( 17, 1, 1, 0, 1 );
+		
+	call tg_draw( 0 );
+	fxshow;
+
+	while TRUE {
+		let event = $fxwait;
+		let selected = tg_scan( event );
+		if >( selected 0 ) {
+			#print $cat( selected, " ", [ tg_a selected ] );
+			switch selected {
+				case 3 {
+					call tg_file_selector( "Load RMS/RWS" );
+				}
+				case 4 {
+					call tg_file_selector( $tup( "Save RMS" 1 ) );
+				}
+				case 5 {
+					call fill_array( foreground, -1 );
+					call tg_draw( 0 );
+				}
+				case 6 {
+					call fore_to_back();
+					call dither( background, foreground );
+					call tg_draw( 0 );
+				}
+				case 7 {
+					break;
+				}
+				case 9 {
+					let c1 = +( +( *( [ tg_a 9 ] 65536 ) *( [ tg_a 10 ] 256 ) ) [ tg_a 11 ] );
+					set [ tg_c 8 ] = c1;
+					call tg_draw( 1 );
+				}
+				case 10 {
+					let c1 = +( +( *( [ tg_a 9 ] 65536 ) *( [ tg_a 10 ] 256 ) ) [ tg_a 11 ] );
+					set [ tg_c 8 ] = c1;
+					call tg_draw( 1 );
+				}
+				case 11 {
+					let c1 = +( +( *( [ tg_a 9 ] 65536 ) *( [ tg_a 10 ] 256 ) ) [ tg_a 11 ] );
+					set [ tg_c 8 ] = c1;
+					call tg_draw( 1 );
+				}
+				case 13 {
+					let c2 = +( +( *( [ tg_a 13 ] 65536 ) *( [ tg_a 14 ] 256 ) ) [ tg_a 15 ] );
+					set [ tg_c 12 ] = c2;
+					call tg_draw( 1 );
+				}
+				case 14 {
+					let c2 = +( +( *( [ tg_a 13 ] 65536 ) *( [ tg_a 14 ] 256 ) ) [ tg_a 15 ] );
+					set [ tg_c 12 ] = c2;
+					call tg_draw( 1 );
+				}
+				case 15 {
+					let c2 = +( +( *( [ tg_a 13 ] 65536 ) *( [ tg_a 14 ] 256 ) ) [ tg_a 15 ] );
+					set [ tg_c 12 ] = c2;
+					call tg_draw( 1 );
+				}
+				case 17 {
+					call tg_draw( 0 );
+				}
+				case fs_file {
+					call fs_file_selected();
+				}
+				case fs_dir {
+					call fs_dir_selected();
+				}
+				case fs_list {
+					call fs_list_selected();
+				}
+				case fs_cancel {
+					call fs_dispose();
+				}
+				case fs_okay {
+					try {
+						if =( [ tg_a fs_win ] 1 ) {
+							let file = fs_okay_selected();
+							if file {
+								call fore_to_back();
+								save $str( "RM.AGA\012" $astr( background ) "EOF" ), file;
+							}
+						} else {
+							let file = fs_okay_selected();
+							if file {
+								call parse_rws( $load( file ), background );
+								call fill_array( foreground, -1 );
+								call tg_draw( 0 );
+							}
+						}
+					} catch err {
+						print err;
+					}
+				}
+			}
+		} else {
+			if =( $mousekey 1 ) {
+				if &&( tg_selx =( tg_find( tg_selx, tg_sely, 0 ) 0 ) ) {
+					if =( paint FALSE ) {
+						call fore_to_back();
+						let paint = TRUE;
+					}
+					let y = $ymouse;
+					call fill_array( foreground, -1 );
+					if <( tg_sely y ) {
+						call gradient( c1, c2, foreground, /( tg_sely 2 ), /( -( y tg_sely ) 2 ) );
+					} else {
+						call gradient( c2, c1, foreground, /( y 2 ), /( -( tg_sely y ) 2 ) );
+					}
+					call tg_draw(0);
+				}
+			} else {
+				let paint = FALSE;
+			}
+		}
+		fxshow;
+	}
+	print "Bye!";
+}
