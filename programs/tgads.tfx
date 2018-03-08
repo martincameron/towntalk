@@ -894,11 +894,11 @@ function format_dir( vals ) {
 
 function tg_file_selector( title ) {
 	var err;
-	if fs_win {
-		call tg_dispose( fs_win );
-	}
 	if <( tg_num_unused() 8 ) {
 		throw "Not enough free gadgets.";
+	}
+	if fs_win {
+		call tg_dispose( fs_win );
 	}
 	try {
 		let fs_path = $fxpath( fs_path );
@@ -1011,47 +1011,65 @@ function fs_okay_selected() {
 }
 
 function tg_request( title, msg1, msg2, msg3, but1, but2 ) {
-	var len1, len2, len3, len4, len5, width, x, y;
-	if req_win {
-		call tg_dispose( req_win );
-	}
+	var len1, len2, len3, len4, len5, width, height, x, y;
 	if <( tg_num_unused() 6 ) {
 		throw "Not enough free gadgets.";
 	}
-	let len1 = *( $len( $str( msg1 ) ) 8 );
-	let len2 = *( $len( $str( msg2 ) ) 8 );
-	let len3 = *( $len( $str( msg3 ) ) 8 );
-	let len4 = *( +( $len( $str( but1 ) ) 2 ) 8 );
-	let len5 = *( +( $len( $str( but1 ) ) 2 ) 8 );
+	if req_win {
+		call tg_dispose( req_win );
+	}
+	if msg1 { let len1 = *( $len( $str( msg1 ) ) 8 ); }
+	if msg2 { let len2 = *( $len( $str( msg2 ) ) 8 ); }
+	if msg3 { let len3 = *( $len( $str( msg3 ) ) 8 ); }
+	if but1 { let len4 = *( +( $len( $str( but1 ) ) 2 ) 8 ); }
+	if but2 { let len5 = *( +( $len( $str( but2 ) ) 2 ) 8 ); }
 	let width = len1;
 	if >( len2 width ) { let width = len2; }
 	if >( len3 width ) { let width = len3; }
-	if >( +( len4 len5 ) width ) { let width = +( len4 len5 ); }
+	if >( +( +( len4 len5 ) 8 ) width ) { let width = +( +( len4 len5 ) 8 ); }
 	let width = +( width 32 );
+	let height = 96;
+	if msg2 { let height = 112; }
+	if msg3 { let height = 128; }
 	let x = /( -( [ tg_w 0 ] width ) 2 );
-	let y = /( -( [ tg_h 0 ] 128 ) 2 );
+	let y = /( -( [ tg_h 0 ] height ) 2 );
 	let req_win = tg_unused();
-	call tg_window( req_win, x, y, width, 128, title );
+	call tg_window( req_win, x, y, width, height, title );
 	set [ tg_mode req_win ] = 2;
 	let req_msg1 = tg_unused();
 	call tg_label( req_msg1, req_win, /( -( width len1 ) 2 ), 32, len1, 1, msg1 );
-	let req_msg2 = tg_unused();
-	call tg_label( req_msg2, req_win, /( -( width len2 ) 2 ), 48, len2, 1, msg2 );
-	let req_msg3 = tg_unused();
-	call tg_label( req_msg3, req_win, /( -( width len3 ) 2 ), 64, len3, 1, msg3 );
+	if msg2 {
+		let req_msg2 = tg_unused();
+		call tg_label( req_msg2, req_win, /( -( width len2 ) 2 ), 48, len2, 1, msg2 );
+	}
+	if msg3 {
+		let req_msg3 = tg_unused();
+		call tg_label( req_msg3, req_win, /( -( width len3 ) 2 ), 64, len3, 1, msg3 );
+	}
 	if but1 {
 		let req_but1 = tg_unused();
-		call tg_button( req_but1, req_win, 16, 88, len4, 26, but1 );
+		call tg_button( req_but1, req_win, 16, -( height 40 ), len4, 26, but1 );
 	} else {
 		let req_but1 = 0;
 	}
 	if but2 {
 		let req_but2 = tg_unused();
-		call tg_button( req_but2, req_win, -( -( width len5 ) 16 ), 88, len5, 26, but2 );
+		call tg_button( req_but2, req_win, -( -( width len5 ) 16 ), -( height 40 ), len5, 26, but2 );
 	} else {
 		let req_but2 = 0;
 	}
 	call tg_wintofront( req_win );
+	call tg_draw( 0 );
+}
+
+function req_dispose() {
+	call tg_dispose( req_win );
+	let req_win = 0;
+	let req_msg1 = 0;
+	let req_msg2 = 0;
+	let req_msg3 = 0;
+	let req_but1 = 0;
+	let req_but2 = 0;
 	call tg_draw( 0 );
 }
 
@@ -1077,11 +1095,13 @@ program tgads {
 
 	while TRUE {
 		switch tg_scan( $fxwait ) {
+			case 0 {
+			}
 			case 3 {
 				call tg_file_selector( "Select File" );
 			}
 			case 4 {
-				break;
+				call tg_request( "Quit?", "Really quit this incredible program?!", 0, 0, "Yes, please!", "Only kidding!" );
 			}
 			case fs_file {
 				call fs_file_selected();
@@ -1101,6 +1121,12 @@ program tgads {
 					set[ tg_a 5 ] = file;
 					call tg_draw( 5 );
 				}
+			}
+			case req_but1 {
+				break;
+			}
+			case req_but2 {
+				call req_dispose();
 			}
 		}
 		fxshow;
