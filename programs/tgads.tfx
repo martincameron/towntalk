@@ -8,7 +8,7 @@ array tg_a, tg_b, tg_c;
 
 global tg_selx, tg_sely, tg_focus, tg_time, tg_draw_background;
 global fs_win, fs_dir, fs_slider, fs_list, fs_file, fs_cancel, fs_okay, fs_path;
-global req_win, req_msg1, req_msg2, req_msg3, req_but1, req_but2;
+global req_win, req_but1, req_but2;
 
 function tg_charset( str ) {
 	var w, h, clr, chr, y, x;
@@ -1010,51 +1010,62 @@ function fs_okay_selected() {
 	}
 }
 
-function tg_request( title, msg1, msg2, msg3, but1, but2 ) {
-	var len1, len2, len3, len4, len5, width, height, x, y;
-	if <( tg_num_unused() 6 ) {
+function tg_request( title, message, left_button, right_button ) {
+	var len, msg, num, width, height, x, y, str;
+	let num = 3;
+	let height = 80;
+	let len = $len( $str( title ) );
+	let msg = message;
+	while msg {
+		let x = $len( $unquote( msg ) );
+		if >( x len ) {
+			let len = x;
+		}
+		inc num;
+		let height = +( height 16 );
+		let msg = $next( msg );
+	}
+	if left_button {
+		let x = +( $len( $str( left_button ) ) 2 );
+	}
+	if right_button { 
+		let x = +( x +( $len( $str( right_button ) ) 3 ) );
+	}
+	if >( x len ) {
+		let len = x;
+	}
+	let width = +( *( len 8 ) 32 );
+	let x = /( -( [ tg_w 0 ] width ) 2 );
+	let y = /( -( [ tg_h 0 ] height ) 2 );
+	if <( tg_num_unused() num ) {
 		throw "Not enough free gadgets.";
 	}
 	if req_win {
 		call tg_dispose( req_win );
 	}
-	if msg1 { let len1 = *( $len( $str( msg1 ) ) 8 ); }
-	if msg2 { let len2 = *( $len( $str( msg2 ) ) 8 ); }
-	if msg3 { let len3 = *( $len( $str( msg3 ) ) 8 ); }
-	if but1 { let len4 = *( +( $len( $str( but1 ) ) 2 ) 8 ); }
-	if but2 { let len5 = *( +( $len( $str( but2 ) ) 2 ) 8 ); }
-	let width = len1;
-	if >( len2 width ) { let width = len2; }
-	if >( len3 width ) { let width = len3; }
-	if >( +( +( len4 len5 ) 8 ) width ) { let width = +( +( len4 len5 ) 8 ); }
-	let width = +( width 32 );
-	let height = 96;
-	if msg2 { let height = 112; }
-	if msg3 { let height = 128; }
-	let x = /( -( [ tg_w 0 ] width ) 2 );
-	let y = /( -( [ tg_h 0 ] height ) 2 );
 	let req_win = tg_unused();
 	call tg_window( req_win, x, y, width, height, title );
 	set [ tg_mode req_win ] = 2;
-	let req_msg1 = tg_unused();
-	call tg_label( req_msg1, req_win, /( -( width len1 ) 2 ), 32, len1, 1, msg1 );
-	if msg2 {
-		let req_msg2 = tg_unused();
-		call tg_label( req_msg2, req_win, /( -( width len2 ) 2 ), 48, len2, 1, msg2 );
+	let msg = message;
+	let y = 32;
+	while msg {
+		let str = $unquote( msg );
+		let len = *( $len( str ) 8 );
+		call tg_label( tg_unused(), req_win, /( -( width len ) 2 ), y, len, 1, str );
+		let y = +( y 16 );
+		let msg = $next( msg );
 	}
-	if msg3 {
-		let req_msg3 = tg_unused();
-		call tg_label( req_msg3, req_win, /( -( width len3 ) 2 ), 64, len3, 1, msg3 );
-	}
-	if but1 {
+	if left_button {
 		let req_but1 = tg_unused();
-		call tg_button( req_but1, req_win, 16, -( height 40 ), len4, 26, but1 );
+		let len = *( +( $len( $str( left_button ) ) 2 ) 8 );
+		call tg_button( req_but1, req_win, 16, -( height 40 ), len, 26, left_button );
 	} else {
 		let req_but1 = 0;
 	}
-	if but2 {
+	if right_button {
 		let req_but2 = tg_unused();
-		call tg_button( req_but2, req_win, -( -( width len5 ) 16 ), -( height 40 ), len5, 26, but2 );
+		let len = *( +( $len( $str( right_button ) ) 2 ) 8 );
+		call tg_button( req_but2, req_win, -( -( width len ) 16 ), -( height 40 ), len, 26, right_button );
 	} else {
 		let req_but2 = 0;
 	}
@@ -1065,9 +1076,6 @@ function tg_request( title, msg1, msg2, msg3, but1, but2 ) {
 function req_dispose() {
 	call tg_dispose( req_win );
 	let req_win = 0;
-	let req_msg1 = 0;
-	let req_msg2 = 0;
-	let req_msg3 = 0;
 	let req_but1 = 0;
 	let req_but2 = 0;
 	call tg_draw( 0 );
@@ -1101,7 +1109,7 @@ program tgads {
 				call tg_file_selector( "Select File" );
 			}
 			case 4 {
-				call tg_request( "Quit?", "Really quit this incredible program?!", 0, 0, "Yes, please!", "Only kidding!" );
+				call tg_request( "Quit?", ${ "" "Really quit this incredible program?!" "" }, "Yes, please!", "Only kidding!" );
 			}
 			case fs_file {
 				call fs_file_selected();
