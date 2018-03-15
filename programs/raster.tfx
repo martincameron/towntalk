@@ -271,23 +271,25 @@ program raster {
 				}
 			}
 		} else {
-			if =( $mousekey 1 ) {
-				if &&( tg_selx =( tg_find( tg_selx, tg_sely, 0 ) 0 ) ) {
-					if =( paint FALSE ) {
-						call fore_to_back();
-						let paint = TRUE;
+			if !( |( fs_win req_win ) ) {
+				if =( $mousekey 1 ) {
+					if &&( tg_selx =( tg_find( tg_selx, tg_sely, 0 ) 0 ) ) {
+						if =( paint FALSE ) {
+							call fore_to_back();
+							let paint = TRUE;
+						}
+						let y = $ymouse;
+						call fill_array( foreground, -1 );
+						if <( tg_sely y ) {
+							call gradient( c1, c2, foreground, /( tg_sely 2 ), /( -( y tg_sely ) 2 ) );
+						} else {
+							call gradient( c2, c1, foreground, /( y 2 ), /( -( tg_sely y ) 2 ) );
+						}
+						call tg_draw(0);
 					}
-					let y = $ymouse;
-					call fill_array( foreground, -1 );
-					if <( tg_sely y ) {
-						call gradient( c1, c2, foreground, /( tg_sely 2 ), /( -( y tg_sely ) 2 ) );
-					} else {
-						call gradient( c2, c1, foreground, /( y 2 ), /( -( tg_sely y ) 2 ) );
-					}
-					call tg_draw(0);
+				} else {
+					let paint = FALSE;
 				}
-			} else {
-				let paint = FALSE;
 			}
 		}
 		fxshow;
