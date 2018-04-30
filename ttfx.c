@@ -5,6 +5,10 @@
 #include "dirent.h"
 #include "sys/stat.h"
 
+#if defined( MIDI )
+#include "alsa/asoundlib.h"
+#endif
+
 #if defined( __MINGW32__ )
 #define canonicalize_file_name( path ) _fullpath( NULL, ( path ), 0 )
 #endif
@@ -54,6 +58,9 @@ struct fxenvironment {
 	struct fxchannel channels[ NUM_CHANNELS ];
 	int tick, tick_len, audio_idx, audio_end;
 	int audio[ ( MAX_TICK_LEN + 33 ) * 4 ], ramp_buf[ 64 ];
+	#if defined( MIDI )
+	snd_rawmidi_t* midi_in;
+	#endif
 };
 
 static Uint32 timer_callback( Uint32 interval, void *param ) {
@@ -324,6 +331,11 @@ static void dispose_fxenvironment( struct fxenvironment *fxenv ) {
 		if( fxenv->timer ) {
 			SDL_RemoveTimer( fxenv->timer );
 		}
+		#if defined( MIDI )
+		if( fxenv->midi_in ) {
+		   snd_rawmidi_close( fxenv->midi_in );
+		}
+		#endif
 		dispose_environment( ( struct environment * ) fxenv );
 	}
 }
@@ -680,9 +692,27 @@ static int execute_fxplay_statement( struct statement *this, struct variable *va
 
 static int execute_fxmidi_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
+	#if defined( MIDI )
+	int err = 0;
+	struct fxenvironment *fxenv = ( struct fxenvironment * ) this->source->function->env;
+	#endif
 	struct variable device = { 0, NULL };
 	int ret = this->source->evaluate( this->source, variables, &device, exception );
 	if( ret ) {
+		#if defined( MIDI )
+		if( fxenv->midi_in ) {
+			err = snd_rawmidi_close( fxenv->midi_in );
+			fxenv->midi_in = NULL;
+		}
+		if( err == 0 && device.string_value ) {
+			err = snd_rawmidi_open( &fxenv->midi_in, NULL, device.string_value->string, SND_RAWMIDI_SYNC );
+		}
+		if( err < 0 ) {
+			ret = throw( exception, this->source, err, snd_strerror( err ) );
+		}
+		#else
+		ret = throw( exception, this->source, 0, "MIDI not supported." );
+		#endif
 		dispose_variable( &device );
 	}
 	return ret;
