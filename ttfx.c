@@ -505,8 +505,11 @@ static int execute_fxsleep_statement( struct statement *this, struct variable *v
 	struct variable *result, struct variable *exception ) {
 	struct variable millis = { 0, NULL };
 	int ret = this->source->evaluate( this->source, variables, &millis, exception );
-	if( ret && millis.integer_value > 0 ) {
-		SDL_Delay( millis.integer_value );
+	if( ret ) {
+		if( millis.integer_value > 0 ) {
+			SDL_Delay( millis.integer_value );
+		}
+		dispose_variable( &millis );
 	}
 	return ret;
 }
@@ -527,6 +530,7 @@ static int execute_fxtimer_statement( struct statement *this, struct variable *v
 				ret = throw( exception, this->source, millis.integer_value, "Unable to stop timer." );
 			}
 		}
+		dispose_variable( &millis );
 	}
 	return ret;
 }
@@ -674,6 +678,16 @@ static int execute_fxplay_statement( struct statement *this, struct variable *va
 	return ret;
 }
 
+static int execute_fxmidi_statement( struct statement *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	struct variable device = { 0, NULL };
+	int ret = this->source->evaluate( this->source, variables, &device, exception );
+	if( ret ) {
+		dispose_variable( &device );
+	}
+	return ret;
+}
+
 static struct element* parse_fxopen_statement( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message ) {
 	return parse_expr_list_statement( elem, env, func, prev, execute_fxopen_statement, message );
@@ -738,6 +752,11 @@ static struct element* parse_fxqueue_statement( struct element *elem, struct env
 		prev->next->local = 1;
 	}
 	return next;
+}
+
+static struct element* parse_fxmidi_statement( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct statement *prev, char *message ) {
+	return parse_expr_list_statement( elem, env, func, prev, execute_fxmidi_statement, message );
 }
 
 static int handle_event_expression( struct expression *this, SDL_Event *event,
@@ -1028,7 +1047,8 @@ static struct keyword fxstatements[] = {
 	{ "fxaudio", "x;", parse_fxaudio_statement, &fxstatements[ 8 ] },
 	{ "fxsample", "xxxx;", parse_fxsample_statement, &fxstatements[ 9 ] },
 	{ "fxqueue", "xx;", parse_fxqueue_statement, &fxstatements[ 10 ] },
-	{ "fxplay", "xx;", parse_fxplay_statement, statements }
+	{ "fxplay", "xx;", parse_fxplay_statement, &fxstatements[ 11 ] },
+	{ "fxmidi", "x;", parse_fxmidi_statement, statements }
 };
 
 int main( int argc, char **argv ) {
