@@ -5,7 +5,7 @@
 #include "dirent.h"
 #include "sys/stat.h"
 
-#if defined( MIDI )
+#if defined( ALSA_MIDI )
 #include "alsa/asoundlib.h"
 #endif
 
@@ -56,10 +56,11 @@ struct fxenvironment {
 	SDLKey key;
 	struct fxsample samples[ NUM_SAMPLES ];
 	struct fxchannel channels[ NUM_CHANNELS ];
-	int tick, tick_len, audio_idx, audio_end;
+	int tick, tick_len, audio_idx, audio_end, midi_msg;
 	int audio[ ( MAX_TICK_LEN + 33 ) * 4 ], ramp_buf[ 64 ];
-	#if defined( MIDI )
-	snd_rawmidi_t* midi_in;
+	#if defined( ALSA_MIDI )
+	int midi_buf, midi_idx;
+	snd_rawmidi_t *midi_in;
 	#endif
 };
 
@@ -239,13 +240,49 @@ static void process_sequence( struct fxenvironment *fxenv, int channel_idx ) {
 
 static void audio_callback( void *userdata, Uint8 *stream, int len ) {
 	struct fxenvironment *fxenv = ( struct fxenvironment * ) userdata;
-	SDL_Event event = { SDL_USEREVENT + 1 };
+	SDL_Event event = { 0 };
 	Sint16 *output = ( Sint16 * ) stream;
 	struct fxchannel *channel;
 	int samples = len >> 2;
 	int *audio = fxenv->audio;
 	int out_idx, out_end, aud_idx, ampl;
 	int chan_idx, count, offset = 0;
+	#if defined( ALSA_MIDI )
+	unsigned char chr;
+	if( fxenv->midi_in ) {
+		while( snd_rawmidi_read( fxenv->midi_in, &chr, 1 ) > 0 ) {
+			/*printf( "%x\n", (int)chr );*/
+			if( chr & 0x80 ) {
+				fxenv->midi_buf = chr << 16;
+				if( ( fxenv->midi_buf & 0xF00000 ) == 0xF00000 ) {
+					/* 1-byte 0xFx message. */
+					fxenv->midi_idx = 3;
+				} else {
+					fxenv->midi_idx = 1;
+				}
+			} else if( fxenv->midi_idx == 1 ) {
+				fxenv->midi_buf |= chr << 8;
+				if( ( fxenv->midi_buf & 0xE00000 ) == 0xC00000 ) {
+					/* 2-byte message. */
+					fxenv->midi_idx = 3;
+				} else {
+					fxenv->midi_idx = 2;
+				}
+			} else if( fxenv->midi_idx == 2 ) {
+				/* 3-byte message. */
+				fxenv->midi_buf |= chr;
+				fxenv->midi_idx = 3;
+			}
+			if( fxenv->midi_idx == 3 ) {
+				/* Push message.*/
+				event.type = SDL_USEREVENT + 2;
+				event.user.code = fxenv->midi_buf;
+				SDL_PushEvent( &event );
+				fxenv->midi_idx = 0;
+			}
+		}
+	}
+	#endif
 	while( offset < samples ) {
 		count = samples - offset;
 		if( fxenv->audio_idx + count > fxenv->audio_end ) {
@@ -277,6 +314,7 @@ static void audio_callback( void *userdata, Uint8 *stream, int len ) {
 						process_sequence( fxenv, chan_idx );
 						while( channel->sequence.string_value && channel->sequence_wait == 0 ) {
 							/* Signal sequence end. */
+							event.type = SDL_USEREVENT + 1;
 							SDL_PushEvent( &event );
 							assign_variable( &channel->next_sequence, &channel->sequence );
 							dispose_variable( &channel->next_sequence );
@@ -331,9 +369,10 @@ static void dispose_fxenvironment( struct fxenvironment *fxenv ) {
 		if( fxenv->timer ) {
 			SDL_RemoveTimer( fxenv->timer );
 		}
-		#if defined( MIDI )
+		#if defined( ALSA_MIDI )
 		if( fxenv->midi_in ) {
-		   snd_rawmidi_close( fxenv->midi_in );
+			SDL_CloseAudio();
+			snd_rawmidi_close( fxenv->midi_in );
 		}
 		#endif
 		dispose_environment( ( struct environment * ) fxenv );
@@ -692,21 +731,23 @@ static int execute_fxplay_statement( struct statement *this, struct variable *va
 
 static int execute_fxmidi_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	#if defined( MIDI )
+	#if defined( ALSA_MIDI )
 	int err = 0;
 	struct fxenvironment *fxenv = ( struct fxenvironment * ) this->source->function->env;
 	#endif
 	struct variable device = { 0, NULL };
 	int ret = this->source->evaluate( this->source, variables, &device, exception );
 	if( ret ) {
-		#if defined( MIDI )
+		#if defined( ALSA_MIDI )
+		SDL_LockAudio();
 		if( fxenv->midi_in ) {
 			err = snd_rawmidi_close( fxenv->midi_in );
 			fxenv->midi_in = NULL;
 		}
 		if( err == 0 && device.string_value ) {
-			err = snd_rawmidi_open( &fxenv->midi_in, NULL, device.string_value->string, SND_RAWMIDI_SYNC );
+			err = snd_rawmidi_open( &fxenv->midi_in, NULL, device.string_value->string, SND_RAWMIDI_NONBLOCK );
 		}
+		SDL_UnlockAudio();
 		if( err < 0 ) {
 			ret = throw( exception, this->source, err, snd_strerror( err ) );
 		}
@@ -798,12 +839,22 @@ static int handle_event_expression( struct expression *this, SDL_Event *event,
 	} else {
 		if( event->type == SDL_KEYDOWN || event->type == SDL_KEYUP ) {
 			fxenv->key = event->key.keysym.sym;
+		} else if( event->type == SDL_USEREVENT + 2 ) {
+			fxenv->midi_msg = event->user.code;
 		}
 		dispose_variable( result );
 		result->integer_value = event->type;
 		result->string_value = NULL;
 	}
 	return ret;
+}
+
+static int evaluate_midimsg_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	dispose_variable( result );
+	result->integer_value = ( ( struct fxenvironment * ) this->function->env )->midi_msg;
+	result->string_value = NULL;
+	return 1;
 }
 
 static int evaluate_fxpoll_expression( struct expression *this, struct variable *variables,
@@ -1048,6 +1099,7 @@ static struct constant fxconstants[] = {
 	{ "FX_MOUSEKEYUP", SDL_MOUSEBUTTONUP, NULL },
 	{ "FX_TIMER", SDL_USEREVENT, NULL },
 	{ "FX_SEQUENCER", SDL_USEREVENT + 1, NULL },
+	{ "FX_MIDI", SDL_USEREVENT + 2, NULL },
 	{ NULL }
 };
 
@@ -1063,7 +1115,8 @@ static struct operator fxoperators[] = {
 	{ "$fxtick",'$', 0, evaluate_fxtick_expression, &fxoperators[ 9 ] },
 	{ "$fxseq",'$', 1, evaluate_fxseq_expression, &fxoperators[ 10 ] },
 	{ "$fxdir",'$', 1, evaluate_fxdir_expression, &fxoperators[ 11 ] },
-	{ "$fxpath",'$', 1, evaluate_fxpath_expression, operators }
+	{ "$fxpath",'$', 1, evaluate_fxpath_expression, &fxoperators[ 12 ] },
+	{ "$midimsg",'$', 0, evaluate_midimsg_expression, operators }
 };
 
 static struct keyword fxstatements[] = {
