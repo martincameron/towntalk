@@ -1,0 +1,168 @@
+
+rem {
+	Very simple polyphonic synthesizer for TTFX.
+}
+
+function unpack( buf, idx ) {
+	var value, end;
+	let end = +( idx 4 );
+	while <( idx end ) {
+		let value = +( *( value 256 ) &( $chr( buf idx ) 0xFF ) );
+		inc idx;
+	}
+	return value;
+}
+
+function trim( str ) {
+	var offset, end;
+	let end = -( $len( str ) 1 );
+	while &&( >e( end 0 ) <( $chr( str, end ) 33 ) ) {
+		let end = -( end 1 );
+	}
+	return $sub( str, offset, +( end 1 ) );
+}
+
+function load_song( tmf, names ) {
+	var offset, sequence, length, idx, loopidx, looplen;
+	if $cmp( $sub( tmf, 0, 4 ) "TMF0" ) {
+		throw "Not a TMF file.";
+	}
+	if names {
+		dim [ names 64 ];
+		set [ names 0 ] = trim( $sub( tmf 8 32 ) );
+	}
+	let offset = *( 32 64 );
+	let sequence = $sub( tmf, offset, unpack( tmf, 4 ) );
+	let offset = +( offset $len( sequence ) );
+	let idx = 1;
+	while <( idx 64 ) {
+		let loopidx = unpack( tmf, *( idx 32 ) );
+		let looplen = unpack( tmf, +( *( idx 32 ) 4 ) );
+		if names {
+			set [ names idx ] = trim( $sub( tmf +( *( idx 32 ) 8 ) 24 ) );
+		}
+		let length = +( loopidx looplen );
+		if length {
+			fxsample idx, $sub( tmf offset length ), loopidx, looplen;
+			let offset = +( offset length );
+		}
+		inc idx;
+	}
+	return sequence;
+}
+
+function map_key( keymap, key ) {
+	if &&( >( key 47 ) <( key 96 ) ) {
+		let key = [ keymap -( key 48 ) ];
+	} else {
+		if &&( >( key 96 ) <( key 123 ) ) {
+			# Lower case.
+			let key = [ keymap -( key 80 ) ];
+		} else {
+			let key = 0;
+		}
+	}
+	return key;
+}
+
+program midi {
+	var sequence, idx, name, names;
+	var cmd, chn, key, vel, ins, voc, voicekey, keymap;
+	if >( $argc 1 ) {
+		let keymap = $array( ${
+			#   0   1   2   3   4   5   6   7   8   9   :   ;   <   =   >   ?   @
+			   75,  0, 61, 63,  0, 66, 68, 70,  0, 73,  0,  0,  0, 78,  0,  0,  0,
+			#   A   B   C   D   E   F   G   H   I   J   K   L   M   N   O   P   Q
+			    0, 55, 52, 51, 64,  0, 54, 56, 72, 58,  0,  0, 59, 57, 74, 76, 60,
+			#   R   S   T   U   V   W   X   Y   Z   [   \   ]
+			   65, 49, 67, 71, 53, 62, 50, 69, 48, 77, 47, 79
+		} );
+		let names = $array( 0 );
+		let sequence = load_song( $load( $argv( 1 ) ), names );
+		print $cat( "Song name: " [ names 0 ] );
+		print $cat( "Sequence length: " $len( sequence ) " bytes.");
+		let idx = 1;
+		while <( idx 64 ) {
+			let name = [ names idx ];
+			if >( $len( name ) 0 ) {
+				print $cat( "Instrument " idx ": " name );
+			}
+			inc idx;
+		}
+		# Open window to accept keyboard events.
+		fxopen 640, 480, "test";
+		# Open midi device.
+		#fxmidi "hw:2,0,0";
+		fxaudio 960;
+		#fxplay 0, sequence;
+		#fxqueue 0, sequence;
+		let voicekey = $array( 32 );
+		while TRUE {
+			let cmd = 0;
+			switch $fxwait {
+				case FX_KEYDOWN {
+					if &&( >( $keyboard 281 ) <( $keyboard 294 ) ) {
+						# Function key.
+						let cmd = 0xC;
+						let key = -( $keyboard 282 );
+					} else {
+						let key = map_key( keymap, $keyboard );
+						if >( key 0 ) {
+							let cmd = 0x9;
+							let chn = 0;
+							let vel = 64;
+						}
+					}
+				}
+				case FX_KEYUP {
+					let key = map_key( keymap, $keyboard );
+					if >( key 0 ) {
+						let cmd = 0x9;
+						let chn = 0;
+						let vel = 0;
+					}
+				}
+				case FX_MIDI {
+					print $hex( $midimsg );
+					let cmd = >>( $midimsg 20 );
+					let chn = &( >>( $midimsg 16 ) 0xF );
+					let key = &( >>( $midimsg 8 ) 0x7F );
+					if =( cmd 0x8 ) {
+						let cmd = 0x9;
+						let vel = 0;
+					} else {
+						let vel = &( $midimsg 0x7F );
+					}
+				}
+			}
+			switch cmd {
+				case 0x9 {
+					if >( key 71 ) {
+						let voc = 31;
+					} else {
+						if >( key 47 ) {
+							let voc = -( key 40 );
+						} else {
+							let voc = 8;
+						}
+					}
+					if >( vel 0 ) {
+						set [ voicekey voc ] = key;
+						let key = +( 480 *( -( key 60 ) 8 ) );
+						fxplay voc, $cat( $pack( 0x7000 ) $pack( +( +( 0x10000000 *( key 65536 ) ) *( +( ins 1 ) 256 ) ) ) );
+					} else {
+						if =( [ voicekey voc ] key ) {
+							# Key off.
+							fxplay voc, $pack( $array( ${ 0x6000F010 0x5800F010 0x5000F010 0x4800F010 0x4000 } ) );
+						}
+					}
+				}
+				case 0xC {
+					let ins = &( key 0x3F );
+				}
+			}
+		}
+	} else {
+		error $cat( "Usage ttfx " $argv( 0 ) " song.tmf" );
+	}
+}
