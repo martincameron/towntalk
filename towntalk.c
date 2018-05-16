@@ -3060,7 +3060,7 @@ static struct element* parse_expr_list_statement( struct element *elem, struct e
 		prev->next = stmt;
 		head.next = NULL;
 		next = parse_expression( next, env, func, &head, message );
-		expr = head.next;
+		expr = stmt->source = head.next;
 		while( expr && next->str.string[ 0 ] != ';' ) {
 			if( next->str.string[ 0 ] == ',' ) {
 				next = next->next;
@@ -3069,7 +3069,6 @@ static struct element* parse_expr_list_statement( struct element *elem, struct e
 			expr = expr->next;
 		}
 		if( expr ) {
-			stmt->source = head.next;
 			stmt->execute = execute;
 			next = next->next;
 		}
