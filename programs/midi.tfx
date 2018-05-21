@@ -67,7 +67,7 @@ function map_key( keymap, key ) {
 
 program midi {
 	var sequence, idx, name, names;
-	var cmd, chn, key, vel, ins, voc, voicekey, keymap;
+	var cmd, chn, key, vel, ins, voc, voicekey, keymap, bank;
 	if >( $argc 1 ) {
 		let keymap = $array( ${
 			#   0   1   2   3   4   5   6   7   8   9   :   ;   <   =   >   ?   @
@@ -103,8 +103,17 @@ program midi {
 				case FX_KEYDOWN {
 					if &&( >( $keyboard 281 ) <( $keyboard 294 ) ) {
 						# Function key.
+						if =( $keyboard 293 ) {
+							let bank = 20;
+						}
+						if &&( =( $keyboard 292 ) !( =( bank 20 ) ) ){
+							let bank = 10;
+						}
 						let cmd = 0xC;
-						let key = -( $keyboard 282 );
+						let key = +( bank -( $keyboard 282 ) );
+						if <( $keyboard 292 ) {
+							let bank = 0;
+						}
 					} else {
 						let key = map_key( keymap, $keyboard );
 						if >( key 0 ) {
