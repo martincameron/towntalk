@@ -67,7 +67,7 @@ function map_key( keymap, key ) {
 
 program midi {
 	var sequence, idx, name, names;
-	var cmd, chn, key, vel, ins, voc, voicekey, keymap, bank;
+	var cmd, chn, key, vel, ins, voc, va, keyvoice, voicekey, keymap, bank;
 	if >( $argc 1 ) {
 		let keymap = $array( ${
 			#   0   1   2   3   4   5   6   7   8   9   :   ;   <   =   >   ?   @
@@ -96,6 +96,7 @@ program midi {
 		fxaudio 960;
 		#fxplay 0, sequence;
 		#fxqueue 0, sequence;
+		let keyvoice = $array( 128 );
 		let voicekey = $array( 32 );
 		while TRUE {
 			let cmd = 0;
@@ -103,16 +104,16 @@ program midi {
 				case FX_KEYDOWN {
 					if &&( >( $keyboard 281 ) <( $keyboard 294 ) ) {
 						# Function key.
-						if =( $keyboard 293 ) {
-							let bank = 20;
-						}
-						if &&( =( $keyboard 292 ) !( =( bank 20 ) ) ){
-							let bank = 10;
-						}
-						let cmd = 0xC;
-						let key = +( bank -( $keyboard 282 ) );
 						if <( $keyboard 292 ) {
-							let bank = 0;
+							let cmd = 0xC;
+							let key = +( bank -( $keyboard 282 ) );
+						} else {
+							if =( $keyboard 292 ){
+								let bank = 0;
+							}
+							if =( $keyboard 293 ) {
+								let bank = 10;
+							}
 						}
 					} else {
 						let key = map_key( keymap, $keyboard );
@@ -146,17 +147,16 @@ program midi {
 			}
 			switch cmd {
 				case 0x9 {
-					if >( key 71 ) {
-						let voc = 31;
-					} else {
-						if >( key 47 ) {
-							let voc = -( key 40 );
-						} else {
-							let voc = 8;
-						}
-					}
+					let voc = [ keyvoice key ];
 					if >( vel 0 ) {
-						set [ voicekey voc ] = key;
+						if =( voc 0 ) {
+							if !( =( [ voicekey va ] key ) ) {
+								let va = +( 16 %( +( va 1 ) 16 ) );
+								set [ voicekey va ] = key;
+							}
+							let voc = va;
+							set [ keyvoice key ] = voc;
+						}
 						let key = +( 480 *( -( key 60 ) 8 ) );
 						fxplay voc, $cat( $pack( 0x7000 ) $pack( +( +( 0x10000000 *( key 65536 ) ) *( +( ins 1 ) 256 ) ) ) );
 					} else {
@@ -164,6 +164,7 @@ program midi {
 							# Key off.
 							fxplay voc, $pack( $array( ${ 0x6000F010 0x5800F010 0x5000F010 0x4800F010 0x4000 } ) );
 						}
+						set [ keyvoice key ] = 0;
 					}
 				}
 				case 0xC {
