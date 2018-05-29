@@ -51,6 +51,19 @@ function load_song( tmf, names ) {
 	return sequence;
 }
 
+function timestretch() {
+	var seq, off, idx;
+	let seq = $array( 256 );
+	while <( idx $len( seq ) ) {
+		set [ seq idx ] = +( 0x30000000 *( off 256 ) );
+		let off = +( off 2007 );
+		inc idx;
+		set [ seq idx ] = 0xF006;
+		inc idx;
+	}
+	return $pack( seq );
+}
+
 function map_key( keymap, key ) {
 	if &&( >( key 47 ) <( key 96 ) ) {
 		let key = [ keymap -( key 48 ) ];
@@ -67,8 +80,12 @@ function map_key( keymap, key ) {
 
 program midi {
 	var sequence, idx, name, names;
-	var cmd, chn, key, vel, ins, voc, va, keyvoice, voicekey, keymap, bank;
+	var cmd, chn, key, vel, ins, voc, va;
+	var keyvoice, voicekey, keymap, bank, c0;
+	var decay, stretch;
 	if >( $argc 1 ) {
+		let decay = $pack( $array( ${ 0x6800F010 0x6000F010 0x5800F010 0x5000F010 0x4800F010 0x4000 } ) );
+		let stretch = timestretch();
 		let keymap = $array( ${
 			#   0   1   2   3   4   5   6   7   8   9   :   ;   <   =   >   ?   @
 			   75,  0, 61, 63,  0, 66, 68, 70,  0, 73,  0,  0,  0, 78,  0,  0,  0,
@@ -99,6 +116,7 @@ program midi {
 		let keyvoice = $array( 128 );
 		let voicekey = $array( 32 );
 		while TRUE {
+			let c0 = 480;
 			let cmd = 0;
 			switch $fxwait {
 				case FX_KEYDOWN {
@@ -116,6 +134,10 @@ program midi {
 							}
 						}
 					} else {
+						if &( $keyshift 0x2000 ) {
+							# Drop an octave if caps lock on.
+							let c0 = 384;
+						}
 						let key = map_key( keymap, $keyboard );
 						if >( key 0 ) {
 							let cmd = 0x9;
@@ -157,12 +179,20 @@ program midi {
 							let voc = va;
 							set [ keyvoice key ] = voc;
 						}
-						let key = +( 480 *( -( key 60 ) 8 ) );
-						fxplay voc, $cat( $pack( 0x7000 ) $pack( +( +( 0x10000000 *( key 65536 ) ) *( +( ins 1 ) 256 ) ) ) );
+						let key = +( c0 *( -( key 60 ) 8 ) );
+						fxplay voc, $cat( $pack( 0x8000 ) $pack( +( +( 0x10000000 *( key 65536 ) ) *( +( ins 1 ) 256 ) ) ) );
+						if &( $keyshift 0x1 ) {
+							# Enable time-stretching if shift pressed.
+							fxplay voc, stretch;
+						}
 					} else {
 						if =( [ voicekey voc ] key ) {
 							# Key off.
-							fxplay voc, $pack( $array( ${ 0x6000F010 0x5800F010 0x5000F010 0x4800F010 0x4000 } ) );
+							if &( $keyshift 0x1 ) {
+								fxplay voc, $pack( 0x4000 );
+							} else {
+								fxplay voc, decay;
+							}
 						}
 						set [ keyvoice key ] = 0;
 					}
