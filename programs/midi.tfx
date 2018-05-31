@@ -51,17 +51,26 @@ function load_song( tmf, names ) {
 	return sequence;
 }
 
-function timestretch() {
-	var seq, off, idx;
-	let seq = $array( 256 );
+function timestretch( key ) {
+	var keyfreq, freq, seq, off, idx;
+	let keyfreq = $array( ${
+		16744, 17740, 18795, 19912, 21096, 22351, 23680, 25088, 26579, 28160, 29834, 31608, 33488
+	} );
+	let key = /( key 8 );
+	let freq = >>( *( [ keyfreq %( key 12 ) ] 32 ) -( 10 /( key 12 ) ) );
+	let seq = $array( 1024 );
 	while <( idx $len( seq ) ) {
 		set [ seq idx ] = +( 0x30000000 *( off 256 ) );
-		let off = +( off 2007 );
+		let off = &( +( off /( *( freq 6 ) 50 ) ) 0xFFFFF );
 		inc idx;
 		set [ seq idx ] = 0xF006;
 		inc idx;
 	}
 	return $pack( seq );
+}
+
+function fade() {
+	return $pack( $array( ${ 0x6800F010 0x6000F010 0x5800F010 0x5000F010 0x4800F010 0x4000 } ) );
 }
 
 function map_key( keymap, key ) {
@@ -81,11 +90,11 @@ function map_key( keymap, key ) {
 program midi {
 	var sequence, idx, name, names;
 	var cmd, chn, key, vel, ins, voc, va;
-	var keyvoice, voicekey, keymap, bank, c0;
-	var decay, stretch;
+	var keyvoice, voicekey, keymap, keyfreq, bank, c0;
+	var attack, decay;
 	if >( $argc 1 ) {
-		let decay = $pack( $array( ${ 0x6800F010 0x6000F010 0x5800F010 0x5000F010 0x4800F010 0x4000 } ) );
-		let stretch = timestretch();
+		let attack = "";
+		let decay = fade();
 		let keymap = $array( ${
 			#   0   1   2   3   4   5   6   7   8   9   :   ;   <   =   >   ?   @
 			   75,  0, 61, 63,  0, 66, 68, 70,  0, 73,  0,  0,  0, 78,  0,  0,  0,
@@ -120,19 +129,31 @@ program midi {
 			let cmd = 0;
 			switch $fxwait {
 				case FX_KEYDOWN {
-					if &&( >( $keyboard 281 ) <( $keyboard 294 ) ) {
-						# Function key.
-						if <( $keyboard 292 ) {
-							let cmd = 0xC;
-							let key = +( bank -( $keyboard 282 ) );
-						} else {
-							if =( $keyboard 292 ){
-								let bank = 0;
-							}
-							if =( $keyboard 293 ) {
-								let bank = 10;
+					switch $keyboard {
+						case 27 {
+							# Escape, exit timestretch mode.
+							let attack = "";
+							let decay = fade();
+						}
+						case 280 {
+							# Page up, next sample bank.
+							let bank = +( bank 10 );
+							if >( bank 50 ) {
+								let bank = 50;
 							}
 						}
+						case 281 {
+							# Page down, previous sample bank.
+							let bank = -( bank 10 );
+							if <( bank 0 ) {
+								let bank = 0;
+							}
+						}
+					}
+					if &&( >( $keyboard 281 ) <( $keyboard 294 ) ) {
+						# Function key, select sample.
+						let cmd = 0xC;
+						let key = +( bank -( $keyboard 282 ) );
 					} else {
 						if &( $keyshift 0x2000 ) {
 							# Drop an octave if caps lock on.
@@ -180,19 +201,17 @@ program midi {
 							set [ keyvoice key ] = voc;
 						}
 						let key = +( c0 *( -( key 60 ) 8 ) );
-						fxplay voc, $cat( $pack( 0x8000 ) $pack( +( +( 0x10000000 *( key 65536 ) ) *( +( ins 1 ) 256 ) ) ) );
-						if &( $keyshift 0x1 ) {
+						if &( $keyshift 0x3 ) {
 							# Enable time-stretching if shift pressed.
-							fxplay voc, stretch;
+							let attack = timestretch( key );
+							let decay = $pack( 0x4000 );
 						}
+						fxplay voc, $cat( $pack( 0x8000 ) $pack( +( +( 0x10000000 *( key 65536 ) ) *( +( ins 1 ) 256 ) ) ) );
+						fxplay voc, attack;
 					} else {
 						if =( [ voicekey voc ] key ) {
 							# Key off.
-							if &( $keyshift 0x1 ) {
-								fxplay voc, $pack( 0x4000 );
-							} else {
-								fxplay voc, decay;
-							}
+							fxplay voc, decay;
 						}
 						set [ keyvoice key ] = 0;
 					}
