@@ -22,7 +22,16 @@ function trim( str ) {
 	return $sub( str, offset, +( end 1 ) );
 }
 
-function load_song( tmf, names ) {
+function load_song( song, names ) {
+	var e;
+	try {
+		return load_tmf( song, names );
+	} catch e {
+		return load_mod( song, names );
+	}
+}
+
+function load_tmf( tmf, names ) {
 	var offset, sequence, length, idx, loopidx, looplen;
 	if $cmp( $sub( tmf, 0, 4 ) "TMF0" ) {
 		throw "Not a TMF file.";
@@ -49,6 +58,48 @@ function load_song( tmf, names ) {
 		inc idx;
 	}
 	return sequence;
+}
+
+function u16be( str, idx ) {
+	return +( *( &( $chr( str idx ) 0xFF ) 256 ) &( $chr( str +( idx 1 ) ) 0xFF ) );
+}
+
+function load_mod( mod, names ) {
+	var offset, patterns, length, instrument, loopidx, looplen;
+	if $cmp( $sub( mod, 1080, 4 ) "M.K." ) {
+		throw "Not a MOD file.";
+	}
+	if names {
+		dim [ names 32 ];
+		set [ names 0 ] = trim( $sub( mod, 0, 20 ) );
+	}
+	let offset = 952;
+	while <( offset 1080 ) {
+		if <e( patterns &( $chr( mod offset ) 0x7F ) ) {
+			let patterns = +( &( $chr( mod offset ) 0x7F ) 1 );
+		}
+		inc offset;
+	}
+	let offset = +( 1084 *( patterns 1024 ) );
+	let instrument = 1;
+	while <( instrument 32 ) {
+		let length = *( u16be( mod, +( *( instrument 30 ) 12 ) ) 2 );
+		let loopidx = *( u16be( mod, +( *( instrument 30 ) 16 ) ) 2 );
+		let looplen = *( u16be( mod, +( *( instrument 30 ) 18 ) ) 2 );
+		if <( looplen 4 ) {
+			let loopidx = length;
+			let looplen = 0;
+		}
+		if names {
+			set [ names instrument ] = trim( $sub( mod -( *( instrument 30 ) 10 ) 22 ) );
+		}
+		if length {
+			fxsample instrument, $sub( mod offset length ), loopidx, looplen;
+			let offset = +( offset length );
+		}
+		inc instrument;
+	}
+	return "";
 }
 
 function timestretch( key ) {
@@ -108,7 +159,7 @@ program midi {
 		print $cat( "Song name: " [ names 0 ] );
 		print $cat( "Sequence length: " $len( sequence ) " bytes.");
 		let idx = 1;
-		while <( idx 64 ) {
+		while <( idx $len( names ) ) {
 			let name = [ names idx ];
 			if >( $len( name ) 0 ) {
 				print $cat( "Instrument " idx ": " name );
