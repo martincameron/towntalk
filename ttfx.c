@@ -392,7 +392,7 @@ static int execute_fxopen_statement( struct statement *this, struct variable *va
 			expr = expr->next;
 			ret = expr->evaluate( expr, variables, &caption, exception );
 			if( ret ) {
-				if( caption.string_value->string ) {
+				if( caption.string_value ) {
 					SDL_WM_SetCaption( caption.string_value->string, "" );
 				}
 				if( SDL_SetVideoMode( width.integer_value, height.integer_value, 32, SDL_HWSURFACE ) == NULL ) {
