@@ -120,7 +120,6 @@ function draw_background() {
 program raster {
 	var idx, event, selected, file, err, y, c1, c2, paint;
 	let palette = $array( ${ 0x000000, 0xFFFFFF, 0xA0A0A0, 0x6080B0 } );
-	call tg_charset( $load( $str( $chop( $src, "/:\\" ) "topaz8.txt" ) ) );
 	
 	dim [ foreground 240 ];
 	call fill_array( foreground, -1 );
@@ -129,8 +128,10 @@ program raster {
 	call parse_rws( $load( $str( $chop( $src, "/:\\" ) "rws/demo5.rws" ) ), background );
 
 	fxopen 640, 480, "Raster Master 2.0";
-
+	
+	call tg_charset( $load( $str( $chop( $src, "/:\\" ) "topaz8.txt" ) ) );
 	call tg_init( 32, 640, 480 );
+	
 	let tg_draw_background = @draw_background;
 
 	call tg_window( 1, 16, 16, 320, 320, "Raster Master 2.0" );

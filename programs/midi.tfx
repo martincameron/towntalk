@@ -201,10 +201,10 @@ program midi {
 							}
 						}
 					}
-					if &&( >( $keyboard 281 ) <( $keyboard 294 ) ) {
+					if &&( >e( $keyboard FX_KEY_F1 ) <( $keyboard +( FX_KEY_F1 12 ) ) ) {
 						# Function key, select sample.
 						let cmd = 0xC;
-						let key = +( bank -( $keyboard 282 ) );
+						let key = +( bank -( $keyboard FX_KEY_F1 ) );
 					} else {
 						if &( $keyshift 0x2000 ) {
 							# Drop an octave if caps lock on.
@@ -271,6 +271,7 @@ program midi {
 					let ins = &( key 0x3F );
 				}
 			}
+			fxshow;
 		}
 	} else {
 		error $cat( "Usage ttfx " $argv( 0 ) " song.tmf" );

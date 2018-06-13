@@ -9,10 +9,6 @@
 #include "alsa/asoundlib.h"
 #endif
 
-#if defined( __MINGW32__ )
-#define canonicalize_file_name( path ) _fullpath( NULL, ( path ), 0 )
-#endif
-
 #define NUM_SURFACES 16
 #define NUM_CHANNELS 32
 #define NUM_SAMPLES 64
@@ -51,9 +47,11 @@ struct fxchannel {
 
 struct fxenvironment {
 	struct environment env;
-	struct SDL_Surface *surfaces[ NUM_SURFACES ];
+	struct SDL_Window *window;
+	struct SDL_Renderer *renderer;
+	struct SDL_Texture *target, *surfaces[ NUM_SURFACES ];
 	SDL_TimerID timer;
-	SDLKey key;
+	SDL_Keycode key;
 	struct fxsample samples[ NUM_SAMPLES ];
 	struct fxchannel channels[ NUM_CHANNELS ];
 	int tick, tick_len, audio_idx, audio_end, midi_msg;
@@ -354,10 +352,11 @@ static struct fxenvironment* new_fxenvironment() {
 static void dispose_fxenvironment( struct fxenvironment *fxenv ) {
 	int idx;
 	if( fxenv ) {
-		for( idx = 0; idx < NUM_SURFACES; idx++ ) {
-			if( fxenv->surfaces[ idx ] ) {
-				SDL_FreeSurface( fxenv->surfaces[ idx ] );
-			}
+		if( fxenv->window ) {
+			SDL_DestroyWindow( fxenv->window );
+		}
+		if( fxenv->renderer ) {
+			SDL_DestroyRenderer( fxenv->renderer );
 		}
 		for( idx = 0; idx < NUM_SAMPLES; idx++ ) {
 			dispose_variable( &fxenv->samples[ idx ].sample_data );
@@ -384,6 +383,7 @@ static int execute_fxopen_statement( struct statement *this, struct variable *va
 	int ret;
 	struct variable width = { 0, NULL }, height = { 0, NULL }, caption = { 0, NULL };
 	struct expression *expr = this->source;
+	struct fxenvironment *fxenv = ( struct fxenvironment * ) expr->function->env;
 	ret = expr->evaluate( expr, variables, &width, exception );
 	if( ret ) {
 		expr = expr->next;
@@ -392,11 +392,39 @@ static int execute_fxopen_statement( struct statement *this, struct variable *va
 			expr = expr->next;
 			ret = expr->evaluate( expr, variables, &caption, exception );
 			if( ret ) {
-				if( caption.string_value ) {
-					SDL_WM_SetCaption( caption.string_value->string, "" );
-				}
-				if( SDL_SetVideoMode( width.integer_value, height.integer_value, 32, SDL_HWSURFACE ) == NULL ) {
-					ret = throw( exception, this->source, 0, SDL_GetError() );
+				if( !fxenv->window ) {
+					fxenv->window = SDL_CreateWindow(
+						caption.string_value ? caption.string_value->string : "",
+						SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
+						width.integer_value, height.integer_value, 0 );
+					if( fxenv->window ) {
+						fxenv->renderer = SDL_CreateRenderer(
+							fxenv->window, -1, SDL_RENDERER_TARGETTEXTURE );
+						if( fxenv->renderer ) {
+							fxenv->target = SDL_CreateTexture( fxenv->renderer,
+								SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET,
+								width.integer_value, height.integer_value );
+							if( fxenv->target ) {
+								SDL_SetRenderDrawColor( fxenv->renderer, 0, 0, 0, 255 );
+								SDL_RenderClear( fxenv->renderer );
+								SDL_SetRenderTarget( fxenv->renderer, fxenv->target );
+								SDL_RenderClear( fxenv->renderer );
+								SDL_RenderPresent( fxenv->renderer );
+							} else {
+								ret = throw( exception, this->source, 0, SDL_GetError() );
+								SDL_DestroyRenderer( fxenv->renderer );
+								fxenv->renderer = NULL;
+							}
+						} else {
+							ret = throw( exception, this->source, 0, SDL_GetError() );
+							SDL_DestroyWindow( fxenv->window );
+							fxenv->window = NULL;
+						}
+					} else {
+						ret = throw( exception, this->source, 0, SDL_GetError() );
+					}
+				} else {
+					ret = throw( exception, this->source, 0, "Window already open." );
 				}
 				dispose_variable( &caption );
 			}
@@ -413,7 +441,7 @@ static int execute_fxsurface_statement( struct statement *this, struct variable 
 	struct variable params[ 4 ], *values;
 	struct array *arr;
 	Uint32 *pixels;
-	struct SDL_Surface *surface = NULL;
+	struct SDL_Texture *texture = NULL;
 	struct expression *expr = this->source;
 	struct fxenvironment *fxenv = ( struct fxenvironment * ) expr->function->env;
 	memset( params, 0, 4 * sizeof( struct variable ) );
@@ -429,27 +457,31 @@ static int execute_fxsurface_statement( struct statement *this, struct variable 
 			width = params[ 1 ].integer_value;
 			height = params[ 2 ].integer_value;
 			if( width > 0 && height > 0 ) {
-				surface = SDL_CreateRGBSurface( SDL_HWSURFACE, width, height,
-					32, 0xFF000000, 0x00FF0000, 0x0000FF00, 0x000000FF );
-				if( surface ) {
+				texture = SDL_CreateTexture( fxenv->renderer,
+					SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, width, height );
+				if( texture ) {
 					if( params[ 3 ].string_value ) {
 						if( params[ 3 ].string_value->line < 0 ) {
 							arr = ( struct array * ) params[ 3 ].string_value;
 							values = arr->array;
-							if( SDL_LockSurface( surface ) == 0 ) {
+							pixels = malloc( arr->length * sizeof( Uint32 ) );
+							if( pixels ) {
 								idx = 0;
 								len = arr->length;
 								if( len > width * height ) {
 									len = width * height;
 								}
-								pixels = ( Uint32 * ) surface->pixels;
 								while( idx < len ) {
 									pixels[ idx ] = values[ idx ].integer_value;
 									idx++;
 								}
-								SDL_UnlockSurface( surface );
+								if( SDL_UpdateTexture( texture, NULL, pixels, width * sizeof( Uint32 ) ) ) {
+									ret = throw( exception, this->source, 0, SDL_GetError() );
+								}
+								SDL_SetTextureBlendMode( texture, SDL_BLENDMODE_BLEND );
+								free( pixels );
 							} else {
-								ret = throw( exception, this->source, 0, SDL_GetError() );
+								ret = throw( exception, this->source, 0, OUT_OF_MEMORY );
 							}
 						} else {
 							ret = throw( exception, this->source, 0, "Not an array." );
@@ -457,11 +489,11 @@ static int execute_fxsurface_statement( struct statement *this, struct variable 
 					}
 					if( ret ) {
 						if( fxenv->surfaces[ surf ] ) {
-							SDL_FreeSurface( fxenv->surfaces[ surf ] );
+							SDL_DestroyTexture( fxenv->surfaces[ surf ] );
 						}
-						fxenv->surfaces[ surf ] = surface;
+						fxenv->surfaces[ surf ] = texture;
 					} else {
-						SDL_FreeSurface( surface );
+						SDL_DestroyTexture( texture );
 					}
 				} else {
 					ret = throw( exception, this->source, 0, SDL_GetError() );
@@ -483,7 +515,7 @@ static int execute_fxsurface_statement( struct statement *this, struct variable 
 static int execute_fxblit_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	int ret, idx = 0;
-	struct SDL_Rect src, dest;
+	struct SDL_Rect clip, dest;
 	struct variable params[ 7 ];
 	struct expression *expr = this->source;
 	struct fxenvironment *fxenv = ( struct fxenvironment * ) expr->function->env;
@@ -497,13 +529,15 @@ static int execute_fxblit_statement( struct statement *this, struct variable *va
 	if( ret ) {
 		idx = params[ 0 ].integer_value;
 		if( idx >= 0 && idx < NUM_SURFACES ) {
-			src.x = params[ 1 ].integer_value;
-			src.y = params[ 2 ].integer_value;
-			src.w = params[ 3 ].integer_value;
-			src.h = params[ 4 ].integer_value;
-			dest.x = params[ 5 ].integer_value;
-			dest.y = params[ 6 ].integer_value;
-			if( SDL_BlitSurface( fxenv->surfaces[ idx ], &src, SDL_GetVideoSurface(), &dest ) ) {
+			clip.x = params[ 5 ].integer_value;
+			clip.y = params[ 6 ].integer_value;
+			clip.w = params[ 3 ].integer_value;
+			clip.h = params[ 4 ].integer_value;
+			dest.x = clip.x - params[ 1 ].integer_value;
+			dest.y = clip.y - params[ 2 ].integer_value;
+			SDL_QueryTexture( fxenv->surfaces[ idx ], NULL, NULL, &dest.w, &dest.h );
+			SDL_RenderSetClipRect( fxenv->renderer, &clip );
+			if( SDL_RenderCopy( fxenv->renderer, fxenv->surfaces[ idx ], NULL, &dest ) ) {
 				ret = throw( exception, this->source, 0, SDL_GetError() );
 			}
 		} else {
@@ -519,10 +553,11 @@ static int execute_fxblit_statement( struct statement *this, struct variable *va
 
 static int execute_fxrect_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	int ret, idx = 0;
+	int ret, colour, idx = 0;
 	struct SDL_Rect rect;
 	struct variable params[ 5 ];
 	struct expression *expr = this->source;
+	struct fxenvironment *fxenv = ( struct fxenvironment * ) expr->function->env;
 	memset( params, 0, 5 * sizeof( struct variable ) );
 	ret = expr->evaluate( expr, variables, &params[ idx++ ], exception );
 	expr = expr->next;
@@ -535,7 +570,11 @@ static int execute_fxrect_statement( struct statement *this, struct variable *va
 		rect.y = params[ 1 ].integer_value;
 		rect.w = params[ 2 ].integer_value;
 		rect.h = params[ 3 ].integer_value;
-		if( SDL_FillRect( SDL_GetVideoSurface(), &rect, params[ 4 ].integer_value ) ) {
+		colour = params[ 4 ].integer_value;
+		SDL_RenderSetClipRect( fxenv->renderer, NULL );
+		SDL_SetRenderDrawColor( fxenv->renderer,
+			( colour >> 16 ) & 0xFF, ( colour >> 8 ) & 0xFF, colour & 0xFF, 0xFF );
+		if( SDL_RenderFillRect( fxenv->renderer, &rect ) ) {
 			ret = throw( exception, this->source, 0, SDL_GetError() );
 		}
 	}
@@ -548,7 +587,11 @@ static int execute_fxrect_statement( struct statement *this, struct variable *va
 
 static int execute_fxshow_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	SDL_UpdateRect( SDL_GetVideoSurface(), 0, 0, 0, 0 );
+	struct fxenvironment *fxenv = ( struct fxenvironment * ) this->source->function->env;
+	SDL_SetRenderTarget( fxenv->renderer, NULL );
+	SDL_RenderCopy( fxenv->renderer, fxenv->target, NULL, NULL );
+	SDL_RenderPresent( fxenv->renderer );
+	SDL_SetRenderTarget( fxenv->renderer, fxenv->target );
 	return 1;
 }
 
@@ -573,7 +616,7 @@ static int execute_fxtimer_statement( struct statement *this, struct variable *v
 	if( ret ) {
 		if( millis.integer_value > 0 ) {
 			fxenv->timer = SDL_AddTimer( millis.integer_value, timer_callback, fxenv );
-			if( fxenv->timer == NULL ) {
+			if( !fxenv->timer ) {
 				ret = throw( exception, this->source, millis.integer_value, "Unable to start timer." );
 			}
 		} else {
@@ -769,9 +812,16 @@ static struct element* parse_fxshow_statement( struct element *elem, struct envi
 	struct element *next = elem->next;
 	struct statement *stmt = new_statement( message );
 	if( stmt ) {
-		stmt->execute = execute_fxshow_statement;
-		prev->next = stmt;
-		next = next->next;
+		stmt->source = calloc( 1, sizeof( struct expression ) );
+		if( stmt->source ) {
+			stmt->source->line = next->str.line;
+			stmt->source->function = func;
+			stmt->execute = execute_fxshow_statement;
+			prev->next = stmt;
+			next = next->next;
+		} else {
+			strcpy( message, OUT_OF_MEMORY );
+		}
 	}
 	return next;
 }
@@ -860,7 +910,7 @@ static int evaluate_midimsg_expression( struct expression *this, struct variable
 static int evaluate_fxpoll_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	SDL_Event event;
-	event.type = SDL_NOEVENT;
+	event.type = SDL_FIRSTEVENT;
 	SDL_PollEvent( &event );
 	return handle_event_expression( this, &event, result, exception );
 }
@@ -970,7 +1020,7 @@ static int evaluate_fxdir_expression( struct expression *this, struct variable *
 	if( ret ) {
 		if( var.string_value && var.string_value->string ) {
 			errno = 0;
-			path = canonicalize_file_name( var.string_value->string );
+			path = realpath( var.string_value->string, NULL );
 			if( path ) {
 				pathlen = strlen( path );
 				sep = path[ chop( path, "/:\\" ) - 1 ];
@@ -1064,7 +1114,7 @@ static int evaluate_fxpath_expression( struct expression *this, struct variable 
 	if( ret ) {
 		if( var.string_value ) {
 			errno = 0;
-			path = canonicalize_file_name( var.string_value->string );
+			path = realpath( var.string_value->string, NULL );
 			if( path ) {
 				str = new_string_value( strlen( path ) );
 				if( str ) {
