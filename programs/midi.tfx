@@ -180,41 +180,43 @@ program midi {
 			let cmd = 0;
 			switch $fxwait {
 				case FX_KEYDOWN {
-					switch $keyboard {
-						case 27 {
-							# Escape, exit timestretch mode.
-							let attack = "";
-							let decay = fade();
-						}
-						case 280 {
-							# Page up, next sample bank.
-							let bank = +( bank 10 );
-							if >( bank 50 ) {
-								let bank = 50;
+					if !( $keyheld ) {
+						switch $keyboard {
+							case FX_KEY_ESCAPE {
+								# Escape, exit timestretch mode.
+								let attack = "";
+								let decay = fade();
+							}
+							case FX_KEY_PAGE_UP {
+								# Page up, next sample bank.
+								let bank = +( bank 10 );
+								if >( bank 50 ) {
+									let bank = 50;
+								}
+							}
+							case FX_KEY_PAGE_DOWN {
+								# Page down, previous sample bank.
+								let bank = -( bank 10 );
+								if <( bank 0 ) {
+									let bank = 0;
+								}
 							}
 						}
-						case 281 {
-							# Page down, previous sample bank.
-							let bank = -( bank 10 );
-							if <( bank 0 ) {
-								let bank = 0;
+						if &&( >e( $keyboard FX_KEY_F1 ) <( $keyboard +( FX_KEY_F1 12 ) ) ) {
+							# Function key, select sample.
+							let cmd = 0xC;
+							let key = +( bank -( $keyboard FX_KEY_F1 ) );
+						} else {
+							if &( $keyshift 0x2000 ) {
+								# Drop an octave if caps lock on.
+								let c0 = 384;
 							}
-						}
-					}
-					if &&( >e( $keyboard FX_KEY_F1 ) <( $keyboard +( FX_KEY_F1 12 ) ) ) {
-						# Function key, select sample.
-						let cmd = 0xC;
-						let key = +( bank -( $keyboard FX_KEY_F1 ) );
-					} else {
-						if &( $keyshift 0x2000 ) {
-							# Drop an octave if caps lock on.
-							let c0 = 384;
-						}
-						let key = map_key( keymap, $keyboard );
-						if >( key 0 ) {
-							let cmd = 0x9;
-							let chn = 0;
-							let vel = 64;
+							let key = map_key( keymap, $keyboard );
+							if >( key 0 ) {
+								let cmd = 0x9;
+								let chn = 0;
+								let vel = 64;
+							}
 						}
 					}
 				}
@@ -236,6 +238,11 @@ program midi {
 						let vel = 0;
 					} else {
 						let vel = &( $midimsg 0x7F );
+					}
+				}
+				case FX_WINDOW {
+					if =( $window FX_WINDOW_EXPOSED ) {
+						fxshow;
 					}
 				}
 			}
@@ -271,7 +278,6 @@ program midi {
 					let ins = &( key 0x3F );
 				}
 			}
-			fxshow;
 		}
 	} else {
 		error $cat( "Usage ttfx " $argv( 0 ) " song.tmf" );

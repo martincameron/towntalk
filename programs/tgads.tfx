@@ -794,7 +794,7 @@ function tg_scan( event ) {
 			if =( [ tg_type n ] 4 ) {
 				let t = [ tg_a n ];
 				let c = $keyboard;
-				if =( c 8 ) {
+				if =( c FX_KEY_BACKSPACE ) {
 					if >( $len( t ) 0 ) {
 						if &( $keyshift 3 ) {
 							let t = "";
@@ -804,7 +804,7 @@ function tg_scan( event ) {
 						set [ tg_a n ] = t;
 					}
 				} else {
-					if =( c 13 ) {
+					if =( c FX_KEY_RETURN ) {
 						let tg_focus = 0;
 						call tg_draw( n );
 						let n = [ tg_action n ];
@@ -1084,8 +1084,10 @@ function req_dispose() {
 program tgads {
 	var selected, file;
 	let palette = $array( ${ 0x000000, 0xFFFFFF, 0xA0A0A0, 0x6080B0 } );
-	call tg_charset( $load( $str( $chop( $src, "/:\\" ) "topaz8.txt" ) ) );
+	
 	fxopen 640, 480, "tgads";
+	
+	call tg_charset( $load( $str( $chop( $src, "/:\\" ) "topaz8.txt" ) ) );
 	call tg_init( 16, 640, 480 );
 	
 	call tg_window( 1, 16, 16, 320, 160, "Gadget Test" );

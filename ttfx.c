@@ -837,16 +837,27 @@ static int handle_event_expression( struct expression *this, SDL_Event *event,
 	if( event->type == SDL_QUIT ) {
 		ret = throw( exception, this, 0, NULL );
 	} else {
-		if( event->type == SDL_KEYDOWN || event->type == SDL_KEYUP ) {
-			fxenv->key = event->key.keysym.sym;
-		} else if( event->type == SDL_USEREVENT + 2 ) {
-			fxenv->midi_msg = event->user.code;
+		switch( event->type ) {
+			case SDL_KEYDOWN: case SDL_KEYUP:
+				fxenv->key = event->key.keysym.sym;
+				break;
+			case SDL_USEREVENT + 2:
+				fxenv->midi_msg = event->user.code;
+				break;
 		}
 		dispose_variable( result );
 		result->integer_value = event->type;
 		result->string_value = NULL;
 	}
 	return ret;
+}
+
+static int evaluate_window_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	dispose_variable( result );
+	result->integer_value = SDL_VIDEOEXPOSE;
+	result->string_value = NULL;
+	return 1;
 }
 
 static int evaluate_midimsg_expression( struct expression *this, struct variable *variables,
@@ -916,6 +927,14 @@ static int evaluate_keyshift_expression( struct expression *this, struct variabl
 	struct variable *result, struct variable *exception ) {
 	dispose_variable( result );
 	result->integer_value = SDL_GetModState();
+	result->string_value = NULL;
+	return 1;
+}
+
+static int evaluate_keyheld_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	dispose_variable( result );
+	result->integer_value = 0;
 	result->string_value = NULL;
 	return 1;
 }
@@ -1097,9 +1116,37 @@ static struct constant fxconstants[] = {
 	{ "FX_MOUSEMOTION", SDL_MOUSEMOTION, NULL },
 	{ "FX_MOUSEKEYDOWN", SDL_MOUSEBUTTONDOWN, NULL },
 	{ "FX_MOUSEKEYUP", SDL_MOUSEBUTTONUP, NULL },
+	{ "FX_WINDOW", SDL_VIDEOEXPOSE, NULL },
+	{ "FX_WINDOW_EXPOSED", SDL_VIDEOEXPOSE, NULL },
 	{ "FX_TIMER", SDL_USEREVENT, NULL },
 	{ "FX_SEQUENCER", SDL_USEREVENT + 1, NULL },
 	{ "FX_MIDI", SDL_USEREVENT + 2, NULL },
+	{ "FX_KEY_BACKSPACE", SDLK_BACKSPACE, NULL },
+	{ "FX_KEY_TAB", SDLK_TAB, NULL },
+	{ "FX_KEY_RETURN", SDLK_RETURN, NULL },
+	{ "FX_KEY_ESCAPE", SDLK_ESCAPE, NULL },
+	{ "FX_KEY_SPACE", SDLK_SPACE, NULL },
+	{ "FX_KEY_0", SDLK_0, NULL },
+	{ "FX_KEY_A", SDLK_a, NULL },
+	{ "FX_KEY_PAD_0", SDLK_KP0, NULL },
+	{ "FX_KEY_PAD_1", SDLK_KP1, NULL },
+	{ "FX_KEY_PAD_PERIOD", SDLK_KP_PERIOD, NULL },
+	{ "FX_KEY_PAD_DIVIDE", SDLK_KP_DIVIDE, NULL },
+	{ "FX_KEY_PAD_MULTIPLY", SDLK_KP_MULTIPLY, NULL },
+	{ "FX_KEY_PAD_MINUS", SDLK_KP_MINUS, NULL },
+	{ "FX_KEY_PAD_PLUS", SDLK_KP_PLUS, NULL },
+	{ "FX_KEY_PAD_ENTER", SDLK_KP_ENTER, NULL },
+	{ "FX_KEY_PAD_EQUALS", SDLK_KP_EQUALS, NULL },
+	{ "FX_KEY_UP", SDLK_UP, NULL },
+	{ "FX_KEY_DOWN", SDLK_DOWN, NULL },
+	{ "FX_KEY_LEFT", SDLK_LEFT, NULL },
+	{ "FX_KEY_RIGHT", SDLK_RIGHT, NULL },
+	{ "FX_KEY_INSERT", SDLK_INSERT, NULL },
+	{ "FX_KEY_DELETE", SDLK_DELETE, NULL },
+	{ "FX_KEY_HOME", SDLK_HOME, NULL },
+	{ "FX_KEY_END", SDLK_END, NULL },
+	{ "FX_KEY_PAGE_UP", SDLK_PAGEUP, NULL },
+	{ "FX_KEY_PAGE_DOWN", SDLK_PAGEDOWN, NULL },
 	{ "FX_KEY_F1", SDLK_F1, NULL },
 	{ NULL }
 };
@@ -1117,7 +1164,9 @@ static struct operator fxoperators[] = {
 	{ "$fxseq",'$', 1, evaluate_fxseq_expression, &fxoperators[ 10 ] },
 	{ "$fxdir",'$', 1, evaluate_fxdir_expression, &fxoperators[ 11 ] },
 	{ "$fxpath",'$', 1, evaluate_fxpath_expression, &fxoperators[ 12 ] },
-	{ "$midimsg",'$', 0, evaluate_midimsg_expression, operators }
+	{ "$midimsg",'$', 0, evaluate_midimsg_expression, &fxoperators[ 13 ] },
+	{ "$window",'$', 0, evaluate_window_expression, &fxoperators[ 14 ] },
+	{ "$keyheld",'$', 0, evaluate_keyheld_expression, operators }
 };
 
 static struct keyword fxstatements[] = {
