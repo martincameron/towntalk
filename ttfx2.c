@@ -9,6 +9,10 @@
 #include "alsa/asoundlib.h"
 #endif
 
+#if defined( __MINGW32__ )
+#define realpath( path, resolved_path ) _fullpath( NULL, ( path ), 0 )
+#endif
+
 #define NUM_SURFACES 16
 #define NUM_CHANNELS 32
 #define NUM_SAMPLES 64
