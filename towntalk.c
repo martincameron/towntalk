@@ -147,6 +147,10 @@
 static const int MAX_INTEGER = ( 1 << ( sizeof( int ) * 8 - 1 ) ) - 1u;
 static const char *OUT_OF_MEMORY = "Out of memory.";
 
+enum result {
+	EXCEPTION, OKAY, RETURN, BREAK, CONTINUE
+};
+
 /* Reference-counted string. */
 struct string {
 	size_t reference_count;
@@ -197,7 +201,7 @@ struct expression {
 	struct global_variable *global;
 	struct function_declaration *function;
 	struct expression *parameters, *next;
-	int ( *evaluate )( struct expression *this, struct variable *variables,
+	enum result ( *evaluate )( struct expression *this, struct variable *variables,
 		struct variable *result, struct variable *exception );
 };
 
@@ -207,7 +211,7 @@ struct statement {
 	struct variable *global;
 	struct expression *source, *destination, *index;
 	struct statement *if_block, *else_block, *next;
-	int ( *execute )( struct statement *this, struct variable *variables,
+	enum result ( *execute )( struct statement *this, struct variable *variables,
 		struct variable *result, struct variable *exception );
 };
 
@@ -236,7 +240,7 @@ struct keyword {
 struct operator {
 	char *name, oper;
 	int num_operands;
-	int ( *evaluate )( struct expression *this, struct variable *variables,
+	enum result ( *evaluate )( struct expression *this, struct variable *variables,
 		struct variable *result, struct variable *exception );
 	struct operator *next;
 };
@@ -826,7 +830,7 @@ static int get_string_list_index( struct string_list *list, char *value ) {
 	return idx;
 }
 
-static int throw( struct variable *exception, struct expression *source, int integer, const char *string ) {
+static enum result throw( struct variable *exception, struct expression *source, int integer, const char *string ) {
 	struct string *str;
 	if( string ) {
 		str = new_string_value( strlen( string ) + 64 );
@@ -847,7 +851,7 @@ static int throw( struct variable *exception, struct expression *source, int int
 	dispose_variable( exception );
 	exception->integer_value = integer;
 	exception->string_value = str;
-	return 0;
+	return EXCEPTION;
 }
 
 static int write_byte_string( char *bytes, int count, char *output ) {
@@ -1193,19 +1197,19 @@ static int add_constants( struct constant *constants, struct environment *env, c
 	return message[ 0 ] == 0;
 }
 
-static int execute_global_assignment( struct statement *this, struct variable *variables,
+static enum result execute_global_assignment( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct variable *destination = this->global;
 	return this->source->evaluate( this->source, variables, destination, exception );
 }
 
-static int execute_local_assignment( struct statement *this, struct variable *variables,
+static enum result execute_local_assignment( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct variable *destination = &variables[ this->local ];
 	return this->source->evaluate( this->source, variables, destination, exception );
 }
 
-static int execute_print_statement( struct statement *this, struct variable *variables,
+static enum result execute_print_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct variable value = { 0, NULL };
 	if( this->source->evaluate( this->source, variables, &value, exception ) ) {
@@ -1215,12 +1219,12 @@ static int execute_print_statement( struct statement *this, struct variable *var
 			printf( "%d\n", value.integer_value );
 		}
 		dispose_variable( &value );
-		return 1;
+		return OKAY;
 	}
-	return 0;
+	return EXCEPTION;
 }
 
-static int execute_error_statement( struct statement *this, struct variable *variables,
+static enum result execute_error_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct variable value = { 0, NULL };
 	if( this->source->evaluate( this->source, variables, &value, exception ) ) {
@@ -1231,12 +1235,12 @@ static int execute_error_statement( struct statement *this, struct variable *var
 			fprintf( stderr, "%d\n", value.integer_value );
 		}
 		dispose_variable( &value );
-		return 1;
+		return OKAY;
 	}
-	return 0;
+	return EXCEPTION;
 }
 
-static int execute_write_statement( struct statement *this, struct variable *variables,
+static enum result execute_write_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct variable value = { 0, NULL };
 	if( this->source->evaluate( this->source, variables, &value, exception ) ) {
@@ -1246,67 +1250,67 @@ static int execute_write_statement( struct statement *this, struct variable *var
 			printf( "%d", value.integer_value );
 		}
 		dispose_variable( &value );
-		return 1;
+		return OKAY;
 	}
-	return 0;
+	return EXCEPTION;
 }
 
-static int execute_throw_statement( struct statement *this, struct variable *variables,
+static enum result execute_throw_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	this->source->evaluate( this->source, variables, exception, exception );
-	return 0;
+	return EXCEPTION;
 }
 
-static int execute_exit_statement( struct statement *this, struct variable *variables,
+static enum result execute_exit_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct variable exit_code = { 0, NULL };
-	int ret = this->source->evaluate( this->source, variables, &exit_code, exception );
+	enum result ret = this->source->evaluate( this->source, variables, &exit_code, exception );
 	if( ret ) {
 		ret = throw( exception, this->source, exit_code.integer_value, NULL );
 	}
 	return ret;
 }
 
-static int execute_return_statement( struct statement *this, struct variable *variables,
+static enum result execute_return_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	if( this->source->evaluate( this->source, variables, result, exception ) ) {
-		return 2;
+		return RETURN;
 	}
-	return 0;
+	return EXCEPTION;
 }
 
-static int execute_break_statement( struct statement *this, struct variable *variables,
+static enum result execute_break_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	return 3;
+	return BREAK;
 }
 
-static int execute_continue_statement( struct statement *this, struct variable *variables,
+static enum result execute_continue_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	return 4;
+	return CONTINUE;
 }
 
-static int execute_try_statement( struct statement *this, struct variable *variables,
+static enum result execute_try_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	int ret = 1;
+	enum result ret = OKAY;
 	struct variable *exc = &variables[ this->local ];
 	struct statement *stmt = this->if_block;
 	while( stmt ) {
 		ret = stmt->execute( stmt, variables, result, exc );
-		if( ret == 1 ) {
+		if( ret == OKAY ) {
 			stmt = stmt->next;
 		} else {
 			break;
 		}
 	}
-	if( ret == 0 ) {
+	if( ret == EXCEPTION ) {
 		if( exc->string_value && exc->string_value->string == NULL ) {
 			assign_variable( exc, exception );
 		} else {
-			ret = 1;
+			ret = OKAY;
 			stmt = this->else_block;
 			while( stmt ) {
 				ret = stmt->execute( stmt, variables, result, exception );
-				if( ret == 1 ) {
+				if( ret == OKAY ) {
 					stmt = stmt->next;
 				} else {
 					break;
@@ -1317,11 +1321,11 @@ static int execute_try_statement( struct statement *this, struct variable *varia
 	return ret;
 }
 
-static int execute_if_statement( struct statement *this, struct variable *variables,
+static enum result execute_if_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct variable condition = { 0, NULL };
 	struct statement *stmt = this->else_block;
-	int ret = this->source->evaluate( this->source, variables, &condition, exception );
+	enum result ret = this->source->evaluate( this->source, variables, &condition, exception );
 	if( ret ) {
 		if( condition.integer_value || condition.string_value ) {
 			stmt = this->if_block;
@@ -1329,7 +1333,7 @@ static int execute_if_statement( struct statement *this, struct variable *variab
 		dispose_variable( &condition );
 		while( stmt ) {
 			ret = stmt->execute( stmt, variables, result, exception );
-			if( ret == 1 ) {
+			if( ret == OKAY ) {
 				stmt = stmt->next;
 			} else {
 				break;
@@ -1339,51 +1343,51 @@ static int execute_if_statement( struct statement *this, struct variable *variab
 	return ret;
 }
 
-static int execute_while_statement( struct statement *this, struct variable *variables,
+static enum result execute_while_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct variable condition = { 0, NULL };
 	struct statement *stmt;
-	int ret;
+	enum result ret;
 	while( this->source->evaluate( this->source, variables, &condition, exception ) ) {
 		if( condition.integer_value || condition.string_value ) {
 			dispose_variable( &condition );
 			stmt = this->if_block;
 			while( stmt ) {
 				ret = stmt->execute( stmt, variables, result, exception );
-				if( ret == 1 ) {
+				if( ret == OKAY ) {
 					stmt = stmt->next;
-				} else if( ret == 2 ) {
-					return 2;
-				} else if( ret == 3 ) {
-					return 1;
-				} else if( ret == 4 ) {
+				} else if( ret == RETURN ) {
+					return RETURN;
+				} else if( ret == BREAK ) {
+					return OKAY;
+				} else if( ret == CONTINUE ) {
 					break;
-				} else if( ret == 0 ) {
-					return 0;
+				} else if( ret == EXCEPTION ) {
+					return EXCEPTION;
 				}
 			}
 		} else {
 			dispose_variable( &condition );
-			return 1;
+			return OKAY;
 		}
 	}
-	return 0;
+	return EXCEPTION;
 }
 
-static int execute_call_statement( struct statement *this, struct variable *variables,
+static enum result execute_call_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct variable var = { 0, NULL };
-	int ret = this->source->evaluate( this->source, variables, &var, exception );
+	enum result ret = this->source->evaluate( this->source, variables, &var, exception );
 	if( ret ) {
 		dispose_variable( &var );
 	}
 	return ret;
 }
 
-static int execute_dim_statement( struct statement *this, struct variable *variables,
+static enum result execute_dim_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct variable var = { 0, NULL }, len = { 0, NULL };
-	int ret = this->destination->evaluate( this->destination, variables, &var, exception );
+	enum result ret = this->destination->evaluate( this->destination, variables, &var, exception );
 	if( ret ) {
 		ret = this->source->evaluate( this->source, variables, &len, exception );
 		if( ret ) {
@@ -1405,11 +1409,11 @@ static int execute_dim_statement( struct statement *this, struct variable *varia
 	return ret;
 }
 
-static int execute_set_statement( struct statement *this, struct variable *variables,
+static enum result execute_set_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct array *arr;
 	struct variable var = { 0, NULL }, idx = { 0, NULL };
-	int ret = this->destination->evaluate( this->destination, variables, &var, exception );
+	enum result ret = this->destination->evaluate( this->destination, variables, &var, exception );
 	if( ret ) {
 		ret = this->index->evaluate( this->index, variables, &idx, exception );
 		if( ret ) {
@@ -1447,12 +1451,12 @@ static int parse_constant_list( struct element *elem, struct global_variable *pr
 	return count;
 }
 
-static int execute_switch_statement( struct statement *this, struct variable *variables,
+static enum result execute_switch_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	int ret, matched = 0;
+	int matched = 0;
 	struct statement *stmt = this->if_block;
 	struct variable switch_value = { 0, NULL }, case_value = { 0, NULL };
-	ret = this->source->evaluate( this->source, variables, &switch_value, exception );
+	enum result ret = this->source->evaluate( this->source, variables, &switch_value, exception );
 	if( ret ) {
 		while( stmt && ret && !matched ) {
 			ret = stmt->source->evaluate( stmt->source, variables, &case_value, exception );
@@ -1473,13 +1477,13 @@ static int execute_switch_statement( struct statement *this, struct variable *va
 	return ret;
 }
 
-static int execute_case_statement( struct statement *this, struct variable *variables,
+static enum result execute_case_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct statement *stmt = this->if_block;
-	int ret = 1;
+	enum result ret = OKAY;
 	while( stmt ) {
 		ret = stmt->execute( stmt, variables, result, exception );
-		if( ret == 1 ) {
+		if( ret == OKAY ) {
 			stmt = stmt->next;
 		} else {
 			break;
@@ -1488,7 +1492,7 @@ static int execute_case_statement( struct statement *this, struct variable *vari
 	return ret;
 }
 
-static int execute_increment_statement( struct statement *this, struct variable *variables,
+static enum result execute_increment_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct variable *local = &variables[ this->local ];
 	if( local->string_value ) {
@@ -1496,16 +1500,16 @@ static int execute_increment_statement( struct statement *this, struct variable 
 	} else {
 		local->integer_value++;
 	}
-	return 1;
+	return OKAY;
 }
 
-static int execute_save_statement( struct statement *this, struct variable *variables,
+static enum result execute_save_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	int ret, count;
+	int count;
 	char message[ 64 ];
 	struct string *sval, *fval;
 	struct variable str = { 0, NULL }, file = { 0, NULL };
-	ret = this->source->evaluate( this->source, variables, &str, exception );
+	enum result ret = this->source->evaluate( this->source, variables, &str, exception );
 	if( ret ) {
 		ret = this->destination->evaluate( this->destination, variables, &file, exception );
 		if( ret ) {
@@ -1526,21 +1530,22 @@ static int execute_save_statement( struct statement *this, struct variable *vari
 	return ret;
 }
 
-static int evaluate_local( struct expression *this, struct variable *variables,
+static enum result evaluate_local( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	assign_variable( &variables[ this->index ], result );
-	return 1;
+	return OKAY;
 }
 
-static int evaluate_global( struct expression *this, struct variable *variables,
+static enum result evaluate_global( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	assign_variable( &this->global->value, result );
-	return 1;
+	return OKAY;
 }
 
-static int evaluate_function_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_function_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	int idx, count, ret = 1;
+	int idx, count;
+	enum result ret = OKAY;
 	struct statement *stmt;
 	struct variable func = { 0, NULL }, *locals;
 	struct expression *parameter = this->parameters;
@@ -1585,14 +1590,14 @@ static int evaluate_function_expression( struct expression *this, struct variabl
 			stmt = function->statements;
 			while( stmt ) {
 				ret = stmt->execute( stmt, locals, result, exception );
-				if( ret == 0 ) {
-					break;
-				} else if( ret == 1 ) {
+				if( ret == OKAY ) {
 					stmt = stmt->next;
-				} else if( ret == 2 ) {
-					ret = 1;
+				} else if( ret == EXCEPTION ) {
 					break;
-				} else if( ret > 2 ) {
+				} else if( ret == RETURN ) {
+					ret = OKAY;
+					break;
+				} else {
 					ret = throw( exception, this, ret, "Unhandled 'break' or 'continue'." );
 					break;
 				}
@@ -1611,13 +1616,12 @@ static int evaluate_function_expression( struct expression *this, struct variabl
 	return ret;
 }
 
-static int evaluate_index_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_index_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	int ret;
 	struct array *arr;
 	struct expression *parameter = this->parameters;
 	struct variable var = { 0, NULL }, idx = { 0, NULL };
-	ret = parameter->evaluate( parameter, variables, &var, exception );
+	enum result ret = parameter->evaluate( parameter, variables, &var, exception );
 	if( ret ) {
 		parameter = parameter->next;
 		ret = parameter->evaluate( parameter, variables, &idx, exception );
@@ -1639,12 +1643,12 @@ static int evaluate_index_expression( struct expression *this, struct variable *
 	return ret;
 }
 
-static int evaluate_integer_constant_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_integer_constant_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	dispose_variable( result );
 	result->string_value = NULL;
 	result->integer_value = this->index;
-	return 1;
+	return OKAY;
 }
 
 static struct structure* get_structure( struct structure *structures, char *name ) {
@@ -1786,10 +1790,10 @@ static struct element* parse_local_declaration( struct element *elem, struct env
 	return parse_variable_declaration( elem, env, add_local_variable, message);
 }
 
-static int evaluate_logical_not_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_logical_not_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct variable var = { 0, NULL };
-	int ret = this->parameters->evaluate( this->parameters, variables, &var, exception );
+	enum result ret = this->parameters->evaluate( this->parameters, variables, &var, exception );
 	if( ret ) {
 		dispose_variable( result );
 		result->integer_value = ~var.integer_value;
@@ -1799,11 +1803,12 @@ static int evaluate_logical_not_expression( struct expression *this, struct vari
 	return ret;
 }
 
-static int evaluate_logical_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_logical_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
+	int value;
 	struct variable var = { 0, NULL };
 	struct expression *parameter = this->parameters;
-	int value, ret = parameter->evaluate( parameter, variables, &var, exception );
+	enum result ret = parameter->evaluate( parameter, variables, &var, exception );
 	if( ret ) {
 		parameter = parameter->next;
 		value = var.integer_value || var.string_value;
@@ -1845,11 +1850,12 @@ static int evaluate_logical_expression( struct expression *this, struct variable
 	return ret;
 }
 
-static int evaluate_arithmetic_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_arithmetic_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct variable var = { 0, NULL };
 	struct expression *parameter = this->parameters;
-	int lhs, rhs, value, ret = 1;
+	enum result ret = OKAY;
+	int lhs, rhs, value;
 	if( parameter->evaluate == evaluate_integer_constant_expression ) {
 		lhs = parameter->index;
 	} else if( parameter->evaluate == evaluate_local ) {
@@ -1919,12 +1925,12 @@ static int evaluate_arithmetic_expression( struct expression *this, struct varia
 	return ret;
 }
 
-static int evaluate_int_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_int_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	int ret, val;
+	int val;
 	char *end;
 	struct variable str = { 0, NULL };
-	ret = this->parameters->evaluate( this->parameters, variables, &str, exception );
+	enum result ret = this->parameters->evaluate( this->parameters, variables, &str, exception );
 	if( ret ) {
 		if( str.string_value && str.string_value->string ) {
 			val = ( int ) strtol( str.string_value->string, &end, 0 );
@@ -1943,10 +1949,11 @@ static int evaluate_int_expression( struct expression *this, struct variable *va
 	return ret;
 }
 
-static int evaluate_str_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_str_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	int ret = 1, str_len = 0, len;
+	int str_len = 0, len;
 	char num[ 24 ], *val;
+	enum result ret = OKAY;
 	struct expression *parameter = this->parameters;
 	struct variable var = { 0, NULL };
 	struct string *str = NULL, *new;
@@ -1991,12 +1998,11 @@ static int evaluate_str_expression( struct expression *this, struct variable *va
 	return ret;
 }
 
-static int evaluate_asc_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_asc_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	int ret;
 	struct string *str;
 	struct variable val = { 0, NULL };
-	ret = this->parameters->evaluate( this->parameters, variables, &val, exception );
+	enum result ret = this->parameters->evaluate( this->parameters, variables, &val, exception );
 	if( ret ) {
 		str = new_string_value( 1 );
 		if( str ) {
@@ -2012,11 +2018,10 @@ static int evaluate_asc_expression( struct expression *this, struct variable *va
 	return ret;
 }
 
-static int evaluate_len_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_len_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	int ret;
 	struct variable len = { 0, NULL };
-	ret = this->parameters->evaluate( this->parameters, variables, &len, exception );
+	enum result ret = this->parameters->evaluate( this->parameters, variables, &len, exception );
 	if( ret ) {
 		if( len.string_value ) {
 			dispose_variable( result );
@@ -2034,12 +2039,11 @@ static int evaluate_len_expression( struct expression *this, struct variable *va
 	return ret;
 }
 
-static int evaluate_tup_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_tup_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	int ret;
 	struct expression *parameter = this->parameters;
 	struct variable str = { 0, NULL }, val = { 0, NULL };
-	ret = parameter->evaluate( parameter, variables, &str, exception );
+	enum result ret = parameter->evaluate( parameter, variables, &str, exception );
 	if( ret ) {
 		parameter = parameter->next;
 		ret = parameter->evaluate( parameter, variables, &val, exception );
@@ -2053,13 +2057,13 @@ static int evaluate_tup_expression( struct expression *this, struct variable *va
 	return ret;
 }
 
-static int evaluate_load_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_load_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	long len;
 	char message[ 64 ];
 	struct string *str;
 	struct variable file = { 0, NULL };
-	int ret = this->parameters->evaluate( this->parameters, variables, &file, exception );
+	enum result ret = this->parameters->evaluate( this->parameters, variables, &file, exception );
 	if( ret ) {
 		if( file.string_value && file.string_value->string ) {
 			len = load_file( file.string_value->string, NULL, message );
@@ -2093,12 +2097,12 @@ static int evaluate_load_expression( struct expression *this, struct variable *v
 	return ret;
 }
 
-static int evaluate_flen_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_flen_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	long len;
 	char message[ 64 ];
 	struct variable file = { 0, NULL };
-	int ret = this->parameters->evaluate( this->parameters, variables, &file, exception );
+	enum result ret = this->parameters->evaluate( this->parameters, variables, &file, exception );
 	if( ret ) {
 		if( file.string_value && file.string_value->string ) {
 			len = load_file( file.string_value->string, NULL, message );
@@ -2121,11 +2125,11 @@ static int evaluate_flen_expression( struct expression *this, struct variable *v
 	return ret;
 }
 
-static int evaluate_cmp_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_cmp_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct expression *parameter = this->parameters;
 	struct variable var1 = { 0, NULL }, var2 = { 0, NULL };
-	int ret = parameter->evaluate( parameter, variables, &var1, exception );
+	enum result ret = parameter->evaluate( parameter, variables, &var1, exception );
 	if( ret ) {
 		parameter = parameter->next;
 		ret = parameter->evaluate( parameter, variables, &var2, exception );
@@ -2139,12 +2143,11 @@ static int evaluate_cmp_expression( struct expression *this, struct variable *va
 	return ret;
 }
 
-static int evaluate_chr_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_chr_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	int ret;
 	struct expression *parameter = this->parameters;
 	struct variable str = { 0, NULL }, idx = { 0, NULL };
-	ret = parameter->evaluate( parameter, variables, &str, exception );
+	enum result ret = parameter->evaluate( parameter, variables, &str, exception );
 	if( ret ) {
 		parameter = parameter->next;
 		ret = parameter->evaluate( parameter, variables, &idx, exception );
@@ -2167,14 +2170,14 @@ static int evaluate_chr_expression( struct expression *this, struct variable *va
 	return ret;
 }
 
-static int evaluate_sub_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_sub_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	char *data;
-	int ret, offset, length;
+	int offset, length;
 	struct string *str;
 	struct expression *parameter = this->parameters;
 	struct variable var = { 0, NULL }, idx = { 0, NULL }, len = { 0, NULL }, *arr;
-	ret = parameter->evaluate( parameter, variables, &var, exception );
+	enum result ret = parameter->evaluate( parameter, variables, &var, exception );
 	if( ret ) {
 		parameter = parameter->next;
 		ret = parameter->evaluate( parameter, variables, &idx, exception );
@@ -2226,13 +2229,14 @@ static int evaluate_sub_expression( struct expression *this, struct variable *va
 	return ret;
 }
 
-static int evaluate_astr_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_astr_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	struct string *str;
+	int len;
 	struct array *arr;
+	struct string *str;
 	struct expression *parameter = this->parameters;
 	struct variable input = { 0, NULL };
-	int len, ret = parameter->evaluate( parameter, variables, &input, exception );
+	enum result ret = parameter->evaluate( parameter, variables, &input, exception );
 	if( ret ) {
 		if( input.string_value && input.string_value->line == -1 ) {
 			arr = ( struct array * ) input.string_value;
@@ -2258,18 +2262,18 @@ static int evaluate_astr_expression( struct expression *this, struct variable *v
 	return ret;
 }
 
-static int evaluate_argc_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_argc_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	dispose_variable( result );
 	result->integer_value = this->function->env->argc;
 	result->string_value = NULL;
-	return 1;
+	return OKAY;
 }
 
-static int evaluate_argv_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_argv_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	int ret;
 	char *val;
+	enum result ret;
 	struct string *str;
 	struct expression *parameter = this->parameters;
 	struct variable idx = { 0, NULL };
@@ -2294,9 +2298,9 @@ static int evaluate_argv_expression( struct expression *this, struct variable *v
 	return ret;
 }
 
-static int evaluate_time_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_time_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	int ret = 1;
+	enum result ret = OKAY;
 	time_t seconds = time( NULL );
 	char *time_str = ctime( &seconds );
 	struct string *str = new_string_value( strlen( time_str ) );
@@ -2312,12 +2316,12 @@ static int evaluate_time_expression( struct expression *this, struct variable *v
 	return ret;
 }
 
-static int evaluate_next_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_next_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct expression *parameter = this->parameters;
 	struct variable prev = { 0, NULL };
 	struct element *next;
-	int ret = parameter->evaluate( parameter, variables, &prev, exception );
+	enum result ret = parameter->evaluate( parameter, variables, &prev, exception );
 	if( ret ) {
 		if( prev.string_value && prev.string_value->line > 0 ) {
 			next = ( ( struct element * ) prev.string_value )->next;
@@ -2335,12 +2339,12 @@ static int evaluate_next_expression( struct expression *this, struct variable *v
 	return ret;
 }
 
-static int evaluate_child_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_child_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct expression *parameter = this->parameters;
 	struct variable parent = { 0, NULL };
 	struct element *child;
-	int ret = parameter->evaluate( parameter, variables, &parent, exception );
+	enum result ret = parameter->evaluate( parameter, variables, &parent, exception );
 	if( ret ) {
 		if( parent.string_value && parent.string_value->line > 0 ) {
 			child = ( ( struct element * ) parent.string_value )->child;
@@ -2358,13 +2362,13 @@ static int evaluate_child_expression( struct expression *this, struct variable *
 	return ret;
 }
 
-static int evaluate_parse_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_parse_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct expression *parameter = this->parameters;
 	struct variable string = { 0, NULL };
 	struct element *elem;
 	char message[ 128 ] = "";
-	int ret = parameter->evaluate( parameter, variables, &string, exception );
+	enum result ret = parameter->evaluate( parameter, variables, &string, exception );
 	if( ret ) {
 		if( string.string_value ) {
 			elem = parse_element( string.string_value->string, message );
@@ -2383,13 +2387,13 @@ static int evaluate_parse_expression( struct expression *this, struct variable *
 	return ret;
 }
 
-static int evaluate_quote_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_quote_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	int ret, length;
+	int length;
 	struct expression *parameter = this->parameters;
 	struct variable var = { 0, NULL };
 	struct string *str;
-	ret = parameter->evaluate( parameter, variables, &var, exception );
+	enum result ret = parameter->evaluate( parameter, variables, &var, exception );
 	if( ret ) {
 		if( var.string_value ) {
 			length = write_byte_string( var.string_value->string,
@@ -2416,12 +2420,12 @@ static int evaluate_quote_expression( struct expression *this, struct variable *
 	return ret;
 }
 
-static int evaluate_unquote_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_unquote_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct expression *parameter = this->parameters;
 	struct variable var = { 0, NULL };
 	struct string *str;
-	int ret = parameter->evaluate( parameter, variables, &var, exception );
+	enum result ret = parameter->evaluate( parameter, variables, &var, exception );
 	if( ret ) {
 		if( var.string_value ) {
 			str = new_string_literal( var.string_value->string );
@@ -2440,11 +2444,11 @@ static int evaluate_unquote_expression( struct expression *this, struct variable
 	return ret;
 }
 
-static int evaluate_line_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_line_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct expression *parameter = this->parameters;
 	struct variable elem = { 0, NULL };
-	int ret = parameter->evaluate( parameter, variables, &elem, exception );
+	enum result ret = parameter->evaluate( parameter, variables, &elem, exception );
 	if( ret ) {
 		if( elem.string_value && elem.string_value->line > 0 ) {
 			dispose_variable( result );
@@ -2458,12 +2462,12 @@ static int evaluate_line_expression( struct expression *this, struct variable *v
 	return ret;
 }
 
-static int evaluate_hex_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_hex_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	int ret, len;
+	int len;
 	struct string *str;
 	struct variable val = { 0, NULL };
-	ret = this->parameters->evaluate( this->parameters, variables, &val, exception );
+	enum result ret = this->parameters->evaluate( this->parameters, variables, &val, exception );
 	if( ret ) {
 		str = new_string_value( sizeof( int ) * 2 + 4 );
 		if( str ) {
@@ -2489,13 +2493,13 @@ static int evaluate_hex_expression( struct expression *this, struct variable *va
 	return ret;
 }
 
-static int evaluate_pack_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_pack_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	int ret, idx, len, in;
+	int idx, len, in;
 	char *out;
 	struct string *str;
 	struct variable val = { 0, NULL }, *src;
-	ret = this->parameters->evaluate( this->parameters, variables, &val, exception );
+	enum result ret = this->parameters->evaluate( this->parameters, variables, &val, exception );
 	if( ret ) {
 		if( val.string_value && val.string_value->line == -1 ) {
 			src = ( ( struct array * ) val.string_value )->array;
@@ -2528,14 +2532,14 @@ static int evaluate_pack_expression( struct expression *this, struct variable *v
 	return ret;
 }
 
-static int evaluate_array_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_array_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	int idx, len;
 	char msg[ 128 ] = "";
 	struct variable var = { 0, NULL }, *values;
 	struct global_variable inputs, *input;
 	struct array *arr;
-	int ret = this->parameters->evaluate( this->parameters, variables, &var, exception );
+	enum result ret = this->parameters->evaluate( this->parameters, variables, &var, exception );
 	if( ret ) {
 		if( var.string_value && var.string_value->line > 0 ) {
 			inputs.next = NULL;
@@ -2577,19 +2581,19 @@ static int evaluate_array_expression( struct expression *this, struct variable *
 	return ret;
 }
 
-static int evaluate_func_ref_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_func_ref_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct variable src = { 0, NULL };
 	src.string_value = &this->function->ref.str;
 	assign_variable( &src, result );
-	return 1;
+	return OKAY;
 }
 
-static int evaluate_eq_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_eq_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct variable lhs = { 0, NULL }, rhs = { 0, NULL };
 	struct expression *parameter = this->parameters;
-	int ret = parameter->evaluate( parameter, variables, &lhs, exception );
+	enum result ret = parameter->evaluate( parameter, variables, &lhs, exception );
 	if( ret ) {
 		parameter = parameter->next;
 		ret = parameter->evaluate( parameter, variables, &rhs, exception );
@@ -2604,12 +2608,12 @@ static int evaluate_eq_expression( struct expression *this, struct variable *var
 	return ret;
 }
 
-static int evaluate_chop_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_chop_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct expression *parameter = this->parameters;
 	struct variable var = { 0, NULL }, sep = { 0, NULL };
 	struct string *str;
-	int ret = parameter->evaluate( parameter, variables, &var, exception );
+	enum result ret = parameter->evaluate( parameter, variables, &var, exception );
 	if( ret ) {
 		parameter = parameter->next;
 		ret = parameter->evaluate( parameter, variables, &sep, exception );
@@ -3051,7 +3055,7 @@ static struct element* parse_assignment_statement( struct element *elem, struct 
 
 static struct element* parse_expr_list_statement( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev,
-	int ( *execute )( struct statement *this, struct variable *variables,
+	enum result ( *execute )( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ), char *message ) {
 	struct expression head, *expr;
 	struct element *next = elem->next;

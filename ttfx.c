@@ -379,12 +379,11 @@ static void dispose_fxenvironment( struct fxenvironment *fxenv ) {
 	}
 }
 
-static int execute_fxopen_statement( struct statement *this, struct variable *variables,
+static enum result execute_fxopen_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	int ret;
 	struct variable width = { 0, NULL }, height = { 0, NULL }, caption = { 0, NULL };
 	struct expression *expr = this->source;
-	ret = expr->evaluate( expr, variables, &width, exception );
+	enum result ret = expr->evaluate( expr, variables, &width, exception );
 	if( ret ) {
 		expr = expr->next;
 		ret = expr->evaluate( expr, variables, &height, exception );
@@ -407,9 +406,10 @@ static int execute_fxopen_statement( struct statement *this, struct variable *va
 	return ret;
 }
 
-static int execute_fxsurface_statement( struct statement *this, struct variable *variables,
+static enum result execute_fxsurface_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	int ret, surf, width, height, len, idx = 0;
+	enum result ret;
+	int surf, width, height, len, idx = 0;
 	struct variable params[ 4 ], *values;
 	struct array *arr;
 	Uint32 *pixels;
@@ -480,9 +480,10 @@ static int execute_fxsurface_statement( struct statement *this, struct variable 
 	return ret;
 }
 
-static int execute_fxblit_statement( struct statement *this, struct variable *variables,
+static enum result execute_fxblit_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	int ret, idx = 0;
+	int idx = 0;
+	enum result ret;
 	struct SDL_Rect src, dest;
 	struct variable params[ 7 ];
 	struct expression *expr = this->source;
@@ -517,9 +518,10 @@ static int execute_fxblit_statement( struct statement *this, struct variable *va
 	return ret;
 }
 
-static int execute_fxrect_statement( struct statement *this, struct variable *variables,
+static enum result execute_fxrect_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	int ret, idx = 0;
+	int idx = 0;
+	enum result ret;
 	struct SDL_Rect rect;
 	struct variable params[ 5 ];
 	struct expression *expr = this->source;
@@ -546,16 +548,16 @@ static int execute_fxrect_statement( struct statement *this, struct variable *va
 	return ret;
 }
 
-static int execute_fxshow_statement( struct statement *this, struct variable *variables,
+static enum result execute_fxshow_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	SDL_UpdateRect( SDL_GetVideoSurface(), 0, 0, 0, 0 );
-	return 1;
+	return OKAY;
 }
 
-static int execute_fxsleep_statement( struct statement *this, struct variable *variables,
+static enum result execute_fxsleep_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct variable millis = { 0, NULL };
-	int ret = this->source->evaluate( this->source, variables, &millis, exception );
+	enum result ret = this->source->evaluate( this->source, variables, &millis, exception );
 	if( ret ) {
 		if( millis.integer_value > 0 ) {
 			SDL_Delay( millis.integer_value );
@@ -565,11 +567,11 @@ static int execute_fxsleep_statement( struct statement *this, struct variable *v
 	return ret;
 }
 
-static int execute_fxtimer_statement( struct statement *this, struct variable *variables,
+static enum result execute_fxtimer_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct variable millis = { 0, NULL };
 	struct fxenvironment *fxenv = ( struct fxenvironment * ) this->source->function->env;
-	int ret = this->source->evaluate( this->source, variables, &millis, exception );
+	enum result ret = this->source->evaluate( this->source, variables, &millis, exception );
 	if( ret ) {
 		if( millis.integer_value > 0 ) {
 			fxenv->timer = SDL_AddTimer( millis.integer_value, timer_callback, fxenv );
@@ -586,12 +588,12 @@ static int execute_fxtimer_statement( struct statement *this, struct variable *v
 	return ret;
 }
 
-static int execute_fxaudio_statement( struct statement *this, struct variable *variables,
+static enum result execute_fxaudio_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct variable ticklen = { 0, NULL };
 	struct fxenvironment *fxenv = ( struct fxenvironment * ) this->source->function->env;
 	SDL_AudioSpec audiospec = { 0 };
-	int ret = this->source->evaluate( this->source, variables, &ticklen, exception );
+	enum result ret = this->source->evaluate( this->source, variables, &ticklen, exception );
 	if( ret ) {
 		/* fxaudio ticklen; */
 		if( ticklen.integer_value > 0 ) {
@@ -624,10 +626,11 @@ static int execute_fxaudio_statement( struct statement *this, struct variable *v
 	return ret;
 }
 
-static int execute_fxsample_statement( struct statement *this, struct variable *variables,
+static enum result execute_fxsample_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	/* fxsample index data$ loopstart looplen; */
-	int ret, loop, llen, lend, idx = 0;
+	enum result ret;
+	int loop, llen, lend, idx = 0;
 	struct string *data;
 	struct variable params[ 4 ];
 	struct expression *expr = this->source;
@@ -674,7 +677,7 @@ static int execute_fxsample_statement( struct statement *this, struct variable *
 	return ret;
 }
 
-static int execute_fxplay_statement( struct statement *this, struct variable *variables,
+static enum result execute_fxplay_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	/*
 		Play sequence: fxplay channel sequence$;
@@ -697,7 +700,7 @@ static int execute_fxplay_statement( struct statement *this, struct variable *va
 	struct expression *expr = this->source;
 	struct variable channel = { 0, NULL }, sequence = { 0, NULL };
 	struct fxenvironment *fxenv = ( struct fxenvironment * ) this->source->function->env;
-	int ret = expr->evaluate( expr, variables, &channel, exception );
+	enum result ret = expr->evaluate( expr, variables, &channel, exception );
 	if( ret ) {
 		expr = expr->next;
 		ret = expr->evaluate( expr, variables, &sequence, exception );
@@ -729,14 +732,14 @@ static int execute_fxplay_statement( struct statement *this, struct variable *va
 	return ret;
 }
 
-static int execute_fxmidi_statement( struct statement *this, struct variable *variables,
+static enum result execute_fxmidi_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	#if defined( ALSA_MIDI )
 	int err = 0;
 	struct fxenvironment *fxenv = ( struct fxenvironment * ) this->source->function->env;
 	#endif
 	struct variable device = { 0, NULL };
-	int ret = this->source->evaluate( this->source, variables, &device, exception );
+	enum result ret = this->source->evaluate( this->source, variables, &device, exception );
 	if( ret ) {
 		#if defined( ALSA_MIDI )
 		SDL_LockAudio();
@@ -830,10 +833,10 @@ static struct element* parse_fxmidi_statement( struct element *elem, struct envi
 	return parse_expr_list_statement( elem, env, func, prev, execute_fxmidi_statement, message );
 }
 
-static int handle_event_expression( struct expression *this, SDL_Event *event,
+static enum result handle_event_expression( struct expression *this, SDL_Event *event,
 	struct variable *result, struct variable *exception ) {
 	struct fxenvironment *fxenv = ( struct fxenvironment * ) this->function->env;
-	int ret = 1;
+	enum result ret = OKAY;
 	if( event->type == SDL_QUIT ) {
 		ret = throw( exception, this, 0, NULL );
 	} else {
@@ -852,23 +855,23 @@ static int handle_event_expression( struct expression *this, SDL_Event *event,
 	return ret;
 }
 
-static int evaluate_window_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_window_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	dispose_variable( result );
 	result->integer_value = SDL_VIDEOEXPOSE;
 	result->string_value = NULL;
-	return 1;
+	return OKAY;
 }
 
-static int evaluate_midimsg_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_midimsg_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	dispose_variable( result );
 	result->integer_value = ( ( struct fxenvironment * ) this->function->env )->midi_msg;
 	result->string_value = NULL;
-	return 1;
+	return OKAY;
 }
 
-static int evaluate_fxpoll_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_fxpoll_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	SDL_Event event;
 	event.type = SDL_NOEVENT;
@@ -876,85 +879,85 @@ static int evaluate_fxpoll_expression( struct expression *this, struct variable 
 	return handle_event_expression( this, &event, result, exception );
 }
 
-static int evaluate_fxwait_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_fxwait_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	SDL_Event event;
 	SDL_WaitEvent( &event );
 	return handle_event_expression( this, &event, result, exception );
 }
 
-static int evaluate_millis_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_millis_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	dispose_variable( result );
 	result->integer_value = SDL_GetTicks();
 	result->string_value = NULL;
-	return 1;
+	return OKAY;
 }
 
-static int evaluate_xmouse_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_xmouse_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	dispose_variable( result );
 	SDL_GetMouseState( &result->integer_value, NULL );
 	result->string_value = NULL;
-	return 1;
+	return OKAY;
 }
 
-static int evaluate_ymouse_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_ymouse_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	dispose_variable( result );
 	SDL_GetMouseState( NULL, &result->integer_value );
 	result->string_value = NULL;
-	return 1;
+	return OKAY;
 }
 
-static int evaluate_mousekey_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_mousekey_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	dispose_variable( result );
 	result->integer_value = SDL_GetMouseState( NULL, NULL );
 	result->string_value = NULL;
-	return 1;
+	return OKAY;
 }
 
-static int evaluate_keyboard_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_keyboard_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	dispose_variable( result );
 	result->integer_value = ( ( struct fxenvironment * ) this->function->env )->key;
 	result->string_value = NULL;
-	return 1;
+	return OKAY;
 }
 
-static int evaluate_keyshift_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_keyshift_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	dispose_variable( result );
 	result->integer_value = SDL_GetModState();
 	result->string_value = NULL;
-	return 1;
+	return OKAY;
 }
 
-static int evaluate_keyheld_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_keyheld_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	dispose_variable( result );
 	result->integer_value = 0;
 	result->string_value = NULL;
-	return 1;
+	return OKAY;
 }
 
 /* Returns a value incremented every sequencer tick while the audio device is running. */
-static int evaluate_fxtick_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_fxtick_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	dispose_variable( result );
 	result->integer_value = ( ( struct fxenvironment * ) this->function->env )->tick;
 	result->string_value = NULL;
-	return 1;
+	return OKAY;
 }
 
 /* Returns the number of sequences playing and/or queued on the specified channel. */
-static int evaluate_fxseq_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_fxseq_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct fxenvironment *env = ( struct fxenvironment * ) this->function->env;
 	struct expression *parameter = this->parameters;
 	struct variable chan = { 0, NULL };
-	int ret = parameter->evaluate( parameter, variables, &chan, exception );
+	enum result ret = parameter->evaluate( parameter, variables, &chan, exception );
 	if( ret ) {
 		if( chan.integer_value >= 0 && chan.integer_value < NUM_CHANNELS ) {
 			dispose_variable( result );
@@ -974,7 +977,7 @@ static int evaluate_fxseq_expression( struct expression *this, struct variable *
 	return ret;
 }
 
-static int evaluate_fxdir_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_fxdir_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	DIR *dir;
 	struct array *arr;
@@ -985,7 +988,7 @@ static int evaluate_fxdir_expression( struct expression *this, struct variable *
 	char *path, *file, sep;
 	struct variable var = { 0, NULL };
 	struct expression *parameter = this->parameters;
-	int ret = parameter->evaluate( parameter, variables, &var, exception );
+	enum result ret = parameter->evaluate( parameter, variables, &var, exception );
 	if( ret ) {
 		if( var.string_value && var.string_value->string ) {
 			errno = 0;
@@ -1073,13 +1076,13 @@ static int evaluate_fxdir_expression( struct expression *this, struct variable *
 	return ret;
 }
 
-static int evaluate_fxpath_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_fxpath_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct expression *parameter = this->parameters;
 	struct variable var = { 0, NULL };
 	struct string *str;
 	char *path;
-	int ret = parameter->evaluate( parameter, variables, &var, exception );
+	enum result ret = parameter->evaluate( parameter, variables, &var, exception );
 	if( ret ) {
 		if( var.string_value ) {
 			errno = 0;
