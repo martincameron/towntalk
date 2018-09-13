@@ -73,7 +73,7 @@ program playtmf {
 					exit 0;
 				}
 			} else {
-				print event;
+				print $hex( event );
 			}
 		}
 	} else {

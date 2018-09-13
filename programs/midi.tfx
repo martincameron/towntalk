@@ -65,8 +65,14 @@ function u16be( str, idx ) {
 }
 
 function load_mod( mod, names ) {
-	var offset, patterns, length, instrument, loopidx, looplen;
-	if $cmp( $sub( mod, 1080, 4 ) "M.K." ) {
+	var channels, offset, patterns, length, instrument, loopidx, looplen;
+	if !( $cmp( $sub( mod, 1080, 4 ) "M.K." ) ) {
+		let channels = 4;
+	}
+	if !( $cmp( $sub( mod, 1081, 3 ) "CHN" ) ) {
+		let channels = -( $chr( mod, 1080 ) $chr( "0" 0 ) );
+	}
+	if !( channels ) {
 		throw "Not a MOD file.";
 	}
 	if names {
@@ -80,7 +86,7 @@ function load_mod( mod, names ) {
 		}
 		inc offset;
 	}
-	let offset = +( 1084 *( patterns 1024 ) );
+	let offset = +( 1084 *( patterns *( channels 256 ) ) );
 	let instrument = 1;
 	while <( instrument 32 ) {
 		let length = *( u16be( mod, +( *( instrument 30 ) 12 ) ) 2 );
