@@ -629,6 +629,13 @@ function testchop() {
 	call assert( =( $cmp( $chop( "c:\\dir\\file", "/:\\" ), "c:\\dir\\" ) 0 ), ${-} );
 }
 
+function testinterrupted() {
+	var x;
+	let x = STR;
+	let x = $interrupted;
+	call assert( !( x ), ${-} );
+}
+
 program test {
 	call hello();
 	call assert( =( testvoid() 0 ), ${-} );
@@ -668,5 +675,6 @@ program test {
 	call testfuncref();
 	call testeq();
 	call testchop();
+	call testinterrupted();
 	print "Tests passed.";
 }

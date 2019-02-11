@@ -26,6 +26,7 @@
 	Elements are separated by whitespace, commas, ';' or '='.
 	Elements may contain spaces and separators by enclosing them in quotes.
 	Child elements are enclosed in parentheses, square brackets or braces.
+	If the program has been interrupted, while loops will throw an exception.
 
 	Example:
 		rem { Test }
@@ -142,6 +143,7 @@
 		$pack(int/arr)           Encode integers as big-endian byte string.
 		$quote(str)              Encode byte string with quotes and escapes.
 		$unquote(str)            Decode quoted-string into byte string.
+		$interrupted             Check and clear program interrupt status.
 */
 
 static const int MAX_INTEGER = ( 1 << ( sizeof( int ) * 8 - 1 ) ) - 1u;
@@ -218,7 +220,7 @@ struct statement {
 /* Execution environment. */
 struct environment {
 	int argc;
-	char **argv, *file;
+	char **argv, *file, interrupted;
 	struct array arrays;
 	struct keyword *statements;
 	struct operator *operators;
@@ -1345,6 +1347,7 @@ static enum result execute_if_statement( struct statement *this, struct variable
 
 static enum result execute_while_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
+	struct environment *env = this->source->function->env;
 	struct variable condition = { 0, NULL };
 	struct statement *stmt;
 	enum result ret;
@@ -1365,6 +1368,9 @@ static enum result execute_while_statement( struct statement *this, struct varia
 				} else if( ret == EXCEPTION ) {
 					return EXCEPTION;
 				}
+			}
+			if( env->interrupted ) {
+				return throw( exception, this->source, 0, "Interrupted.");
 			}
 		} else {
 			dispose_variable( &condition );
@@ -2638,6 +2644,15 @@ static enum result evaluate_chop_expression( struct expression *this, struct var
 	return ret;
 }
 
+static enum result evaluate_interrupted_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	struct environment *env = this->function->env; 
+	dispose_variable( result );
+	result->integer_value = env->interrupted;
+	env->interrupted = 0;
+	return OKAY;
+}
+
 static struct operator operators[] = {
 	{ "%", '%', 2, evaluate_arithmetic_expression, &operators[ 1 ] },
 	{ "&", '&', 2, evaluate_arithmetic_expression, &operators[ 2 ] },
@@ -2666,25 +2681,26 @@ static struct operator operators[] = {
 	{ "$chr", '$', 2, evaluate_chr_expression, &operators[ 25 ] },
 	{ "$tup", '$', 2, evaluate_tup_expression, &operators[ 26 ] },
 	{ "$sub", '$', 3, evaluate_sub_expression, &operators[ 27 ] },
-	{ "$astr",'$', 1, evaluate_astr_expression, &operators[ 28 ] },
-	{ "$load",'$', 1, evaluate_load_expression, &operators[ 29 ] },
-	{ "$flen",'$', 1, evaluate_flen_expression, &operators[ 30 ] },
-	{ "$argc",'$', 0, evaluate_argc_expression, &operators[ 31 ] },
-	{ "$argv",'$', 1, evaluate_argv_expression, &operators[ 32 ] },
-	{ "$time",'$', 0, evaluate_time_expression, &operators[ 33 ] },
-	{ "$next",'$', 1, evaluate_next_expression, &operators[ 34 ] },
-	{ "$child",'$', 1, evaluate_child_expression, &operators[ 35 ] },
-	{ "$parse",'$', 1, evaluate_parse_expression, &operators[ 36 ] },
-	{ "$quote",'$', 1, evaluate_quote_expression, &operators[ 37 ] },
-	{ "$unquote",'$', 1, evaluate_unquote_expression, &operators[ 38 ] },
-	{ "$line",'$', 1, evaluate_line_expression, &operators[ 39 ] },
-	{ "$hex",'$', 1, evaluate_hex_expression, &operators[ 40 ] },
-	{ "$pack",'$', 1, evaluate_pack_expression, &operators[ 41 ] },
-	{ "$array",'$', 1, evaluate_array_expression, &operators[ 42 ] },
-	{ "$new",'$', 1, evaluate_array_expression, &operators[ 43 ] },
-	{ "$eq",'$', 2, evaluate_eq_expression, &operators[ 44 ] },
-	{ "$chop",'$', 2, evaluate_chop_expression, &operators[ 45 ] },
-	{ ":",':', -1, evaluate_function_expression, NULL }
+	{ "$astr", '$', 1, evaluate_astr_expression, &operators[ 28 ] },
+	{ "$load", '$', 1, evaluate_load_expression, &operators[ 29 ] },
+	{ "$flen", '$', 1, evaluate_flen_expression, &operators[ 30 ] },
+	{ "$argc", '$', 0, evaluate_argc_expression, &operators[ 31 ] },
+	{ "$argv", '$', 1, evaluate_argv_expression, &operators[ 32 ] },
+	{ "$time", '$', 0, evaluate_time_expression, &operators[ 33 ] },
+	{ "$next", '$', 1, evaluate_next_expression, &operators[ 34 ] },
+	{ "$child", '$', 1, evaluate_child_expression, &operators[ 35 ] },
+	{ "$parse", '$', 1, evaluate_parse_expression, &operators[ 36 ] },
+	{ "$quote", '$', 1, evaluate_quote_expression, &operators[ 37 ] },
+	{ "$unquote", '$', 1, evaluate_unquote_expression, &operators[ 38 ] },
+	{ "$line", '$', 1, evaluate_line_expression, &operators[ 39 ] },
+	{ "$hex", '$', 1, evaluate_hex_expression, &operators[ 40 ] },
+	{ "$pack", '$', 1, evaluate_pack_expression, &operators[ 41 ] },
+	{ "$array", '$', 1, evaluate_array_expression, &operators[ 42 ] },
+	{ "$new", '$', 1, evaluate_array_expression, &operators[ 43 ] },
+	{ "$eq", '$', 2, evaluate_eq_expression, &operators[ 44 ] },
+	{ "$chop", '$', 2, evaluate_chop_expression, &operators[ 45 ] },
+	{ "$interrupted", '$', 0, evaluate_interrupted_expression, &operators[ 46 ] },
+	{ ":", ':', -1, evaluate_function_expression, NULL }
 };
 
 static struct operator* get_operator( char *name, struct environment *env ) {

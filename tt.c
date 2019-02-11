@@ -1,10 +1,17 @@
 
 #include "towntalk.c"
+#include "signal.h"
+
+static struct environment *env;
+
+static void termination_handler( int signum ) {
+	signal( signum, termination_handler );
+	env->interrupted = 1;
+}
 
 int main( int argc, char **argv ) {
 	int exit_code = EXIT_FAILURE;
 	char *file_name, message[ 256 ] = "";
-	struct environment *env;
 	struct variable result = { 0 }, except = { 0 };
 	struct expression expr = { 0 };
 	/* Handle command-line.*/
@@ -23,6 +30,9 @@ int main( int argc, char **argv ) {
 			env->operators = operators;
 			if( parse_tt_file( file_name, env, message ) ) {
 				if( env->entry_point ) {
+					/* Install signal handlers. */
+					signal( SIGTERM, termination_handler );
+					signal( SIGINT,  termination_handler );
 					/* Evaluate entry-point function. */
 					expr.line = env->entry_point->line;
 					expr.function = env->entry_point;

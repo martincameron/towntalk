@@ -3,6 +3,7 @@
 
 #include "SDL.h"
 #include "dirent.h"
+#include "signal.h"
 #include "sys/stat.h"
 
 #if defined( ALSA_MIDI )
@@ -63,6 +64,13 @@ struct fxenvironment {
 	snd_rawmidi_t *midi_in;
 	#endif
 };
+
+static struct fxenvironment *fxenv;
+
+static void termination_handler( int signum ) {
+	signal( signum, termination_handler );
+	fxenv->env.interrupted = 1;
+}
 
 static Uint32 timer_callback( Uint32 interval, void *param ) {
 	SDL_Event event;
@@ -1191,7 +1199,6 @@ int main( int argc, char **argv ) {
 	int exit_code = EXIT_FAILURE;
 	char *file_name, message[ 256 ] = "";
 	struct environment *env;
-	struct fxenvironment *fxenv;
 	struct variable result = { 0 }, except = { 0 };
 	struct expression expr = { 0 };
 	/* Handle command-line.*/
@@ -1214,6 +1221,9 @@ int main( int argc, char **argv ) {
 				if( env->entry_point ) {
 					/* Initialize SDL. */
 					if( SDL_Init( SDL_INIT_VIDEO | SDL_INIT_TIMER ) == 0 ) {
+						/* Install signal handlers. */
+						signal( SIGTERM, termination_handler );
+						signal( SIGINT,  termination_handler );
 						/* Evaluate entry-point function. */
 						expr.line = env->entry_point->line;
 						expr.function = env->entry_point;
