@@ -1796,7 +1796,7 @@ static struct element* parse_local_declaration( struct element *elem, struct env
 	return parse_variable_declaration( elem, env, add_local_variable, message);
 }
 
-static enum result evaluate_logical_not_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_bitwise_not_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct variable var = { 0, NULL };
 	enum result ret = this->parameters->evaluate( this->parameters, variables, &var, exception );
@@ -2669,7 +2669,7 @@ static struct operator operators[] = {
 	{ "^", '^', 2, evaluate_arithmetic_expression, &operators[ 12 ] },
 	{ "=", '=', 2, evaluate_arithmetic_expression, &operators[ 13 ] },
 	{ "|", '|', 2, evaluate_arithmetic_expression, &operators[ 14 ] },
-	{ "~", '~', 1, evaluate_logical_not_expression, &operators[ 15 ] },
+	{ "~", '~', 1, evaluate_bitwise_not_expression, &operators[ 15 ] },
 	{ "!", '!', 1, evaluate_logical_expression, &operators[ 16 ] },
 	{ "&&",'&', 2, evaluate_logical_expression, &operators[ 17 ] },
 	{ "||",'|', 2, evaluate_logical_expression, &operators[ 18 ] },
