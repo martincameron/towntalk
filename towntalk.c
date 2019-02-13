@@ -233,7 +233,7 @@ struct environment {
 struct keyword {
 	char *name, *syntax;
 	/* Parse the current declaration into env, or statement into prev->next. */
-	struct element* (*parse)( struct element *elem, struct environment *env,
+	struct element* ( *parse )( struct element *elem, struct environment *env,
 		struct function_declaration *func, struct statement *prev, char *message );
 	struct keyword *next;
 };
@@ -2649,6 +2649,7 @@ static enum result evaluate_interrupted_expression( struct expression *this, str
 	struct environment *env = this->function->env; 
 	dispose_variable( result );
 	result->integer_value = env->interrupted;
+	result->string_value = NULL;
 	env->interrupted = 0;
 	return OKAY;
 }

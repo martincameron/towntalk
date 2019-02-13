@@ -4,8 +4,8 @@
 
 static struct environment *env;
 
-static void termination_handler( int signum ) {
-	signal( signum, termination_handler );
+static void interrupt_handler( int signum ) {
+	signal( signum, interrupt_handler );
 	env->interrupted = 1;
 }
 
@@ -30,25 +30,27 @@ int main( int argc, char **argv ) {
 			env->operators = operators;
 			if( parse_tt_file( file_name, env, message ) ) {
 				if( env->entry_point ) {
-					/* Install signal handlers. */
-					signal( SIGTERM, termination_handler );
-					signal( SIGINT,  termination_handler );
-					/* Evaluate entry-point function. */
-					expr.line = env->entry_point->line;
-					expr.function = env->entry_point;
-					expr.evaluate = evaluate_function_expression;
-					if( expr.evaluate( &expr, NULL, &result, &except ) ) {
-						exit_code = EXIT_SUCCESS;
-					} else if( except.string_value && except.string_value->string == NULL ) {
-						exit_code = except.integer_value;
-					} else {
-						fprintf( stderr, "Unhandled exception %d.\n", except.integer_value );
-						if( except.string_value && except.string_value->string ) {
-							fprintf( stderr, "%s\n", except.string_value->string );
+					/* Install signal handler. */
+					if( signal( SIGINT, interrupt_handler ) != SIG_ERR ) {
+						/* Evaluate entry-point function. */
+						expr.line = env->entry_point->line;
+						expr.function = env->entry_point;
+						expr.evaluate = evaluate_function_expression;
+						if( expr.evaluate( &expr, NULL, &result, &except ) ) {
+							exit_code = EXIT_SUCCESS;
+						} else if( except.string_value && except.string_value->string == NULL ) {
+							exit_code = except.integer_value;
+						} else {
+							fprintf( stderr, "Unhandled exception %d.\n", except.integer_value );
+							if( except.string_value && except.string_value->string ) {
+								fprintf( stderr, "%s\n", except.string_value->string );
+							}
 						}
+						dispose_variable( &result );
+						dispose_variable( &except );
+					} else {
+						fprintf( stderr, "Unable to install signal handler: %s\n", strerror( errno ) );
 					}
-					dispose_variable( &result );
-					dispose_variable( &except );
 				} else {
 					fprintf( stderr, "No programs found.\n" );
 				}

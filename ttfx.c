@@ -67,9 +67,14 @@ struct fxenvironment {
 
 static struct fxenvironment *fxenv;
 
-static void termination_handler( int signum ) {
-	signal( signum, termination_handler );
+static void ( *interrupt_handler )( int signum );
+
+static void signal_handler( int signum ) {
+	signal( signum, signal_handler );
 	fxenv->env.interrupted = 1;
+	if( signum == SIGINT && interrupt_handler ) {
+		interrupt_handler( SIGINT );
+	}
 }
 
 static Uint32 timer_callback( Uint32 interval, void *param ) {
@@ -1221,25 +1226,28 @@ int main( int argc, char **argv ) {
 				if( env->entry_point ) {
 					/* Initialize SDL. */
 					if( SDL_Init( SDL_INIT_VIDEO | SDL_INIT_TIMER ) == 0 ) {
-						/* Install signal handlers. */
-						signal( SIGTERM, termination_handler );
-						signal( SIGINT,  termination_handler );
-						/* Evaluate entry-point function. */
-						expr.line = env->entry_point->line;
-						expr.function = env->entry_point;
-						expr.evaluate = evaluate_function_expression;
-						if( expr.evaluate( &expr, NULL, &result, &except ) ) {
-							exit_code = EXIT_SUCCESS;
-						} else if( except.string_value && except.string_value->string == NULL ) {
-							exit_code = except.integer_value;
-						} else {
-							fprintf( stderr, "Unhandled exception %d.\n", except.integer_value );
-							if( except.string_value && except.string_value->string ) {
-								fprintf( stderr, "%s\n", except.string_value->string );
+						/* Install signal handler. */
+						interrupt_handler = signal( SIGINT, signal_handler );
+						if( interrupt_handler != SIG_ERR ) {
+							/* Evaluate entry-point function. */
+							expr.line = env->entry_point->line;
+							expr.function = env->entry_point;
+							expr.evaluate = evaluate_function_expression;
+							if( expr.evaluate( &expr, NULL, &result, &except ) ) {
+								exit_code = EXIT_SUCCESS;
+							} else if( except.string_value && except.string_value->string == NULL ) {
+								exit_code = except.integer_value;
+							} else {
+								fprintf( stderr, "Unhandled exception %d.\n", except.integer_value );
+								if( except.string_value && except.string_value->string ) {
+									fprintf( stderr, "%s\n", except.string_value->string );
+								}
 							}
+							dispose_variable( &result );
+							dispose_variable( &except );
+						} else {
+							fprintf( stderr, "Unable to install signal handler: %s\n", strerror( errno ) );
 						}
-						dispose_variable( &result );
-						dispose_variable( &except );
 						SDL_Quit();
 					} else {
 						fprintf( stderr, "Unable to initialise SDL: %s\n", SDL_GetError() );
