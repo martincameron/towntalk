@@ -1283,7 +1283,7 @@ int main( int argc, char **argv ) {
 			if( parse_tt_file( file_name, env, message ) ) {
 				if( env->entry_point ) {
 					/* Initialize SDL. */
-					if( SDL_Init( SDL_INIT_VIDEO | SDL_INIT_TIMER ) == 0 ) {
+					if( SDL_Init( SDL_INIT_AUDIO | SDL_INIT_VIDEO | SDL_INIT_TIMER ) == 0 ) {
 						/* Install signal handler. */
 						interrupt_handler = signal( SIGINT, signal_handler );
 						if( interrupt_handler != SIG_ERR ) {
