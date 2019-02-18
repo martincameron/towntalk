@@ -110,7 +110,7 @@ static void downsample( int *buf, int count ) {
 
 static void mix_channel( struct fxchannel *channel, int *output, int count ) {
 	int idx, end, loop, llen, lend, sidx, sfra, lamp, ramp, step, sam;
-	char *data;
+	signed char *data;
 	if( channel->volume > 0 && channel->sample
 	&& channel->sample->sample_data.string_value ) {
 		loop = channel->sample->loop_start;
@@ -122,7 +122,7 @@ static void mix_channel( struct fxchannel *channel, int *output, int count ) {
 			lamp = channel->volume * ( 32 - channel->panning );
 			ramp = channel->volume * ( 32 + channel->panning );
 			step = ( channel->frequency << 12 ) / ( SAMPLE_RATE >> 2 );
-			data = channel->sample->sample_data.string_value->string;
+			data = ( signed char * ) channel->sample->sample_data.string_value->string;
 			idx = 0;
 			end = count << 1;
 			while( idx < end ) {
@@ -1317,7 +1317,7 @@ int main( int argc, char **argv ) {
 				fprintf( stderr, "%s\n", message );
 			}
 		}
-		dispose_fxenvironment( ( struct fxenvironment * )env );
+		dispose_fxenvironment( ( struct fxenvironment * ) env );
 	} else {
 		fputs( "Out of memory.\n", stderr );
 	}

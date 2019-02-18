@@ -346,6 +346,7 @@ function testchr() {
 	try { call $chr( "" 0 ); } catch err {}
 	call assert( err, ${-} );
 	call assert( =( $chr( "~" 0 ) 126 ), ${-} );
+	call assert( =( $chr( "\377" 0 ) -1 ), ${-} );
 }
 
 function testsub() {

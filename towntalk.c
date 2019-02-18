@@ -2161,7 +2161,7 @@ static enum result evaluate_chr_expression( struct expression *this, struct vari
 			if( str.string_value && str.string_value->string ) {
 				if( idx.integer_value >= 0 && idx.integer_value < str.string_value->length ) {
 					dispose_variable( result );
-					result->integer_value = str.string_value->string[ idx.integer_value ];
+					result->integer_value = ( signed char ) str.string_value->string[ idx.integer_value ];
 					result->string_value = NULL;
 				} else {
 					ret = throw( exception, this, idx.integer_value, "String index out of bounds." );
