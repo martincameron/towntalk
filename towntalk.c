@@ -1658,7 +1658,7 @@ static enum result evaluate_integer_constant_expression( struct expression *this
 }
 
 static struct structure* get_structure( struct structure *structures, char *name ) {
-	int len;
+	size_t len;
 	char *chr = strchr( name, '.' );
 	if( chr ) {
 		len = chr - name;

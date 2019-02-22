@@ -6,7 +6,7 @@ ANSI_C=-ansi -pedantic
 all: tt
 
 clean:
-	rm -f tt ttfx ttfx-midi xm2tmf
+	rm -f tt ttfx ttfx2 ttfx-midi xm2tmf
 
 tt: tt.c towntalk.c
 	$(CC) $(CFLAGS) $(ANSI_C) tt.c -o tt
