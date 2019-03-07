@@ -316,17 +316,28 @@ function tg_draw_button( n ) {
 }
 
 function tg_draw_textbox( n ) {
-	var x, y, t, c;
+	var x, y, l, t, p, s;
 	let x = tg_getx( n );
 	let y = tg_gety( n );
 	let t = [ tg_a n ];
-	let c = /( -( [ tg_w n ] 16 ) 8 );
-	if >( $len( t ) c ) {
-		let t = $sub( t, -( $len( t ) c ), c );
+	let l = /( -( [ tg_w n ] 16 ) 8 );
+	if =( tg_focus n ) {
+		let p = [ tg_b n ];
+		let s = [ tg_c n ];
+	} else {
+		if >( $len( t ) l ) {
+			let s = -( $len( t ) l );
+		}
+	}
+	if >( s 0 ) {
+		let t = $sub( t, s, -( $len( t ) s ) );
+	}
+	if >( $len( t ) l ) {
+		let t = $sub( t, 0, l );
 	}
 	fxrect x, y, [ tg_w n ], [ tg_h n ], [ palette 2 ];
 	if =( tg_focus n ) {
-		fxrect +( x *( +( $len( t ) 1 ) 8 ) ), +( y 6 ), 8, 16, [ palette 3 ];
+		fxrect +( x *( +( -( p s ) 1 ) 8 ) ), +( y 6 ), 8, 16, [ palette 3 ];
 	}
 	call tg_bevel_box( x, y, [ tg_w n ], [ tg_h n ] );
 	call tg_text( t, +( x 8 ), +( y 6 ), 0 );
@@ -580,7 +591,7 @@ function tg_unused() {
 }
 
 function tg_scan( event ) {
-	var n, s, o, p, e, t, c, w, x, y, selected;
+	var n, s, o, p, e, t, c, l, w, x, y, selected;
 	switch event {
 		case FX_MOUSEMOTION {
 			if =( $mousekey 1 ) {
@@ -725,6 +736,14 @@ function tg_scan( event ) {
 						}
 					}
 					case 4 {
+						let t = [ tg_a n ];
+						let l = /( -( [ tg_w n ] 16 ) 8 );
+						set [ tg_b n ] = $len( t );
+						if >( $len( t ) l ) {
+							set [ tg_c n ] = -( $len( t ) l );
+						} else {
+							set [ tg_c n ] = 0;
+						}
 						let tg_focus = n;
 						call tg_draw( n );
 					}
@@ -793,22 +812,70 @@ function tg_scan( event ) {
 			let n = tg_focus;
 			if =( [ tg_type n ] 4 ) {
 				let t = [ tg_a n ];
+				let p = [ tg_b n ];
+				let l = /( -( [ tg_w n ] 16 ) 8 );
 				let c = $keyboard;
-				if =( c FX_KEY_BACKSPACE ) {
-					if >( $len( t ) 0 ) {
+				switch c {
+					case FX_KEY_BACKSPACE {
 						if &( $keyshift 3 ) {
-							let t = "";
+							set [ tg_a n ] = $sub( t p -( $len( t ) p ) );
+							set [ tg_b n ] = 0;
+							set [ tg_c n ] = 0;
 						} else {
-							let t = $sub( t, 0, -( $len( t ) 1 ) );
+							if >( p 0 ) {
+								set [ tg_a n ] = $str( $sub( t 0 -( p 1 ) ) $sub( t p -( $len( t ) p ) ) );
+								let p = -( p 1 );
+								set [ tg_b n ] = p;
+								if <( p [ tg_c n ] ) {
+									set [ tg_c n ] = p;
+								}
+							}
 						}
-						set [ tg_a n ] = t;
 					}
-				} else {
-					if =( c FX_KEY_RETURN ) {
+					case FX_KEY_RETURN {
 						let tg_focus = 0;
 						call tg_draw( n );
 						let n = [ tg_action n ];
-					} else {
+					}
+					case FX_KEY_LEFT {
+						if >( p 0 ) {
+							let p = -( p 1 );
+						}
+						set [ tg_b n ] = p;
+						if <( p [ tg_c n ] ) {
+							set [ tg_c n ] = p;
+						}
+					}
+					case FX_KEY_RIGHT {
+						if <( p $len( t ) ) {
+							inc p;
+						}
+						set [ tg_b n ] = p;
+						if >e( -( p [ tg_c n ] ) l ) {
+							set [ tg_c n ] = +( -( p l ) 1 );
+						}
+					}
+					case FX_KEY_DELETE {
+						if &( $keyshift 3 ) {
+							set [ tg_a n ] = $sub( t 0 p );
+						} else {
+							if <( p $len( t ) ) {
+								set [ tg_a n ] = $str( $sub( t 0 p ) $sub( t +( p 1 ) -( $len( t ) +( p 1 ) ) ) );
+							}
+						}
+					}
+					case FX_KEY_HOME {
+						set [ tg_b n ] = 0;
+						set [ tg_c n ] = 0;
+					}
+					case FX_KEY_END {
+						let p = $len( t );
+						set [ tg_b n ] = p;
+						if >e( -( p [ tg_c n ] ) l ) {
+							set [ tg_c n ] = +( -( p l ) 1 );
+						}
+					}
+					default {
 						if >( c 31 ) {
 							if &( $keyshift 3 ) {
 								if <( c 64 ) {
@@ -822,7 +889,12 @@ function tg_scan( event ) {
 								}
 							}
 							if <( c 127 ) {
-								set [ tg_a n ] = $str( t, $asc( c ) );
+								set [ tg_a n ] = $str( $sub( t 0 p ) $asc( c ) $sub( t p -( $len( t ) p ) ) );
+								inc p;
+								set [ tg_b n ] = p;
+								if >e( -( p [ tg_c n ] ) l ) {
+									set [ tg_c n ] = +( -( p l ) 1 );
+								}
 							}
 						}
 					}
