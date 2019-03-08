@@ -892,8 +892,8 @@ function tg_scan( event ) {
 								set [ tg_a n ] = $str( $sub( t 0 p ) $asc( c ) $sub( t p -( $len( t ) p ) ) );
 								inc p;
 								set [ tg_b n ] = p;
-								if >e( -( p [ tg_c n ] ) l ) {
-									set [ tg_c n ] = +( -( p l ) 1 );
+								if >( -( p [ tg_c n ] ) l ) {
+									set [ tg_c n ] = -( p l );
 								}
 							}
 						}
