@@ -738,13 +738,22 @@ function tg_scan( event ) {
 					case 4 {
 						let t = [ tg_a n ];
 						let l = /( -( [ tg_w n ] 16 ) 8 );
-						set [ tg_b n ] = $len( t );
-						if >( $len( t ) l ) {
-							set [ tg_c n ] = -( $len( t ) l );
-						} else {
-							set [ tg_c n ] = 0;
+						if !( =( tg_focus n ) ) {
+							if >( $len( t ) l ) {
+								set [ tg_c n ] = -( $len( t ) l );
+							} else {
+								set [ tg_c n ] = 0;
+							}
+							let tg_focus = n;
 						}
-						let tg_focus = n;
+						let p = -( +( [ tg_c n ] /( -( tg_selx tg_getx( n ) ) 8 ) ) 1 );
+						if <( p [ tg_c n ] ) {
+							let p = [ tg_c n ];
+						}
+						if >( p $len( t ) ) {
+							let p = $len( t );
+						}
+						set [ tg_b n ] = p;
 						call tg_draw( n );
 					}
 					case 6 {
