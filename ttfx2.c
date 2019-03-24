@@ -430,6 +430,8 @@ static enum result execute_fxopen_statement( struct statement *this, struct vari
 								ret = throw( exception, this->source, 0, SDL_GetError() );
 								SDL_DestroyRenderer( fxenv->renderer );
 								fxenv->renderer = NULL;
+								SDL_DestroyWindow( fxenv->window );
+								fxenv->window = NULL;
 							}
 						} else {
 							ret = throw( exception, this->source, 0, SDL_GetError() );
