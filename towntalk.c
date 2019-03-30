@@ -11,7 +11,7 @@
 #include "time.h"
 
 /*
-	Towntalk (c)2018 Martin Cameron.
+	Towntalk (c)2019 Martin Cameron.
 
 	A program file consists of a list of declarations.
 	Variables are integers, strings, elements or array references.
@@ -167,7 +167,7 @@ struct element {
 
 struct array {
 	struct string str;
-	int length, marked;
+	int length;
 	struct variable *array;
 	struct array *prev, *next;
 };
