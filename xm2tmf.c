@@ -2110,9 +2110,9 @@ static int write_sequence( struct replay *replay, char *dest ) {
 			} else {
 				d_tkey = 0;
 			}
-			ampl = sqr_rt( replay->channels[ chn ].ampl >> ( FP_SHIFT - 12 ) );
+			ampl = sqr_rt( replay->channels[ chn ].ampl >> ( FP_SHIFT - 13 ) );
 			if( replay->channels[ chn ].ampl != replay->channels[ chn ].prev_ampl ) {
-				d_ampl = ampl - sqr_rt( replay->channels[ chn ].prev_ampl >> ( FP_SHIFT - 12 ) );
+				d_ampl = ampl - sqr_rt( replay->channels[ chn ].prev_ampl >> ( FP_SHIFT - 13 ) );
 			} else {
 				d_ampl = 0;
 			}
@@ -2216,6 +2216,9 @@ static int xm_to_tmf( struct module *module, char *tmf ) {
 	int loop_start, loop_length;
 	struct instrument *instrument;
 	struct sample *sample;
+	if( module->gain > 64 ) {
+		module->gain = 64;
+	}
 	idx = 1;
 	for( ins = 1; ins <= module->num_instruments; ins++ ) {
 		instrument = &module->instruments[ ins ];
