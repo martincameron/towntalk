@@ -1,0 +1,69 @@
+
+# Return the width of the specified TGA image file.
+function truevision_get_width( tga ) {
+	return +( *( $chr( tga 13 ) 256 ) $chr( tga 12 ) );
+}
+
+# Return the height of the specified TGA image file.
+function truevision_get_height( tga ) {
+	return +( *( $chr( tga 15 ) 256 ) $chr( tga 14 ) );
+}
+
+# Return the RGBA pixel data from the specified TGA image file.
+function truevision_get_pixels( tga ) {
+	var offset, palette, idx, end, clr, pixels;
+	if !( &&( =( $chr( tga 1 ) 1 ) =( $chr( tga 2 ) 1 ) ) ) {
+		throw "Unsupported image type. Expected uncompressed colour-mapped image.";
+	}
+	if !( =( $chr( tga 7 ) 24 ) ) {
+		throw "Unsupported palette type. Expected 24 bits per palette entry.";
+	}
+	if !( =( $chr( tga 16 ) 8 ) ) {
+		throw "Unsupported image data. Expected 8 bits per pixel.";
+	}
+	# Skip Image ID area.
+	let offset = +( $chr( tga 0 ) 18 );
+	# Read palette.
+	let palette = $array( 256 );
+	let idx = $chr( tga 3 );
+	let end = +( idx +( *( $chr( tga 6 ) 256 ) $chr( tga 5 ) ) );
+	while <( idx end ) {
+		# Read palette entry.
+		let clr = $chr( tga +( offset 2 ) );
+		let clr = +( *( clr 256 ) $chr( tga +( offset 1 ) ) );
+		let clr = +( *( clr 256 ) $chr( tga offset ) );
+		let offset = +( offset 3 );
+		# Set full opacity.
+		set [ palette idx ] = +( *( clr 256 ) 0xFF );
+		inc idx;
+	}
+	# Read image data.
+	let pixels = $array( *( truevision_get_width( tga ) truevision_get_height( tga ) ) );
+	let idx = 0;
+	let end = $len( pixels );
+	while <( idx end ) {
+		# Lookup palette index.
+		set [ pixels idx ] = [ palette &( $chr( tga offset ) 0xFF ) ];
+		inc offset;
+		inc idx;
+	}
+	return pixels;
+}
+
+program truevision {
+	var tga, width, height, pixels;
+	let tga = $load( $argv( 1 ) );
+	
+	let width = truevision_get_width( tga );
+	let height = truevision_get_height( tga );
+	let pixels = truevision_get_pixels( tga );
+	
+	fxopen width height "Truevision";
+	fxsurface 0, width, height, pixels;
+	fxblit 0, 0, 0, width, height, 0, 0;
+	fxshow;
+	
+	while TRUE {
+		call $fxwait;
+	}
+}
