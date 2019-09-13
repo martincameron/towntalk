@@ -11,12 +11,14 @@ function truevision_get_height( tga ) {
 
 # Return the RGBA pixel data from the specified TGA image file.
 function truevision_get_pixels( tga ) {
-	var offset, palette, idx, end, clr, pixels;
-	if !( &&( =( $chr( tga 1 ) 1 ) =( $chr( tga 2 ) 1 ) ) ) {
-		throw "Unsupported image type. Expected uncompressed colour-mapped image.";
+	var imgtype, palbits, offset, palette, idx, end, clr, alpha, pixels, len, run;
+	let imgtype = $chr( tga 2 );
+	if !( &&( =( $chr( tga 1 ) 1 ) ||( =( imgtype 1 ) =( imgtype 9 ) ) ) ) {
+		throw $cat( "Unsupported image type (" imgtype "). Expected colour-mapped image." );
 	}
-	if !( =( $chr( tga 7 ) 24 ) ) {
-		throw "Unsupported palette type. Expected 24 bits per palette entry.";
+	let palbits = $chr( tga 7 );
+	if !( ||( =( palbits 24 ) =( palbits 32 ) ) ) {
+		throw $cat( "Unsupported palette entry size (" palbits " bits)." );
 	}
 	if !( =( $chr( tga 16 ) 8 ) ) {
 		throw "Unsupported image data. Expected 8 bits per pixel.";
@@ -33,19 +35,51 @@ function truevision_get_pixels( tga ) {
 		let clr = +( *( clr 256 ) $chr( tga +( offset 1 ) ) );
 		let clr = +( *( clr 256 ) $chr( tga offset ) );
 		let offset = +( offset 3 );
-		# Set full opacity.
-		set [ palette idx ] = +( *( clr 256 ) 0xFF );
+		if =( palbits 32 ) {
+			let alpha = $chr( tga offset );
+			inc offset;
+		} else {
+			let alpha = 0xFF;
+		}
+		set [ palette idx ] = +( *( clr 256 ) alpha );
 		inc idx;
 	}
 	# Read image data.
 	let pixels = $array( *( truevision_get_width( tga ) truevision_get_height( tga ) ) );
 	let idx = 0;
-	let end = $len( pixels );
-	while <( idx end ) {
-		# Lookup palette index.
-		set [ pixels idx ] = [ palette &( $chr( tga offset ) 0xFF ) ];
-		inc offset;
-		inc idx;
+	let len = $len( pixels );
+	if =( imgtype 1 ) {
+		# Uncompressed.
+		while <( idx len ) {
+			# Lookup palette index.
+			set [ pixels idx ] = [ palette &( $chr( tga offset ) 0xFF ) ];
+			inc offset;
+			inc idx;
+		}
+	} else {
+		# Run-length coding.
+		while <( idx len ) {
+			let run = &( $chr( tga offset ) 0xFF );
+			inc offset;
+			if >( run 127 ) {
+				# Run-length packet.
+				let end = -( +( idx run ) 127 );
+				let clr = [ palette &( $chr( tga offset ) 0xFF ) ];
+				inc offset;
+				while <( idx end ) {
+					set [ pixels idx ] = clr;
+					inc idx;
+				}
+			} else {
+				# Literal packet.
+				let end = +( +( idx run ) 1 );
+				while <( idx end ) {
+					set [ pixels idx ] = [ palette &( $chr( tga offset ) 0xFF ) ];
+					inc offset;
+					inc idx;
+				}
+			}
+		}
 	}
 	return pixels;
 }
