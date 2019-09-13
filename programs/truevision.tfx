@@ -1,12 +1,12 @@
 
 # Return the width of the specified TGA image file.
 function truevision_get_width( tga ) {
-	return +( *( $chr( tga 13 ) 256 ) $chr( tga 12 ) );
+	return +( *( $chr( tga 13 ) 256 ) &( $chr( tga 12 ) 0xFF ) );
 }
 
 # Return the height of the specified TGA image file.
 function truevision_get_height( tga ) {
-	return +( *( $chr( tga 15 ) 256 ) $chr( tga 14 ) );
+	return +( *( $chr( tga 15 ) 256 ) &( $chr( tga 14 ) 0xFF ) );
 }
 
 # Return the RGBA pixel data from the specified TGA image file.
@@ -95,9 +95,9 @@ program truevision {
 	fxopen width height "Truevision";
 	fxsurface 0, width, height, pixels;
 	fxblit 0, 0, 0, width, height, 0, 0;
-	fxshow;
 	
 	while TRUE {
+		fxshow;
 		call $fxwait;
 	}
 }
