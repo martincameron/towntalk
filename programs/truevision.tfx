@@ -9,26 +9,21 @@ function truevision_get_height( tga ) {
 	return +( *( $chr( tga 15 ) 256 ) &( $chr( tga 14 ) 0xFF ) );
 }
 
-# Return the RGBA pixel data from the specified TGA image file.
-function truevision_get_pixels( tga ) {
-	var imgtype, palbits, offset, palette, idx, end, clr, alpha, pixels, len, run;
-	let imgtype = $chr( tga 2 );
-	if !( &&( =( $chr( tga 1 ) 1 ) ||( =( imgtype 1 ) =( imgtype 9 ) ) ) ) {
-		throw $cat( "Unsupported image type (" imgtype "). Expected colour-mapped image." );
+# Return an array containing the palette contained within the specified TGA image file.
+function truevision_get_palette( tga ) {
+	var palbits, offset, palette, idx, end, clr, alpha;
+	if !( &&( =( $chr( tga 1 ) 1 ) =( $chr( tga 16 ) 8 ) ) ) {
+		throw "Palette data not present in file or unsupported.";
 	}
 	let palbits = $chr( tga 7 );
 	if !( ||( =( palbits 24 ) =( palbits 32 ) ) ) {
 		throw $cat( "Unsupported palette entry size (" palbits " bits)." );
 	}
-	if !( =( $chr( tga 16 ) 8 ) ) {
-		throw "Unsupported image data. Expected 8 bits per pixel.";
-	}
 	# Skip Image ID area.
 	let offset = +( $chr( tga 0 ) 18 );
-	# Read palette.
 	let palette = $array( 256 );
 	let idx = $chr( tga 3 );
-	let end = +( idx +( *( $chr( tga 6 ) 256 ) $chr( tga 5 ) ) );
+	let end = +( idx +( *( $chr( tga 6 ) 256 ) &( $chr( tga 5 ) 0xFF ) ) );
 	while <( idx end ) {
 		# Read palette entry.
 		let clr = $chr( tga +( offset 2 ) );
@@ -44,42 +39,75 @@ function truevision_get_pixels( tga ) {
 		set [ palette idx ] = +( *( clr 256 ) alpha );
 		inc idx;
 	}
+	return palette;
+}
+
+# Return an array containing the image-data from the specified TGA image file.
+function truevision_get_image_data( tga ) {
+	var imgtype, length, offset, data, idx, run, end, clr;
+	let imgtype = $chr( tga 2 );
+	if !( ||( =( imgtype 1 ) =( imgtype 9 ) ) ) {
+		throw $cat( "Unsupported image type (" imgtype "). Expected colour-mapped image." );
+	}
+	if !( =( $chr( tga 16 ) 8 ) ) {
+		throw "Unsupported image data. Expected 8 bits per pixel.";
+	}
+	# Skip image ID and palette area.
+	let length = +( *( $chr( tga 6 ) 256 ) &( $chr( tga 5 ) 0xFF ) );
+	let offset = +( +( $chr( tga 0 ) 18 ) *( length >>( $chr( tga 7 ) 3 ) ) );
 	# Read image data.
-	let pixels = $array( *( truevision_get_width( tga ) truevision_get_height( tga ) ) );
+	let data = $array( *( truevision_get_width( tga ) truevision_get_height( tga ) ) );
 	let idx = 0;
-	let len = $len( pixels );
+	let length = $len( data );
 	if =( imgtype 1 ) {
 		# Uncompressed.
-		while <( idx len ) {
+		while <( idx length ) {
 			# Lookup palette index.
-			set [ pixels idx ] = [ palette &( $chr( tga offset ) 0xFF ) ];
+			set [ data idx ] = &( $chr( tga offset ) 0xFF );
 			inc offset;
 			inc idx;
 		}
 	} else {
 		# Run-length coding.
-		while <( idx len ) {
+		while <( idx length ) {
 			let run = &( $chr( tga offset ) 0xFF );
 			inc offset;
 			if >( run 127 ) {
 				# Run-length packet.
 				let end = -( +( idx run ) 127 );
-				let clr = [ palette &( $chr( tga offset ) 0xFF ) ];
+				let clr = &( $chr( tga offset ) 0xFF );
 				inc offset;
 				while <( idx end ) {
-					set [ pixels idx ] = clr;
+					set [ data idx ] = clr;
 					inc idx;
 				}
 			} else {
 				# Literal packet.
 				let end = +( +( idx run ) 1 );
 				while <( idx end ) {
-					set [ pixels idx ] = [ palette &( $chr( tga offset ) 0xFF ) ];
+					set [ data idx ] = &( $chr( tga offset ) 0xFF );
 					inc offset;
 					inc idx;
 				}
 			}
 		}
+	}
+	return data;
+}
+
+# Return the RGBA pixel data from the specified TGA image file.
+function truevision_get_pixels( tga ) {
+	var palette, pixels, idx, len;
+	# Read palette.
+	let palette = truevision_get_palette( tga );
+	# Read image data.
+	let pixels = truevision_get_image_data( tga );
+	let idx = 0;
+	let len = $len( pixels );
+	while <( idx len ) {
+		# Look-up palette index.
+		set [ pixels idx ] = [ palette [ pixels idx ] ];
+		inc idx;
 	}
 	return pixels;
 }
