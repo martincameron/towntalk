@@ -221,6 +221,7 @@ function testarith() {
 	let err = 0;
 	try { call %( 1 0 ); } catch err {}
 	call assert( err, ${-} );
+	call assert( =( <<( 4 1 ) 8 ), ${-} );
 	call assert( =( >>( -8 1 ) -4 ), ${-} );
 	call assert( =( 1 1 ), ${-} );
 	call assert( =( =( 1 0 ) 0 ), ${-} );

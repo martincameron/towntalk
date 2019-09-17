@@ -101,6 +101,7 @@
 		*(int int)               Multiplication.
 		/(int int)               Division.
 		%(int int)               Modulo division.
+		<<(int int)              Arithmetic shift-left.
 		>>(int int)              Arithmetic shift-right.
 		=(int int)               Equality.
 		<(int int)               Less than.
@@ -1910,7 +1911,8 @@ static enum result evaluate_arithmetic_expression( struct expression *this, stru
 					break;
 				case '<': value = lhs  < rhs; break;
 				case '>': value = lhs  > rhs; break;
-				case 'A': value = lhs >> rhs; break;
+				case 'A': value = lhs << rhs; break;
+				case 'B': value = lhs >> rhs; break;
 				case 'G': value = lhs >= rhs; break;
 				case 'L': value = lhs <= rhs; break;
 				case '^': value = lhs  ^ rhs; break;
@@ -2665,42 +2667,43 @@ static struct operator operators[] = {
 	{ "<e",'L', 2, evaluate_arithmetic_expression, &operators[ 8 ] },
 	{ ">", '>', 2, evaluate_arithmetic_expression, &operators[ 9 ] },
 	{ ">e",'G', 2, evaluate_arithmetic_expression, &operators[ 10 ] },
-	{ ">>",'A', 2, evaluate_arithmetic_expression, &operators[ 11 ] },
-	{ "^", '^', 2, evaluate_arithmetic_expression, &operators[ 12 ] },
-	{ "=", '=', 2, evaluate_arithmetic_expression, &operators[ 13 ] },
-	{ "|", '|', 2, evaluate_arithmetic_expression, &operators[ 14 ] },
-	{ "~", '~', 1, evaluate_bitwise_not_expression, &operators[ 15 ] },
-	{ "!", '!', 1, evaluate_logical_expression, &operators[ 16 ] },
-	{ "&&",'&', 2, evaluate_logical_expression, &operators[ 17 ] },
-	{ "||",'|', 2, evaluate_logical_expression, &operators[ 18 ] },
-	{ "$int", '$', 1, evaluate_int_expression, &operators[ 19 ] },
-	{ "$str", '$',-1, evaluate_str_expression, &operators[ 20 ] },
-	{ "$len", '$', 1, evaluate_len_expression, &operators[ 21 ] },
-	{ "$asc", '$', 1, evaluate_asc_expression, &operators[ 22 ] },
-	{ "$cmp", '$', 2, evaluate_cmp_expression, &operators[ 23 ] },
-	{ "$cat", '$',-1, evaluate_str_expression, &operators[ 24 ] },
-	{ "$chr", '$', 2, evaluate_chr_expression, &operators[ 25 ] },
-	{ "$tup", '$', 2, evaluate_tup_expression, &operators[ 26 ] },
-	{ "$sub", '$', 3, evaluate_sub_expression, &operators[ 27 ] },
-	{ "$astr", '$', 1, evaluate_astr_expression, &operators[ 28 ] },
-	{ "$load", '$', 1, evaluate_load_expression, &operators[ 29 ] },
-	{ "$flen", '$', 1, evaluate_flen_expression, &operators[ 30 ] },
-	{ "$argc", '$', 0, evaluate_argc_expression, &operators[ 31 ] },
-	{ "$argv", '$', 1, evaluate_argv_expression, &operators[ 32 ] },
-	{ "$time", '$', 0, evaluate_time_expression, &operators[ 33 ] },
-	{ "$next", '$', 1, evaluate_next_expression, &operators[ 34 ] },
-	{ "$child", '$', 1, evaluate_child_expression, &operators[ 35 ] },
-	{ "$parse", '$', 1, evaluate_parse_expression, &operators[ 36 ] },
-	{ "$quote", '$', 1, evaluate_quote_expression, &operators[ 37 ] },
-	{ "$unquote", '$', 1, evaluate_unquote_expression, &operators[ 38 ] },
-	{ "$line", '$', 1, evaluate_line_expression, &operators[ 39 ] },
-	{ "$hex", '$', 1, evaluate_hex_expression, &operators[ 40 ] },
-	{ "$pack", '$', 1, evaluate_pack_expression, &operators[ 41 ] },
-	{ "$array", '$', 1, evaluate_array_expression, &operators[ 42 ] },
-	{ "$new", '$', 1, evaluate_array_expression, &operators[ 43 ] },
-	{ "$eq", '$', 2, evaluate_eq_expression, &operators[ 44 ] },
-	{ "$chop", '$', 2, evaluate_chop_expression, &operators[ 45 ] },
-	{ "$interrupted", '$', 0, evaluate_interrupted_expression, &operators[ 46 ] },
+	{ "<<",'A', 2, evaluate_arithmetic_expression, &operators[ 11 ] },
+	{ ">>",'B', 2, evaluate_arithmetic_expression, &operators[ 12 ] },
+	{ "^", '^', 2, evaluate_arithmetic_expression, &operators[ 13 ] },
+	{ "=", '=', 2, evaluate_arithmetic_expression, &operators[ 14 ] },
+	{ "|", '|', 2, evaluate_arithmetic_expression, &operators[ 15 ] },
+	{ "~", '~', 1, evaluate_bitwise_not_expression, &operators[ 16 ] },
+	{ "!", '!', 1, evaluate_logical_expression, &operators[ 17 ] },
+	{ "&&",'&', 2, evaluate_logical_expression, &operators[ 18 ] },
+	{ "||",'|', 2, evaluate_logical_expression, &operators[ 19 ] },
+	{ "$int", '$', 1, evaluate_int_expression, &operators[ 20 ] },
+	{ "$str", '$',-1, evaluate_str_expression, &operators[ 21 ] },
+	{ "$len", '$', 1, evaluate_len_expression, &operators[ 22 ] },
+	{ "$asc", '$', 1, evaluate_asc_expression, &operators[ 23 ] },
+	{ "$cmp", '$', 2, evaluate_cmp_expression, &operators[ 24 ] },
+	{ "$cat", '$',-1, evaluate_str_expression, &operators[ 25 ] },
+	{ "$chr", '$', 2, evaluate_chr_expression, &operators[ 26 ] },
+	{ "$tup", '$', 2, evaluate_tup_expression, &operators[ 27 ] },
+	{ "$sub", '$', 3, evaluate_sub_expression, &operators[ 28 ] },
+	{ "$astr", '$', 1, evaluate_astr_expression, &operators[ 29 ] },
+	{ "$load", '$', 1, evaluate_load_expression, &operators[ 30 ] },
+	{ "$flen", '$', 1, evaluate_flen_expression, &operators[ 31 ] },
+	{ "$argc", '$', 0, evaluate_argc_expression, &operators[ 32 ] },
+	{ "$argv", '$', 1, evaluate_argv_expression, &operators[ 33 ] },
+	{ "$time", '$', 0, evaluate_time_expression, &operators[ 34 ] },
+	{ "$next", '$', 1, evaluate_next_expression, &operators[ 35 ] },
+	{ "$child", '$', 1, evaluate_child_expression, &operators[ 36 ] },
+	{ "$parse", '$', 1, evaluate_parse_expression, &operators[ 37 ] },
+	{ "$quote", '$', 1, evaluate_quote_expression, &operators[ 38 ] },
+	{ "$unquote", '$', 1, evaluate_unquote_expression, &operators[ 39 ] },
+	{ "$line", '$', 1, evaluate_line_expression, &operators[ 40 ] },
+	{ "$hex", '$', 1, evaluate_hex_expression, &operators[ 41 ] },
+	{ "$pack", '$', 1, evaluate_pack_expression, &operators[ 42 ] },
+	{ "$array", '$', 1, evaluate_array_expression, &operators[ 43 ] },
+	{ "$new", '$', 1, evaluate_array_expression, &operators[ 44 ] },
+	{ "$eq", '$', 2, evaluate_eq_expression, &operators[ 45 ] },
+	{ "$chop", '$', 2, evaluate_chop_expression, &operators[ 46 ] },
+	{ "$interrupted", '$', 0, evaluate_interrupted_expression, &operators[ 47 ] },
 	{ ":", ':', -1, evaluate_function_expression, NULL }
 };
 
