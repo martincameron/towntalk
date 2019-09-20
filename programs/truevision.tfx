@@ -26,12 +26,12 @@ function truevision_get_palette( tga ) {
 	let end = +( idx +( *( $chr( tga 6 ) 256 ) &( $chr( tga 5 ) 0xFF ) ) );
 	while <( idx end ) {
 		# Read palette entry.
-		let clr = $chr( tga +( offset 2 ) );
-		let clr = +( *( clr 256 ) $chr( tga +( offset 1 ) ) );
-		let clr = +( *( clr 256 ) $chr( tga offset ) );
+		let clr = &( $chr( tga +( offset 2 ) ) 0xFF );
+		let clr = +( *( clr 256 ) &( $chr( tga +( offset 1 ) ) 0xFF ) );
+		let clr = +( *( clr 256 ) &( $chr( tga offset ) 0xFF ) );
 		let offset = +( offset 3 );
 		if =( palbits 32 ) {
-			let alpha = $chr( tga offset );
+			let alpha = &( $chr( tga offset ) 0xFF );
 			inc offset;
 		} else {
 			let alpha = 0xFF;
