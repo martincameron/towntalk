@@ -1,0 +1,190 @@
+
+global lzw_bits, lzw_mask, lzw_size, lzw_dict;
+
+function lzw_reset( bits ) {
+	var idx;
+	let lzw_bits = bits;
+	let lzw_mask = -( <<( 1 bits ) 1 );
+	let lzw_size = +( <<( 1 -( bits 1 ) ) 2 );
+	if !( lzw_dict ) {
+		let lzw_dict = $array( 4096 );
+		while <( idx lzw_size ) {
+			set [ lzw_dict idx ] = $asc( idx );
+			inc idx;
+		}
+	}
+}
+
+function lzw_update( prev, code ) {
+	if >( code lzw_size ) {
+		throw "Invalid compressed data!";
+	}
+	if =( code lzw_size ) {
+		let code = prev;
+	}
+	if <( lzw_size $len( lzw_dict ) ) {
+		set [ lzw_dict lzw_size ] = $cat( [ lzw_dict prev ] $sub( [ lzw_dict code ] 0 1 ) );
+		let lzw_size = +( lzw_size 1 );
+		if >( lzw_size lzw_mask ) {
+			let lzw_bits = +( lzw_bits 1 );
+			let lzw_mask = +( *( lzw_mask 2 ) 1 );
+		}
+	}
+}
+
+function lzw_decode( input, output, bits ) {
+	var reset, stop, init_size, in_idx, out_idx, buffer, buf_bits, prev, code, entry, idx;
+	let reset = <<( 1 -( bits 1 ) );
+	let stop = +( reset 1 );
+	call lzw_reset( bits );
+	let init_size = lzw_size;
+	let prev = reset;
+	while TRUE {
+		while &&( <( buf_bits 16 ) <( in_idx $len( input ) ) ) {
+			let buffer = +( buffer <<( &( $chr( input in_idx ) 0xFF ) buf_bits ) );
+			let buf_bits = +( buf_bits 8 );
+			inc in_idx;
+		}
+		let code = &( buffer lzw_mask );
+		let buffer = >>( buffer lzw_bits );
+		let buf_bits = -( buf_bits lzw_bits );
+		if =( code reset ) {
+			if >( lzw_size init_size ) {
+				call lzw_reset( bits );
+			}
+		} else {
+			if =( code stop ) {
+				break;
+			} else {
+				if !( =( prev reset ) ) {
+					call lzw_update( prev, code );
+				}
+				let entry = [ lzw_dict code ];
+				let idx = 0;
+				if output {
+					while <( idx $len( entry ) ) {
+						set [ output out_idx ] = &( $chr( entry idx ) 0xFF );
+						inc out_idx;
+						inc idx;
+					}
+				} else {
+					let out_idx = +( out_idx $len( entry ) );
+				}
+			}
+		}
+		let prev = code;
+	}
+	return out_idx;
+}
+
+# Return the width of the specified GIF image file.
+function gif_get_width( tga ) {
+	return +( <<( $chr( tga 787 ) 8 ) &( $chr( tga 786 ) 0xFF ) );
+}
+
+# Return the height of the specified GIF image file.
+function gif_get_height( tga ) {
+	return +( <<( $chr( tga 789 ) 8 ) &( $chr( tga 788 ) 0xFF ) );
+}
+
+# Return an array containing the palette contained within the specified GIF image file.
+function gif_get_palette( gif ) {
+	var offset, idx, palette, clr;
+	if !( =( &( $chr( gif 10 ) 0xF7 ) 0xF7 ) ) {
+		throw "Unsupported palette. Expected 256 colour global palette.";
+	}
+	let offset = 13;
+	let palette = $array( 256 );
+	while <( idx 256 ) {
+		# Read palette entry.
+		let clr = 0xFF;
+		let clr = +( clr <<( &( $chr( gif offset ) 0xFF ) 16 ) );
+		let clr = +( clr <<( &( $chr( gif +( offset 1 ) ) 0xFF ) 8 ) );
+		let clr = +( clr &( $chr( gif +( offset 2 ) ) 0xFF ) );
+		let offset = +( offset 3 );
+		set [ palette idx ] = +( <<( clr 8 ) 0xFF );
+		inc idx;
+	}
+	return palette;
+}
+
+# Return the length of the compressed image data and copy to output if not null.
+function gif_get_lzw_image_data( gif, offset, output ) {
+	var len, idx, end;
+	let len = &( $chr( gif offset ) 0xFF );
+	inc offset;
+	while len {
+		let end = +( idx len );
+		if output {
+			while <( idx end ) {
+				set [ output idx ] = &( $chr( gif offset ) 0xFF );
+				inc offset;
+				inc idx;
+			}
+		} else {
+			let offset = +( offset len );
+			let idx = end;
+		}
+		let len = &( $chr( gif offset ) 0xFF );
+		inc offset;
+	}
+	return idx;
+}
+
+# Return an array containing the image-data from the specified GIF image file.
+function gif_get_image_data( gif ) {
+	var width, height, offset, bits, input, output;
+	if $cmp( $sub( gif, 0, 4 ) "GIF8" ) {
+		throw "Not a GIF file!";
+	}
+	let width = gif_get_width( gif );
+	let height = gif_get_height( gif );
+	if &( $chr( gif 790 ) 0xC0 ) {
+		throw "Unsupported image type. Local palette or interlaced image data present.";
+	}
+	# Offset of image data assuming 256-colour global palette.
+	let offset = 791;
+	let bits = +( $chr( gif offset ) 1 );
+	inc offset;
+	let input = $array( gif_get_lzw_image_data( gif, offset, 0 ) );
+	call gif_get_lzw_image_data( gif, offset, input );
+	let input = $sub( input 0 $len( input ) );
+	let output = $array( lzw_decode( input 0 bits ) );
+	call lzw_decode( input output bits );
+	return output;
+}
+
+# Return the RGBA pixel data from the specified GIF image file.
+function gif_get_pixels( gif ) {
+	var palette, pixels, idx, len;
+	# Read palette.
+	let palette = gif_get_palette( gif );
+	# Read image data.
+	let pixels = gif_get_image_data( gif );
+	let idx = 0;
+	let len = $len( pixels );
+	while <( idx len ) {
+		# Look-up palette index.
+		set [ pixels idx ] = [ palette [ pixels idx ] ];
+		inc idx;
+	}
+	return pixels;
+}
+
+program gifview {
+	var gif, width, height, pixels;
+	let gif = $load( $argv( 1 ) );
+	
+	let width = gif_get_width( gif );
+	let height = gif_get_height( gif );
+	let pixels = gif_get_pixels( gif );
+	
+	fxopen width height "GIFView";
+	fxsurface 0, width, height, pixels;
+	fxblit 0, 0, 0, width, height, 0, 0;
+	
+	while TRUE {
+		fxshow;
+		call $fxwait;
+	}
+}
