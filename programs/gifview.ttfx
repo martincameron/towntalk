@@ -77,28 +77,37 @@ function lzw_decode( input, output, bits ) {
 	return out_idx;
 }
 
+# Return the number of global palette entries in the specified GIF image file.
+function gif_get_global_palette_length( gif ) {
+	if !( =( &( $chr( gif 10 ) 0x80 ) 0x80 ) ) {
+		throw "Global palette not present.";
+	}
+	return <<( 1 +( &( $chr( gif 10 ) 0x7 ) 1 ) );
+}
+
 # Return the width of the specified GIF image file.
-function gif_get_width( tga ) {
-	return +( <<( $chr( tga 787 ) 8 ) &( $chr( tga 786 ) 0xFF ) );
+function gif_get_width( gif ) {
+	var offset;
+	let offset = +( 18 *( gif_get_global_palette_length( gif ) 3 ) );
+	return +( <<( $chr( gif +( offset 1 ) ) 8 ) &( $chr( gif offset ) 0xFF ) );
 }
 
 # Return the height of the specified GIF image file.
-function gif_get_height( tga ) {
-	return +( <<( $chr( tga 789 ) 8 ) &( $chr( tga 788 ) 0xFF ) );
+function gif_get_height( gif ) {
+	var offset;
+	let offset = +( 20 *( gif_get_global_palette_length( gif ) 3 ) );
+	return +( <<( $chr( gif +( offset 1 ) ) 8 ) &( $chr( gif offset ) 0xFF ) );
 }
 
 # Return an array containing the palette contained within the specified GIF image file.
 function gif_get_palette( gif ) {
-	var offset, idx, palette, clr;
-	if !( =( &( $chr( gif 10 ) 0xF7 ) 0xF7 ) ) {
-		throw "Unsupported palette. Expected 256 colour global palette.";
-	}
+	var offset, length, idx, palette, clr;
 	let offset = 13;
-	let palette = $array( 256 );
-	while <( idx 256 ) {
+	let length = gif_get_global_palette_length( gif );
+	let palette = $array( length );
+	while <( idx length ) {
 		# Read palette entry.
-		let clr = 0xFF;
-		let clr = +( clr <<( &( $chr( gif offset ) 0xFF ) 16 ) );
+		let clr = <<( &( $chr( gif offset ) 0xFF ) 16 );
 		let clr = +( clr <<( &( $chr( gif +( offset 1 ) ) 0xFF ) 8 ) );
 		let clr = +( clr &( $chr( gif +( offset 2 ) ) 0xFF ) );
 		let offset = +( offset 3 );
@@ -139,11 +148,11 @@ function gif_get_image_data( gif ) {
 	}
 	let width = gif_get_width( gif );
 	let height = gif_get_height( gif );
-	if &( $chr( gif 790 ) 0xC0 ) {
+	let offset = +( 22 *( gif_get_global_palette_length( gif ) 3 ) );
+	if &( $chr( gif offset ) 0xC0 ) {
 		throw "Unsupported image type. Local palette or interlaced image data present.";
 	}
-	# Offset of image data assuming 256-colour global palette.
-	let offset = 791;
+	inc offset;
 	let bits = +( $chr( gif offset ) 1 );
 	inc offset;
 	let input = $array( gif_get_lzw_image_data( gif, offset, 0 ) );
