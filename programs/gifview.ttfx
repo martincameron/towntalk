@@ -33,11 +33,10 @@ function lzw_update( prev, code ) {
 }
 
 function lzw_decode( input, output, bits ) {
-	var reset, stop, init_size, in_idx, out_idx, buffer, buf_bits, prev, code, entry, idx;
+	var reset, stop, in_idx, out_idx, buffer, buf_bits, prev, code, entry, idx;
 	let reset = <<( 1 -( bits 1 ) );
 	let stop = +( reset 1 );
 	call lzw_reset( bits );
-	let init_size = lzw_size;
 	let prev = reset;
 	while TRUE {
 		while &&( <( buf_bits 16 ) <( in_idx $len( input ) ) ) {
@@ -49,9 +48,7 @@ function lzw_decode( input, output, bits ) {
 		let buffer = >>( buffer lzw_bits );
 		let buf_bits = -( buf_bits lzw_bits );
 		if =( code reset ) {
-			if >( lzw_size init_size ) {
-				call lzw_reset( bits );
-			}
+			call lzw_reset( bits );
 		} else {
 			if =( code stop ) {
 				break;
