@@ -154,9 +154,8 @@ function gif_get_image_data( gif ) {
 	inc offset;
 	let input = $array( gif_get_lzw_image_data( gif, offset, 0 ) );
 	call gif_get_lzw_image_data( gif, offset, input );
-	let input = $sub( input 0 $len( input ) );
-	let output = $array( lzw_decode( input 0 bits ) );
-	call lzw_decode( input output bits );
+	let output = $array( *( width height ) );
+	call lzw_decode( $sub( input 0 $len( input ) ) output bits );
 	return output;
 }
 
