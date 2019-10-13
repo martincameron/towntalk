@@ -719,7 +719,7 @@ static enum result execute_fxplay_statement( struct statement *this, struct vari
 		ret = expr->evaluate( expr, variables, &sequence, exception );
 		if( ret ) {
 			if( channel.integer_value >= 0 && channel.integer_value < NUM_CHANNELS ) {
-				if( sequence.string_value ) {
+				if( sequence.string_value && sequence.string_value->line == 0 ) {
 					SDL_LockAudio();
 					if( this->local && fxenv->channels[ channel.integer_value ].sequence.string_value ) {
 						assign_variable( &sequence, &fxenv->channels[ channel.integer_value ].next_sequence );
