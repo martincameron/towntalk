@@ -118,7 +118,7 @@ function draw_background() {
 }
 
 program raster {
-	var idx, event, selected, file, err, y, c1, c2, paint;
+	var event, selected, file, err, y, c1, c2, paint;
 	let palette = $array( ${ 0x000000, 0xFFFFFF, 0xA0A0A0, 0x6080B0 } );
 	
 	dim [ foreground 240 ];
@@ -169,131 +169,138 @@ program raster {
 	call tg_anchors( 21, 1, 1, 0, 1 );
 		
 	call tg_draw( 0 );
-	fxshow;
 
 	while TRUE {
-		let event = $fxwait;
-		let selected = tg_scan( event );
-		if >( selected 0 ) {
-			#print $cat( selected, " ", [ tg_a selected ] );
-			switch selected {
-				case 3 {
-					call tg_file_selector( "Load RMS/RWS" );
-				}
-				case 4 {
-					call tg_file_selector( $tup( "Save RMS" 1 ) );
-				}
-				case 5 {
-					call fill_array( foreground, -1 );
-					call tg_draw( 0 );
-				}
-				case 6 {
-					call fore_to_back();
-					call dither( background, foreground );
-					set [ tg_a 21 ] = 0;
-					call tg_draw( 0 );
-				}
-				case 7 {
-					call tg_request( "About", ${ "Copper-designer for AMOS & TTFX!" "(c)1994-2018 mumart@gmail.com" }, "  Okay!  ", " Wicked! " );
-				}
-				case 8 {
-					break;
-				}
-				case 11 {
-					let c1 = +( +( *( [ tg_a 11 ] 65536 ) *( [ tg_a 12 ] 256 ) ) [ tg_a 13 ] );
-					set [ tg_c 10 ] = c1;
-					call tg_draw( 1 );
-				}
-				case 12 {
-					let c1 = +( +( *( [ tg_a 11 ] 65536 ) *( [ tg_a 12 ] 256 ) ) [ tg_a 13 ] );
-					set [ tg_c 10 ] = c1;
-					call tg_draw( 1 );
-				}
-				case 13 {
-					let c1 = +( +( *( [ tg_a 11 ] 65536 ) *( [ tg_a 12 ] 256 ) ) [ tg_a 13 ] );
-					set [ tg_c 10 ] = c1;
-					call tg_draw( 1 );
-				}
-				case 16 {
-					let c2 = +( +( *( [ tg_a 16 ] 65536 ) *( [ tg_a 17 ] 256 ) ) [ tg_a 18 ] );
-					set [ tg_c 15 ] = c2;
-					call tg_draw( 1 );
-				}
-				case 17 {
-					let c2 = +( +( *( [ tg_a 16 ] 65536 ) *( [ tg_a 17 ] 256 ) ) [ tg_a 18 ] );
-					set [ tg_c 15 ] = c2;
-					call tg_draw( 1 );
-				}
-				case 18 {
-					let c2 = +( +( *( [ tg_a 16 ] 65536 ) *( [ tg_a 17 ] 256 ) ) [ tg_a 18 ] );
-					set [ tg_c 15 ] = c2;
-					call tg_draw( 1 );
-				}
-				case 21 {
-					call tg_draw( 0 );
-				}
-				case req_but1 {
-					call req_dispose();
-				}
-				case req_but2 {
-					call req_dispose();
-				}
-				case fs_file {
-					call fs_file_selected();
-				}
-				case fs_dir {
-					call fs_dir_selected();
-				}
-				case fs_list {
-					call fs_list_selected();
-				}
-				case fs_cancel {
-					call fs_dispose();
-				}
-				case fs_okay {
-					try {
-						if =( [ tg_a fs_win ] 1 ) {
-							let file = fs_okay_selected();
-							if file {
-								call fore_to_back();
-								save $str( "RM.AGA\012" $astr( background ) "EOF" ), file;
-							}
-						} else {
-							let file = fs_okay_selected();
-							if file {
-								call parse_rws( $load( file ), background );
-								call fill_array( foreground, -1 );
-								call tg_draw( 0 );
-							}
-						}
-					} catch err {
-						print err;
-					}
-				}
-			}
-		} else {
-			if !( |( fs_win req_win ) ) {
-				if =( $mousekey 1 ) {
-					if &&( tg_selx =( tg_find( tg_selx, tg_sely, 0 ) 0 ) ) {
-						if =( paint FALSE ) {
-							call fore_to_back();
-							let paint = TRUE;
-						}
-						let y = $ymouse;
-						call fill_array( foreground, -1 );
-						if <( tg_sely y ) {
-							call gradient( c1, c2, foreground, /( tg_sely 2 ), /( -( y tg_sely ) 2 ) );
-						} else {
-							call gradient( c2, c1, foreground, /( y 2 ), /( -( tg_sely y ) 2 ) );
-						}
-						call tg_draw(0);
-					}
-				} else {
-					let paint = FALSE;
-				}
-			}
-		}
+		# Show might block until the next frame.
 		fxshow;
+		# Wait before handling events to reduce latency (at 60hz).
+		fxsleep 16;
+		# Wait for at least one event.
+		let event = $fxwait;
+		while event {
+			# Handle all events in queue.
+			let selected = tg_scan( event );
+			if >( selected 0 ) {
+				#print $cat( selected, " ", [ tg_a selected ] );
+				switch selected {
+					case 3 {
+						call tg_file_selector( "Load RMS/RWS" );
+					}
+					case 4 {
+						call tg_file_selector( $tup( "Save RMS" 1 ) );
+					}
+					case 5 {
+						call fill_array( foreground, -1 );
+						call tg_draw( 0 );
+					}
+					case 6 {
+						call fore_to_back();
+						call dither( background, foreground );
+						set [ tg_a 21 ] = 0;
+						call tg_draw( 0 );
+					}
+					case 7 {
+						call tg_request( "About", ${ "Copper-designer for AMOS & TTFX!" "(c)1994-2019 mumart@gmail.com" }, "  Okay!  ", " Wicked! " );
+					}
+					case 8 {
+						print "Bye!";
+						exit 0;
+					}
+					case 11 {
+						let c1 = +( +( *( [ tg_a 11 ] 65536 ) *( [ tg_a 12 ] 256 ) ) [ tg_a 13 ] );
+						set [ tg_c 10 ] = c1;
+						call tg_draw( 1 );
+					}
+					case 12 {
+						let c1 = +( +( *( [ tg_a 11 ] 65536 ) *( [ tg_a 12 ] 256 ) ) [ tg_a 13 ] );
+						set [ tg_c 10 ] = c1;
+						call tg_draw( 1 );
+					}
+					case 13 {
+						let c1 = +( +( *( [ tg_a 11 ] 65536 ) *( [ tg_a 12 ] 256 ) ) [ tg_a 13 ] );
+						set [ tg_c 10 ] = c1;
+						call tg_draw( 1 );
+					}
+					case 16 {
+						let c2 = +( +( *( [ tg_a 16 ] 65536 ) *( [ tg_a 17 ] 256 ) ) [ tg_a 18 ] );
+						set [ tg_c 15 ] = c2;
+						call tg_draw( 1 );
+					}
+					case 17 {
+						let c2 = +( +( *( [ tg_a 16 ] 65536 ) *( [ tg_a 17 ] 256 ) ) [ tg_a 18 ] );
+						set [ tg_c 15 ] = c2;
+						call tg_draw( 1 );
+					}
+					case 18 {
+						let c2 = +( +( *( [ tg_a 16 ] 65536 ) *( [ tg_a 17 ] 256 ) ) [ tg_a 18 ] );
+						set [ tg_c 15 ] = c2;
+						call tg_draw( 1 );
+					}
+					case 21 {
+						call tg_draw( 0 );
+					}
+					case req_but1 {
+						call req_dispose();
+					}
+					case req_but2 {
+						call req_dispose();
+					}
+					case fs_file {
+						call fs_file_selected();
+					}
+					case fs_dir {
+						call fs_dir_selected();
+					}
+					case fs_list {
+						call fs_list_selected();
+					}
+					case fs_cancel {
+						call fs_dispose();
+					}
+					case fs_okay {
+						try {
+							if =( [ tg_a fs_win ] 1 ) {
+								let file = fs_okay_selected();
+								if file {
+									call fore_to_back();
+									save $str( "RM.AGA\012" $astr( background ) "EOF" ), file;
+								}
+							} else {
+								let file = fs_okay_selected();
+								if file {
+									call parse_rws( $load( file ), background );
+									call fill_array( foreground, -1 );
+									call tg_draw( 0 );
+								}
+							}
+						} catch err {
+							print err;
+						}
+					}
+				}
+			} else {
+				if !( |( fs_win req_win ) ) {
+					if =( $mousekey 1 ) {
+						if &&( tg_selx =( tg_find( tg_selx, tg_sely, 0 ) 0 ) ) {
+							if =( paint FALSE ) {
+								call fore_to_back();
+								let paint = TRUE;
+							}
+							let y = $ymouse;
+							call fill_array( foreground, -1 );
+							if <( tg_sely y ) {
+								call gradient( c1, c2, foreground, /( tg_sely 2 ), /( -( y tg_sely ) 2 ) );
+							} else {
+								call gradient( c2, c1, foreground, /( y 2 ), /( -( tg_sely y ) 2 ) );
+							}
+							call tg_draw(0);
+						}
+					} else {
+						let paint = FALSE;
+					}
+				}
+			}
+			let event = $fxpoll;
+		}
 	}
-	print "Bye!";
 }

@@ -191,5 +191,8 @@ program gifview {
 	while TRUE {
 		fxshow;
 		call $fxwait;
+		while $fxpoll {
+			# Consume all events as show might block.
+		}
 	}
 }

@@ -415,7 +415,7 @@ static enum result execute_fxopen_statement( struct statement *this, struct vari
 						width.integer_value, height.integer_value, 0 );
 					if( fxenv->window ) {
 						fxenv->renderer = SDL_CreateRenderer(
-							fxenv->window, -1, SDL_RENDERER_TARGETTEXTURE );
+							fxenv->window, -1, SDL_RENDERER_TARGETTEXTURE | SDL_RENDERER_PRESENTVSYNC );
 						if( fxenv->renderer ) {
 							fxenv->target = SDL_CreateTexture( fxenv->renderer,
 								SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET,

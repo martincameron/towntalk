@@ -1163,7 +1163,7 @@ function req_dispose() {
 }
 
 program tgads {
-	var selected, file;
+	var event, selected, file;
 	let palette = $array( ${ 0x000000, 0xFFFFFF, 0xA0A0A0, 0x6080B0 } );
 	
 	fxopen 640, 480, "tgads";
@@ -1182,44 +1182,52 @@ program tgads {
 	call tg_anchors( 5, 0, 1, 0, 1 );
 	
 	call tg_draw( 0 );
-	fxshow;
 
 	while TRUE {
-		switch tg_scan( $fxwait ) {
-			case 0 {
-			}
-			case 3 {
-				call tg_file_selector( "Select File" );
-			}
-			case 4 {
-				call tg_request( "Quit?", ${ "" "Really quit this incredible program?!" "" }, "Yes, please!", "Only kidding!" );
-			}
-			case fs_file {
-				call fs_file_selected();
-			}
-			case fs_dir {
-				call fs_dir_selected();
-			}
-			case fs_list {
-				call fs_list_selected();
-			}
-			case fs_cancel {
-				call fs_dispose();
-			}
-			case fs_okay {
-				let file = fs_okay_selected();
-				if file {
-					set[ tg_a 5 ] = file;
-					call tg_draw( 5 );
+		# Show might block until the next frame.
+		fxshow;
+		# Wait before handling events to reduce latency (at 60hz).
+		fxsleep 16;
+		# Wait for at least one event.
+		let event = $fxwait;
+		while event {
+			# Handle all events in queue.
+			switch tg_scan( event ) {
+				case 0 {
+				}
+				case 3 {
+					call tg_file_selector( "Select File" );
+				}
+				case 4 {
+					call tg_request( "Quit?", ${ "" "Really quit this incredible program?!" "" }, "Yes, please!", "Only kidding!" );
+				}
+				case fs_file {
+					call fs_file_selected();
+				}
+				case fs_dir {
+					call fs_dir_selected();
+				}
+				case fs_list {
+					call fs_list_selected();
+				}
+				case fs_cancel {
+					call fs_dispose();
+				}
+				case fs_okay {
+					let file = fs_okay_selected();
+					if file {
+						set[ tg_a 5 ] = file;
+						call tg_draw( 5 );
+					}
+				}
+				case req_but1 {
+					exit 0;
+				}
+				case req_but2 {
+					call req_dispose();
 				}
 			}
-			case req_but1 {
-				break;
-			}
-			case req_but2 {
-				call req_dispose();
-			}
+			let event = $fxpoll;
 		}
-		fxshow;
 	}
 }

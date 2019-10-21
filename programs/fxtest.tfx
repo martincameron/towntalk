@@ -44,6 +44,9 @@ program fxtest {
 	let x = 0;
 	while TRUE {
 		switch $fxwait {
+			case FX_WINDOW {
+				fxshow;
+			}
 			case FX_TIMER {
 				if <( x 640 ) {
 					fxrect x, 0, 8, 480, *( c 256 );
