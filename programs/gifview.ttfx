@@ -34,6 +34,9 @@ function lzw_update( prev, code ) {
 
 function lzw_decode( input, output, bits ) {
 	var reset, stop, in_idx, out_idx, buffer, buf_bits, prev, code, entry, idx;
+	if <( bits 2 ) {
+		throw "Invalid code size!";
+	}
 	let reset = <<( 1 -( bits 1 ) );
 	let stop = +( reset 1 );
 	call lzw_reset( bits );
