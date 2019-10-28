@@ -1,0 +1,77 @@
+
+# Return the encoded length and encode to output if not null.
+function rle_encode( input, output ) {
+	var in_idx, in_end, out_idx, code, prev, run;
+	let in_end = -( $len( input ) 1 );
+	while <e( in_idx in_end ) {
+		let code = $chr( input in_idx );
+		if &&( &&( =( code prev ) <( in_idx in_end ) ) <( run 128 ) ) {
+			inc run;
+		} else {
+			let prev = code;
+			if output {
+				if run {
+					set [ output out_idx ] = -( 0 run );
+					inc out_idx;
+					let run = 0;
+				}
+				set [ output out_idx ] = code;
+				inc out_idx;
+			} else {
+				if run {
+					inc out_idx;
+					let run = 0;
+				}
+				inc out_idx;
+			}
+		}
+		inc in_idx;
+	}
+	return out_idx;
+}
+
+# Return the decoded length and decode to output if not null.
+function rle_decode( input, output ) {
+	var in_idx, out_idx, prev, code;
+	while <( in_idx $len( input ) ) {
+		let code = $chr( input in_idx );
+		if >( code -1 ) {
+			let prev = code;
+			let code = -1;
+		}
+		if output {
+			while <( code 0 ) {
+				set [ output out_idx ] = prev;
+				inc out_idx;
+				inc code;
+			}
+		} else {
+			let out_idx = -( out_idx code );
+		}
+		inc in_idx;
+	}
+	return out_idx;
+}
+
+program rle {
+	var org, buf, enc, dec;
+	if =( $argc 3 ) {
+		let org = $load( $argv( 1 ) );
+		print $cat( "Original length: " $len( org ) );
+		
+		let buf = $array( rle_encode( org 0 ) );
+		print $cat( "Compressed length: " rle_encode( org buf ) );
+		let enc = $sub( buf 0 $len( buf ) );
+		
+		let buf = $array( rle_decode( enc 0 ) );
+		print $cat( "Decompressed length: " rle_decode( enc buf ) );
+		let dec = $sub( buf 0 $len( buf ) );
+		
+		if $cmp( org dec ) {
+			throw "Decoded data differs from original!";
+		}
+		save enc $argv( 2 );
+	} else {
+		error "Usage rle.tt input output.rle";
+	}
+}
