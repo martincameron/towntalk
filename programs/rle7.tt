@@ -2,7 +2,8 @@
 rem {
 	Run-length coder for compression of 7-bit image data.
 	The high-bit of each byte is used as a flag for run-lengths,
-	which results in better efficiency over a generic algorithm.
+	which simplifies the implementation and has better efficiency
+	than a generic algorithm where the full 8-bits are not required.
 }
 
 # Return the encoded length and encode to output if not null.
@@ -82,6 +83,6 @@ program rle7 {
 		save enc $argv( 2 );
 	} else {
 		error "Run-length compression for 7-bit image data.";
-		error "Usage rle.tt input output.rle";
+		error "Usage rle7.tt input output.rle";
 	}
 }
