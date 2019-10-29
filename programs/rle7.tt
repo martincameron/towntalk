@@ -1,10 +1,19 @@
 
+rem {
+	Run-length coder for compression of 7-bit image data.
+	The high-bit of each byte is used as a flag for run-lengths,
+	which results in better efficiency over a generic algorithm.
+}
+
 # Return the encoded length and encode to output if not null.
-function rle_encode( input, output ) {
+function rle7_encode( input, output ) {
 	var in_idx, in_end, out_idx, code, prev, run;
 	let in_end = -( $len( input ) 1 );
 	while <e( in_idx in_end ) {
 		let code = $chr( input in_idx );
+		if &( code 0x80 ) {
+			throw "Unsupported input data! Must be 7-bit.";
+		}
 		if &&( &&( =( code prev ) <( in_idx in_end ) ) <( run 128 ) ) {
 			inc run;
 		} else {
@@ -31,7 +40,7 @@ function rle_encode( input, output ) {
 }
 
 # Return the decoded length and decode to output if not null.
-function rle_decode( input, output ) {
+function rle7_decode( input, output ) {
 	var in_idx, out_idx, prev, code;
 	while <( in_idx $len( input ) ) {
 		let code = $chr( input in_idx );
@@ -53,18 +62,18 @@ function rle_decode( input, output ) {
 	return out_idx;
 }
 
-program rle {
+program rle7 {
 	var org, buf, enc, dec;
 	if =( $argc 3 ) {
 		let org = $load( $argv( 1 ) );
 		print $cat( "Original length: " $len( org ) );
 		
-		let buf = $array( rle_encode( org 0 ) );
-		print $cat( "Compressed length: " rle_encode( org buf ) );
+		let buf = $array( rle7_encode( org 0 ) );
+		print $cat( "Compressed length: " rle7_encode( org buf ) );
 		let enc = $sub( buf 0 $len( buf ) );
 		
-		let buf = $array( rle_decode( enc 0 ) );
-		print $cat( "Decompressed length: " rle_decode( enc buf ) );
+		let buf = $array( rle7_decode( enc 0 ) );
+		print $cat( "Decompressed length: " rle7_decode( enc buf ) );
 		let dec = $sub( buf 0 $len( buf ) );
 		
 		if $cmp( org dec ) {
@@ -72,6 +81,7 @@ program rle {
 		}
 		save enc $argv( 2 );
 	} else {
+		error "Run-length compression for 7-bit image data.";
 		error "Usage rle.tt input output.rle";
 	}
 }
