@@ -3418,11 +3418,10 @@ static int validate_syntax( char *syntax, struct element *elem,
 			}
 		} else if( chr == 'x' ) {
 			/* Expression. */
-			if( elem && elem->str.string[ 0 ] == ',' ) {
-				elem = elem->next;
-			}
 			if( elem && strchr( ",;({", elem->str.string[ 0 ] ) == NULL ) {
-				if( elem->str.string[ 0 ] == '$' && elem->str.string[ 1 ] == 0 ) {
+				if( elem->str.string[ 0 ] == '[' ) {
+					validate_syntax( "[", elem, key, env, message );
+				} else if( elem->str.string[ 0 ] == '$' && elem->str.string[ 1 ] == 0 ) {
 					elem = elem->next;
 					if( elem == NULL || elem->str.string[ 0 ] != '{' ) {
 						sprintf( message, "Expected '{' after '$' on line %d.", line );
@@ -3430,8 +3429,9 @@ static int validate_syntax( char *syntax, struct element *elem,
 				} else if( elem->next && elem->next->str.string[ 0 ] == '(' ) {
 					elem = elem->next;
 				}
-			} else if( elem && elem->str.string[ 0 ] == '[' ) {
-				validate_syntax( "[", elem, key, env, message );
+				if( elem->next && elem->next->str.string[ 0 ] == ',' && syntax[ idx ] == 'x' ) {
+					elem = elem->next;
+				}
 			} else {
 				sprintf( message, "Expected expression after '%.16s' on line %d.", key->str.string, line );
 			}
