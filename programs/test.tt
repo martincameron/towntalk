@@ -1,7 +1,7 @@
 
 rem { Test }
 
-const ONE = 1;
+const ONE = $len( $array( 1 ) );
 const STR = "*";
 const CAT = $str( "*" "*" );
 const ELE = ${ ( * ) };
@@ -88,6 +88,7 @@ function testarray() {
 	call assert( =( $cmp( $child( $next( [ a 4 ] ) ) "4" ) 0 ), ${-} );
 	call assert( =( $cmp( $sub( a, 5, 2 ) "TT" ) 0 ), ${-} );
 	call assert( =( $cmp( a "#Array#" ) 0 ), ${-} );
+	call assert( =( $len( $array( 1 ) ) 1 ), ${-} );
 	let err = 0;
 	try { let b = $array( -1 ); } catch err {}
 	call assert( err, ${-} );

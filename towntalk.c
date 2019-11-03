@@ -195,6 +195,7 @@ struct structure {
 struct global_variable {
 	char *name;
 	struct variable value;
+	struct expression *initializer;
 	struct global_variable *next;
 };
 
@@ -725,17 +726,6 @@ static int compare_variables( struct variable *var1, struct variable *var2 ) {
 	return result;
 }
 
-static void dispose_global_variables( struct global_variable *global ) {
-	struct global_variable *next;
-	while( global ) {
-		next = global->next;
-		free( global->name );
-		dispose_variable( &global->value );
-		free( global );
-		global = next;
-	}
-}
-
 static void dispose_expressions( struct expression *expr ) {
 	struct expression *next;
 	while( expr ) {
@@ -743,6 +733,18 @@ static void dispose_expressions( struct expression *expr ) {
 		dispose_expressions( expr->parameters );
 		free( expr );
 		expr = next;
+	}
+}
+
+static void dispose_global_variables( struct global_variable *global ) {
+	struct global_variable *next;
+	while( global ) {
+		next = global->next;
+		free( global->name );
+		dispose_variable( &global->value );
+		dispose_expressions( global->initializer );
+		free( global );
+		global = next;
 	}
 }
 
@@ -1766,13 +1768,15 @@ static struct element* parse_const_declaration( struct element *elem, struct env
 	struct function_declaration *func, struct statement *prev, char *message ) {
 	struct element *next = elem->next;
 	struct global_variable *constant;
+	struct expression expr = { 0 };
 	char *name = next->str.string;
 	next = next->next->next;
 	constant = new_global_variable( name, message );
 	if( constant ) {
 		constant->next = env->constants;
 		env->constants = constant;
-		next = parse_constant( next, &constant->value, message );
+		next = parse_expression( next, env, func, &expr, message );
+		constant->initializer = expr.next;
 	}
 	return next->next;
 }
@@ -3399,23 +3403,6 @@ static int validate_syntax( char *syntax, struct element *elem,
 					validate_syntax( "n", elem, key, env, message );
 				}
 			}
-		} else if( chr == 'v' ) {
-			/* String, integer or tuple constant. */
-			if( elem == NULL || strchr( "\"$-0123456789", elem->str.string[ 0 ] ) == NULL ) {
-				sprintf( message, "Expected constant after '%.16s' on line %d.", key->str.string, line );
-			} else if( elem->str.string[ 0 ] == '$' && elem->str.string[ 1 ] == 0 ) {
-				if( elem->next && elem->next->str.string[ 0 ] == '{' ) {
-					elem = elem->next;
-				} else {
-					sprintf( message, "Expected '{' after '$' on line %d.", line );
-				}
-			} else if( strcmp( elem->str.string, "$str" ) == 0 || strcmp( elem->str.string, "$tup" ) == 0 ) {
-				if( elem->next && elem->next->str.string[ 0 ] == '(' ) {
-					elem = elem->next;
-				} else {
-					sprintf( message, "Expected '(' after '%s' on line %d.", elem->str.string, line );
-				}
-			}
 		} else if( chr == 'x' ) {
 			/* Expression. */
 			if( elem && strchr( ",;({", elem->str.string[ 0 ] ) == NULL ) {
@@ -3713,7 +3700,7 @@ static struct keyword declarations[] = {
 	{ "program", "n{", parse_program_declaration, &declarations[ 4 ] },
 	{ "global", "l;", parse_global_declaration, &declarations[ 5 ] },
 	{ "array", "l;", parse_array_declaration, &declarations[ 6 ] },
-	{ "const", "n=v;", parse_const_declaration, &declarations[ 7 ] },
+	{ "const", "n=x;", parse_const_declaration, &declarations[ 7 ] },
 	{ "struct", "n", parse_struct_declaration, NULL }
 };
 
@@ -3779,29 +3766,36 @@ static struct element* parse_decl_list( struct element *elem, struct environment
 static int parse_tt_program( char *program, struct environment *env, char *message ) {
 	struct statement stmt;
 	struct element *elem, *next;
-	struct function_declaration *func, *entry;
+	struct function_declaration *empty, *func, *entry;
 	elem = parse_element( program, message );
 	if( elem ) {
-		/* Populate execution environment.*/
-		parse_keywords( declarations, elem, env, NULL, NULL, message );
-		/* Parse function bodies. */
-		func = env->functions;
-		while( func && func->elem && message[ 0 ] == 0 ) {
-			next = func->elem->next->next;
-			if( next->str.string[ 0 ] == '(' ) {
+		/* Create empty function for global evaluation. */
+		empty = new_function_declaration( "", env->file, message );
+		if( empty ) {
+			empty->next = env->functions;
+			env->functions = empty;
+			empty->env = env;
+			/* Populate execution environment. */
+			parse_keywords( declarations, elem, env, empty, NULL, message );
+			/* Parse function bodies. */
+			func = env->functions;
+			while( func && func->elem && message[ 0 ] == 0 ) {
+				next = func->elem->next->next;
+				if( next->str.string[ 0 ] == '(' ) {
+					next = next->next;
+				}
+				if( next->child ) {
+					entry = env->entry_point;
+					env->entry_point = func;
+					stmt.next = NULL;
+					parse_keywords( env->statements, next->child, env, func, &stmt, message );
+					func->statements = stmt.next;
+					env->entry_point = entry;
+				}
 				next = next->next;
+				func->elem = NULL;
+				func = func->next;
 			}
-			if( next->child ) {
-				entry = env->entry_point;
-				env->entry_point = func;
-				stmt.next = NULL;
-				parse_keywords( env->statements, next->child, env, func, &stmt, message );
-				func->statements = stmt.next;
-				env->entry_point = entry;
-			}
-			next = next->next;
-			func->elem = NULL;
-			func = func->next;
 		}
 		unref_string( &elem->str );
 	}
@@ -3844,4 +3838,17 @@ static int parse_tt_file( char *file_name, struct environment *env, char *messag
 		}
 	}
 	return success;
+}
+
+static int initialize_globals( struct environment *env, struct variable *exception ) {
+	struct global_variable *global = env->constants;
+	struct expression *init;
+	while( global ) {
+		init = global->initializer;
+		if( init && init->evaluate( init, NULL, &global->value, exception ) == EXCEPTION ) {
+			return 0;
+		}
+		global = global->next;
+	}
+	return 1;
 }
