@@ -227,7 +227,7 @@ struct environment {
 	struct keyword *statements;
 	struct operator *operators;
 	struct structure *structures;
-	struct global_variable *constants, *globals;
+	struct global_variable *constants, *constants_tail, *globals;
 	struct function_declaration *functions, *entry_point;
 };
 
@@ -1176,6 +1176,15 @@ static struct statement* new_statement( char *message ) {
 	return stmt;
 }
 
+static void add_constant( struct environment *env, struct global_variable *constant ) {
+	if( env->constants ){
+		env->constants_tail->next = constant;
+	} else {
+		env->constants = constant;
+	}
+	env->constants_tail = constant;
+}
+
 static int add_constants( struct constant *constants, struct environment *env, char *message ) {
 	struct global_variable *global;
 	int idx = 0;
@@ -1187,14 +1196,12 @@ static int add_constants( struct constant *constants, struct environment *env, c
 			if( con->string_value ) {
 				global->value.string_value = new_string_literal( con->string_value );
 				if( global->value.string_value ) {
-					global->next = env->globals;
-					env->globals = global;
+					add_constant( env, global );
 				} else {
 					strcpy( message, OUT_OF_MEMORY );
 				}
 			} else {
-				global->next = env->constants;
-				env->constants = global;
+				add_constant( env, global );
 			}
 		}
 		con = &constants[ idx++ ];
@@ -1773,8 +1780,7 @@ static struct element* parse_const_declaration( struct element *elem, struct env
 	next = next->next->next;
 	constant = new_global_variable( name, message );
 	if( constant ) {
-		constant->next = env->constants;
-		env->constants = constant;
+		add_constant( env, constant );
 		next = parse_expression( next, env, func, &expr, message );
 		constant->initializer = expr.next;
 	}
@@ -2887,8 +2893,7 @@ static struct element* parse_expression( struct element *elem, struct environmen
 			/* String or element literal. */
 			constant = new_global_variable( "#Const#", message );
 			if( constant ) {
-				constant->next = env->constants;
-				env->constants = constant;
+				add_constant( env, constant );
 				expr->global = constant;
 				expr->evaluate = evaluate_global;
 				next = parse_constant( elem, &constant->value, message );
@@ -2897,8 +2902,7 @@ static struct element* parse_expression( struct element *elem, struct environmen
 			/* Source file. */
 			constant = new_global_variable( "#Const#", message );
 			if( constant ) {
-				constant->next = env->constants;
-				env->constants = constant;
+				add_constant( env, constant );
 				expr->global = constant;
 				expr->evaluate = evaluate_global;
 				constant->value.string_value = new_string_value( strlen( env->file ) );

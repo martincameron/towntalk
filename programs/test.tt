@@ -2,6 +2,7 @@
 rem { Test }
 
 const ONE = $len( $array( 1 ) );
+const TWO = +( ONE 1 );
 const STR = "*";
 const CAT = $str( "*" "*" );
 const ELE = ${ ( * ) };
@@ -211,7 +212,7 @@ function testarith() {
 	try { call +( 0 except( ${-} ) ); } catch err {}
 	call assert( err, ${-} );
 	call assert( =( +( +( 1 1 ) +( 1 1 ) ) 4 ), ${-} );
-	call assert( =( +( 1 1 ) 2 ), ${-} );
+	call assert( =( +( ONE TWO ) 3 ), ${-} );
 	call assert( =( -( 1 1 ) 0 ), ${-} );
 	call assert( =( *( 2 2 ) 4 ), ${-} );
 	call assert( =( /( 6 2 ) 3 ), ${-} );
