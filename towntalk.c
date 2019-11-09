@@ -1776,13 +1776,26 @@ static struct element* parse_const_declaration( struct element *elem, struct env
 	struct element *next = elem->next;
 	struct global_variable *constant;
 	struct expression expr = { 0 };
-	char *name = next->str.string;
-	next = next->next->next;
-	constant = new_global_variable( name, message );
-	if( constant ) {
-		add_constant( env, constant );
-		next = parse_expression( next, env, func, &expr, message );
-		constant->initializer = expr.next;
+	char *name;
+	while( message[ 0 ] == 0 && next->str.string[ 0 ] != ';' ) {
+		if( validate_decl( next, env, message ) ) {
+			name = next->str.string;
+			next = next->next;
+			if( next->str.string[ 0 ] == '=' ) {
+				next = next->next;
+				constant = new_global_variable( name, message );
+				if( constant ) {
+					add_constant( env, constant );
+					next = parse_expression( next, env, func, &expr, message );
+					if( next->str.string[ 0 ] == ',' ) {
+						next = next->next;
+					}
+					constant->initializer = expr.next;
+				}
+			} else {
+				sprintf( message, "Expected '=' in const declaration on line %d.", next->str.line );
+			}
+		}
 	}
 	return next->next;
 }
@@ -3362,6 +3375,8 @@ static struct element* validate_syntax( char *syntax, struct element *elem,
 			/* Strings, separators or blocks. */
 			if( elem == NULL || elem->str.string[ 0 ] != chr ) {
 				sprintf( message, "Expected '%c' after '%.16s' on line %d.", chr, key->str.string, line );
+			} else {
+				elem = elem->next;
 			}
 		} else if( chr == '(' ) {
 			/* Bracketed name list. */
@@ -3369,6 +3384,7 @@ static struct element* validate_syntax( char *syntax, struct element *elem,
 				if( elem->child ) {
 					validate_syntax( "l0", elem->child, elem, env, message );
 				}
+				elem = elem->next;
 			} else {
 				sprintf( message, "Expected '(' after '%.16s' on line %d.", key->str.string, line );
 			}
@@ -3377,6 +3393,7 @@ static struct element* validate_syntax( char *syntax, struct element *elem,
 			if( elem && elem->str.string[ 0 ] == '[' ) {
 				if( elem->child ) {
 					validate_syntax( "xx0", elem->child, key, env, message );
+					elem = elem->next;
 				} else {
 					sprintf( message, "Expected '[' after '%.16s' on line %d.", key->str.string, line );
 				}
@@ -3387,6 +3404,8 @@ static struct element* validate_syntax( char *syntax, struct element *elem,
 			/* Catch */
 			if( elem == NULL || strcmp( elem->str.string, "catch" ) ) {
 				sprintf( message, "Expected 'catch' after '%.16s' on line %d.", key->str.string, line );
+			} else {
+				elem = elem->next;
 			}
 		} else if( chr == 'n' ) {
 			/* Name. */
@@ -3394,17 +3413,17 @@ static struct element* validate_syntax( char *syntax, struct element *elem,
 				sprintf( message, "Expected name after '%.16s' on line %d.", key->str.string, line );
 			} else if( !validate_name( elem->str.string, env ) ) {
 				sprintf( message, "Invalid name '%.16s' on line %d.", elem->str.string, line );
+			} else {
+				elem = elem->next;
 			}
 		} else if( chr == 'l' ) {
 			/* Name list, terminated by ';' or NULL. */
-			validate_syntax( "n", elem, key, env, message );
-			while( message[ 0 ] == 0 && elem->next && elem->next->str.string[ 0 ] != ';' ) {
-				elem = elem->next;
-				line = elem->str.line;
+			elem = validate_syntax( "n", elem, key, env, message );
+			while( message[ 0 ] == 0 && elem && elem->str.string[ 0 ] != ';' ) {
 				if( elem->str.string[ 0 ] == ',' ) {
 					elem = elem->next;
 				}
-				validate_syntax( "n", elem, key, env, message );
+				elem = validate_syntax( "n", elem, key, env, message );
 			}
 		} else if( chr == 'x' ) {
 			/* Expression. */
@@ -3422,16 +3441,15 @@ static struct element* validate_syntax( char *syntax, struct element *elem,
 				if( elem->next && elem->next->str.string[ 0 ] == ',' && syntax[ idx ] == 'x' ) {
 					elem = elem->next;
 				}
+				if( elem ) {
+					elem = elem->next;
+				}
 			} else {
 				sprintf( message, "Expected expression after '%.16s' on line %d.", key->str.string, line );
 			}
 		} else if( chr == 'a' ) {
 			/* Name list with optional assignment expression, terminated by ';' or NULL. */
-			validate_syntax( "n", elem, key, env, message );
-			if( elem ) {
-				elem = elem->next;
-				line = elem->str.line;
-			}
+			elem = validate_syntax( "n", elem, key, env, message );
 			while( message[ 0 ] == 0 && elem && elem->str.string[ 0 ] != ';' ) {
 				if( elem->str.string[ 0 ] == '=' ) {
 					elem = validate_syntax( "x", elem->next, key, env, message );
@@ -3440,11 +3458,7 @@ static struct element* validate_syntax( char *syntax, struct element *elem,
 					if( elem->str.string[ 0 ] == ',' ) {
 						elem = elem->next;
 					}
-					validate_syntax( "n", elem, key, env, message );
-					if( elem ) {
-						elem = elem->next;
-						line = elem->str.line;
-					}
+					elem = validate_syntax( "n", elem, key, env, message );
 				}
 			}
 		} else {
@@ -3452,9 +3466,6 @@ static struct element* validate_syntax( char *syntax, struct element *elem,
 			sprintf( message, "Internal error. Unknown specifier '%c' in syntax for '%s'.", chr, key->str.string );
 		}
 		chr = syntax[ idx++ ];
-		if( elem ) {
-			elem = elem->next;
-		}
 	}
 	return elem;
 }
@@ -3726,7 +3737,7 @@ static struct keyword declarations[] = {
 	{ "program", "n{", parse_program_declaration, &declarations[ 4 ] },
 	{ "global", "l;", parse_global_declaration, &declarations[ 5 ] },
 	{ "array", "l;", parse_array_declaration, &declarations[ 6 ] },
-	{ "const", "n=x;", parse_const_declaration, &declarations[ 7 ] },
+	{ "const", "a;", parse_const_declaration, &declarations[ 7 ] },
 	{ "struct", "n", parse_struct_declaration, NULL }
 };
 
