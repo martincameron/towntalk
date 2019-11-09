@@ -3346,7 +3346,7 @@ static int is_keyword( struct keyword *keywords, char *value ) {
 	return keywords != NULL;
 }
 
-static int validate_syntax( char *syntax, struct element *elem,
+static struct element* validate_syntax( char *syntax, struct element *elem,
 	struct element *key, struct environment *env, char *message ) {
 	int idx = 1, chr = syntax[ 0 ], line = key->str.line;
 	while( chr && message[ 0 ] == 0 ) {
@@ -3396,16 +3396,15 @@ static int validate_syntax( char *syntax, struct element *elem,
 				sprintf( message, "Invalid name '%.16s' on line %d.", elem->str.string, line );
 			}
 		} else if( chr == 'l' ) {
-			/* Name list. */
-			if( validate_syntax( "n", elem, key, env, message ) ) {
-				while( elem->next && elem->next->str.string[ 0 ] != ';' && message[ 0 ] == 0 ) {
+			/* Name list, terminated by ';' or NULL. */
+			validate_syntax( "n", elem, key, env, message );
+			while( message[ 0 ] == 0 && elem->next && elem->next->str.string[ 0 ] != ';' ) {
+				elem = elem->next;
+				line = elem->str.line;
+				if( elem->str.string[ 0 ] == ',' ) {
 					elem = elem->next;
-					line = elem->str.line;
-					if( elem->str.string[ 0 ] == ',' ) {
-						elem = elem->next;
-					}
-					validate_syntax( "n", elem, key, env, message );
 				}
+				validate_syntax( "n", elem, key, env, message );
 			}
 		} else if( chr == 'x' ) {
 			/* Expression. */
@@ -3426,6 +3425,28 @@ static int validate_syntax( char *syntax, struct element *elem,
 			} else {
 				sprintf( message, "Expected expression after '%.16s' on line %d.", key->str.string, line );
 			}
+		} else if( chr == 'a' ) {
+			/* Name list with optional assignment expression, terminated by ';' or NULL. */
+			validate_syntax( "n", elem, key, env, message );
+			if( elem ) {
+				elem = elem->next;
+				line = elem->str.line;
+			}
+			while( message[ 0 ] == 0 && elem && elem->str.string[ 0 ] != ';' ) {
+				if( elem->str.string[ 0 ] == '=' ) {
+					elem = validate_syntax( "x", elem->next, key, env, message );
+				}
+				if( message[ 0 ] == 0 && elem && elem->str.string[ 0 ] != ';' ) {
+					if( elem->str.string[ 0 ] == ',' ) {
+						elem = elem->next;
+					}
+					validate_syntax( "n", elem, key, env, message );
+					if( elem ) {
+						elem = elem->next;
+						line = elem->str.line;
+					}
+				}
+			}
 		} else {
 			/* Internal error. */
 			sprintf( message, "Internal error. Unknown specifier '%c' in syntax for '%s'.", chr, key->str.string );
@@ -3435,7 +3456,7 @@ static int validate_syntax( char *syntax, struct element *elem,
 			elem = elem->next;
 		}
 	}
-	return message[ 0 ] == 0;
+	return elem;
 }
 
 static void parse_keywords( struct keyword *keywords, struct element *elem,
@@ -3448,7 +3469,8 @@ static void parse_keywords( struct keyword *keywords, struct element *elem,
 			key = key->next;
 		}
 		if( key ) {
-			if( validate_syntax( key->syntax, elem->next, elem, env, message ) ) {
+			validate_syntax( key->syntax, elem->next, elem, env, message );
+			if( message[ 0 ] == 0 ) { 
 				elem = key->parse( elem, env, func, stmt, message );
 				if( stmt && stmt->next ) {
 					stmt = stmt->next;
