@@ -285,8 +285,6 @@ static int validate_decl( struct element *elem, struct environment *env, char *m
 static int parse_tt_file( char *file_name, struct environment *env, char *message );
 static void parse_keywords( struct keyword *keywords, struct element *elem,
 	struct environment *env, struct function_declaration *func, struct statement *stmt, char *message );
-static struct element* parse_decl_list( struct element *elem, struct environment *env,
-	int (*add)( struct environment *env, struct element *elem, char *message ), char *message );
 static struct element* parse_expression( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct expression *prev, char *message );
 static int parse_expressions( struct element *elem, struct environment *env,
@@ -1713,30 +1711,6 @@ static int add_array_variable( struct environment *env, struct element *elem, ch
 	return message[ 0 ] == 0;
 }
 
-static int add_function_parameter( struct environment *env, struct element *elem, char *message ) {
-	char *name = elem->str.string;
-	struct function_declaration *func = env->functions;
-	struct string_list *param = new_string_list( name );
-	if( param ) {
-		/*printf("Function parameter '%s'\n", name);*/
-		if( get_string_list_index( func->variable_decls, name ) < 0 ) {
-			func->num_parameters = func->num_variables = func->num_parameters + 1;
-			if( func->variable_decls ) {
-				func->variable_decls_tail->next = param;
-			} else {
-				func->variable_decls = param;
-			}
-			func->variable_decls_tail = param;
-		} else {
-			dispose_string_list( param );
-			sprintf( message, "Parameter '%.16s' already defined on line %d.", name, elem->str.line );
-		}
-	} else {
-		strcpy( message, OUT_OF_MEMORY );
-	}
-	return message[ 0 ] == 0;
-}
-
 static int add_local_variable( struct environment *env, struct element *elem, char *message ) {
 	char *name = elem->str.string;
 	struct function_declaration *func = env->entry_point;
@@ -1763,12 +1737,20 @@ static int add_local_variable( struct environment *env, struct element *elem, ch
 
 static struct element* parse_variable_declaration( struct element *elem, struct environment *env,
 	int (*add)( struct environment *env, struct element *elem, char *message ), char *message ) {
-	struct element *next = elem->next;
-	next = parse_decl_list( next, env, add, message );
-	if( next && next->str.string[ 0 ] == ';' ) {
-		next = next->next;
+	while( elem && elem->str.string[ 0 ] != ';' && message[ 0 ] == 0 ) {
+		if( validate_decl( elem, env, message ) ) {
+			if( add( env, elem, message ) ) {
+				elem = elem->next;
+				if( elem && elem->str.string[ 0 ] == ',' ) {
+					elem = elem->next;
+				}
+			}
+		}
 	}
-	return next;
+	if( elem && elem->str.string[ 0 ] == ';' ) {
+		elem = elem->next;
+	}
+	return elem;
 }
 
 static struct element* parse_const_declaration( struct element *elem, struct environment *env,
@@ -1807,17 +1789,17 @@ static struct element* parse_comment( struct element *elem, struct environment *
 
 static struct element* parse_global_declaration( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message ) {
-	return parse_variable_declaration( elem, env, add_global_variable, message);
+	return parse_variable_declaration( elem->next, env, add_global_variable, message);
 }
 
 static struct element* parse_array_declaration( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message ) {
-	return parse_variable_declaration( elem, env, add_array_variable, message);
+	return parse_variable_declaration( elem->next, env, add_array_variable, message);
 }
 
 static struct element* parse_local_declaration( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message ) {
-	return parse_variable_declaration( elem, env, add_local_variable, message);
+	return parse_variable_declaration( elem->next, env, add_local_variable, message);
 }
 
 static enum result evaluate_bitwise_not_expression( struct expression *this, struct variable *variables,
@@ -3592,9 +3574,33 @@ static struct element* parse_try_statement( struct element *elem, struct environ
 	return next;
 }
 
+static int add_function_parameter( struct function_declaration *func, struct element *elem,
+	struct environment *env, char *message ) {
+	char *name = elem->str.string;
+	struct string_list *param = new_string_list( name );
+	if( param ) {
+		/*printf("Function parameter '%s'\n", name);*/
+		if( get_string_list_index( func->variable_decls, name ) < 0 ) {
+			func->num_parameters = func->num_variables = func->num_parameters + 1;
+			if( func->variable_decls ) {
+				func->variable_decls_tail->next = param;
+			} else {
+				func->variable_decls = param;
+			}
+			func->variable_decls_tail = param;
+		} else {
+			dispose_string_list( param );
+			sprintf( message, "Parameter '%.16s' already defined on line %d.", name, elem->str.line );
+		}
+	} else {
+		strcpy( message, OUT_OF_MEMORY );
+	}
+	return message[ 0 ] == 0;
+}
+
 static struct element* parse_function_declaration( struct element *elem, struct environment *env,
 	struct function_declaration *decl, struct statement *prev, char *message ) {
-	struct element *next = elem->next;
+	struct element *next = elem->next, *child;
 	if( validate_decl( next, env, message ) ) {
 		decl = new_function_declaration( next->str.string, env->file, message );
 		if( decl ) {
@@ -3605,7 +3611,17 @@ static struct element* parse_function_declaration( struct element *elem, struct 
 			decl->env = env;
 			next = next->next;
 			if( next->str.string[ 0 ] == '(' ) {
-				parse_decl_list( next->child, env, add_function_parameter, message );
+				child = next->child;
+				while( child && child->str.string[ 0 ] != ';' && message[ 0 ] == 0 ) {
+					if( validate_decl( child, env, message ) ) {
+						if( add_function_parameter( decl, child, env, message ) ) {
+							child = child->next;
+							if( child && child->str.string[ 0 ] == ',' ) {
+								child = child->next;
+							}
+						}
+					}
+				}
 				next = next->next;
 			}
 			next = next->next;
@@ -3783,21 +3799,6 @@ static int validate_decl( struct element *elem, struct environment *env, char *m
 		return 0;
 	}
 	return 1;
-}
-
-static struct element* parse_decl_list( struct element *elem, struct environment *env,
-	int (*add)( struct environment *env, struct element *elem, char *message ), char *message ) {
-	while( elem && elem->str.string[ 0 ] != ';' && message[ 0 ] == 0 ) {
-		if( validate_decl( elem, env, message ) ) {
-			if( add( env, elem, message ) ) {
-				elem = elem->next;
-				if( elem && elem->str.string[ 0 ] == ',' ) {
-					elem = elem->next;
-				}
-			}
-		}
-	}
-	return elem;
 }
 
 static int parse_tt_program( char *program, struct environment *env, char *message ) {
