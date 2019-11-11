@@ -7,8 +7,8 @@ const STR = "*";
 const CAT = $str( "*" "*" );
 const ELE = ${ ( * ) };
 
-global g;
-array a;
+global g, g1 = 1;
+array a, a1 = $array( 1 );
 
 struct struc {
 	a,b,c,d,e;
@@ -42,6 +42,8 @@ function testvars( x ) {
 	var y;
 	let y = x;
 	call assert( =( y x ), ${-} );
+	call assert( =( g 0 ), ${-} );
+	call assert( =( g1 1 ), ${-} );
 	call setg( y );
 	call assert( =( g x ), ${-} );
 	call assert( =( TRUE 1 ), ${-} );
@@ -64,6 +66,8 @@ function testarray() {
 	let err = 0;
 	try { dim [ a -1 ]; } catch err {}
 	call assert( err, ${-} );
+	call assert( =( $len( a ) 0 ), ${-} );
+	call assert( =( $len( a1 ) 1 ), ${-} );
 	dim [ a 3 ];
 	set [ a 0 ] = "a";
 	set [ a 1 ] = 1;

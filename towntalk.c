@@ -1693,25 +1693,30 @@ static struct global_variable* get_global_variable( struct global_variable *glob
 	return globals;
 }
 
-static int add_global_variable( struct environment *env, struct element *elem, char *message ) {
+static int add_global_variable( struct environment *env, struct element *elem,
+	struct expression *initializer, char *message ) {
 	struct global_variable *global = new_global_variable( elem->str.string, message );
 	if( global ) {
+		global->initializer = initializer;
 		global->next = env->globals;
 		env->globals = global;
 	}
 	return message[ 0 ] == 0;
 }
 
-static int add_array_variable( struct environment *env, struct element *elem, char *message ) {
+static int add_array_variable( struct environment *env, struct element *elem,
+	struct expression *initializer, char *message ) {
 	struct global_variable *array = new_array_variable( env, elem->str.string, message );
 	if( array ) {
+		array->initializer = initializer;
 		array->next = env->globals;
 		env->globals = array;
 	}
 	return message[ 0 ] == 0;
 }
 
-static int add_local_variable( struct environment *env, struct element *elem, char *message ) {
+static int add_local_variable( struct environment *env, struct element *elem,
+	struct expression *initializer, char *message ) {
 	char *name = elem->str.string;
 	struct function_declaration *func = env->entry_point;
 	struct string_list *param = new_string_list( name );
@@ -1735,15 +1740,28 @@ static int add_local_variable( struct environment *env, struct element *elem, ch
 	return message[ 0 ] == 0;
 }
 
-static struct element* parse_variable_declaration( struct element *elem, struct environment *env,
-	int (*add)( struct environment *env, struct element *elem, char *message ), char *message ) {
+static struct element* parse_variable_declaration( struct element *elem,
+	struct environment *env, struct function_declaration *func,
+	int (*add)( struct environment *env, struct element *elem, struct expression *initializer, char *message ),
+	char *message ) {
+	struct expression expr = { 0 };
+	struct element *next;
 	while( elem && elem->str.string[ 0 ] != ';' && message[ 0 ] == 0 ) {
 		if( validate_decl( elem, env, message ) ) {
-			if( add( env, elem, message ) ) {
-				elem = elem->next;
-				if( elem && elem->str.string[ 0 ] == ',' ) {
-					elem = elem->next;
+			if( elem->next->str.string[ 0 ] == '=' ) {
+				next = parse_expression( elem->next->next, env, func, &expr, message );
+				if( message[ 0 ] == 0 ) {
+					if( !add( env, elem, expr.next, message ) ) {
+						dispose_expressions( expr.next );
+					}
 				}
+				elem = next;
+			} else {
+				add( env, elem, NULL, message );
+				elem = elem->next;
+			}
+			if( elem && elem->str.string[ 0 ] == ',' ) {
+				elem = elem->next;
 			}
 		}
 	}
@@ -1789,17 +1807,17 @@ static struct element* parse_comment( struct element *elem, struct environment *
 
 static struct element* parse_global_declaration( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message ) {
-	return parse_variable_declaration( elem->next, env, add_global_variable, message);
+	return parse_variable_declaration( elem->next, env, func, add_global_variable, message);
 }
 
 static struct element* parse_array_declaration( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message ) {
-	return parse_variable_declaration( elem->next, env, add_array_variable, message);
+	return parse_variable_declaration( elem->next, env, func, add_array_variable, message);
 }
 
 static struct element* parse_local_declaration( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message ) {
-	return parse_variable_declaration( elem->next, env, add_local_variable, message);
+	return parse_variable_declaration( elem->next, env, func, add_local_variable, message);
 }
 
 static enum result evaluate_bitwise_not_expression( struct expression *this, struct variable *variables,
@@ -3751,8 +3769,8 @@ static struct keyword declarations[] = {
 	{ "include", "\";", parse_include, &declarations[ 2 ] },
 	{ "function", "n({", parse_function_declaration, &declarations[ 3 ] },
 	{ "program", "n{", parse_program_declaration, &declarations[ 4 ] },
-	{ "global", "l;", parse_global_declaration, &declarations[ 5 ] },
-	{ "array", "l;", parse_array_declaration, &declarations[ 6 ] },
+	{ "global", "a;", parse_global_declaration, &declarations[ 5 ] },
+	{ "array", "a;", parse_array_declaration, &declarations[ 6 ] },
 	{ "const", "a;", parse_const_declaration, &declarations[ 7 ] },
 	{ "struct", "n", parse_struct_declaration, NULL }
 };
@@ -3879,8 +3897,16 @@ static int parse_tt_file( char *file_name, struct environment *env, char *messag
 }
 
 static int initialize_globals( struct environment *env, struct variable *exception ) {
-	struct global_variable *global = env->constants;
 	struct expression *init;
+	struct global_variable *global = env->constants;
+	while( global ) {
+		init = global->initializer;
+		if( init && init->evaluate( init, NULL, &global->value, exception ) == EXCEPTION ) {
+			return 0;
+		}
+		global = global->next;
+	}
+	global = env->globals;
 	while( global ) {
 		init = global->initializer;
 		if( init && init->evaluate( init, NULL, &global->value, exception ) == EXCEPTION ) {
