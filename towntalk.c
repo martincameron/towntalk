@@ -1704,7 +1704,7 @@ static struct global_variable* get_global_variable( struct global_variable *glob
 }
 
 static int add_global_constant( struct environment *env, struct element *elem,
-	struct expression *initializer, char *message ) {
+	struct expression *initializer, struct statement *prev, char *message ) {
 	struct global_variable *global = new_global_variable( elem->str.string, message );
 	if( global ) {
 		global->initializer = initializer;
@@ -1714,7 +1714,7 @@ static int add_global_constant( struct environment *env, struct element *elem,
 }
 
 static int add_global_variable( struct environment *env, struct element *elem,
-	struct expression *initializer, char *message ) {
+	struct expression *initializer, struct statement *prev, char *message ) {
 	struct global_variable *global = new_global_variable( elem->str.string, message );
 	if( global ) {
 		global->initializer = initializer;
@@ -1724,7 +1724,7 @@ static int add_global_variable( struct environment *env, struct element *elem,
 }
 
 static int add_array_variable( struct environment *env, struct element *elem,
-	struct expression *initializer, char *message ) {
+	struct expression *initializer, struct statement *prev, char *message ) {
 	struct global_variable *array = new_array_variable( env, elem->str.string, message );
 	if( array ) {
 		array->initializer = initializer;
@@ -1734,7 +1734,8 @@ static int add_array_variable( struct environment *env, struct element *elem,
 }
 
 static int add_local_variable( struct environment *env, struct element *elem,
-	struct expression *initializer, char *message ) {
+	struct expression *initializer, struct statement *prev, char *message ) {
+	struct statement *stmt;
 	char *name = elem->str.string;
 	struct function_declaration *func = env->entry_point;
 	struct string_list *param = new_string_list( name );
@@ -1748,6 +1749,15 @@ static int add_local_variable( struct environment *env, struct element *elem,
 				func->variable_decls = param;
 			}
 			func->variable_decls_tail = param;
+			if( initializer ) {
+				stmt = new_statement( message );
+				if( stmt ) {
+					prev->next = stmt;
+					stmt->source = initializer;
+					stmt->local = func->num_variables - 1;
+					stmt->execute = execute_local_assignment;
+				}
+			}
 		} else {
 			dispose_string_list( param );
 			sprintf( message, "Local variable '%.8s' already defined on line %d.", name, elem->str.line );
@@ -1759,23 +1769,26 @@ static int add_local_variable( struct environment *env, struct element *elem,
 }
 
 static struct element* parse_variable_declaration( struct element *elem,
-	struct environment *env, struct function_declaration *func,
-	int (*add)( struct environment *env, struct element *elem, struct expression *initializer, char *message ),
+	struct environment *env, struct function_declaration *func, struct statement *prev,
+	int (*add)( struct environment *env, struct element *elem, struct expression *initializer, struct statement *prev, char *message ),
 	char *message ) {
 	struct expression expr = { 0 };
 	struct element *next;
 	while( elem && elem->str.string[ 0 ] != ';' && message[ 0 ] == 0 ) {
+		if( prev && prev->next ) {
+			prev = prev->next;
+		}
 		if( validate_decl( elem, env, message ) ) {
 			if( elem->next->str.string[ 0 ] == '=' ) {
 				next = parse_expression( elem->next->next, env, func, &expr, message );
 				if( message[ 0 ] == 0 ) {
-					if( !add( env, elem, expr.next, message ) ) {
+					if( !add( env, elem, expr.next, prev, message ) ) {
 						dispose_expressions( expr.next );
 					}
 				}
 				elem = next;
 			} else {
-				add( env, elem, NULL, message );
+				add( env, elem, NULL, prev, message );
 				elem = elem->next;
 			}
 			if( elem && elem->str.string[ 0 ] == ',' ) {
@@ -1796,22 +1809,22 @@ static struct element* parse_comment( struct element *elem, struct environment *
 
 static struct element* parse_const_declaration( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message ) {
-	return parse_variable_declaration( elem->next, env, func, add_global_constant, message);
+	return parse_variable_declaration( elem->next, env, func, prev, add_global_constant, message);
 }
 
 static struct element* parse_global_declaration( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message ) {
-	return parse_variable_declaration( elem->next, env, func, add_global_variable, message);
+	return parse_variable_declaration( elem->next, env, func, prev, add_global_variable, message);
 }
 
 static struct element* parse_array_declaration( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message ) {
-	return parse_variable_declaration( elem->next, env, func, add_array_variable, message);
+	return parse_variable_declaration( elem->next, env, func, prev, add_array_variable, message);
 }
 
 static struct element* parse_local_declaration( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message ) {
-	return parse_variable_declaration( elem->next, env, func, add_local_variable, message);
+	return parse_variable_declaration( elem->next, env, func, prev, add_local_variable, message);
 }
 
 static enum result evaluate_bitwise_not_expression( struct expression *this, struct variable *variables,
@@ -3284,7 +3297,7 @@ static struct element* parse_switch_statement( struct element *elem, struct envi
 
 static struct keyword statements[] = {
 	{ "rem", "{", parse_comment, &statements[ 1 ] },
-	{ "var", "l;", parse_local_declaration, &statements[ 2 ] },
+	{ "var", "a;", parse_local_declaration, &statements[ 2 ] },
 	{ "let", "n=x;", parse_assignment_statement, &statements[ 3 ] },
 	{ "print", "x;", parse_print_statement, &statements[ 4 ] },
 	{ "write", "x;", parse_write_statement, &statements[ 5 ] },
@@ -3477,7 +3490,7 @@ static void parse_keywords( struct keyword *keywords, struct element *elem,
 			validate_syntax( key->syntax, elem->next, elem, env, message );
 			if( message[ 0 ] == 0 ) { 
 				elem = key->parse( elem, env, func, stmt, message );
-				if( stmt && stmt->next ) {
+				while( stmt && stmt->next ) {
 					stmt = stmt->next;
 				}
 			}
