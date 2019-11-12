@@ -227,7 +227,8 @@ struct environment {
 	struct keyword *statements;
 	struct operator *operators;
 	struct structure *structures;
-	struct global_variable *constants, *constants_tail, *globals;
+	struct global_variable *constants, *constants_tail;
+	struct global_variable *globals, *globals_tail;
 	struct function_declaration *functions, *entry_point;
 };
 
@@ -1183,6 +1184,15 @@ static void add_constant( struct environment *env, struct global_variable *const
 	env->constants_tail = constant;
 }
 
+static void add_global( struct environment *env, struct global_variable *global ) {
+	if( env->globals ){
+		env->globals_tail->next = global;
+	} else {
+		env->globals = global;
+	}
+	env->globals_tail = global;
+}
+
 static int add_constants( struct constant *constants, struct environment *env, char *message ) {
 	struct global_variable *global;
 	int idx = 0;
@@ -1693,13 +1703,22 @@ static struct global_variable* get_global_variable( struct global_variable *glob
 	return globals;
 }
 
+static int add_global_constant( struct environment *env, struct element *elem,
+	struct expression *initializer, char *message ) {
+	struct global_variable *global = new_global_variable( elem->str.string, message );
+	if( global ) {
+		global->initializer = initializer;
+		add_constant( env, global );
+	}
+	return message[ 0 ] == 0;
+}
+
 static int add_global_variable( struct environment *env, struct element *elem,
 	struct expression *initializer, char *message ) {
 	struct global_variable *global = new_global_variable( elem->str.string, message );
 	if( global ) {
 		global->initializer = initializer;
-		global->next = env->globals;
-		env->globals = global;
+		add_global( env, global );
 	}
 	return message[ 0 ] == 0;
 }
@@ -1709,8 +1728,7 @@ static int add_array_variable( struct environment *env, struct element *elem,
 	struct global_variable *array = new_array_variable( env, elem->str.string, message );
 	if( array ) {
 		array->initializer = initializer;
-		array->next = env->globals;
-		env->globals = array;
+		add_global( env, array );
 	}
 	return message[ 0 ] == 0;
 }
@@ -1771,38 +1789,14 @@ static struct element* parse_variable_declaration( struct element *elem,
 	return elem;
 }
 
-static struct element* parse_const_declaration( struct element *elem, struct environment *env,
-	struct function_declaration *func, struct statement *prev, char *message ) {
-	struct element *next = elem->next;
-	struct global_variable *constant;
-	struct expression expr = { 0 };
-	char *name;
-	while( message[ 0 ] == 0 && next->str.string[ 0 ] != ';' ) {
-		if( validate_decl( next, env, message ) ) {
-			name = next->str.string;
-			next = next->next;
-			if( next->str.string[ 0 ] == '=' ) {
-				next = next->next;
-				constant = new_global_variable( name, message );
-				if( constant ) {
-					add_constant( env, constant );
-					next = parse_expression( next, env, func, &expr, message );
-					if( next->str.string[ 0 ] == ',' ) {
-						next = next->next;
-					}
-					constant->initializer = expr.next;
-				}
-			} else {
-				sprintf( message, "Expected '=' in const declaration on line %d.", next->str.line );
-			}
-		}
-	}
-	return next->next;
-}
-
 static struct element* parse_comment( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message ) {
 	return elem->next->next;
+}
+
+static struct element* parse_const_declaration( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct statement *prev, char *message ) {
+	return parse_variable_declaration( elem->next, env, func, add_global_constant, message);
 }
 
 static struct element* parse_global_declaration( struct element *elem, struct environment *env,
