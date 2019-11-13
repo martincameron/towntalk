@@ -59,7 +59,7 @@ struct fxenvironment {
 	SDL_Keycode key;
 	struct fxsample samples[ NUM_SAMPLES ];
 	struct fxchannel channels[ NUM_CHANNELS ];
-	int tick, tick_len, audio_idx, audio_end, midi_msg, win_event, key_held;
+	int tick, tick_len, audio_idx, audio_end, seq_msg, midi_msg, win_event, key_held;
 	int audio[ ( MAX_TICK_LEN + 33 ) * 4 ], ramp_buf[ 64 ];
 	#if defined( ALSA_MIDI )
 	int midi_buf, midi_idx;
@@ -167,6 +167,7 @@ static void update_channel( struct fxchannel *channel, int *output, int count ) 
 static void process_sequence( struct fxenvironment *fxenv, int channel_idx ) {
 	int off, len, cmd, oper, tick, chan, key, ins, vol, gain;
 	struct fxchannel *channel, *cmdchan;
+	SDL_Event event = { 0 };
 	char *seq;
 	channel = &fxenv->channels[ channel_idx ];
 	if( channel->sequence.string_value ) {
@@ -176,7 +177,7 @@ static void process_sequence( struct fxenvironment *fxenv, int channel_idx ) {
 		while( channel->sequence_wait < 1 && off < len ) {
 			cmd = seq[ off ] & 0xFF;
 			oper = cmd >> 4;
-			if( ( oper == 0 || oper >= 0x4 ) && ( off + 1 < len ) ) {
+			if( ( cmd == 0 || oper >= 0x4 ) && ( off + 1 < len ) ) {
 				cmd = ( cmd << 8 ) | ( seq[ off + 1 ] & 0xFF );
 				off += 2;
 			} else if( off + 3 < len ) {
@@ -245,6 +246,11 @@ static void process_sequence( struct fxenvironment *fxenv, int channel_idx ) {
 						if( oper == 1 ) {
 							cmdchan->sample_idx = cmdchan->sample_fra = 0;
 						}
+					} else if( ( cmd & 0xF000000 ) == 0x8000000 ) {
+						/* 0x08xxxxxx sequencer event. */
+						event.type = SDL_USEREVENT + 1;
+						event.user.code = ( channel_idx << 24 ) | ( cmd & 0xFFFFFF );
+						SDL_PushEvent( &event );
 					}
 				}
 			}
@@ -255,7 +261,6 @@ static void process_sequence( struct fxenvironment *fxenv, int channel_idx ) {
 
 static void audio_callback( void *userdata, Uint8 *stream, int len ) {
 	struct fxenvironment *fxenv = ( struct fxenvironment * ) userdata;
-	SDL_Event event = { 0 };
 	Sint16 *output = ( Sint16 * ) stream;
 	struct fxchannel *channel;
 	int samples = len >> 2;
@@ -328,9 +333,6 @@ static void audio_callback( void *userdata, Uint8 *stream, int len ) {
 						channel->sequence_wait = 0;
 						process_sequence( fxenv, chan_idx );
 						while( channel->sequence.string_value && channel->sequence_wait == 0 ) {
-							/* Signal sequence end. */
-							event.type = SDL_USEREVENT + 1;
-							SDL_PushEvent( &event );
 							assign_variable( &channel->next_sequence, &channel->sequence );
 							dispose_variable( &channel->next_sequence );
 							channel->next_sequence.string_value = NULL;
@@ -745,7 +747,8 @@ static enum result execute_fxplay_statement( struct statement *this, struct vari
 		Play sequence: fxplay channel sequence$;
 		Queue sequence: fxqueue channel sequence$;
 		2 and 4-byte sequencer commands packed into byte string:
-			0x0xxx do nothing (used to pad 2-byte cmds to 4).
+			0x00xx do nothing (used to pad 2-byte cmds to 4).
+			0x08xxxxxx fire an event containing the specified 24-bit parameter.
 			0x1kkkiicc set key k, instrument i and sample offset 0 on channel c.
 			0x2kkkiicc set key k and instrument i on channel c.
 			0x3ssssscc set sample offset s on channel c.
@@ -917,6 +920,9 @@ static enum result handle_event_expression( struct expression *this, SDL_Event *
 				fxenv->key = event->key.keysym.sym;
 				fxenv->key_held = event->key.repeat;
 				break;
+			case SDL_USEREVENT + 1:
+				fxenv->seq_msg = event->user.code;
+				break;
 			case SDL_USEREVENT + 2:
 				fxenv->midi_msg = event->user.code;
 				break;
@@ -1024,30 +1030,16 @@ static enum result evaluate_fxtick_expression( struct expression *this, struct v
 	return OKAY;
 }
 
-/* Returns the number of sequences playing and/or queued on the specified channel. */
+/*
+	Returns an integer of the form 0xccpppppp containing the
+	channel and parameter of the most recently handled sequencer event.
+*/
 static enum result evaluate_fxseq_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	struct fxenvironment *env = ( struct fxenvironment * ) this->function->env;
-	struct expression *parameter = this->parameters;
-	struct variable chan = { 0, NULL };
-	enum result ret = parameter->evaluate( parameter, variables, &chan, exception );
-	if( ret ) {
-		if( chan.integer_value >= 0 && chan.integer_value < NUM_CHANNELS ) {
-			dispose_variable( result );
-			if( env->channels[ chan.integer_value ].sequence.string_value == NULL ) {
-				result->integer_value = 0;
-			} else if( env->channels[ chan.integer_value ].next_sequence.string_value == NULL ) {
-				result->integer_value = 1;
-			} else {
-				result->integer_value = 2;
-			}
-			result->string_value = NULL;
-		} else {
-			ret = throw( exception, this, chan.integer_value, "Invalid channel index." );
-		}
-		dispose_variable( &chan );
-	}
-	return ret;
+	dispose_variable( result );
+	result->integer_value = ( ( struct fxenvironment * ) this->function->env )->seq_msg;
+	result->string_value = NULL;
+	return OKAY;
 }
 
 static enum result evaluate_fxdir_expression( struct expression *this, struct variable *variables,
@@ -1237,7 +1229,7 @@ static struct operator fxoperators[] = {
 	{ "$keyboard",'$', 0, evaluate_keyboard_expression, &fxoperators[ 7 ] },
 	{ "$keyshift",'$', 0, evaluate_keyshift_expression, &fxoperators[ 8 ] },
 	{ "$fxtick",'$', 0, evaluate_fxtick_expression, &fxoperators[ 9 ] },
-	{ "$fxseq",'$', 1, evaluate_fxseq_expression, &fxoperators[ 10 ] },
+	{ "$fxseq",'$', 0, evaluate_fxseq_expression, &fxoperators[ 10 ] },
 	{ "$fxdir",'$', 1, evaluate_fxdir_expression, &fxoperators[ 11 ] },
 	{ "$fxpath",'$', 1, evaluate_fxpath_expression, &fxoperators[ 12 ] },
 	{ "$midimsg",'$', 0, evaluate_midimsg_expression, &fxoperators[ 13 ] },
