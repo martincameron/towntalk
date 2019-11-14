@@ -47,8 +47,8 @@
 		rem {}                   Comment (all brackets inside must be balanced).
 		include "file.tt";       Include declarations from specified file.
 		const name = value;      Integer, string or tuple constant.
-		global a,b,c;            Global variables.
-		array a,b,c;             Global arrays.
+		global a, b, c = expr;   Global variables.
+		array a, b, [ c expr ];  Global arrays.
 		struct s { a,b,c };      Layout for formatting arrays.
 		struct t(s) { d,e,f };   Struct with members included from s.
 		function f(param){stmts} Function declaration.
@@ -56,7 +56,7 @@
 
 	Statements:
 		rem {}                   Comment.
-		var a,b,c;               Local variable.
+		var a, b, c = expr;      Local variables.
 		let a = expr;            Variable assignment.
 		print expr;              Write integer or string to standard output.
 		write expr;              Same as print, but do not add a newline.
@@ -1640,6 +1640,55 @@ static enum result evaluate_function_expression( struct expression *this, struct
 	return ret;
 }
 
+static enum result evaluate_array_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	int idx, len;
+	char msg[ 128 ] = "";
+	struct variable var = { 0, NULL }, *values;
+	struct global_variable inputs, *input;
+	struct array *arr;
+	enum result ret = this->parameters->evaluate( this->parameters, variables, &var, exception );
+	if( ret ) {
+		if( var.string_value && var.string_value->line > 0 ) {
+			inputs.next = NULL;
+			len = parse_constant_list( ( struct element * ) var.string_value, &inputs, msg );
+			if( msg[ 0 ] == 0 ) {
+				arr = new_array( this->function->env, len );
+				if( arr ) {
+					idx = 0;
+					input = inputs.next;
+					values = arr->array;
+					while( idx < len ) {
+						assign_variable( &input->value, &values[ idx++ ] );
+						input = input->next;
+					}
+					dispose_variable( result );
+					result->integer_value = 0;
+					result->string_value = &arr->str;
+				} else {
+					ret = throw( exception, this, 0, OUT_OF_MEMORY );
+				}
+			} else {
+				ret = throw( exception, this, 0, msg );
+			}
+			dispose_global_variables( inputs.next );
+		} else if( var.integer_value >= 0 ) {
+			arr = new_array( this->function->env, var.integer_value );
+			if( arr ) {
+				dispose_variable( result );
+				result->integer_value = 0;
+				result->string_value = &arr->str;
+			} else {
+				ret = throw( exception, this, 0, OUT_OF_MEMORY );
+			}
+		} else {
+			ret = throw( exception, this, var.integer_value, "Invalid array length." );
+		}
+		dispose_variable( &var );
+	}
+	return ret;
+}
+
 static enum result evaluate_index_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct array *arr;
@@ -1772,28 +1821,48 @@ static struct element* parse_variable_declaration( struct element *elem,
 	struct environment *env, struct function_declaration *func, struct statement *prev,
 	int (*add)( struct environment *env, struct element *elem, struct expression *initializer, struct statement *prev, char *message ),
 	char *message ) {
-	struct expression expr = { 0 };
+	struct expression expr = { 0 }, *array_expr;
 	struct element *next;
 	while( elem && elem->str.string[ 0 ] != ';' && message[ 0 ] == 0 ) {
 		if( prev && prev->next ) {
 			prev = prev->next;
 		}
-		if( validate_decl( elem, env, message ) ) {
+		if( elem->str.string[ 0 ] == '[' && validate_decl( elem->child, env, message ) ) {
+			parse_expression( elem->child->next, env, func, &expr, message );
+			if( message[ 0 ] == 0 ) {
+				array_expr = calloc( 1, sizeof( struct expression ) );
+				if( array_expr ) {
+					array_expr->line = elem->str.line;
+					array_expr->function = func;
+					array_expr->parameters = expr.next;
+					array_expr->evaluate = evaluate_array_expression;
+					if( add( env, elem->child, array_expr, prev, message ) ) {
+						elem = elem->next;
+					} else {
+						dispose_expressions( array_expr );
+					}
+				} else {
+					strcpy( message, OUT_OF_MEMORY );
+				}
+			}
+		} else if( validate_decl( elem, env, message ) ) {
 			if( elem->next->str.string[ 0 ] == '=' ) {
 				next = parse_expression( elem->next->next, env, func, &expr, message );
 				if( message[ 0 ] == 0 ) {
-					if( !add( env, elem, expr.next, prev, message ) ) {
+					if( add( env, elem, expr.next, prev, message ) ) {
+						elem = next;
+					} else {
 						dispose_expressions( expr.next );
 					}
 				}
-				elem = next;
 			} else {
-				add( env, elem, NULL, prev, message );
-				elem = elem->next;
+				if( add( env, elem, NULL, prev, message ) ) {
+					elem = elem->next;
+				}
 			}
-			if( elem && elem->str.string[ 0 ] == ',' ) {
-				elem = elem->next;
-			}
+		}
+		if( elem && elem->str.string[ 0 ] == ',' ) {
+			elem = elem->next;
 		}
 	}
 	if( elem && elem->str.string[ 0 ] == ';' ) {
@@ -2570,55 +2639,6 @@ static enum result evaluate_pack_expression( struct expression *this, struct var
 	return ret;
 }
 
-static enum result evaluate_array_expression( struct expression *this, struct variable *variables,
-	struct variable *result, struct variable *exception ) {
-	int idx, len;
-	char msg[ 128 ] = "";
-	struct variable var = { 0, NULL }, *values;
-	struct global_variable inputs, *input;
-	struct array *arr;
-	enum result ret = this->parameters->evaluate( this->parameters, variables, &var, exception );
-	if( ret ) {
-		if( var.string_value && var.string_value->line > 0 ) {
-			inputs.next = NULL;
-			len = parse_constant_list( ( struct element * ) var.string_value, &inputs, msg );
-			if( msg[ 0 ] == 0 ) {
-				arr = new_array( this->function->env, len );
-				if( arr ) {
-					idx = 0;
-					input = inputs.next;
-					values = arr->array;
-					while( idx < len ) {
-						assign_variable( &input->value, &values[ idx++ ] );
-						input = input->next;
-					}
-					dispose_variable( result );
-					result->integer_value = 0;
-					result->string_value = &arr->str;
-				} else {
-					ret = throw( exception, this, 0, OUT_OF_MEMORY );
-				}
-			} else {
-				ret = throw( exception, this, 0, msg );
-			}
-			dispose_global_variables( inputs.next );
-		} else if( var.integer_value >= 0 ) {
-			arr = new_array( this->function->env, var.integer_value );
-			if( arr ) {
-				dispose_variable( result );
-				result->integer_value = 0;
-				result->string_value = &arr->str;
-			} else {
-				ret = throw( exception, this, 0, OUT_OF_MEMORY );
-			}
-		} else {
-			ret = throw( exception, this, var.integer_value, "Invalid array length." );
-		}
-		dispose_variable( &var );
-	}
-	return ret;
-}
-
 static enum result evaluate_func_ref_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct variable src = { 0, NULL };
@@ -3297,7 +3317,7 @@ static struct element* parse_switch_statement( struct element *elem, struct envi
 
 static struct keyword statements[] = {
 	{ "rem", "{", parse_comment, &statements[ 1 ] },
-	{ "var", "a;", parse_local_declaration, &statements[ 2 ] },
+	{ "var", "d;", parse_local_declaration, &statements[ 2 ] },
 	{ "let", "n=x;", parse_assignment_statement, &statements[ 3 ] },
 	{ "print", "x;", parse_print_statement, &statements[ 4 ] },
 	{ "write", "x;", parse_write_statement, &statements[ 5 ] },
@@ -3454,19 +3474,27 @@ static struct element* validate_syntax( char *syntax, struct element *elem,
 			} else {
 				sprintf( message, "Expected expression after '%.16s' on line %d.", key->str.string, line );
 			}
-		} else if( chr == 'a' ) {
-			/* Name list with optional assignment expression, terminated by ';' or NULL. */
-			elem = validate_syntax( "n", elem, key, env, message );
-			while( message[ 0 ] == 0 && elem && elem->str.string[ 0 ] != ';' ) {
-				if( elem->str.string[ 0 ] == '=' ) {
+		} else if( chr == 'v' ) {
+			/* Variable declaration. */
+			if( elem && elem->str.string[ 0 ] == '[' ) {
+				validate_syntax( "nx", elem->child, elem, env, message );
+				if( message[ 0 ] == 0 ) {
+					elem = elem->next;
+				}
+			} else {
+				elem = validate_syntax( "n", elem, key, env, message );
+				if( message[ 0 ] == 0 && elem && elem->str.string[ 0 ] == '=' ) {
 					elem = validate_syntax( "x", elem->next, key, env, message );
 				}
-				if( message[ 0 ] == 0 && elem && elem->str.string[ 0 ] != ';' ) {
-					if( elem->str.string[ 0 ] == ',' ) {
-						elem = elem->next;
-					}
-					elem = validate_syntax( "n", elem, key, env, message );
+			}
+		} else if( chr == 'd' ) {
+			/* Variable declaration list, terminated by ';' or NULL. */
+			elem = validate_syntax( "v", elem, key, env, message );
+			while( message[ 0 ] == 0 && elem && elem->str.string[ 0 ] != ';' ) {
+				if( elem->str.string[ 0 ] == ',' ) {
+					elem = elem->next;
 				}
+				elem = validate_syntax( "v", elem, key, env, message );
 			}
 		} else {
 			/* Internal error. */
@@ -3776,9 +3804,9 @@ static struct keyword declarations[] = {
 	{ "include", "\";", parse_include, &declarations[ 2 ] },
 	{ "function", "n({", parse_function_declaration, &declarations[ 3 ] },
 	{ "program", "n{", parse_program_declaration, &declarations[ 4 ] },
-	{ "global", "a;", parse_global_declaration, &declarations[ 5 ] },
-	{ "array", "a;", parse_array_declaration, &declarations[ 6 ] },
-	{ "const", "a;", parse_const_declaration, &declarations[ 7 ] },
+	{ "global", "d;", parse_global_declaration, &declarations[ 5 ] },
+	{ "array", "d;", parse_array_declaration, &declarations[ 6 ] },
+	{ "const", "d;", parse_const_declaration, &declarations[ 7 ] },
 	{ "struct", "n", parse_struct_declaration, NULL }
 };
 
