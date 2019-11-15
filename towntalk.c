@@ -79,6 +79,7 @@
 		dim [arr len];           Resize specified array.
 		set [arr idx] = expr;    Assign expression to array at index.
 		inc a;                   Increment local variable.
+		dec a;                   Decrement local variable.
 		save str, "file";        Save bytes from string to file.
 		append str, "file";      Append bytes to the end of file.
 
@@ -142,6 +143,7 @@
 		$child(elem)             Get the first child element or null.
 		$line(elem)              Get the line number of the element.
 		$pack(int/arr)           Encode integers as big-endian byte string.
+		$unpack(str idx)         Decode the specified big-endian integer.
 		$quote(str)              Encode byte string with quotes and escapes.
 		$unquote(str)            Decode quoted-string into byte string.
 		$interrupted             Check and clear program interrupt status.
@@ -1521,9 +1523,18 @@ static enum result execute_increment_statement( struct statement *this, struct v
 	struct variable *local = &variables[ this->local ];
 	if( local->string_value ) {
 		return throw( exception, this->source, 0, "Not an integer." );
-	} else {
-		local->integer_value++;
 	}
+	local->integer_value++;
+	return OKAY;
+}
+
+static enum result execute_decrement_statement( struct statement *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	struct variable *local = &variables[ this->local ];
+	if( local->string_value ) {
+		return throw( exception, this->source, 0, "Not an integer." );
+	}
+	local->integer_value--;
 	return OKAY;
 }
 
@@ -2639,6 +2650,39 @@ static enum result evaluate_pack_expression( struct expression *this, struct var
 	return ret;
 }
 
+static enum result evaluate_unpack_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	struct expression *parameter = this->parameters;
+	struct variable str = { 0, NULL }, idx = { 0, NULL };
+	signed char *chr;
+	enum result ret = parameter->evaluate( parameter, variables, &str, exception );
+	if( ret ) {
+		parameter = parameter->next;
+		ret = parameter->evaluate( parameter, variables, &idx, exception );
+		if( ret ) {
+			if( str.string_value && str.string_value->string ) {
+				chr = ( signed char * ) str.string_value->string;
+				idx.integer_value <<= 2;
+				if( idx.integer_value >= 0 && idx.integer_value < str.string_value->length - 3 ) {
+					dispose_variable( result );
+					str.integer_value = chr[ idx.integer_value ] << 24;
+					str.integer_value |= ( chr[ idx.integer_value + 1 ] & 0xFF ) << 16;
+					str.integer_value |= ( chr[ idx.integer_value + 2 ] & 0xFF ) << 8;
+					result->integer_value = str.integer_value | ( chr[ idx.integer_value + 3 ] & 0xFF );
+					result->string_value = NULL;
+				} else {
+					ret = throw( exception, this, idx.integer_value, "String index out of bounds." );
+				}
+			} else {
+				ret = throw( exception, this, 0, "Not a string." );
+			}
+			dispose_variable( &idx );
+		}
+		dispose_variable( &str );
+	}
+	return ret;
+}
+
 static enum result evaluate_func_ref_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct variable src = { 0, NULL };
@@ -2749,11 +2793,12 @@ static struct operator operators[] = {
 	{ "$line", '$', 1, evaluate_line_expression, &operators[ 40 ] },
 	{ "$hex", '$', 1, evaluate_hex_expression, &operators[ 41 ] },
 	{ "$pack", '$', 1, evaluate_pack_expression, &operators[ 42 ] },
-	{ "$array", '$', 1, evaluate_array_expression, &operators[ 43 ] },
-	{ "$new", '$', 1, evaluate_array_expression, &operators[ 44 ] },
-	{ "$eq", '$', 2, evaluate_eq_expression, &operators[ 45 ] },
-	{ "$chop", '$', 2, evaluate_chop_expression, &operators[ 46 ] },
-	{ "$interrupted", '$', 0, evaluate_interrupted_expression, &operators[ 47 ] },
+	{ "$unpack", '$', 2, evaluate_unpack_expression, &operators[ 43 ] },
+	{ "$array", '$', 1, evaluate_array_expression, &operators[ 44 ] },
+	{ "$new", '$', 1, evaluate_array_expression, &operators[ 45 ] },
+	{ "$eq", '$', 2, evaluate_eq_expression, &operators[ 46 ] },
+	{ "$chop", '$', 2, evaluate_chop_expression, &operators[ 47 ] },
+	{ "$interrupted", '$', 0, evaluate_interrupted_expression, &operators[ 48 ] },
 	{ ":", ':', -1, evaluate_function_expression, NULL }
 };
 
@@ -3052,6 +3097,32 @@ static struct element* parse_increment_statement( struct element *elem, struct e
 	return next;
 }
 
+static struct element* parse_decrement_statement( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct statement *prev, char *message ) {
+	int local;
+	struct element *next = elem->next;
+	struct statement *stmt = new_statement( message );
+	if( stmt ) {
+		prev->next = stmt;
+		local = get_string_list_index( func->variable_decls, next->str.string );
+		if( local >= 0 ) {
+			stmt->source = calloc( 1, sizeof( struct expression ) );
+			if( stmt->source ) {
+				stmt->local = local;
+				stmt->source->line = next->str.line;
+				stmt->source->function = func;
+				stmt->execute = execute_decrement_statement;
+				next = next->next->next;
+			} else {
+				strcpy( message, OUT_OF_MEMORY );
+			}
+		} else {
+			sprintf( message, "Undeclared local variable '%.16s' on line %d.", next->str.string, next->str.line );
+		}
+	}
+	return next;
+}
+
 static struct element* parse_save_statement( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message ) {
 	struct expression expr;
@@ -3335,7 +3406,8 @@ static struct keyword statements[] = {
 	{ "set", "[=x;", parse_set_statement, &statements[ 17 ] },
 	{ "switch", "x{", parse_switch_statement, &statements[ 18 ] },
 	{ "inc", "n;", parse_increment_statement, &statements[ 19 ] },
-	{ "save", "xx;", parse_save_statement, &statements[ 20 ] },
+	{ "dec", "n;", parse_decrement_statement, &statements[ 20 ] },
+	{ "save", "xx;", parse_save_statement, &statements[ 21 ] },
 	{ "append", "xx;", parse_append_statement, NULL }
 };
 

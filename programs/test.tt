@@ -53,7 +53,7 @@ function testvars( x ) {
 }
 
 function testarray() {
-	var b, c, err;
+	var b, c, err, [ arr *( TWO TWO ) ];
 	call setg( 0 );
 	try { dim [ except( ${ 1 } ) setg( 2 ) ]; } catch err {}
 	call assert( =( $cmp( $str( err ) "1" ) 0 ), ${-} );
@@ -71,6 +71,7 @@ function testarray() {
 	call assert( =( $len( a1 ) 1 ), ${-} );
 	call assert( =( $len( a2 ) 2 ), ${-} );
 	call assert( =( $len( a3 ) 3 ), ${-} );
+	call assert( =( $len( arr ) 4 ), ${-} );
 	dim [ a 3 ];
 	set [ a 0 ] = "a";
 	set [ a 1 ] = 1;
@@ -581,6 +582,27 @@ function testpack() {
 	call assert( =( $cmp( $pack( a ), "\0\0\0\0\1\2\3\4" ) 0 ), ${-} );
 }
 
+function testunpack() {
+	var err;
+	try { call $unpack( except( ${ 1 } ) 0 ); } catch err {}
+	call assert( =( $cmp( $str( err ) "1" ) 0 ), ${-} );
+	let err = 0;
+	try { call $unpack( 0 0 ); } catch err {}
+	call assert( err, ${-} );
+	try { call $unpack( "" except( ${ 2 } ) ); } catch err {}
+	call assert( =( $cmp( $str( err ) "2" ) 0 ), ${-} );
+	let err = 0;
+	try { call $unpack( "\0\0\0\0" -1 ); } catch err {}
+	call assert( err, ${-} );
+	let err = 0;
+	try { call $unpack( "\0\0\0" 0 ); } catch err {}
+	call assert( err, ${-} );
+	call assert( =( $unpack( "\0\0\0\1" 0 ) 1 ), ${-} );
+	call assert( =( $unpack( "\1\2\3\4" 0 ) 0x1020304 ), ${-} );
+	call assert( =( $unpack( $pack( -1 ) 0 ) -1 ), ${-} );
+	call assert( =( $unpack( $pack( $array( ${ 1 2 } ) ) 1 ) 2 ), ${-} );
+}
+
 function teststruct() {
 	call assert( =( struc 5 ), ${-} );
 	call assert( =( exten 7 ), ${-} );
@@ -657,6 +679,24 @@ function testinterrupted() {
 	call assert( !( x ), ${-} );
 }
 
+function testinc() {
+	var int = "", err;
+	try { inc int; } catch err {}
+	call assert( err, ${-} );
+	let int = 0;
+	inc int;
+	call assert( =( int 1 ), ${-} );
+}
+
+function testdec() {
+	var int = "", err;
+	try { dec int; } catch err {}
+	call assert( err, ${-} );
+	let int = 0;
+	dec int;
+	call assert( =( int -1 ), ${-} );
+}
+
 program test {
 	call hello();
 	call assert( =( testvoid() 0 ), ${-} );
@@ -692,10 +732,13 @@ program test {
 	call testquote();
 	call testunquote();
 	call testpack();
+	call testunpack();
 	call teststruct();
 	call testfuncref();
 	call testeq();
 	call testchop();
 	call testinterrupted();
+	call testinc();
+	call testdec();
 	print "Tests passed.";
 }
