@@ -176,7 +176,7 @@ program midi {
 		fxopen 640, 480, "test";
 		# Open midi device.
 		#fxmidi "hw:2,0,0";
-		fxaudio 960;
+		fxaudio 480;
 		#fxplay 0, sequence;
 		#fxqueue 0, sequence;
 		let keyvoice = $array( 128 );

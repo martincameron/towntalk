@@ -63,7 +63,7 @@ program playtmf {
 			}
 			inc idx;
 		}
-		fxaudio 960;
+		fxaudio 480;
 		fxplay 0, sequence;
 		fxqueue 0, $str( sequence $pack( 0x8000000 ) );
 		while TRUE {

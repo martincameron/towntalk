@@ -193,7 +193,7 @@ static void process_sequence( struct fxenvironment *fxenv, int channel_idx ) {
 				channel->sequence_wait = cmd & 0xFFF;
 			} else if( oper == 0xE ) {
 				/* 0xEttt set tempo. */
-				tick = ( cmd & 0xFFF ) << 1;
+				tick = ( cmd & 0xFFF ) * SAMPLE_RATE / 24000;
 				if( tick >= MIN_TICK_LEN && tick <= MAX_TICK_LEN ) {
 					fxenv->tick_len = tick;
 				}
@@ -605,17 +605,18 @@ static enum result execute_fxtimer_statement( struct statement *this, struct var
 
 static enum result execute_fxaudio_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	struct variable ticklen = { 0, NULL };
+	struct variable param = { 0, NULL };
 	struct fxenvironment *fxenv = ( struct fxenvironment * ) this->source->function->env;
 	SDL_AudioSpec audiospec = { 0 };
-	enum result ret = this->source->evaluate( this->source, variables, &ticklen, exception );
+	int ticklen;
+	enum result ret = this->source->evaluate( this->source, variables, &param, exception );
 	if( ret ) {
-		/* fxaudio ticklen; */
-		if( ticklen.integer_value > 0 ) {
-			if( ticklen.integer_value >= MIN_TICK_LEN
-			&&  ticklen.integer_value <= MAX_TICK_LEN ) {
+		/* fxaudio ticklen; (Samples per tick at 24khz, 480 = 50hz) */
+		if( param.integer_value > 0 ) {
+			ticklen = param.integer_value * SAMPLE_RATE / 24000;
+			if( ticklen >= MIN_TICK_LEN && ticklen <= MAX_TICK_LEN ) {
 				SDL_LockAudio();
-				fxenv->tick_len = ticklen.integer_value;
+				fxenv->tick_len = ticklen;
 				SDL_UnlockAudio();
 				if( SDL_GetAudioStatus() == SDL_AUDIO_STOPPED ) {
 					audiospec.freq = SAMPLE_RATE;
@@ -631,12 +632,12 @@ static enum result execute_fxaudio_statement( struct statement *this, struct var
 					}
 				}
 			} else {
-				ret = throw( exception, this->source, ticklen.integer_value, "Invalid tick length." );
+				ret = throw( exception, this->source, param.integer_value, "Invalid tick length." );
 			}
 		} else {
 			SDL_CloseAudio();
 		}
-		dispose_variable( &ticklen );
+		dispose_variable( &param );
 	}
 	return ret;
 }

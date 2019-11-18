@@ -29,7 +29,7 @@ program fxtest {
 		inc x;
 	}
 
-	fxaudio 960;
+	fxaudio 480;
 	fxsample 1, $sub( image 0 256 ), 0, 256;
 	let c = $cat(
 		$pack( 0x8000 ) $pack( 0xA000 ) $pack( 0x11E00100 )
