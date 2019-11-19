@@ -142,6 +142,7 @@
 		$next(elem)              Get the next element in the list or null.
 		$child(elem)             Get the first child element or null.
 		$line(elem)              Get the line number of the element.
+		$elem(elem child next)   Return a copy of elem with specified references.
 		$pack(int/arr)           Encode integers as big-endian byte string.
 		$unpack(str idx)         Decode the specified big-endian integer.
 		$quote(str)              Encode byte string with quotes and escapes.
@@ -350,6 +351,7 @@ static struct element* new_element( int str_len ) {
 		elem->str.string[ str_len ] = 0;
 		elem->str.reference_count = 1;
 		elem->str.length = str_len;
+		elem->str.line = 1;
 	}
 	return elem;
 }
@@ -2480,6 +2482,65 @@ static enum result evaluate_child_expression( struct expression *this, struct va
 	return ret;
 }
 
+static enum result evaluate_elem_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	struct expression *parameter = this->parameters;
+	struct variable elem = { 0 }, child = { 0 }, next = { 0 };
+	struct element *value;
+	enum result ret = parameter->evaluate( parameter, variables, &elem, exception );
+	if( ret ) {
+		if( elem.string_value && elem.string_value->line > 0 ) {
+			parameter = parameter->next;
+			ret = parameter->evaluate( parameter, variables, &child, exception );
+			if( ret ) {
+				if( ( child.string_value && child.string_value->line > 0 )
+				|| !( child.string_value || child.integer_value ) ) {
+					if( !child.string_value || strchr( "([{", elem.string_value->string[ 0 ] ) ) {
+						parameter = parameter->next;
+						ret = parameter->evaluate( parameter, variables, &next, exception );
+						if( ret ) {
+							if( ( next.string_value && next.string_value->line > 0 )
+							|| !( next.string_value || next.integer_value ) ) {
+								value = new_element( elem.string_value->length );
+								if( value ) {
+									value->str.line = elem.string_value->line;
+									memcpy( value->str.string, elem.string_value->string, elem.string_value->length );
+									if( child.string_value ) {
+										value->child = ( struct element * ) child.string_value;
+										child.string_value->reference_count++;
+									}
+									if( next.string_value ) {
+										value->next = ( struct element * ) next.string_value;
+										next.string_value->reference_count++;
+									}
+									dispose_variable( result );
+									result->integer_value = 0;
+									result->string_value = &value->str;
+									
+								} else {
+									ret = throw( exception, this, 0, OUT_OF_MEMORY );
+								}
+							} else {
+								ret = throw( exception, this, next.integer_value, "Not an element." );
+							}
+							dispose_variable( &next );
+						}
+					} else {
+						ret = throw( exception, this, 0, "Parent elements must have value '()', '[]' or '{}'." );
+					}
+				} else {
+					ret = throw( exception, this, child.integer_value, "Not an element." );
+				}
+				dispose_variable( &child );
+			}
+		} else {
+			ret = throw( exception, this, elem.integer_value, "Not an element." );
+		}
+		dispose_variable( &elem );
+	}
+	return ret;
+}
+
 static enum result evaluate_parse_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct expression *parameter = this->parameters;
@@ -2799,6 +2860,7 @@ static struct operator operators[] = {
 	{ "$eq", '$', 2, evaluate_eq_expression, &operators[ 46 ] },
 	{ "$chop", '$', 2, evaluate_chop_expression, &operators[ 47 ] },
 	{ "$interrupted", '$', 0, evaluate_interrupted_expression, &operators[ 48 ] },
+	{ "$elem", '$', 3, evaluate_elem_expression, &operators[ 49 ] },
 	{ ":", ':', -1, evaluate_function_expression, NULL }
 };
 
