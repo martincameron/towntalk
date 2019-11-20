@@ -511,7 +511,19 @@ function testparse() {
 	let err = 0;
 	try { call $parse( 0 ); } catch err {}
 	call assert( err, ${-} );
-	let elem = $parse( $load( $src ) );
+	let elem = $parse( "rem { Test }" );
+	call assert( =( $cmp( elem "rem" ) 0 ), ${-} );
+	call assert( =( $cmp( $child( $next( elem ) ) "Test" ) 0 ), ${-} );
+}
+
+function testunparse() {
+	var elem, err;
+	try { call $unparse( except( ${ 1 } ) ); } catch err {}
+	call assert( =( $cmp( $str( err ) "1" ) 0 ), ${-} );
+	let err = 0;
+	try { call $unparse( 0 ); } catch err {}
+	call assert( err, ${-} );
+	let elem = $parse( $unparse( $parse( "rem { Test }" ) ) );
 	call assert( =( $cmp( elem "rem" ) 0 ), ${-} );
 	call assert( =( $cmp( $child( $next( elem ) ) "Test" ) 0 ), ${-} );
 }
@@ -757,9 +769,11 @@ program test {
 	call testargv();
 	call testtime();
 	call testparse();
+	call testunparse();
 	call testchild();
 	call testnext();
 	call testline();
+	call testelem();
 	call testquote();
 	call testunquote();
 	call testpack();
@@ -771,6 +785,5 @@ program test {
 	call testinterrupted();
 	call testinc();
 	call testdec();
-	call testelem();
 	print "Tests passed.";
 }

@@ -139,6 +139,7 @@
 		$argv(idx)               Command-line argument as string.
 		$time                    Current time as seconds/date tuple.
 		$parse(str)              Parse string into element list.
+		$unparse(elem)           Concatenate element list into string.
 		$next(elem)              Get the next element in the list or null.
 		$child(elem)             Get the first child element or null.
 		$line(elem)              Get the line number of the element.
@@ -2566,6 +2567,37 @@ static enum result evaluate_parse_expression( struct expression *this, struct va
 	return ret;
 }
 
+static enum result evaluate_unparse_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	int len;
+	struct string *str;
+	struct expression *parameter = this->parameters;
+	struct variable elem = { 0, NULL };
+	enum result ret = parameter->evaluate( parameter, variables, &elem, exception );
+	if( ret ) {
+		if( elem.string_value && elem.string_value->line > 0 ) {
+			len = write_element( ( struct element * ) elem.string_value, NULL );
+			if( len >= 0 ) {
+				str = new_string_value( len );
+				if( str ) {
+					write_element( ( struct element * ) elem.string_value, str->string );
+					dispose_variable( result );
+					result->integer_value = 0;
+					result->string_value = str;
+				} else {
+					ret = throw( exception, this, 0, OUT_OF_MEMORY );
+				}
+			} else {
+				ret = throw( exception, this, 0, "String too large." );
+			}
+		} else {
+			ret = throw( exception, this, 0, "Not an element." );
+		}
+		dispose_variable( &elem );
+	}
+	return ret;
+}
+
 static enum result evaluate_quote_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	int length;
@@ -2861,6 +2893,7 @@ static struct operator operators[] = {
 	{ "$chop", '$', 2, evaluate_chop_expression, &operators[ 47 ] },
 	{ "$interrupted", '$', 0, evaluate_interrupted_expression, &operators[ 48 ] },
 	{ "$elem", '$', 3, evaluate_elem_expression, &operators[ 49 ] },
+	{ "$unparse", '$', 1, evaluate_unparse_expression, &operators[ 50 ] },
 	{ ":", ':', -1, evaluate_function_expression, NULL }
 };
 
