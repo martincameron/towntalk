@@ -144,6 +144,7 @@
 		$child(elem)             Get the first child element or null.
 		$line(elem)              Get the line number of the element.
 		$elem(elem child next)   Return a copy of elem with specified references.
+		$values(array)           Return an element containing array values.
 		$pack(int/arr)           Encode integers as big-endian byte string.
 		$unpack(str idx)         Decode the specified big-endian integer.
 		$quote(str)              Encode byte string with quotes and escapes.
@@ -2383,6 +2384,69 @@ static enum result evaluate_astr_expression( struct expression *this, struct var
 	return ret;
 }
 
+static struct element* array_to_element( struct array *arr ) {
+	struct element *head = NULL, *tail = NULL, *elem;
+	int idx = 0, length = 0, count = arr->length;
+	struct variable *var;
+	char integer[ 32 ];
+	while( idx < count ) {
+		elem = NULL;
+		var = &arr->array[ idx++ ];
+		if( var->string_value ) {
+			length = write_byte_string( var->string_value->string, var->string_value->length, NULL );
+			if( length > 0 ) {
+				elem = new_element( length );
+				if( elem ) {
+					write_byte_string( var->string_value->string, var->string_value->length, elem->str.string );
+				}
+			}
+		} else {
+			sprintf( integer, "%d", var->integer_value );
+			elem = new_element( strlen( integer ) );
+			if( elem ) {
+				strcpy( elem->str.string, integer );
+			}
+		}
+		if( elem ) {
+			if( tail ) {
+				tail->next = elem;
+				tail = elem;
+			} else {
+				head = tail = elem;
+			}
+		} else if( head ) {
+			unref_string( &head->str );
+			return NULL;
+		}
+	}
+	return head;
+}
+
+static enum result evaluate_values_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	struct expression *parameter = this->parameters;
+	struct variable arr = { 0, NULL };
+	struct element *elem;
+	enum result ret = parameter->evaluate( parameter, variables, &arr, exception );
+	if( ret ) {
+		if( arr.string_value && arr.string_value->line == -1
+		&& ( ( struct array * ) arr.string_value )->length > 0) {
+			elem = array_to_element( ( struct array * ) arr.string_value );
+			if( elem ) {
+				dispose_variable( result );
+				result->integer_value = 0;
+				result->string_value = &elem->str;;
+			} else {
+				ret = throw( exception, this, 0, OUT_OF_MEMORY );
+			}
+		} else {
+			ret = throw( exception, this, arr.integer_value, "Not an array or no values." );
+		}
+		dispose_variable( &arr );
+	}
+	return ret;
+}
+
 static enum result evaluate_argc_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	dispose_variable( result );
@@ -2894,6 +2958,7 @@ static struct operator operators[] = {
 	{ "$interrupted", '$', 0, evaluate_interrupted_expression, &operators[ 48 ] },
 	{ "$elem", '$', 3, evaluate_elem_expression, &operators[ 49 ] },
 	{ "$unparse", '$', 1, evaluate_unparse_expression, &operators[ 50 ] },
+	{ "$values", '$', 1, evaluate_values_expression, &operators[ 51 ] },
 	{ ":", ':', -1, evaluate_function_expression, NULL }
 };
 
