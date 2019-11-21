@@ -178,6 +178,11 @@ struct array {
 	struct array *prev, *next;
 };
 
+struct function_reference {
+	struct string str;
+	struct function_declaration *func;
+};
+
 /* Variable. */
 struct variable {
 	int integer_value;
@@ -253,11 +258,6 @@ struct operator {
 	enum result ( *evaluate )( struct expression *this, struct variable *variables,
 		struct variable *result, struct variable *exception );
 	struct operator *next;
-};
-
-struct function_reference {
-	struct string str;
-	struct function_declaration *func;
 };
 
 /* Function declaration list. */
@@ -2384,35 +2384,93 @@ static enum result evaluate_astr_expression( struct expression *this, struct var
 	return ret;
 }
 
-static struct element* array_to_element( struct array *arr ) {
-	struct element *head = NULL, *tail = NULL, *elem;
-	int idx = 0, length = 0, count = arr->length;
-	struct variable *var;
+static struct element *new_integer_element( int value ) {
 	char integer[ 32 ];
-	while( idx < count ) {
-		elem = NULL;
-		var = &arr->array[ idx++ ];
-		if( var->string_value ) {
-			length = write_byte_string( var->string_value->string, var->string_value->length, NULL );
-			if( length > 0 ) {
-				elem = new_element( length );
-				if( elem ) {
-					write_byte_string( var->string_value->string, var->string_value->length, elem->str.string );
-				}
-			}
-		} else {
-			sprintf( integer, "%d", var->integer_value );
-			elem = new_element( strlen( integer ) );
-			if( elem ) {
-				strcpy( elem->str.string, integer );
+	struct element *elem;
+	sprintf( integer, "%d", value );
+	elem = new_element( strlen( integer ) );
+	if( elem ) {
+		strcpy( elem->str.string, integer );
+	}
+	return elem;
+}
+
+static struct element *new_string_element( struct string *value ) {
+	struct element *elem = NULL;
+	int length = write_byte_string( value->string, value->length, NULL );
+	if( length > 0 ) {
+		elem = new_element( length );
+		if( elem ) {
+			write_byte_string( value->string, value->length, elem->str.string );
+		}
+	}
+	return elem;
+}
+
+static struct element *new_tuple_element( int int_value, struct string *str_value ) {
+	struct element *elem = new_element( 4 );
+	if( elem ) {
+		strcpy( elem->str.string, "$tup" );
+		elem->next = new_element( 2 );
+		if( elem->next ) {
+			strcpy( elem->next->str.string, "()" );
+			elem->next->child = new_string_element( str_value );
+			if( elem->next->child ) {
+				elem->next->child->next = new_integer_element( int_value );
 			}
 		}
-		if( elem ) {
-			if( tail ) {
-				tail->next = elem;
-				tail = elem;
+	}
+	if( elem && !( elem->next && elem->next->child && elem->next->child->next ) ) {
+		unref_string( &elem->str );
+		elem = NULL;
+	}
+	return elem;
+}
+
+static struct element *new_literal_element( struct element *child ) {
+	struct element *elem = new_element( 1 );
+	if( elem ) {
+		elem->str.string[ 0 ] = '$';
+		elem->next = new_element( 2 );
+		if( elem->next ) {
+			strcpy( elem->next->str.string, "{}" );
+			child->str.reference_count++;
+			elem->next->child = child;
+		}
+	}
+	if( elem && !elem->next ) {
+		unref_string( &elem->str );
+		elem = NULL;
+	}
+	return elem;
+}
+
+static struct element* array_to_element( struct array *arr ) {
+	struct element *head = NULL, *tail = NULL, *elem;
+	int idx = 0, count = arr->length;
+	struct variable *var;
+	while( idx < count ) {
+		var = &arr->array[ idx++ ];
+		if( var->string_value ) {
+			if( var->string_value->line > 0 ) {
+				elem = new_literal_element( ( struct element * ) var->string_value );
+			} else if( var->integer_value ) {
+				elem = new_tuple_element( var->integer_value, var->string_value );
 			} else {
-				head = tail = elem;
+				elem = new_string_element( var->string_value );
+			}
+		} else {
+			elem = new_integer_element( var->integer_value );
+		}
+		if( elem ) {
+			while( elem ) {
+				if( tail ) {
+					tail->next = elem;
+					tail = elem;
+				} else {
+					head = tail = elem;
+				}
+				elem = elem->next;
 			}
 		} else if( head ) {
 			unref_string( &head->str );
@@ -2430,12 +2488,12 @@ static enum result evaluate_values_expression( struct expression *this, struct v
 	enum result ret = parameter->evaluate( parameter, variables, &arr, exception );
 	if( ret ) {
 		if( arr.string_value && arr.string_value->line == -1
-		&& ( ( struct array * ) arr.string_value )->length > 0) {
+		&& ( ( struct array * ) arr.string_value )->length > 0 ) {
 			elem = array_to_element( ( struct array * ) arr.string_value );
 			if( elem ) {
 				dispose_variable( result );
 				result->integer_value = 0;
-				result->string_value = &elem->str;;
+				result->string_value = &elem->str;
 			} else {
 				ret = throw( exception, this, 0, OUT_OF_MEMORY );
 			}
