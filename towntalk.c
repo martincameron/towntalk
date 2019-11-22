@@ -130,7 +130,6 @@
 		$array(len)              Create array of specified length.
 		$array(${0,"a"})         Create array with values from element.
 		$new(struct)             Same as $array(struct).
-		$astr(arr)               Array to element string.
 		$load("abc.bin")         Load raw bytes into string.
 		$flen("file")            Get the length of a file.
 		$src                     Path of current source file.
@@ -937,82 +936,6 @@ static int write_element( struct element *elem, char *output ) {
 				}
 			}
 			elem = elem->next;
-		}
-	}
-	return length;
-}
-
-static int write_variable( struct variable *var, char *output ) {
-	struct string *str = var->string_value;
-	int length = 0, size = 0;
-	char integer[ 32 ];
-	if( output ) {
-		if( str ) {
-			if( str->line > 0 ) {
-				output[ length++ ] = '$';
-				output[ length++ ] = '{';
-				length += write_element( ( struct element * ) str, &output[ length ] );
-				output[ length++ ] = '}';
-			} else if( str->string ) {
-				if( var->integer_value ) {
-					strcpy( output, "$tup(" );
-					length = 5;
-					length += write_byte_string( str->string, str->length, &output[ length ] );
-					output[ length++ ] = ',';
-					sprintf( integer, "%d", var->integer_value );
-					size = strlen( integer );
-					memcpy( &output[ length ], integer, size );
-					length += size;
-					output[ length++ ] = ')';
-				} else {
-					length = write_byte_string( str->string, str->length, output );
-				}
-			}
-		} else {
-			sprintf( integer, "%d", var->integer_value );
-			length = strlen( integer );
-			memcpy( output, integer, length );
-		}
-	} else {
-		if( str ) {
-			if( str->line > 0 ) {
-				length = 3;
-				size = write_element( ( struct element * ) str, NULL );
-			} else if( str->string ) {
-				if( var->integer_value ) {
-					sprintf( integer, "%d", var->integer_value );
-					length = strlen( integer ) + 7;
-				}
-				size = write_byte_string( str->string, str->length, NULL );
-			}
-			if( size >= 0 && MAX_INTEGER - length > size ) {
-				length += size;
-			} else {
-				length = -1;
-			}
-		} else {
-			sprintf( integer, "%d", var->integer_value );
-			length = strlen( integer );
-		}
-	}
-	return length;
-}
-
-static int write_array( struct array *arr, char *output ) {
-	int idx = 0, length = 0, count = arr->length, size;
-	if( output ) {
-		while( idx < count ) {
-			length += write_variable( &arr->array[ idx++ ], &output[ length ] );
-			output[ length++ ] = '\n';
-		}
-	} else {
-		while( idx < count && length >= 0 ) {
-			size = write_variable( &arr->array[ idx++ ], NULL );
-			if( size >= 0 && MAX_INTEGER - length - 1 > size ) {
-				length += size + 1;
-			} else {
-				length = -1;
-			}
 		}
 	}
 	return length;
@@ -2351,39 +2274,6 @@ static enum result evaluate_sub_expression( struct expression *this, struct vari
 	return ret;
 }
 
-static enum result evaluate_astr_expression( struct expression *this, struct variable *variables,
-	struct variable *result, struct variable *exception ) {
-	int len;
-	struct array *arr;
-	struct string *str;
-	struct expression *parameter = this->parameters;
-	struct variable input = { 0, NULL };
-	enum result ret = parameter->evaluate( parameter, variables, &input, exception );
-	if( ret ) {
-		if( input.string_value && input.string_value->line == -1 ) {
-			arr = ( struct array * ) input.string_value;
-			len = write_array( arr, NULL );
-			if( len >= 0 ) {
-				str = new_string_value( len );
-				if( str ) {
-					write_array( arr, str->string );
-					dispose_variable( result );
-					result->integer_value = 0;
-					result->string_value = str;
-				} else {
-					ret = throw( exception, this, 0, OUT_OF_MEMORY );
-				}
-			} else {
-				ret = throw( exception, this, 0, "String too large." );
-			}
-		} else {
-			ret = throw( exception, this, 0, "Not an array." );
-		}
-		dispose_variable( &input );
-	}
-	return ret;
-}
-
 static struct element *new_integer_element( int value ) {
 	char integer[ 32 ];
 	struct element *elem;
@@ -2966,58 +2856,57 @@ static enum result evaluate_interrupted_expression( struct expression *this, str
 }
 
 static struct operator operators[] = {
-	{ "%", '%', 2, evaluate_arithmetic_expression, &operators[ 1 ] },
-	{ "&", '&', 2, evaluate_arithmetic_expression, &operators[ 2 ] },
-	{ "*", '*', 2, evaluate_arithmetic_expression, &operators[ 3 ] },
-	{ "+", '+', 2, evaluate_arithmetic_expression, &operators[ 4 ] },
-	{ "-", '-', 2, evaluate_arithmetic_expression, &operators[ 5 ] },
-	{ "/", '/', 2, evaluate_arithmetic_expression, &operators[ 6 ] },
-	{ "<", '<', 2, evaluate_arithmetic_expression, &operators[ 7 ] },
-	{ "<e",'L', 2, evaluate_arithmetic_expression, &operators[ 8 ] },
-	{ ">", '>', 2, evaluate_arithmetic_expression, &operators[ 9 ] },
-	{ ">e",'G', 2, evaluate_arithmetic_expression, &operators[ 10 ] },
-	{ "<<",'A', 2, evaluate_arithmetic_expression, &operators[ 11 ] },
-	{ ">>",'B', 2, evaluate_arithmetic_expression, &operators[ 12 ] },
-	{ "^", '^', 2, evaluate_arithmetic_expression, &operators[ 13 ] },
-	{ "=", '=', 2, evaluate_arithmetic_expression, &operators[ 14 ] },
-	{ "|", '|', 2, evaluate_arithmetic_expression, &operators[ 15 ] },
-	{ "~", '~', 1, evaluate_bitwise_not_expression, &operators[ 16 ] },
-	{ "!", '!', 1, evaluate_logical_expression, &operators[ 17 ] },
-	{ "&&",'&', 2, evaluate_logical_expression, &operators[ 18 ] },
-	{ "||",'|', 2, evaluate_logical_expression, &operators[ 19 ] },
-	{ "$int", '$', 1, evaluate_int_expression, &operators[ 20 ] },
-	{ "$str", '$',-1, evaluate_str_expression, &operators[ 21 ] },
-	{ "$len", '$', 1, evaluate_len_expression, &operators[ 22 ] },
-	{ "$asc", '$', 1, evaluate_asc_expression, &operators[ 23 ] },
-	{ "$cmp", '$', 2, evaluate_cmp_expression, &operators[ 24 ] },
-	{ "$cat", '$',-1, evaluate_str_expression, &operators[ 25 ] },
-	{ "$chr", '$', 2, evaluate_chr_expression, &operators[ 26 ] },
-	{ "$tup", '$', 2, evaluate_tup_expression, &operators[ 27 ] },
-	{ "$sub", '$', 3, evaluate_sub_expression, &operators[ 28 ] },
-	{ "$astr", '$', 1, evaluate_astr_expression, &operators[ 29 ] },
-	{ "$load", '$', 1, evaluate_load_expression, &operators[ 30 ] },
-	{ "$flen", '$', 1, evaluate_flen_expression, &operators[ 31 ] },
-	{ "$argc", '$', 0, evaluate_argc_expression, &operators[ 32 ] },
-	{ "$argv", '$', 1, evaluate_argv_expression, &operators[ 33 ] },
-	{ "$time", '$', 0, evaluate_time_expression, &operators[ 34 ] },
-	{ "$next", '$', 1, evaluate_next_expression, &operators[ 35 ] },
-	{ "$child", '$', 1, evaluate_child_expression, &operators[ 36 ] },
-	{ "$parse", '$', 1, evaluate_parse_expression, &operators[ 37 ] },
-	{ "$quote", '$', 1, evaluate_quote_expression, &operators[ 38 ] },
-	{ "$unquote", '$', 1, evaluate_unquote_expression, &operators[ 39 ] },
-	{ "$line", '$', 1, evaluate_line_expression, &operators[ 40 ] },
-	{ "$hex", '$', 1, evaluate_hex_expression, &operators[ 41 ] },
-	{ "$pack", '$', 1, evaluate_pack_expression, &operators[ 42 ] },
-	{ "$unpack", '$', 2, evaluate_unpack_expression, &operators[ 43 ] },
-	{ "$array", '$', 1, evaluate_array_expression, &operators[ 44 ] },
-	{ "$new", '$', 1, evaluate_array_expression, &operators[ 45 ] },
-	{ "$eq", '$', 2, evaluate_eq_expression, &operators[ 46 ] },
-	{ "$chop", '$', 2, evaluate_chop_expression, &operators[ 47 ] },
-	{ "$interrupted", '$', 0, evaluate_interrupted_expression, &operators[ 48 ] },
-	{ "$elem", '$', 3, evaluate_elem_expression, &operators[ 49 ] },
-	{ "$unparse", '$', 1, evaluate_unparse_expression, &operators[ 50 ] },
-	{ "$values", '$', 1, evaluate_values_expression, &operators[ 51 ] },
-	{ ":", ':', -1, evaluate_function_expression, NULL }
+	{ ":", ':',-1, evaluate_function_expression, &operators[ 1 ] },
+	{ "%", '%', 2, evaluate_arithmetic_expression, &operators[ 2 ] },
+	{ "&", '&', 2, evaluate_arithmetic_expression, &operators[ 3 ] },
+	{ "*", '*', 2, evaluate_arithmetic_expression, &operators[ 4 ] },
+	{ "+", '+', 2, evaluate_arithmetic_expression, &operators[ 5 ] },
+	{ "-", '-', 2, evaluate_arithmetic_expression, &operators[ 6 ] },
+	{ "/", '/', 2, evaluate_arithmetic_expression, &operators[ 7 ] },
+	{ "<", '<', 2, evaluate_arithmetic_expression, &operators[ 8 ] },
+	{ "<e",'L', 2, evaluate_arithmetic_expression, &operators[ 9 ] },
+	{ ">", '>', 2, evaluate_arithmetic_expression, &operators[ 10 ] },
+	{ ">e",'G', 2, evaluate_arithmetic_expression, &operators[ 11 ] },
+	{ "<<",'A', 2, evaluate_arithmetic_expression, &operators[ 12 ] },
+	{ ">>",'B', 2, evaluate_arithmetic_expression, &operators[ 13 ] },
+	{ "^", '^', 2, evaluate_arithmetic_expression, &operators[ 14 ] },
+	{ "=", '=', 2, evaluate_arithmetic_expression, &operators[ 15 ] },
+	{ "|", '|', 2, evaluate_arithmetic_expression, &operators[ 16 ] },
+	{ "~", '~', 1, evaluate_bitwise_not_expression, &operators[ 17 ] },
+	{ "!", '!', 1, evaluate_logical_expression, &operators[ 18 ] },
+	{ "&&",'&', 2, evaluate_logical_expression, &operators[ 19 ] },
+	{ "||",'|', 2, evaluate_logical_expression, &operators[ 20 ] },
+	{ "$eq", '$', 2, evaluate_eq_expression, &operators[ 21 ] },
+	{ "$str", '$',-1, evaluate_str_expression, &operators[ 22 ] },
+	{ "$cmp", '$', 2, evaluate_cmp_expression, &operators[ 23 ] },
+	{ "$cat", '$',-1, evaluate_str_expression, &operators[ 24 ] },
+	{ "$chr", '$', 2, evaluate_chr_expression, &operators[ 25 ] },
+	{ "$sub", '$', 3, evaluate_sub_expression, &operators[ 26 ] },
+	{ "$asc", '$', 1, evaluate_asc_expression, &operators[ 27 ] },
+	{ "$hex", '$', 1, evaluate_hex_expression, &operators[ 28 ] },
+	{ "$int", '$', 1, evaluate_int_expression, &operators[ 29 ] },
+	{ "$len", '$', 1, evaluate_len_expression, &operators[ 30 ] },
+	{ "$tup", '$', 2, evaluate_tup_expression, &operators[ 31 ] },
+	{ "$array", '$', 1, evaluate_array_expression, &operators[ 32 ] },
+	{ "$new", '$', 1, evaluate_array_expression, &operators[ 33 ] },
+	{ "$load", '$', 1, evaluate_load_expression, &operators[ 34 ] },
+	{ "$flen", '$', 1, evaluate_flen_expression, &operators[ 35 ] },
+	{ "$chop", '$', 2, evaluate_chop_expression, &operators[ 36 ] },
+	{ "$argc", '$', 0, evaluate_argc_expression, &operators[ 37 ] },
+	{ "$argv", '$', 1, evaluate_argv_expression, &operators[ 38 ] },
+	{ "$time", '$', 0, evaluate_time_expression, &operators[ 39 ] },
+	{ "$parse", '$', 1, evaluate_parse_expression, &operators[ 40 ] },
+	{ "$unparse", '$', 1, evaluate_unparse_expression, &operators[ 41 ] },
+	{ "$next", '$', 1, evaluate_next_expression, &operators[ 42 ] },
+	{ "$child", '$', 1, evaluate_child_expression, &operators[ 43 ] },
+	{ "$line", '$', 1, evaluate_line_expression, &operators[ 44 ] },
+	{ "$elem", '$', 3, evaluate_elem_expression, &operators[ 45 ] },
+	{ "$values", '$', 1, evaluate_values_expression, &operators[ 46 ] },
+	{ "$pack", '$', 1, evaluate_pack_expression, &operators[ 47 ] },
+	{ "$unpack", '$', 2, evaluate_unpack_expression, &operators[ 48 ] },
+	{ "$quote", '$', 1, evaluate_quote_expression, &operators[ 49 ] },
+	{ "$unquote", '$', 1, evaluate_unquote_expression, &operators[ 50 ] },
+	{ "$interrupted", '$', 0, evaluate_interrupted_expression, NULL }
 };
 
 static struct operator* get_operator( char *name, struct environment *env ) {
