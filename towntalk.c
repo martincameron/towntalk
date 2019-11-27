@@ -2514,10 +2514,27 @@ static enum result evaluate_elem_expression( struct expression *this, struct var
 						if( ret ) {
 							if( ( next.string_value && next.string_value->line > 0 )
 							|| !( next.string_value || next.integer_value ) ) {
-								value = new_element( elem.string_value->length );
-								if( value ) {
-									value->str.line = elem.string_value->line;
-									memcpy( value->str.string, elem.string_value->string, elem.string_value->length );
+								if( elem.string_value->reference_count > 1 ) {
+									value = new_element( elem.string_value->length );
+									if( value ) {
+										value->str.line = elem.string_value->line;
+										memcpy( value->str.string, elem.string_value->string, elem.string_value->length );
+									} else {
+										ret = throw( exception, this, 0, OUT_OF_MEMORY );
+									}
+								} else { /* Re-use element. */
+									value = ( struct element * ) elem.string_value;
+									if( value->child ) {
+										unref_string( &value->child->str );
+										value->child = NULL;
+									}
+									if( value->next ) {
+										unref_string( &value->next->str );
+										value->next = NULL;
+									}
+									value->str.reference_count++;
+								}
+								if( ret ) {
 									if( child.string_value ) {
 										value->child = ( struct element * ) child.string_value;
 										child.string_value->reference_count++;
@@ -2529,9 +2546,6 @@ static enum result evaluate_elem_expression( struct expression *this, struct var
 									dispose_variable( result );
 									result->integer_value = 0;
 									result->string_value = &value->str;
-									
-								} else {
-									ret = throw( exception, this, 0, OUT_OF_MEMORY );
 								}
 							} else {
 								ret = throw( exception, this, next.integer_value, "Not an element." );

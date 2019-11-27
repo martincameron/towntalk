@@ -738,6 +738,12 @@ function testelem() {
 	call assert( =( $cmp( $child( $elem( ${{}}, $elem( ${ 2 }, 0, 0 ), 0 ) ) "2" ) 0 ), ${-} );
 	call assert( =( $cmp( $next( $elem( ${ 1 }, 0, ${ 3 } ) ) "3" ) 0 ), ${-} );
 	call assert( =( $cmp( $next( $elem( ${ 1 }, 0, $elem( ${ 3 }, 0, 0 ) ) ) "3" ) 0 ), ${-} );
+	call assert( =( $cmp( $elem( $parse( "(abc) def" ), 0, 0 ) "()" ) 0 ), ${-} );
+	call assert( !( $child( $elem( $parse( "(abc) def" ), 0, 0 ) ) ), ${-} );
+	call assert( =( $cmp( $child( $elem( $parse( "(abc) def" ), ${ 2 }, 0 ) ) "2" ) 0 ), ${-} );
+	call assert( !( $next( $elem( $parse( "(abc) def" ), 0, 0 ) ) ), ${-} );
+	call assert( =( $cmp( $next( $elem( $parse( "(abc) def" ), ${ 2 }, ${ 3 } ) ) "3" ) 0 ), ${-} );
+	call assert( =( $cmp( $next( $elem( $elem( ${()}, ${ abc }, ${ def } ), ${ 2 }, ${ 3 } ) ) "3" ) 0 ), ${-} );
 }
 
 function testvalues() {
