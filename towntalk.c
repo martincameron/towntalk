@@ -1033,7 +1033,7 @@ static struct element* parse_constant( struct element *elem, struct variable *co
 		/* Integer constant. */
 		integer_value = ( int ) strtol( elem->str.string, &end, 0 );
 		if( end[ 0 ] != 0 ) {
-			sprintf( message, "Invalid integer constant '%.16s' at line %d.", elem->str.string, elem->str.line );
+			sprintf( message, "Invalid integer constant '%.64s' at line %d.", elem->str.string, elem->str.line );
 		}
 	}
 	constant->integer_value = integer_value;
@@ -2954,14 +2954,14 @@ static struct element* parse_infix_expression( struct element *elem, struct envi
 							if( num_operands == oper->num_operands ) {
 								next = next->next;
 							} else {
-								sprintf( message, "Wrong number of arguments to '%.16s()' on line %d.", oper->name, child->str.line );
+								sprintf( message, "Wrong number of arguments to '%.64s()' on line %d.", oper->name, child->str.line );
 							}
 						}
 					} else {
-						sprintf( message, "Wrong number of arguments to '%.16s()' on line %d.", oper->name, child->str.line );
+						sprintf( message, "Wrong number of arguments to '%.64s()' on line %d.", oper->name, child->str.line );
 					}
 				} else {
-					sprintf( message, "Unhandled operator '%.16s' on line %d.", child->str.string, child->str.line );
+					sprintf( message, "Unhandled operator '%.64s' on line %d.", child->str.string, child->str.line );
 				}
 			} else {
 				sprintf( message, "Expected operator after '( on line %d.", elem->str.line );
@@ -2991,15 +2991,15 @@ static struct element* parse_operator_expression( struct element *elem, struct e
 					if( num_operands == oper->num_operands || ( oper->num_operands < 0 && num_operands > 0 ) ) {
 						next = next->next;
 					} else {
-						sprintf( message, "Wrong number of arguments to '%.16s()' on line %d.", oper->name, next->str.line );
+						sprintf( message, "Wrong number of arguments to '%.64s()' on line %d.", oper->name, next->str.line );
 					}
 				}
 			} else {
-				sprintf( message, "Expected '(' after '%.16s' on line %d.", oper->name, elem->str.line );
+				sprintf( message, "Expected '(' after '%.64s' on line %d.", oper->name, elem->str.line );
 			}
 		}
 	} else {
-		sprintf( message, "Unhandled expression '%.16s' on line %d.", elem->str.string, elem->str.line );
+		sprintf( message, "Unhandled expression '%.64s' on line %d.", elem->str.string, elem->str.line );
 	}
 	return next;
 }
@@ -3019,7 +3019,7 @@ static struct element* parse_function_expression( struct element *elem, struct e
 			if( num_params == expr->function->num_parameters ) {
 				next = next->next;
 			} else {
-				sprintf( message, "Wrong number of arguments to '%.16s()' on line %d.", elem->str.string, next->str.line );
+				sprintf( message, "Wrong number of arguments to '%.64s()' on line %d.", elem->str.string, next->str.line );
 			}
 		}
 	} else {
@@ -3036,7 +3036,7 @@ static struct element* parse_func_ref_expression( struct element *elem, struct e
 		expr->function = function;
 		expr->evaluate = evaluate_func_ref_expression;
 	} else {
-		sprintf( message, "Function '%.16s' not defined on line %d.", name, elem->str.line );
+		sprintf( message, "Function '%.64s' not defined on line %d.", name, elem->str.line );
 	}
 	return elem->next;
 }
@@ -3067,7 +3067,7 @@ static struct element* parse_struct_expression( struct element *elem, struct env
 		if( idx >= 0 ) {
 			expr->index = idx;
 		} else {
-			sprintf( message, "Field '%.16s' not declared on line %d.", elem->str.string, elem->str.line );
+			sprintf( message, "Field '%.64s' not declared on line %d.", elem->str.string, elem->str.line );
 		}
 	} else {
 		expr->index = struc->length;
@@ -3212,7 +3212,7 @@ static struct element* parse_increment_statement( struct element *elem, struct e
 				strcpy( message, OUT_OF_MEMORY );
 			}
 		} else {
-			sprintf( message, "Undeclared local variable '%.16s' on line %d.", next->str.string, next->str.line );
+			sprintf( message, "Undeclared local variable '%.64s' on line %d.", next->str.string, next->str.line );
 		}
 	}
 	return next;
@@ -3238,7 +3238,7 @@ static struct element* parse_decrement_statement( struct element *elem, struct e
 				strcpy( message, OUT_OF_MEMORY );
 			}
 		} else {
-			sprintf( message, "Undeclared local variable '%.16s' on line %d.", next->str.string, next->str.line );
+			sprintf( message, "Undeclared local variable '%.64s' on line %d.", next->str.string, next->str.line );
 		}
 	}
 	return next;
@@ -3307,7 +3307,7 @@ static struct element* parse_assignment_statement( struct element *elem, struct 
 				next = next->next;
 			}
 		} else {
-			sprintf( message, "Undeclared variable '%.16s' on line %d.", next->str.string, next->str.line );
+			sprintf( message, "Undeclared variable '%.64s' on line %d.", next->str.string, next->str.line );
 		}
 	}
 	return next;
@@ -3589,12 +3589,12 @@ static struct element* validate_syntax( char *syntax, struct element *elem,
 		if( chr == '0' ) {
 			/* List end. */
 			if( elem ) {
-				sprintf( message, "Unexpected '%.16s' after '%.16s' on line %d.", elem->str.string, key->str.string, line );
+				sprintf( message, "Unexpected '%.64s' after '%.64s' on line %d.", elem->str.string, key->str.string, line );
 			}
 		} else if( strchr( "\",;={", chr ) ) {
 			/* Strings, separators or blocks. */
 			if( elem == NULL || elem->str.string[ 0 ] != chr ) {
-				sprintf( message, "Expected '%c' after '%.16s' on line %d.", chr, key->str.string, line );
+				sprintf( message, "Expected '%c' after '%.64s' on line %d.", chr, key->str.string, line );
 			} else {
 				elem = elem->next;
 			}
@@ -3606,7 +3606,7 @@ static struct element* validate_syntax( char *syntax, struct element *elem,
 				}
 				elem = elem->next;
 			} else {
-				sprintf( message, "Expected '(' after '%.16s' on line %d.", key->str.string, line );
+				sprintf( message, "Expected '(' after '%.64s' on line %d.", key->str.string, line );
 			}
 		} else if( chr == '[' ) {
 			/* Index expression. */
@@ -3615,24 +3615,24 @@ static struct element* validate_syntax( char *syntax, struct element *elem,
 					validate_syntax( "xx0", elem->child, key, env, message );
 					elem = elem->next;
 				} else {
-					sprintf( message, "Expected '[' after '%.16s' on line %d.", key->str.string, line );
+					sprintf( message, "Expected '[' after '%.64s' on line %d.", key->str.string, line );
 				}
 			} else {
-				sprintf( message, "Expected '[' after '%.16s' on line %d.", key->str.string, line );
+				sprintf( message, "Expected '[' after '%.64s' on line %d.", key->str.string, line );
 			}
 		} else if( chr == 'c' ) {
 			/* Catch */
 			if( elem == NULL || strcmp( elem->str.string, "catch" ) ) {
-				sprintf( message, "Expected 'catch' after '%.16s' on line %d.", key->str.string, line );
+				sprintf( message, "Expected 'catch' after '%.64s' on line %d.", key->str.string, line );
 			} else {
 				elem = elem->next;
 			}
 		} else if( chr == 'n' ) {
 			/* Name. */
 			if( elem == NULL || elem->str.string[ 0 ] == ';' ) {
-				sprintf( message, "Expected name after '%.16s' on line %d.", key->str.string, line );
+				sprintf( message, "Expected name after '%.64s' on line %d.", key->str.string, line );
 			} else if( !validate_name( elem->str.string, env ) ) {
-				sprintf( message, "Invalid name '%.16s' on line %d.", elem->str.string, line );
+				sprintf( message, "Invalid name '%.64s' on line %d.", elem->str.string, line );
 			} else {
 				elem = elem->next;
 			}
@@ -3665,7 +3665,7 @@ static struct element* validate_syntax( char *syntax, struct element *elem,
 					elem = elem->next;
 				}
 			} else {
-				sprintf( message, "Expected expression after '%.16s' on line %d.", key->str.string, line );
+				sprintf( message, "Expected expression after '%.64s' on line %d.", key->str.string, line );
 			}
 		} else if( chr == 'v' ) {
 			/* Variable declaration. */
@@ -3716,7 +3716,7 @@ static void parse_keywords( struct keyword *keywords, struct element *elem,
 				}
 			}
 		} else {
-			sprintf( message, "Unrecognized keyword '%.16s' on line %d.", elem->str.string, elem->str.line );
+			sprintf( message, "Unrecognized keyword '%.64s' on line %d.", elem->str.string, elem->str.line );
 		}
 	}
 }
@@ -3812,7 +3812,7 @@ static struct element* parse_try_statement( struct element *elem, struct environ
 				}
 				stmt->execute = execute_try_statement;
 			} else {
-				sprintf( message, "Undeclared local variable '%.16s' on line %d.", next->str.string, next->str.line );
+				sprintf( message, "Undeclared local variable '%.64s' on line %d.", next->str.string, next->str.line );
 			}
 		}
 		prev->next = stmt;
@@ -3836,7 +3836,7 @@ static int add_function_parameter( struct function_declaration *func, struct ele
 			func->variable_decls_tail = param;
 		} else {
 			dispose_string_list( param );
-			sprintf( message, "Parameter '%.16s' already defined on line %d.", name, elem->str.line );
+			sprintf( message, "Parameter '%.64s' already defined on line %d.", name, elem->str.line );
 		}
 	} else {
 		strcpy( message, OUT_OF_MEMORY );
@@ -3908,7 +3908,7 @@ static int add_structure_field( struct environment *env, char *name, int line, c
 	struct structure *struc = env->structures;
 	if( validate_name( name, env ) ) {
 		if( struc->fields && get_string_list_index( struc->fields, name ) >= 0 ) {
-			sprintf( message, "Field '%.16s' already defined on line %d.", name, line );
+			sprintf( message, "Field '%.64s' already defined on line %d.", name, line );
 		} else {
 			field = new_string_list( name );
 			if( field ) {
@@ -3924,7 +3924,7 @@ static int add_structure_field( struct environment *env, char *name, int line, c
 			}
 		}
 	} else {
-		sprintf( message, "Invalid name '%.16s' on line %d.", name, line );
+		sprintf( message, "Invalid name '%.64s' on line %d.", name, line );
 	}
 	return message[ 0 ] == 0;
 }
@@ -3956,7 +3956,7 @@ static struct element* parse_struct_declaration( struct element *elem, struct en
 						}
 						next = next->next;
 					} else {
-						sprintf( message, "Structure '%.16s' not declared on line %d.", child->str.string, child->str.line );
+						sprintf( message, "Structure '%.64s' not declared on line %d.", child->str.string, child->str.line );
 					}
 				} else {
 					sprintf( message, "Invalid parent structure declaration on line %d.", next->str.line );
@@ -4041,7 +4041,7 @@ static int validate_decl( struct element *elem, struct environment *env, char *m
 	|| get_global_variable( env->constants, name )
 	|| get_function_declaration( env->functions, name )
 	|| get_structure( env->structures, name ) ) {
-		sprintf( message, "Name '%.16s' already defined on line %d.", elem->str.string, elem->str.line );
+		sprintf( message, "Name '%.64s' already defined on line %d.", elem->str.string, elem->str.line );
 		return 0;
 	}
 	return 1;
@@ -4116,7 +4116,7 @@ static int parse_tt_file( char *file_name, struct environment *env, char *messag
 	if( !success && strncmp( message, "Unable to parse", 15 ) ) {
 		strncpy( error, message, 127 );
 		error[ 127 ] = 0;
-		if( sprintf( message, "Unable to parse '%.16s'.\n%s", file_name, error ) < 0 ) {
+		if( sprintf( message, "Unable to parse '%.96s'.\n%s", file_name, error ) < 0 ) {
 			strcpy( message, "Unable to parse. " );
 			strcat( message, error );
 		}
