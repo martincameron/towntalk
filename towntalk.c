@@ -357,7 +357,7 @@ static struct element* new_element( int str_len ) {
 	return elem;
 }
 
-static struct array *new_array( struct environment *env, int length ) {
+static struct array* new_array( struct environment *env, int length ) {
 	struct array *arr = calloc( 1, sizeof( struct array ) );
 	if( arr ) {
 		arr->str.string = "#Array#";
@@ -2274,7 +2274,7 @@ static enum result evaluate_sub_expression( struct expression *this, struct vari
 	return ret;
 }
 
-static struct element *new_integer_element( int value ) {
+static struct element* new_integer_element( int value ) {
 	char integer[ 32 ];
 	struct element *elem;
 	sprintf( integer, "%d", value );
@@ -2285,7 +2285,7 @@ static struct element *new_integer_element( int value ) {
 	return elem;
 }
 
-static struct element *new_string_element( struct string *value ) {
+static struct element* new_string_element( struct string *value ) {
 	struct element *elem = NULL;
 	int length = write_byte_string( value->string, value->length, NULL );
 	if( length > 0 ) {
@@ -2297,7 +2297,7 @@ static struct element *new_string_element( struct string *value ) {
 	return elem;
 }
 
-static struct element *new_tuple_element( int int_value, struct string *str_value ) {
+static struct element* new_tuple_element( int int_value, struct string *str_value ) {
 	struct element *elem = new_element( 4 );
 	if( elem ) {
 		strcpy( elem->str.string, "$tup" );
@@ -2317,7 +2317,7 @@ static struct element *new_tuple_element( int int_value, struct string *str_valu
 	return elem;
 }
 
-static struct element *new_literal_element( struct element *child ) {
+static struct element* new_literal_element( struct element *child ) {
 	struct element *elem = new_element( 1 );
 	if( elem ) {
 		elem->str.string[ 0 ] = '$';
