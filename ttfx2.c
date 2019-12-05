@@ -1186,9 +1186,6 @@ static struct constant fxconstants[] = {
 	{ "FX_MOUSEMOTION", SDL_MOUSEMOTION, NULL },
 	{ "FX_MOUSEKEYDOWN", SDL_MOUSEBUTTONDOWN, NULL },
 	{ "FX_MOUSEKEYUP", SDL_MOUSEBUTTONUP, NULL },
-	{ "FX_TIMER", SDL_USEREVENT, NULL },
-	{ "FX_SEQUENCER", SDL_USEREVENT + 1, NULL },
-	{ "FX_MIDI", SDL_USEREVENT + 2, NULL },
 	{ "FX_KEY_BACKSPACE", SDLK_BACKSPACE, NULL },
 	{ "FX_KEY_TAB", SDLK_TAB, NULL },
 	{ "FX_KEY_RETURN", SDLK_RETURN, NULL },
@@ -1219,6 +1216,8 @@ static struct constant fxconstants[] = {
 	{ "FX_WINDOW_EXPOSED", SDL_WINDOWEVENT_EXPOSED, NULL },
 	{ NULL }
 };
+
+static char* fxevent_constants[] = { "FX_TIMER", "FX_SEQUENCER", "FX_MIDI", NULL };
 
 static struct operator fxoperators[] = {
 	{ "$millis",'$', 0, evaluate_millis_expression, &fxoperators[ 1 ] },
@@ -1253,6 +1252,17 @@ static struct keyword fxstatements[] = {
 	{ "fxmidi", "x;", parse_fxmidi_statement, statements }
 };
 
+static int add_event_constants( char **names, struct environment *env, char *message ) {
+	struct constant event[ 2 ] = { NULL };
+	int result = 1, idx = 0;
+	while( result && names[ idx ] ) {
+		event[ 0 ].name = names[ idx++ ];
+		event[ 0 ].integer_value = SDL_RegisterEvents( 1 );
+		result = add_constants( &event[ 0 ], env, message );
+	}
+	return result;
+}
+
 int main( int argc, char **argv ) {
 	int exit_code = EXIT_FAILURE;
 	char *file_name, message[ 256 ] = "";
@@ -1272,7 +1282,8 @@ int main( int argc, char **argv ) {
 		env->argc = argc - 1;
 		env->argv = &argv[ 1 ];
 		if( add_constants( fxconstants, env, message )
-		&& add_constants( constants, env, message )  ) {
+		&& add_constants( constants, env, message )
+		&& add_event_constants( fxevent_constants, env, message ) ) {
 			env->statements = fxstatements;
 			env->operators = fxoperators;
 			if( parse_tt_file( file_name, env, message ) ) {
