@@ -59,6 +59,7 @@ struct fxenvironment {
 	SDL_Keycode key;
 	struct fxsample samples[ NUM_SAMPLES ];
 	struct fxchannel channels[ NUM_CHANNELS ];
+	int timer_event_type, seq_event_type, midi_event_type;
 	int tick, tick_len, audio_idx, audio_end, seq_msg, midi_msg, win_event, key_held;
 	int audio[ ( MAX_TICK_LEN + 33 ) * 4 ], ramp_buf[ 64 ];
 	#if defined( ALSA_MIDI )
@@ -81,7 +82,7 @@ static void signal_handler( int signum ) {
 
 static Uint32 timer_callback( Uint32 interval, void *param ) {
 	SDL_Event event;
-	event.type = SDL_USEREVENT;
+	event.type = fxenv->timer_event_type;
 	event.user.code = 0;
 	event.user.data1 = event.user.data2 = NULL;
 	SDL_PushEvent( &event );
@@ -248,7 +249,7 @@ static void process_sequence( struct fxenvironment *fxenv, int channel_idx ) {
 						}
 					} else if( ( cmd & 0xF000000 ) == 0x8000000 ) {
 						/* 0x08xxxxxx sequencer event. */
-						event.type = SDL_USEREVENT + 1;
+						event.type = fxenv->seq_event_type;
 						event.user.code = ( channel_idx << 24 ) | ( cmd & 0xFFFFFF );
 						SDL_PushEvent( &event );
 					}
@@ -295,7 +296,7 @@ static void audio_callback( void *userdata, Uint8 *stream, int len ) {
 			}
 			if( fxenv->midi_idx == 3 ) {
 				/* Push message.*/
-				event.type = SDL_USEREVENT + 2;
+				event.type = fxenv->midi_event_type;
 				event.user.code = fxenv->midi_buf;
 				SDL_PushEvent( &event );
 				fxenv->midi_idx = 0;
@@ -913,20 +914,15 @@ static enum result handle_event_expression( struct expression *this, SDL_Event *
 	if( event->type == SDL_QUIT ) {
 		ret = throw( exception, this, 0, NULL );
 	} else {
-		switch( event->type ) {
-			case SDL_WINDOWEVENT:
-				fxenv->win_event = event->window.event;
-				break;
-			case SDL_KEYDOWN: case SDL_KEYUP:
-				fxenv->key = event->key.keysym.sym;
-				fxenv->key_held = event->key.repeat;
-				break;
-			case SDL_USEREVENT + 1:
-				fxenv->seq_msg = event->user.code;
-				break;
-			case SDL_USEREVENT + 2:
-				fxenv->midi_msg = event->user.code;
-				break;
+		if( event->type == fxenv->seq_event_type ) {
+			fxenv->seq_msg = event->user.code;
+		} else if( event->type == fxenv->midi_event_type ) {
+			fxenv->midi_msg = event->user.code;
+		} else if( event->type == SDL_WINDOWEVENT ) {
+			fxenv->win_event = event->window.event;
+		} else if( event->type == SDL_KEYDOWN || event->type == SDL_KEYUP ) {
+			fxenv->key = event->key.keysym.sym;
+			fxenv->key_held = event->key.repeat;
 		}
 		dispose_variable( result );
 		result->integer_value = event->type;
@@ -1217,8 +1213,6 @@ static struct constant fxconstants[] = {
 	{ NULL }
 };
 
-static char* fxevent_constants[] = { "FX_TIMER", "FX_SEQUENCER", "FX_MIDI", NULL };
-
 static struct operator fxoperators[] = {
 	{ "$millis",'$', 0, evaluate_millis_expression, &fxoperators[ 1 ] },
 	{ "$fxpoll",'$', 0, evaluate_fxpoll_expression, &fxoperators[ 2 ] },
@@ -1252,15 +1246,26 @@ static struct keyword fxstatements[] = {
 	{ "fxmidi", "x;", parse_fxmidi_statement, statements }
 };
 
-static int add_event_constants( char **names, struct environment *env, char *message ) {
+static int add_event_constants( struct fxenvironment *env, char *message ) {
+	int event_type = SDL_RegisterEvents( 3 );
 	struct constant event[ 2 ] = { NULL };
-	int result = 1, idx = 0;
-	while( result && names[ idx ] ) {
-		event[ 0 ].name = names[ idx++ ];
-		event[ 0 ].integer_value = SDL_RegisterEvents( 1 );
-		result = add_constants( &event[ 0 ], env, message );
+	event[ 0 ].name = "FX_TIMER";
+	event[ 0 ].integer_value = event_type;
+	if( add_constants( &event[ 0 ], &env->env, message ) ) {
+		env->timer_event_type = event_type++;
+		event[ 0 ].name = "FX_SEQUENCER";
+		event[ 0 ].integer_value = event_type;
+		if( add_constants( &event[ 0 ], &env->env, message ) ) {
+			env->seq_event_type = event_type++;
+			event[ 0 ].name = "FX_MIDI";
+			event[ 0 ].integer_value = event_type;
+			if( add_constants( &event[ 0 ], &env->env, message ) ) {
+				env->midi_event_type = event_type;
+				return 1;
+			}
+		}
 	}
-	return result;
+	return 0;
 }
 
 int main( int argc, char **argv ) {
@@ -1283,7 +1288,7 @@ int main( int argc, char **argv ) {
 		env->argv = &argv[ 1 ];
 		if( add_constants( fxconstants, env, message )
 		&& add_constants( constants, env, message )
-		&& add_event_constants( fxevent_constants, env, message ) ) {
+		&& add_event_constants( fxenv, message ) ) {
 			env->statements = fxstatements;
 			env->operators = fxoperators;
 			if( parse_tt_file( file_name, env, message ) ) {
