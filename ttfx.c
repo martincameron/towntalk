@@ -448,19 +448,21 @@ static enum result execute_fxsurface_statement( struct statement *this, struct v
 					32, 0xFF000000, 0x00FF0000, 0x0000FF00, 0x000000FF );
 				if( surface ) {
 					if( params[ 3 ].string_value ) {
-						if( params[ 3 ].string_value->line < 0 ) {
+						if( params[ 3 ].string_value->line == -1 ) {
 							arr = ( struct array * ) params[ 3 ].string_value;
 							values = arr->array;
 							if( SDL_LockSurface( surface ) == 0 ) {
 								idx = 0;
 								len = arr->length;
-								if( len > width * height ) {
+								if( len >= width * height ) {
 									len = width * height;
-								}
-								pixels = ( Uint32 * ) surface->pixels;
-								while( idx < len ) {
-									pixels[ idx ] = values[ idx ].integer_value;
-									idx++;
+									pixels = ( Uint32 * ) surface->pixels;
+									while( idx < len ) {
+										pixels[ idx ] = values[ idx ].integer_value;
+										idx++;
+									}
+								} else {
+									ret = throw( exception, this->source, len, "Array index out of bounds." );
 								}
 								SDL_UnlockSurface( surface );
 							} else {

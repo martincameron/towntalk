@@ -483,24 +483,26 @@ static enum result execute_fxsurface_statement( struct statement *this, struct v
 					SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, width, height );
 				if( texture ) {
 					if( params[ 3 ].string_value ) {
-						if( params[ 3 ].string_value->line < 0 ) {
+						if( params[ 3 ].string_value->line == -1 ) {
 							arr = ( struct array * ) params[ 3 ].string_value;
 							values = arr->array;
 							pixels = malloc( arr->length * sizeof( Uint32 ) );
 							if( pixels ) {
 								idx = 0;
 								len = arr->length;
-								if( len > width * height ) {
+								if( len >= width * height ) {
 									len = width * height;
+									while( idx < len ) {
+										pixels[ idx ] = values[ idx ].integer_value;
+										idx++;
+									}
+									if( SDL_UpdateTexture( texture, NULL, pixels, width * sizeof( Uint32 ) ) ) {
+										ret = throw( exception, this->source, 0, SDL_GetError() );
+									}
+									SDL_SetTextureBlendMode( texture, SDL_BLENDMODE_BLEND );
+								} else {
+									ret = throw( exception, this->source, len, "Array index out of bounds." );
 								}
-								while( idx < len ) {
-									pixels[ idx ] = values[ idx ].integer_value;
-									idx++;
-								}
-								if( SDL_UpdateTexture( texture, NULL, pixels, width * sizeof( Uint32 ) ) ) {
-									ret = throw( exception, this->source, 0, SDL_GetError() );
-								}
-								SDL_SetTextureBlendMode( texture, SDL_BLENDMODE_BLEND );
 								free( pixels );
 							} else {
 								ret = throw( exception, this->source, 0, OUT_OF_MEMORY );
