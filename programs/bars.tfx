@@ -1,0 +1,92 @@
+
+rem {
+	Behind a bar? It says "bars", here. Behind bars.
+}
+
+const WIDTH = 640, HEIGHT = 480;
+
+const FP_SHIFT = 15, FP_ONE = <<( 1 FP_SHIFT ), FP_MASK = -( FP_ONE 1 );
+
+const TABLE_ACCURACY = 4;
+const SINE_TABLE = $pack( $array( ${ 
+	    0,  6393, 12540, 18205, 23170, 27246, 30274, 32138, 32768,
+	32138, 30274, 27246, 23170, 18205, 12540,  6393,     0,     0
+} ) );
+
+const IMG_HEIGHT = /( WIDTH 160 ), NUM_BARS = 8;
+
+# Triangle wave from 1 to -1 of period 2 (fixed point).
+function tri( x ) {
+	var y = -( FP_ONE *( 2 &( x FP_MASK ) ) );
+	if &( x FP_ONE ) {
+		let y = -( 0 y );
+	}
+	return y;
+}
+
+# Return sine of PI*x in fixed-point.
+function sine( x ) {
+	var tab_idx = >>( &( x FP_MASK ) -( FP_SHIFT TABLE_ACCURACY ) );
+	var c = $unpack( SINE_TABLE tab_idx );
+	var m = -( $unpack( SINE_TABLE +( tab_idx 1 ) ) c );
+	let m = *( m &( x >>( FP_MASK TABLE_ACCURACY ) ) );
+	var y = +( c >>( m -( FP_SHIFT TABLE_ACCURACY ) ) );
+	if &( x FP_ONE ) {
+		let y = -( 0 y );
+	}
+	return y;
+}
+
+function bar_pixels( width, height, num_bars, red, grn, blu ) {
+	var x, y, t, r, g, b, image = $array( *( width height ) );
+	while <( y height ) {
+		let x = 0;
+		while <( x width ) {
+			let t = +( tri( /( *( *( FP_ONE x ) num_bars ) width ) ) FP_ONE );
+			let r = >>( *( *( t red ) 127 ) +( FP_SHIFT 1 ) );
+			let g = >>( *( *( t grn ) 127 ) +( FP_SHIFT 1 ) );
+			let b = >>( *( *( t blu ) 127 ) +( FP_SHIFT 1 ) );
+			set [ image +( *( y width ) x ) ] = |( |( <<( r 24 ) |( <<( g 16 ) <<( b 8 ) ) ) 0xFF );
+			inc x;
+		}
+		inc y;
+	}
+	return image;
+}
+
+function redraw( br1, bv1, ba1, br2, bv2, ba2 ) {
+	# Scale time so that FP_ONE is roughly 8s.
+	var x1, x2, x, y, time = <<( $millis -( FP_SHIFT 13 ) );
+	while <( y HEIGHT ) {
+		# Modulate x position of each "raster" with two sine functions.
+		let x1 = sine( +( *( time +( bv1 1 ) ) /( *( *( FP_ONE y ) br1 ) HEIGHT ) ) );
+		let x2 = sine( +( *( time +( bv2 1 ) ) /( *( *( FP_ONE y ) br2 ) HEIGHT ) ) );
+		let x = >>( *( +( *( x1 ba1 ) *( x2 ba2 ) ) WIDTH ) +( FP_SHIFT 2 ) );
+		fxblit 0, 0, 0, *( WIDTH 3 ), IMG_HEIGHT, -( x WIDTH ), y;
+		let y = +( y IMG_HEIGHT );
+	}
+}
+
+program bars {
+	var event;
+	
+	fxopen WIDTH, HEIGHT, "Bars";
+
+	fxsurface 0, *( WIDTH 3 ), IMG_HEIGHT, bar_pixels( *( WIDTH 3 ), IMG_HEIGHT, NUM_BARS, 2, 0, 1 );
+
+	while TRUE {
+		call redraw( 1 1 2 1 2 2 );
+		# Show might block until the next frame.
+		fxshow;
+		# Wait to limit frame rate.
+		fxsleep 16;
+		# Handle all events.
+		let event = $fxpoll;
+		while event {
+			if =( event FX_KEYDOWN ) {
+				print $keyboard;
+			}
+			let event = $fxpoll;
+		}
+	}
+}
