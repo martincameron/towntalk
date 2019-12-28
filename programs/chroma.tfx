@@ -1,0 +1,76 @@
+
+rem {
+	The Chromalizer...
+}
+
+const WIDTH = 640, HEIGHT = 480;
+
+const FP_SHIFT = 15, FP_ONE = <<( 1 FP_SHIFT ), FP_MASK = -( FP_ONE 1 );
+
+const TABLE_ACCURACY = 4;
+const SINE_TABLE = $pack( $array( ${ 
+	    0,  6393, 12540, 18205, 23170, 27246, 30274, 32138, 32768,
+	32138, 30274, 27246, 23170, 18205, 12540,  6393,     0,     0
+} ) );
+
+# Return sine of PI*x in fixed-point.
+function sine( x ) {
+	var tab_idx = >>( &( x FP_MASK ) -( FP_SHIFT TABLE_ACCURACY ) );
+	var c = $unpack( SINE_TABLE tab_idx );
+	var m = -( $unpack( SINE_TABLE +( tab_idx 1 ) ) c );
+	let m = *( m &( x >>( FP_MASK TABLE_ACCURACY ) ) );
+	var y = +( c >>( m -( FP_SHIFT TABLE_ACCURACY ) ) );
+	if &( x FP_ONE ) {
+		let y = -( 0 y );
+	}
+	return y;
+}
+
+function redraw( params, stripe ) {
+	var time = <<( $millis -( FP_SHIFT 11 ) );
+	# Calculate phase of each bar.
+	var phase_r = >>( sine( *( time [ params 3 ] ) ) +( -( FP_SHIFT 8 ) [ params 6 ] ) );
+	var phase_g = >>( sine( *( time [ params 4 ] ) ) +( -( FP_SHIFT 8 ) [ params 7 ] ) );
+	var phase_b = >>( sine( *( time [ params 5 ] ) ) +( -( FP_SHIFT 8 ) [ params 8 ] ) );
+	# Approximately 128 "rasters" on screen.
+	var y, c, dy = >>( HEIGHT 7 );
+	while <( *( y dy ) HEIGHT ) {
+		let c = <<( [ stripe &( +( phase_r *( y [ params 0 ] ) ) 0xFF ) ] 16 );
+		let c = |( c <<( [ stripe &( +( phase_g *( y [ params 1 ] ) ) 0xFF ) ] 8 ) );
+		let c = |( c [ stripe &( +( phase_b *( y [ params 2 ] ) ) 0xFF ) ] );
+		fxrect 0, *( y dy ), WIDTH, dy, c;
+		inc y;
+	}
+}
+
+program bars {
+	var event;
+	
+	fxopen WIDTH, HEIGHT, "Chroma";
+	
+	var idx = 0;
+	var stripe = $array( 256 );
+	while <( idx 128 ) {
+		set [ stripe idx ] = *( idx 2 );
+		set [ stripe +( idx 128 ) ] = -( 255 *( idx 2 ) );
+		inc idx;
+	}
+
+	var params = $array( ${ 6, 4, 1, 1, 1, 1, 0, 0, 0 } );
+	
+	while TRUE {
+		call redraw( params, stripe );
+		# Show might block until the next frame.
+		fxshow;
+		# Wait to limit frame rate.
+		fxsleep 16;
+		# Handle all events.
+		let event = $fxpoll;
+		while event {
+			if =( event FX_KEYDOWN ) {
+				print $keyboard;
+			}
+			let event = $fxpoll;
+		}
+	}
+}
