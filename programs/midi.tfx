@@ -66,14 +66,19 @@ function u16be( str, idx ) {
 
 function load_mod( mod, names ) {
 	var channels, offset, patterns, length, instrument, loopidx, looplen;
-	if !( $cmp( $sub( mod, 1080, 4 ) "M.K." ) ) {
-		let channels = 4;
-	}
-	if !( $cmp( $sub( mod, 1081, 3 ) "CHN" ) ) {
-		let channels = -( $chr( mod, 1080 ) $chr( "0" 0 ) );
-	}
-	if !( channels ) {
-		throw "Not a MOD file.";
+	switch $sub( mod, 1082, 2 ) {
+		case "K." {
+			let channels = 4;
+		}
+		case "K!" {
+			let channels = 4;
+		}
+		case "HN" {
+			let channels = -( $chr( mod, 1080 ) $chr( "0" 0 ) );
+		}
+		default {
+			throw "Not a MOD file.";
+		}
 	}
 	if names {
 		dim [ names 32 ];
