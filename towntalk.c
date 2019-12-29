@@ -70,8 +70,8 @@
 		if expr {statements}     Execute statements if expr is non-null.
 		   else {statements}     Optional, execute if expr is null.
 		switch expr {            Selection statement for integers or strings.
-		   case  1 {statements}  Execute statements if expr equals 1.
-		   case "a"{statements}  Execute statements if expr equals "a".
+		   case 1,2 {statements} Execute statements if expr equals 1 or 2.
+		   case "a" {statements} Execute statements if expr equals "a".
 		   default {statements}} Execute statements if no valid cases.
 		try {statements}         Execute statements unless exception thrown.
 		   catch a {statements}  Assign exception to local var and execute.
@@ -292,8 +292,8 @@ static void parse_keywords( struct keyword *keywords, struct element *elem,
 	struct environment *env, struct function_declaration *func, struct statement *stmt, char *message );
 static struct element* parse_expression( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct expression *prev, char *message );
-static int parse_expressions( struct element *elem, struct environment *env,
-	struct function_declaration *func, struct expression *prev, char *message );
+static struct element* parse_expressions( struct element *elem, struct environment *env,
+	struct function_declaration *func, char terminator, struct expression *prev, int *num_exprs, char *message );
 static struct element* parse_if_statement( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message );
 static struct element* parse_while_statement( struct element *elem, struct environment *env,
@@ -1407,20 +1407,25 @@ static int parse_constant_list( struct element *elem, struct global_variable *pr
 static enum result execute_switch_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	int matched = 0;
+	struct expression *case_expr;
 	struct statement *stmt = this->if_block;
 	struct variable switch_value = { 0, NULL }, case_value = { 0, NULL };
 	enum result ret = this->source->evaluate( this->source, variables, &switch_value, exception );
 	if( ret ) {
 		while( stmt && ret && !matched ) {
-			ret = stmt->source->evaluate( stmt->source, variables, &case_value, exception );
-			if( ret ) {
-				matched = compare_variables( &switch_value, &case_value ) == 0;
-				dispose_variable( &case_value );
-				if( matched ) {
-					ret = stmt->execute( stmt, variables, result, exception );
+			case_expr = stmt->source;
+			while( case_expr && ret && !matched ) {
+				ret = case_expr->evaluate( case_expr, variables, &case_value, exception );
+				if( ret ) {
+					matched = compare_variables( &switch_value, &case_value ) == 0;
+					dispose_variable( &case_value );
+					if( matched ) {
+						ret = stmt->execute( stmt, variables, result, exception );
+					}
 				}
-				stmt = stmt->next;
+				case_expr = case_expr->next;
 			}
+			stmt = stmt->next;
 		}
 		if( ret && !matched && this->else_block ) {
 			ret = this->else_block->execute( this->else_block, variables, result, exception );
@@ -2949,7 +2954,8 @@ static struct element* parse_infix_expression( struct element *elem, struct envi
 					expr->index = oper->oper;
 					expr->evaluate = oper->evaluate;
 					if( oper->num_operands > 0 ) {
-						num_operands = parse_expressions( child->next, env, func, expr->parameters, message ) + 1;
+						parse_expressions( child->next, env, func, 0, expr->parameters, &num_operands, message );
+						num_operands++;
 						if( message[ 0 ] == 0 ) {
 							if( num_operands == oper->num_operands ) {
 								next = next->next;
@@ -2985,7 +2991,7 @@ static struct element* parse_operator_expression( struct element *elem, struct e
 		if( oper->num_operands != 0 ) {
 			if( next && next->str.string[ 0 ] == '(' ) {
 				prev.next = NULL;
-				num_operands = parse_expressions( next->child, env, func, &prev, message );
+				parse_expressions( next->child, env, func, 0, &prev, &num_operands, message );
 				expr->parameters = prev.next;
 				if( message[ 0 ] == 0 ) {
 					if( num_operands == oper->num_operands || ( oper->num_operands < 0 && num_operands > 0 ) ) {
@@ -3013,7 +3019,7 @@ static struct element* parse_function_expression( struct element *elem, struct e
 		expr->function = decl;
 		expr->evaluate = evaluate_function_expression;
 		prev.next = NULL;
-		num_params = parse_expressions( next->child, env, func, &prev, message );
+		parse_expressions( next->child, env, func, 0, &prev, &num_params, message );
 		expr->parameters = prev.next;
 		if( message[ 0 ] == 0 ) {
 			if( num_params == expr->function->num_parameters ) {
@@ -3046,7 +3052,7 @@ static struct element* parse_index_expression( struct element *elem, struct envi
 	struct expression prev;
 	int num_params;
 	prev.next = NULL;
-	num_params = parse_expressions( elem->child, env, func, &prev, message );
+	parse_expressions( elem->child, env, func, 0, &prev, &num_params, message );
 	expr->parameters = prev.next;
 	if( message[ 0 ] == 0 ) {
 		if( num_params == 2 ) {
@@ -3170,10 +3176,10 @@ static struct element* parse_expression( struct element *elem, struct environmen
 	return next;
 }
 
-static int parse_expressions( struct element *elem, struct environment *env,
-	struct function_declaration *func, struct expression *prev, char *message ) {
+static struct element* parse_expressions( struct element *elem, struct environment *env,
+	struct function_declaration *func, char terminator, struct expression *prev, int *num_exprs, char *message ) {
 	int line, count = 0;
-	while( elem && message[ 0 ] == 0 ) {
+	while( elem && elem->str.string[ 0 ] != terminator && message[ 0 ] == 0 ) {
 		elem = parse_expression( elem, env, func, prev, message );
 		prev = prev->next;
 		count++;
@@ -3189,7 +3195,10 @@ static int parse_expressions( struct element *elem, struct environment *env,
 			}
 		}
 	}
-	return count;
+	if( num_exprs ) {
+		*num_exprs = count;
+	}
+	return elem;
 }
 
 static struct element* parse_increment_statement( struct element *elem, struct environment *env,
@@ -3458,7 +3467,7 @@ static struct element* parse_set_statement( struct element *elem, struct environ
 
 static struct keyword switch_stmts[] = {
 	{ "rem", "{", parse_comment, &switch_stmts[ 1 ] },
-	{ "case", "x{", parse_case_statement, &switch_stmts[ 2 ] },
+	{ "case", "X{", parse_case_statement, &switch_stmts[ 2 ] },
 	{ "default", "{", parse_default_statement, NULL }
 };
 
@@ -3509,7 +3518,7 @@ static struct element* parse_switch_statement( struct element *elem, struct envi
 
 static struct keyword statements[] = {
 	{ "rem", "{", parse_comment, &statements[ 1 ] },
-	{ "var", "d;", parse_local_declaration, &statements[ 2 ] },
+	{ "var", "V;", parse_local_declaration, &statements[ 2 ] },
 	{ "let", "n=x;", parse_assignment_statement, &statements[ 3 ] },
 	{ "print", "x;", parse_print_statement, &statements[ 4 ] },
 	{ "write", "x;", parse_write_statement, &statements[ 5 ] },
@@ -3539,8 +3548,7 @@ static struct element* parse_case_statement( struct element *elem, struct enviro
 	struct statement block, *stmt = new_statement( message );
 	if( stmt ) {
 		prev->next = stmt;
-		expr.next = NULL;
-		next = parse_expression( next, env, func, &expr, message );
+		next = parse_expressions( next, env, func, '{', &expr, NULL, message );
 		if( message[ 0 ] == 0 ) {
 			stmt->source = expr.next;
 			block.next = NULL;
@@ -3602,7 +3610,7 @@ static struct element* validate_syntax( char *syntax, struct element *elem,
 			/* Bracketed name list. */
 			if( elem && elem->str.string[ 0 ] == '(' ) {
 				if( elem->child ) {
-					validate_syntax( "l0", elem->child, elem, env, message );
+					validate_syntax( "N0", elem->child, elem, env, message );
 				}
 				elem = elem->next;
 			} else {
@@ -3636,7 +3644,7 @@ static struct element* validate_syntax( char *syntax, struct element *elem,
 			} else {
 				elem = elem->next;
 			}
-		} else if( chr == 'l' ) {
+		} else if( chr == 'N' ) {
 			/* Name list, terminated by ';' or NULL. */
 			elem = validate_syntax( "n", elem, key, env, message );
 			while( message[ 0 ] == 0 && elem && elem->str.string[ 0 ] != ';' ) {
@@ -3667,6 +3675,15 @@ static struct element* validate_syntax( char *syntax, struct element *elem,
 			} else {
 				sprintf( message, "Expected expression after '%.64s' on line %d.", key->str.string, line );
 			}
+		} else if( chr == 'X' ) {
+			/* Expression list, terminated by '{' or NULL. */
+			elem = validate_syntax( "x", elem, key, env, message );
+			while( message[ 0 ] == 0 && elem && elem->str.string[ 0 ] != '{' ) {
+				if( elem->str.string[ 0 ] == ',' ) {
+					elem = elem->next;
+				}
+				elem = validate_syntax( "x", elem, key, env, message );
+			}
 		} else if( chr == 'v' ) {
 			/* Variable declaration. */
 			if( elem && elem->str.string[ 0 ] == '[' ) {
@@ -3680,7 +3697,7 @@ static struct element* validate_syntax( char *syntax, struct element *elem,
 					elem = validate_syntax( "x", elem->next, key, env, message );
 				}
 			}
-		} else if( chr == 'd' ) {
+		} else if( chr == 'V' ) {
 			/* Variable declaration list, terminated by ';' or NULL. */
 			elem = validate_syntax( "v", elem, key, env, message );
 			while( message[ 0 ] == 0 && elem && elem->str.string[ 0 ] != ';' ) {
@@ -3997,9 +4014,9 @@ static struct keyword declarations[] = {
 	{ "include", "\";", parse_include, &declarations[ 2 ] },
 	{ "function", "n({", parse_function_declaration, &declarations[ 3 ] },
 	{ "program", "n{", parse_program_declaration, &declarations[ 4 ] },
-	{ "global", "d;", parse_global_declaration, &declarations[ 5 ] },
-	{ "array", "d;", parse_array_declaration, &declarations[ 6 ] },
-	{ "const", "d;", parse_const_declaration, &declarations[ 7 ] },
+	{ "global", "V;", parse_global_declaration, &declarations[ 5 ] },
+	{ "array", "V;", parse_array_declaration, &declarations[ 6 ] },
+	{ "const", "V;", parse_const_declaration, &declarations[ 7 ] },
 	{ "struct", "n", parse_struct_declaration, NULL }
 };
 

@@ -144,7 +144,11 @@ function testswitch() {
 	switch 2 {
 		default { inc x; }
 	}
-	call assert( =( x 4 ), ${-} );
+	switch 3 {
+		case 0, setg( 0 ) setg( 3 ) { inc x; }
+	}
+	call assert( =( g 3 ), ${-} );
+	call assert( =( x 5 ), ${-} );
 }
 
 function testif() {

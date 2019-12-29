@@ -67,14 +67,15 @@ function u16be( str, idx ) {
 function load_mod( mod, names ) {
 	var channels, offset, patterns, length, instrument, loopidx, looplen;
 	switch $sub( mod, 1082, 2 ) {
-		case "K." {
-			let channels = 4;
-		}
-		case "K!" {
+		case "K.", "K!", "T4" {
 			let channels = 4;
 		}
 		case "HN" {
 			let channels = -( $chr( mod, 1080 ) $chr( "0" 0 ) );
+		}
+		case "CH" {
+			let channels = *( -( $chr( mod, 1080 ) $chr( "0" 0 ) ) 10 );
+			let channels = +( channels -( $chr( mod, 1081 ) $chr( "0" 0 ) ) );
 		}
 		default {
 			throw "Not a MOD file.";
