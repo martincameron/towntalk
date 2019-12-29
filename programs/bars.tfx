@@ -13,7 +13,7 @@ const SINE_TABLE = $pack( $array( ${
 	32138, 30274, 27246, 23170, 18205, 12540,  6393,     0,     0
 } ) );
 
-const IMG_HEIGHT = /( WIDTH 160 ), NUM_BARS = 8;
+const IMG_HEIGHT = /( WIDTH 160 ), NUM_BARS = 4;
 
 # Triangle wave from 1 to -1 of period 2 (fixed point).
 function tri( x ) {
@@ -62,7 +62,9 @@ function redraw( br1, bv1, ba1, br2, bv2, ba2 ) {
 		let x1 = sine( +( *( time +( bv1 1 ) ) /( *( *( FP_ONE y ) br1 ) HEIGHT ) ) );
 		let x2 = sine( +( *( time +( bv2 1 ) ) /( *( *( FP_ONE y ) br2 ) HEIGHT ) ) );
 		let x = >>( *( +( *( x1 ba1 ) *( x2 ba2 ) ) WIDTH ) +( FP_SHIFT 2 ) );
-		fxblit 0, 0, 0, *( WIDTH 3 ), IMG_HEIGHT, -( x WIDTH ), y;
+		fxblit 0, 0, 0, WIDTH, IMG_HEIGHT, -( x WIDTH ), y;
+		fxblit 0, 0, 0, WIDTH, IMG_HEIGHT, x , y;
+		fxblit 0, 0, 0, WIDTH, IMG_HEIGHT, +( x WIDTH ), y;
 		let y = +( y IMG_HEIGHT );
 	}
 }
@@ -72,7 +74,7 @@ program bars {
 	
 	fxopen WIDTH, HEIGHT, "Bars";
 
-	fxsurface 0, *( WIDTH 3 ), IMG_HEIGHT, bar_pixels( *( WIDTH 3 ), IMG_HEIGHT, NUM_BARS, 2, 0, 1 );
+	fxsurface 0, WIDTH, IMG_HEIGHT, bar_pixels( WIDTH, IMG_HEIGHT, NUM_BARS, 2, 0, 1 );
 
 	while TRUE {
 		call redraw( 1 1 2 1 2 2 );
