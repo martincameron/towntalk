@@ -1,0 +1,106 @@
+
+rem {
+	The Para-Dragster. See "Total Triple Trouble" by Droopy&Static/Rebels.
+}
+
+const WIDTH = 640, HEIGHT = 480;
+
+const FP_SHIFT = 15, FP_ONE = <<( 1 FP_SHIFT ), FP_MASK = -( FP_ONE 1 );
+
+const TABLE_ACCURACY = 4;
+const SINE_TABLE = $pack( $array( ${ 
+	    0,  6393, 12540, 18205, 23170, 27246, 30274, 32138, 32768,
+	32138, 30274, 27246, 23170, 18205, 12540,  6393,     0,     0
+} ) );
+
+# Return sine of PI*x in fixed-point.
+function sine( x ) {
+	var tab_idx = >>( &( x FP_MASK ) -( FP_SHIFT TABLE_ACCURACY ) );
+	var c = $unpack( SINE_TABLE tab_idx );
+	var m = -( $unpack( SINE_TABLE +( tab_idx 1 ) ) c );
+	let m = *( m &( x >>( FP_MASK TABLE_ACCURACY ) ) );
+	var y = +( c >>( m -( FP_SHIFT TABLE_ACCURACY ) ) );
+	if &( x FP_ONE ) {
+		let y = -( 0 y );
+	}
+	return y;
+}
+
+# Linear-interpolate the specified array with wrap-around.
+function interpolate( input, index ) {
+	var idx = >>( index FP_SHIFT );
+	var c = [ input %( idx $len( input ) ) ];
+	var m = -( [ input %( +( idx 1 ) $len( input ) ) ] c );
+	return +( >>( *( m &( index FP_MASK ) ) FP_SHIFT ) c );
+}
+
+# Mix the specified colours (amount from 0 to 256).
+function mix( colour1, colour2, amount ) {
+	var r1 = &( >>( colour1 16 ) 0xFF );
+	var r2 = &( >>( colour2 16 ) 0xFF );
+	var g1 = &( >>( colour1 8 ) 0xFF );
+	var g2 = &( >>( colour2 8 ) 0xFF );
+	var b1 = &( colour1 0xFF );
+	var b2 = &( colour2 0xFF );
+	var r = +( >>( *( -( r2 r1 ) amount ) 8 ) r1 );
+	var g = +( >>( *( -( g2 g1 ) amount ) 8 ) g1 );
+	var b = +( >>( *( -( b2 b1 ) amount ) 8 ) b1 );
+	return |( |( <<( r 16 ) <<( g 8 ) ) b );
+}
+
+function para_dragster_pixels( bar, width, offset, bg_colour, fg_colour ) {
+	var z, y, x, p, v, c, image = $array( *( width 256 ) );
+	while <( z 16 ) {
+		let y = 0;
+		while <( y 16 ) {
+			let x = 0;
+			while <( x width ) {
+				let p = 1;
+				while <e( p z ) {
+					let c = mix( bg_colour, fg_colour, /( *( 256 p ) 15 ) );
+					let v = interpolate( bar, +( <<( y -( FP_SHIFT 2 ) ) /( <<( +( x offset ) -( FP_SHIFT 1 ) ) p ) ) );
+					if v {
+						set [ image +( +( *( *( z width ) 16 ) *( y width ) ) x ) ] = |( <<( mix( 0, c, v ) 8 ) 0xFF );
+					}
+					inc p;
+				}
+				inc x;
+			}
+			inc y;
+		}
+		inc z;
+	}
+	return image;
+}
+
+function redraw( frame ) {
+	var y = 0, z = 0;
+	#fxblit 0, 0, 0, WIDTH, 256, 0, 0;
+	while <( y HEIGHT ) {
+		fxblit 0, 0, +( &( y 0xF0 ) &( frame 0xF ) ), WIDTH, 1, 0, +( y 224 );
+		fxblit 0, 0, +( &( y 0xF0 ) &( frame 0xF ) ), WIDTH, 1, 0, -( 256 y );
+		inc y;
+	}
+}
+
+program bars {
+	var event, frame;
+	fxopen WIDTH, HEIGHT, "Para Dragster";
+	fxsurface 0, WIDTH, 256, para_dragster_pixels( $array( ${ 0, 256, 0, 0 } ), WIDTH, 3072, 0x000080, 0xFF0080 );
+	while TRUE {
+		inc frame;
+		call redraw( frame );
+		# Show might block until the next frame.
+		fxshow;
+		# Wait to limit frame rate.
+		fxsleep 10;
+		# Handle all events.
+		let event = $fxpoll;
+		while event {
+			if =( event FX_KEYDOWN ) {
+				print $keyboard;
+			}
+			let event = $fxpoll;
+		}
+	}
+}
