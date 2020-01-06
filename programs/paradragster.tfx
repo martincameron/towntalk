@@ -59,7 +59,7 @@ function para_dragster_pixels( bar, width, offset, bg_colour, fg_colour ) {
 				while <e( p z ) {
 					let c = mix( bg_colour, fg_colour, /( *( 256 p ) 15 ) );
 					let o = -( <<( $len( bar ) FP_SHIFT ) %( /( <<( offset -( FP_SHIFT 1 ) ) p ) <<( $len( bar ) FP_SHIFT ) ) );
-					let v = interpolate( bar, +( +( <<( y -( FP_SHIFT 2 ) ) /( <<( x -( FP_SHIFT 1 ) ) p ) ) o ) );
+					let v = interpolate( bar, +( +( <<( *( $len( bar ) y ) -( FP_SHIFT 4 ) ) /( <<( x -( FP_SHIFT 1 ) ) p ) ) o ) );
 					if v {
 						set [ image +( +( *( *( z width ) 16 ) *( y width ) ) x ) ] = |( <<( mix( 0, c, v ) 8 ) 0xFF );
 					}
@@ -87,7 +87,7 @@ function redraw( frame ) {
 program bars {
 	var event, frame;
 	fxopen WIDTH, HEIGHT, "Para Dragster";
-	fxsurface 0, WIDTH, 256, para_dragster_pixels( $array( ${ 0, 256, 0, 0 } ), WIDTH, /( WIDTH 2 ), 0x000080, 0xFF0080 );
+	fxsurface 0, WIDTH, 256, para_dragster_pixels( $array( ${ 0, 256, 0 } ), WIDTH, /( WIDTH 2 ), 0x000080, 0xFF0080 );
 	while TRUE {
 		inc frame;
 		call redraw( frame );
