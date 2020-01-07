@@ -78,7 +78,7 @@ function para_dragster_pixels( bar, width, offset, bg_colour, fg_colour ) {
 function redraw( frame ) {
 	var y = 0, z = 0;
 	#fxblit 0, 0, 0, WIDTH, 256, 0, 0;
-	while <( y HEIGHT ) {
+	while <( y 256 ) {
 		fxblit 0, 0, +( &( y 0xF0 ) &( frame 0xF ) ), WIDTH, 1, 0, +( y 224 );
 		fxblit 0, 0, +( &( y 0xF0 ) &( frame 0xF ) ), WIDTH, 1, 0, -( 256 y );
 		inc y;
