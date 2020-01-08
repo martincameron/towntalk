@@ -49,26 +49,28 @@ function mix( colour1, colour2, amount ) {
 }
 
 function para_dragster_pixels( bar, width, offset, bg_colour, fg_colour ) {
-	var z, p, c, o, y, s, x, v, image = $array( *( width 256 ) );
+	var z, c, o, f, s, x, v, p, y, image = $array( *( width 256 ) );
+	let z = 1;
 	while <( z 16 ) {
-		let p = 1;
-		while <e( p z ) {
-			let c = mix( bg_colour, fg_colour, /( *( 256 p ) 15 ) );
-			let o = -( <<( $len( bar ) FP_SHIFT ) %( /( <<( offset -( FP_SHIFT 1 ) ) p ) <<( $len( bar ) FP_SHIFT ) ) );
-			let y = 0;
-			while <( y 16 ) {
-				let s = +( <<( *( $len( bar ) y ) -( FP_SHIFT 4 ) ) o );
-				let x = 0;
-				while <( x width ) {
-					let v = interpolate( bar, +( /( <<( x -( FP_SHIFT 1 ) ) p ) s ) );
-					if v {
-						set [ image +( +( *( *( z width ) 16 ) *( y width ) ) x ) ] = |( <<( mix( 0, c, v ) 8 ) 0xFF );
+		let c = mix( bg_colour, fg_colour, /( *( 256 z ) 15 ) );
+		let o = -( <<( $len( bar ) FP_SHIFT ) %( /( <<( offset -( FP_SHIFT 1 ) ) z ) <<( $len( bar ) FP_SHIFT ) ) );
+		let f = 0;
+		while <( f 16 ) {
+			let s = +( <<( *( $len( bar ) f ) -( FP_SHIFT 4 ) ) o );
+			let x = 0;
+			while <( x width ) {
+				let v = interpolate( bar, +( /( <<( x -( FP_SHIFT 1 ) ) z ) s ) );
+				if v {
+					let p = |( <<( mix( 0, c, v ) 8 ) 0xFF );
+					let y = +( *( z 16 ) f );
+					while <( y 256 ) {
+						set [ image +( *( y width ) x ) ] = p;
+						let y = +( y 16 );
 					}
-					inc x;
 				}
-				inc y;
+				inc x;
 			}
-			inc p;
+			inc f;
 		}
 		inc z;
 	}
