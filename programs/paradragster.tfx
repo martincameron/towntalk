@@ -49,23 +49,23 @@ function mix( colour1, colour2, amount ) {
 }
 
 function para_dragster_pixels( bar, width, offset, bg_colour, fg_colour ) {
-	var z, c, o, f, s, x, v, p, y, image = $array( *( width 256 ) );
+	var z, c, o, f, s, x, v, p, y, image = $array( *( width 512 ) );
 	let z = 1;
 	while <( z 16 ) {
 		let c = mix( bg_colour, fg_colour, /( *( 256 z ) 15 ) );
 		let o = -( <<( $len( bar ) FP_SHIFT ) %( /( <<( offset -( FP_SHIFT 1 ) ) z ) <<( $len( bar ) FP_SHIFT ) ) );
 		let f = 0;
-		while <( f 16 ) {
-			let s = +( <<( *( $len( bar ) f ) -( FP_SHIFT 4 ) ) o );
+		while <( f 32 ) {
+			let s = +( <<( *( $len( bar ) f ) -( FP_SHIFT 5 ) ) o );
 			let x = 0;
 			while <( x width ) {
 				let v = interpolate( bar, +( /( <<( x -( FP_SHIFT 1 ) ) z ) s ) );
 				if v {
 					let p = |( <<( mix( 0, c, v ) 8 ) 0xFF );
-					let y = +( *( z 16 ) f );
-					while <( y 256 ) {
+					let y = +( *( z 32 ) f );
+					while <( y 512 ) {
 						set [ image +( *( y width ) x ) ] = p;
-						let y = +( y 16 );
+						let y = +( y 32 );
 					}
 				}
 				inc x;
@@ -79,10 +79,10 @@ function para_dragster_pixels( bar, width, offset, bg_colour, fg_colour ) {
 
 function redraw( frame ) {
 	var y = 0, z = 0;
-	#fxblit 0, 0, 0, WIDTH, 256, 0, 0;
+	#fxblit 0, 0, 0, WIDTH, 512, 0, 0;
 	while <( y 256 ) {
-		fxblit 0, 0, +( &( y 0xF0 ) &( frame 0xF ) ), WIDTH, 1, 0, +( y 224 );
-		fxblit 0, 0, +( &( y 0xF0 ) &( frame 0xF ) ), WIDTH, 1, 0, -( 256 y );
+		fxblit 0, 0, +( <<( &( y 0xF0 ) 1 ) &( frame 0x1F ) ), WIDTH, 1, 0, +( y 224 );
+		fxblit 0, 0, +( <<( &( y 0xF0 ) 1 ) &( frame 0x1F ) ), WIDTH, 1, 0, -( 256 y );
 		inc y;
 	}
 }
@@ -90,7 +90,7 @@ function redraw( frame ) {
 program bars {
 	var event, frame;
 	fxopen WIDTH, HEIGHT, "Para Dragster";
-	fxsurface 0, WIDTH, 256, para_dragster_pixels( $array( ${ 0, 256, 0 } ), WIDTH, /( WIDTH 2 ), 0x000080, 0xFF0080 );
+	fxsurface 0, WIDTH, 512, para_dragster_pixels( $array( ${ 0, 256, 0 } ), WIDTH, /( WIDTH 2 ), 0x000080, 0xFF0080 );
 	while TRUE {
 		inc frame;
 		call redraw( frame );
