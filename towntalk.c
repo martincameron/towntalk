@@ -57,7 +57,8 @@
 	Statements:
 		rem {}                   Comment.
 		var a, b, c = expr;      Local variables.
-		let a = expr;            Variable assignment.
+		let a = expr;            Assign expression to local or global variable.
+		let [arr idx] = expr;    Assign expression to array at index.
 		print expr;              Write integer or string to standard output.
 		write expr;              Same as print, but do not add a newline.
 		error expr;              Same as print, but write to standard error.
@@ -77,7 +78,7 @@
 		   catch a {statements}  Assign exception to local var and execute.
 		call expr;               Evaluate expression and discard result.
 		dim [arr len];           Resize specified array.
-		set [arr idx] = expr;    Assign expression to array at index.
+		set [arr idx] = expr;    Variable/Array assignment (same as let).
 		inc a;                   Increment local variable.
 		dec a;                   Decrement local variable.
 		save str, "file";        Save bytes from string to file.
@@ -1362,7 +1363,7 @@ static enum result execute_dim_statement( struct statement *this, struct variabl
 	return ret;
 }
 
-static enum result execute_set_statement( struct statement *this, struct variable *variables,
+static enum result execute_array_assignment( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct array *arr;
 	struct variable var = { 0, NULL }, idx = { 0, NULL };
@@ -3293,30 +3294,53 @@ static struct element* parse_assignment_statement( struct element *elem, struct 
 	int local;
 	struct expression expr;
 	struct global_variable *global = NULL;
-	struct element *next = elem->next;
+	struct element *next = elem->next, *child = next->child;
 	struct statement *stmt = new_statement( message );
 	if( stmt ) {
 		prev->next = stmt;
-		local = get_string_list_index( func->variable_decls, next->str.string );
-		if( local < 0 ) {
-			global = get_global_variable( env->globals, next->str.string );
-		}
-		if( local >= 0 || global ) {
+		if( child ) {
 			expr.next = NULL;
-			next = parse_expression( next->next->next, env, func, &expr, message );
+			child = parse_expression( child, env, func, &expr, message );
 			if( expr.next ) {
-				stmt->source = expr.next;
-				if( global ) {
-					stmt->global = &global->value;
-					stmt->execute = execute_global_assignment;
-				} else {
-					stmt->local = local;
-					stmt->execute = execute_local_assignment;
+				stmt->destination = expr.next;
+				if( child->str.string[ 0 ] == ',' ) {
+					child = child->next;
 				}
-				next = next->next;
+				expr.next = NULL;
+				child = parse_expression( child, env, func, &expr, message );
+				if( expr.next ) {
+					stmt->index = expr.next;
+					expr.next = NULL;
+					next = parse_expression( next->next->next, env, func, &expr, message );
+					if( expr.next ) {
+						stmt->source = expr.next;
+						next = next->next;
+					}
+				}
+				stmt->execute = execute_array_assignment;
 			}
 		} else {
-			sprintf( message, "Undeclared variable '%.64s' on line %d.", next->str.string, next->str.line );
+			local = get_string_list_index( func->variable_decls, next->str.string );
+			if( local < 0 ) {
+				global = get_global_variable( env->globals, next->str.string );
+			}
+			if( local >= 0 || global ) {
+				expr.next = NULL;
+				next = parse_expression( next->next->next, env, func, &expr, message );
+				if( expr.next ) {
+					stmt->source = expr.next;
+					if( global ) {
+						stmt->global = &global->value;
+						stmt->execute = execute_global_assignment;
+					} else {
+						stmt->local = local;
+						stmt->execute = execute_local_assignment;
+					}
+					next = next->next;
+				}
+			} else {
+				sprintf( message, "Undeclared variable '%.64s' on line %d.", next->str.string, next->str.line );
+			}
 		}
 	}
 	return next;
@@ -3434,37 +3458,6 @@ static struct element* parse_dim_statement( struct element *elem, struct environ
 	return next;
 }
 
-static struct element* parse_set_statement( struct element *elem, struct environment *env,
-	struct function_declaration *func, struct statement *prev, char *message ) {
-	struct expression expr;
-	struct element *next = elem->next, *child = next->child;
-	struct statement *stmt = new_statement( message );
-	if( stmt ) {
-		prev->next = stmt;
-		expr.next = NULL;
-		child = parse_expression( child, env, func, &expr, message );
-		if( expr.next ) {
-			stmt->destination = expr.next;
-			if( child->str.string[ 0 ] == ',' ) {
-				child = child->next;
-			}
-			expr.next = NULL;
-			child = parse_expression( child, env, func, &expr, message );
-			if( expr.next ) {
-				stmt->index = expr.next;
-				expr.next = NULL;
-				next = parse_expression( next->next->next, env, func, &expr, message );
-				if( expr.next ) {
-					stmt->source = expr.next;
-					next = next->next;
-				}
-			}
-			stmt->execute = execute_set_statement;
-		}
-	}
-	return next;
-}
-
 static struct keyword switch_stmts[] = {
 	{ "rem", "{", parse_comment, &switch_stmts[ 1 ] },
 	{ "case", "X{", parse_case_statement, &switch_stmts[ 2 ] },
@@ -3519,7 +3512,7 @@ static struct element* parse_switch_statement( struct element *elem, struct envi
 static struct keyword statements[] = {
 	{ "rem", "{", parse_comment, &statements[ 1 ] },
 	{ "var", "V;", parse_local_declaration, &statements[ 2 ] },
-	{ "let", "n=x;", parse_assignment_statement, &statements[ 3 ] },
+	{ "let", "d=x;", parse_assignment_statement, &statements[ 3 ] },
 	{ "print", "x;", parse_print_statement, &statements[ 4 ] },
 	{ "write", "x;", parse_write_statement, &statements[ 5 ] },
 	{ "error", "x;", parse_error_statement, &statements[ 6 ] },
@@ -3533,7 +3526,7 @@ static struct keyword statements[] = {
 	{ "call", "x;", parse_call_statement, &statements[ 14 ] },
 	{ "try", "{cn{", parse_try_statement, &statements[ 15 ] },
 	{ "dim", "[;", parse_dim_statement, &statements[ 16 ] },
-	{ "set", "[=x;", parse_set_statement, &statements[ 17 ] },
+	{ "set", "d=x;", parse_assignment_statement, &statements[ 17 ] },
 	{ "switch", "x{", parse_switch_statement, &statements[ 18 ] },
 	{ "inc", "n;", parse_increment_statement, &statements[ 19 ] },
 	{ "dec", "n;", parse_decrement_statement, &statements[ 20 ] },
@@ -3705,6 +3698,13 @@ static struct element* validate_syntax( char *syntax, struct element *elem,
 					elem = elem->next;
 				}
 				elem = validate_syntax( "v", elem, key, env, message );
+			}
+		} else if( chr == 'd' ) {
+			/* Assignment destination. */
+			if( elem && elem->str.string[ 0 ] == '[' ) {
+				elem = validate_syntax( "[", elem, key, env, message );
+			} else {
+				elem = validate_syntax( "n", elem, key, env, message );
 			}
 		} else {
 			/* Internal error. */
