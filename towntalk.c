@@ -11,7 +11,7 @@
 #include "time.h"
 
 /*
-	Towntalk (c)2019 Martin Cameron.
+	Towntalk (c)2020 Martin Cameron.
 
 	A program file consists of a list of declarations.
 	Variables are integers, strings, elements or array references.
