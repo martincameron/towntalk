@@ -1,0 +1,85 @@
+
+rem {
+	4-Bit Delta-PCM Audio Codec.
+}
+
+const QUANT = $pack( $array( ${ 1 2 4 6 8 10 20 32 } ) );
+
+# Return a 256-entry array mapping the delta to the encoded value.
+function dpcm_encoding_table() {
+	var delta, d0, qidx, table = $array( 256 );
+	while <( delta 256 ) {
+		let d0 = -( delta $unpack( QUANT qidx ) );
+		if &&( <( qidx 7 ) <e( -( $unpack( QUANT +( qidx 1 ) ) delta ) d0 ) ) {
+			inc qidx;
+		}
+		set [ table delta ] = qidx;
+		inc delta;
+	}
+	return table;
+}
+
+# Encode the specified byte-string.
+function dpcm_encode( input ) {
+	var table = dpcm_encoding_table();
+	var output = $array( /( $len( input ) 2 ) );
+	var out_idx, bits, amp, dmp, in_idx, code;
+	while <( out_idx $len( output ) ) {
+		let bits = 8;
+		while bits {
+			let bits = -( bits 4 );
+			let dmp = -( $chr( input in_idx ) amp );
+			inc in_idx;
+			if <( dmp 0 ) {
+				let code = [ table -( 0 dmp ) ];
+				let amp = -( amp $unpack( QUANT code ) );
+				let code = |( code 0x8 );
+			} else {
+				let code = [ table dmp ];
+				let amp = +( amp $unpack( QUANT code ) );
+			}
+			set [ output out_idx ] = |( [ output out_idx ] <<( code bits ) );
+		}
+		inc out_idx;
+	}
+	return $sub( output 0 $len( output ) );
+}
+
+# Decode the specified byte-string.
+function dpcm_decode( input ) {
+	var output = $array( *( $len( input ) 2 ) );
+	var in_idx, bits, code, amp, out_idx;
+	while <( in_idx $len( input ) ) {
+		let bits = 8;
+		while bits {
+			let bits = -( bits 4 );
+			let code = &( >>( $chr( input in_idx ) bits ) 0xF );
+			if &( code 0x8 ) {
+				let amp = -( amp $unpack( QUANT &( code 0x7 ) ) );
+			} else {
+				let amp = +( amp $unpack( QUANT &( code 0x7 ) ) );
+			}
+			set [ output out_idx ] = amp;
+			inc out_idx;
+		}
+		inc in_idx;
+	}
+	return $sub( output 0 $len( output ) );
+}
+
+program dpcm {
+	var output, file;
+	if >( $argc 2 ) {
+		if $eq( $argv( 1 ) "-decode" ) {
+			let output = dpcm_decode( $load( $argv( 2 ) ) );
+			let file = $argv( 3 );
+		} else {
+			let output = dpcm_encode( $load( $argv( 1 ) ) );
+			let file = $argv( 2 );
+		}
+		save output, file;
+	} else {
+		error "4-bit delta-PCM audio codec for signed 8-bit raw audio data.";
+		error "Usage: dpcm [-decode] input output";
+	}
+}
