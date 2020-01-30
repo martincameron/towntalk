@@ -1,0 +1,36 @@
+
+rem {
+	Functions for handling composite files.
+}
+
+# Return a datfile composed from the specified array of byte-strings.
+function datfile_create( byte_strings ) {
+	var header = $array( +( $len( byte_strings ) 1 ) );
+	var offset = *( $len( header ) 4 ), idx;
+	while <( idx $len( byte_strings ) ) {
+		set [ header idx ] = offset;
+		let offset = +( offset $len( [ byte_strings idx ] ) );
+		inc idx;
+	}
+	set [ header idx ] = offset;
+	var dat = $pack( header );
+	let idx = 0;
+	while <( idx $len( byte_strings ) ) {
+		let dat = $cat( dat [ byte_strings idx ] );
+		inc idx;
+	}
+	return dat;
+}
+
+# Return the byte-string at the specified index in the datfile.
+function datfile_extract( datfile, index ) {
+	var offset = $unpack( datfile index );
+	return $sub( datfile, offset, -( $unpack( datfile +( index 1 ) ) offset ) );
+}
+
+program datfile_test {
+	var dat = datfile_create( $array( ${ "1" "hello" "abc" } ) );
+	print datfile_extract(dat 0);
+	print datfile_extract(dat 1);
+	print datfile_extract(dat 2);
+}
