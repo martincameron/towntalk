@@ -3,14 +3,14 @@ rem {
 	4-Bit Delta-PCM Audio Codec.
 }
 
-const QUANT = $pack( $array( ${ 1 2 4 8 12 18 24 32 } ) );
+const QUANT = $pack( $array( ${ 1 2 3 6 9 18 27 54 } ) );
 
 # Return a 256-entry array mapping the delta to the encoded value.
-function dpcm_encoding_table() {
+function dpcm_encoding_table( quant ) {
 	var delta, d0, qidx, table = $array( 256 );
 	while <( delta 256 ) {
-		let d0 = -( delta $unpack( QUANT qidx ) );
-		if &&( <( qidx 7 ) <e( -( $unpack( QUANT +( qidx 1 ) ) delta ) d0 ) ) {
+		let d0 = -( delta $unpack( quant qidx ) );
+		if &&( <( qidx 7 ) <e( -( $unpack( quant +( qidx 1 ) ) delta ) d0 ) ) {
 			inc qidx;
 		}
 		set [ table delta ] = qidx;
@@ -19,9 +19,9 @@ function dpcm_encoding_table() {
 	return table;
 }
 
-# Encode the specified byte-string.
-function dpcm_encode( input ) {
-	var table = dpcm_encoding_table();
+# Encode the specified byte-string using the specified quantization table.
+function dpcm_encode( input, quant ) {
+	var table = dpcm_encoding_table( quant );
 	var output = $array( /( $len( input ) 2 ) );
 	var out_idx, bits, amp, dmp, in_idx, code;
 	while <( out_idx $len( output ) ) {
@@ -32,11 +32,11 @@ function dpcm_encode( input ) {
 			inc in_idx;
 			if <( dmp 0 ) {
 				let code = [ table -( 0 dmp ) ];
-				let amp = -( amp $unpack( QUANT code ) );
+				let amp = -( amp $unpack( quant code ) );
 				let code = |( code 0x8 );
 			} else {
 				let code = [ table dmp ];
-				let amp = +( amp $unpack( QUANT code ) );
+				let amp = +( amp $unpack( quant code ) );
 			}
 			set [ output out_idx ] = |( [ output out_idx ] <<( code bits ) );
 		}
@@ -45,8 +45,8 @@ function dpcm_encode( input ) {
 	return $sub( output 0 $len( output ) );
 }
 
-# Decode the specified byte-string.
-function dpcm_decode( input ) {
+# Decode the specified byte-string using the specified quantization table.
+function dpcm_decode( input, quant ) {
 	var output = $array( *( $len( input ) 2 ) );
 	var in_idx, bits, code, amp, out_idx;
 	while <( in_idx $len( input ) ) {
@@ -55,9 +55,9 @@ function dpcm_decode( input ) {
 			let bits = -( bits 4 );
 			let code = &( >>( $chr( input in_idx ) bits ) 0xF );
 			if &( code 0x8 ) {
-				let amp = -( amp $unpack( QUANT &( code 0x7 ) ) );
+				let amp = -( amp $unpack( quant &( code 0x7 ) ) );
 			} else {
-				let amp = +( amp $unpack( QUANT &( code 0x7 ) ) );
+				let amp = +( amp $unpack( quant &( code 0x7 ) ) );
 			}
 			set [ output out_idx ] = amp;
 			inc out_idx;
@@ -71,10 +71,10 @@ program dpcm {
 	var output, file;
 	if >( $argc 2 ) {
 		if $eq( $argv( 1 ) "-decode" ) {
-			let output = dpcm_decode( $load( $argv( 2 ) ) );
+			let output = dpcm_decode( $load( $argv( 2 ) ), QUANT );
 			let file = $argv( 3 );
 		} else {
-			let output = dpcm_encode( $load( $argv( 1 ) ) );
+			let output = dpcm_encode( $load( $argv( 1 ) ), QUANT );
 			let file = $argv( 2 );
 		}
 		save output, file;
