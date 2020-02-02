@@ -1696,8 +1696,8 @@ static struct global_variable* get_global_variable( struct global_variable *glob
 	return globals;
 }
 
-static int add_global_constant( struct environment *env, struct element *elem,
-	struct expression *initializer, struct statement *prev, char *message ) {
+static int add_global_constant( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct expression *initializer, struct statement *prev, char *message ) {
 	struct global_variable *global = new_global_variable( elem->str.string, message );
 	if( global ) {
 		global->initializer = initializer;
@@ -1706,8 +1706,8 @@ static int add_global_constant( struct environment *env, struct element *elem,
 	return message[ 0 ] == 0;
 }
 
-static int add_global_variable( struct environment *env, struct element *elem,
-	struct expression *initializer, struct statement *prev, char *message ) {
+static int add_global_variable( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct expression *initializer, struct statement *prev, char *message ) {
 	struct global_variable *global = new_global_variable( elem->str.string, message );
 	if( global ) {
 		global->initializer = initializer;
@@ -1716,8 +1716,8 @@ static int add_global_variable( struct environment *env, struct element *elem,
 	return message[ 0 ] == 0;
 }
 
-static int add_array_variable( struct environment *env, struct element *elem,
-	struct expression *initializer, struct statement *prev, char *message ) {
+static int add_array_variable( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct expression *initializer, struct statement *prev, char *message ) {
 	struct global_variable *array = new_array_variable( env, elem->str.string, message );
 	if( array ) {
 		array->initializer = initializer;
@@ -1726,11 +1726,10 @@ static int add_array_variable( struct environment *env, struct element *elem,
 	return message[ 0 ] == 0;
 }
 
-static int add_local_variable( struct environment *env, struct element *elem,
-	struct expression *initializer, struct statement *prev, char *message ) {
+static int add_local_variable( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct expression *initializer, struct statement *prev, char *message ) {
 	struct statement *stmt;
 	char *name = elem->str.string;
-	struct function_declaration *func = env->entry_point;
 	struct string_list *param = new_string_list( name );
 	if( param ) {
 		/*printf("Local variable '%s'\n", name);*/
@@ -1763,7 +1762,8 @@ static int add_local_variable( struct environment *env, struct element *elem,
 
 static struct element* parse_variable_declaration( struct element *elem,
 	struct environment *env, struct function_declaration *func, struct statement *prev,
-	int (*add)( struct environment *env, struct element *elem, struct expression *initializer, struct statement *prev, char *message ),
+	int (*add)( struct element *elem, struct environment *env, struct function_declaration *func,
+		struct expression *initializer, struct statement *prev, char *message ),
 	char *message ) {
 	struct expression expr = { 0 }, *array_expr;
 	struct element *next;
@@ -1780,7 +1780,7 @@ static struct element* parse_variable_declaration( struct element *elem,
 					array_expr->function = func;
 					array_expr->parameters = expr.next;
 					array_expr->evaluate = evaluate_array_expression;
-					if( add( env, elem->child, array_expr, prev, message ) ) {
+					if( add( elem->child, env, func, array_expr, prev, message ) ) {
 						elem = elem->next;
 					} else {
 						dispose_expressions( array_expr );
@@ -1793,14 +1793,14 @@ static struct element* parse_variable_declaration( struct element *elem,
 			if( elem->next->str.string[ 0 ] == '=' ) {
 				next = parse_expression( elem->next->next, env, func, &expr, message );
 				if( message[ 0 ] == 0 ) {
-					if( add( env, elem, expr.next, prev, message ) ) {
+					if( add( elem, env, func, expr.next, prev, message ) ) {
 						elem = next;
 					} else {
 						dispose_expressions( expr.next );
 					}
 				}
 			} else {
-				if( add( env, elem, NULL, prev, message ) ) {
+				if( add( elem, env, func, NULL, prev, message ) ) {
 					elem = elem->next;
 				}
 			}
@@ -4067,7 +4067,7 @@ static int validate_decl( struct element *elem, struct environment *env, char *m
 static int parse_tt_program( char *program, struct environment *env, char *message ) {
 	struct statement stmt;
 	struct element *elem, *next;
-	struct function_declaration *empty, *func, *entry;
+	struct function_declaration *empty, *func;
 	elem = parse_element( program, message );
 	if( elem ) {
 		/* Create empty function for global evaluation. */
@@ -4086,12 +4086,9 @@ static int parse_tt_program( char *program, struct environment *env, char *messa
 					next = next->next;
 				}
 				if( next->child ) {
-					entry = env->entry_point;
-					env->entry_point = func;
 					stmt.next = NULL;
 					parse_keywords( env->statements, next->child, env, func, &stmt, message );
 					func->statements = stmt.next;
-					env->entry_point = entry;
 				}
 				next = next->next;
 				func->elem = NULL;
