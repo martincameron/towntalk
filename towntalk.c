@@ -239,7 +239,7 @@ struct environment {
 	struct structure *structures;
 	struct global_variable *constants, *constants_tail;
 	struct global_variable *globals, *globals_tail;
-	struct function_declaration *functions, *entry_point;
+	struct function_declaration *functions, *entry_points;
 };
 
 /* Parser keyword. */
@@ -809,6 +809,7 @@ static void dispose_environment( struct environment *env ) {
 		dispose_global_variables( env->globals );
 		dispose_arrays( &env->arrays );
 		dispose_function_declarations( env->functions );
+		dispose_function_declarations( env->entry_points );
 		dispose_structure_declarations( env->structures );
 		free( env );
 	}
@@ -1682,11 +1683,18 @@ static struct structure* get_structure( struct structure *structures, char *name
 	return structures;
 }
 
-static struct function_declaration* get_function_declaration( struct function_declaration *functions, char *name ) {
-	while( functions && strcmp( functions->name, name ) ) {
-		functions = functions->next;
+static struct function_declaration* get_function_declaration( struct environment *env, char *name ) {
+	struct function_declaration *func = env->functions;
+	while( func && strcmp( func->name, name ) ) {
+		func = func->next;
 	}
-	return functions;
+	if( func == NULL ) {
+		func = env->entry_points;
+		while( func && strcmp( func->name, name ) ) {
+			func = func->next;
+		}
+	}
+	return func;
 }
 
 static struct global_variable* get_global_variable( struct global_variable *globals, char *name ) {
@@ -3038,7 +3046,7 @@ static struct element* parse_function_expression( struct element *elem, struct e
 static struct element* parse_func_ref_expression( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct expression *expr, char *message ) {
 	char *name = &elem->str.string[ 1 ];
-	struct function_declaration *function = get_function_declaration( env->functions, name );
+	struct function_declaration *function = get_function_declaration( env, name );
 	if( function ) {
 		expr->function = function;
 		expr->evaluate = evaluate_func_ref_expression;
@@ -3146,7 +3154,7 @@ static struct element* parse_expression( struct element *elem, struct environmen
 					expr->global = global;
 					expr->evaluate = evaluate_global;
 				} else {
-					decl = get_function_declaration( env->functions, elem->str.string );
+					decl = get_function_declaration( env, elem->str.string );
 					if( decl ) {
 						/* Function.*/
 						next = parse_function_expression( elem, env, func, decl, expr, message );
@@ -3873,21 +3881,20 @@ static struct element* parse_function_declaration( struct element *elem, struct 
 			decl->elem = elem;
 			decl->env = env;
 			next = next->next;
-			if( next->str.string[ 0 ] == '(' ) {
-				child = next->child;
-				while( child && child->str.string[ 0 ] != ';' && message[ 0 ] == 0 ) {
-					if( validate_decl( child, env, message ) ) {
-						if( add_function_parameter( decl, child, env, message ) ) {
+			child = next->child;
+			while( child && message[ 0 ] == 0 ) {
+				if( validate_decl( child, env, message ) ) {
+					if( add_function_parameter( decl, child, env, message ) ) {
+						child = child->next;
+						if( child && child->str.string[ 0 ] == ',' ) {
 							child = child->next;
-							if( child && child->str.string[ 0 ] == ',' ) {
-								child = child->next;
-							}
 						}
 					}
 				}
-				next = next->next;
 			}
-			next = next->next;
+			if( message[ 0 ] == 0 ) {
+				next = next->next->next;
+			}
 		}
 	}
 	return next;
@@ -3895,8 +3902,18 @@ static struct element* parse_function_declaration( struct element *elem, struct 
 
 static struct element* parse_program_declaration( struct element *elem, struct environment *env,
 	struct function_declaration *decl, struct statement *prev, char *message ) {
-	struct element *next = parse_function_declaration( elem, env, decl, prev, message );
-	env->entry_point = env->functions;
+	struct element *next = elem->next;
+	if( validate_decl( next, env, message ) ) {
+		decl = new_function_declaration( next->str.string, env->file, message );
+		if( decl ) {
+			decl->next = env->entry_points;
+			env->entry_points = decl;
+			decl->line = elem->str.line;
+			decl->elem = elem;
+			decl->env = env;
+			next = next->next->next;
+		}
+	}
 	return next;
 }
 
@@ -4056,7 +4073,7 @@ static int validate_decl( struct element *elem, struct environment *env, char *m
 	char *name = elem->str.string;
 	if( get_global_variable( env->globals, name )
 	|| get_global_variable( env->constants, name )
-	|| get_function_declaration( env->functions, name )
+	|| get_function_declaration( env, name )
 	|| get_structure( env->structures, name ) ) {
 		sprintf( message, "Name '%.64s' already defined on line %d.", elem->str.string, elem->str.line );
 		return 0;
@@ -4064,9 +4081,21 @@ static int validate_decl( struct element *elem, struct environment *env, char *m
 	return 1;
 }
 
-static int parse_tt_program( char *program, struct environment *env, char *message ) {
+static void parse_function_body( struct function_declaration *func, struct environment *env, char *message ) {
 	struct statement stmt;
-	struct element *elem, *next;
+	struct element *next = func->elem->next->next;
+	if( next->str.string[ 0 ] == '(' ) {
+		next = next->next;
+	}
+	if( next->child ) {
+		stmt.next = NULL;
+		parse_keywords( env->statements, next->child, env, func, &stmt, message );
+		func->statements = stmt.next;
+	}
+}
+
+static int parse_tt_program( char *program, struct environment *env, char *message ) {
+	struct element *elem;
 	struct function_declaration *empty, *func;
 	elem = parse_element( program, message );
 	if( elem ) {
@@ -4081,16 +4110,13 @@ static int parse_tt_program( char *program, struct environment *env, char *messa
 			/* Parse function bodies. */
 			func = env->functions;
 			while( func && func->elem && message[ 0 ] == 0 ) {
-				next = func->elem->next->next;
-				if( next->str.string[ 0 ] == '(' ) {
-					next = next->next;
-				}
-				if( next->child ) {
-					stmt.next = NULL;
-					parse_keywords( env->statements, next->child, env, func, &stmt, message );
-					func->statements = stmt.next;
-				}
-				next = next->next;
+				parse_function_body( func, env, message );
+				func->elem = NULL;
+				func = func->next;
+			}
+			func = env->entry_points;
+			while( func && func->elem && message[ 0 ] == 0 ) {
+				parse_function_body( func, env, message );
 				func->elem = NULL;
 				func = func->next;
 			}

@@ -1294,15 +1294,15 @@ int main( int argc, char **argv ) {
 			env->statements = fxstatements;
 			env->operators = fxoperators;
 			if( parse_tt_file( file_name, env, message ) ) {
-				if( env->entry_point ) {
+				if( env->entry_points ) {
 					/* Initialize SDL. */
 					if( SDL_Init( SDL_INIT_AUDIO | SDL_INIT_VIDEO | SDL_INIT_TIMER ) == 0 ) {
 						/* Install signal handler. */
 						interrupt_handler = signal( SIGINT, signal_handler );
 						if( interrupt_handler != SIG_ERR ) {
 							/* Evaluate entry-point function. */
-							expr.line = env->entry_point->line;
-							expr.function = env->entry_point;
+							expr.line = env->entry_points->line;
+							expr.function = env->entry_points;
 							expr.evaluate = evaluate_function_expression;
 							if( initialize_globals( env, &except ) && expr.evaluate( &expr, NULL, &result, &except ) ) {
 								exit_code = EXIT_SUCCESS;
