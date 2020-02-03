@@ -3883,12 +3883,10 @@ static struct element* parse_function_declaration( struct element *elem, struct 
 			next = next->next;
 			child = next->child;
 			while( child && message[ 0 ] == 0 ) {
-				if( validate_decl( child, env, message ) ) {
-					if( add_function_parameter( decl, child, env, message ) ) {
+				if( add_function_parameter( decl, child, env, message ) ) {
+					child = child->next;
+					if( child && child->str.string[ 0 ] == ',' ) {
 						child = child->next;
-						if( child && child->str.string[ 0 ] == ',' ) {
-							child = child->next;
-						}
 					}
 				}
 			}
@@ -4083,11 +4081,22 @@ static int validate_decl( struct element *elem, struct environment *env, char *m
 
 static void parse_function_body( struct function_declaration *func, struct environment *env, char *message ) {
 	struct statement stmt;
-	struct element *next = func->elem->next->next;
+	struct element *next = func->elem->next->next, *child;
 	if( next->str.string[ 0 ] == '(' ) {
-		next = next->next;
+		child = next->child;
+		while( child && message[ 0 ] == 0 ) {
+			if( validate_decl( child, env, message ) ) {
+				child = child->next;
+				if( child && child->str.string[ 0 ] == ',' ) {
+					child = child->next;
+				}
+			}
+		}
+		if( message[ 0 ] == 0 ) {
+			next = next->next;
+		}
 	}
-	if( next->child ) {
+	if( next->child && message[ 0 ] == 0 ) {
 		stmt.next = NULL;
 		parse_keywords( env->statements, next->child, env, func, &stmt, message );
 		func->statements = stmt.next;
