@@ -52,6 +52,8 @@ struct fxchannel {
 
 struct fxenvironment {
 	struct environment env;
+	char *datfile;
+	int datfile_length;
 	struct SDL_Window *window;
 	struct SDL_Renderer *renderer;
 	struct SDL_Texture *target, *surfaces[ NUM_SURFACES ];
@@ -372,6 +374,7 @@ static struct fxenvironment* new_fxenvironment() {
 static void dispose_fxenvironment( struct fxenvironment *fxenv ) {
 	int idx;
 	if( fxenv ) {
+		free( fxenv->datfile );
 		if( fxenv->window ) {
 			SDL_DestroyWindow( fxenv->window );
 		}
@@ -1270,6 +1273,69 @@ static int add_event_constants( struct fxenvironment *env, char *message ) {
 	return 0;
 }
 
+static int unpack( char *str, int idx ) {
+	return ( ( str[ idx * 4 ] & 0xFF ) << 24 ) | ( ( str[ idx * 4 + 1 ] & 0xFF ) << 16 )
+		| ( (  str[ idx * 4 + 2 ] & 0xFF ) <<  8 ) | ( str[ idx * 4 + 3 ] & 0xFF );
+}
+
+static int datfile_extract( char *datfile, int datfile_length, int bank, char *buffer ) {
+	int offset, end, length = -1;
+	if( ( bank + 2 ) * 4 <= datfile_length ) {
+		offset = unpack( datfile, bank );
+		end = unpack( datfile, bank + 1 );
+		if( offset > 0 && end >= offset && end < datfile_length ) {
+			length = end - offset;
+			if( buffer ) {
+				memcpy( buffer, &datfile[ offset ], length );
+			}
+		}
+	}
+	return length;
+}
+
+static int parse_ttfx_program( char *file_name, struct fxenvironment *env, char *message ) {
+	long file_length, success = 0;
+	char *program_buffer;
+	/* Load program file into string.*/
+	file_length = load_file( file_name, NULL, message );
+	if( file_length >= 0 ) {
+		if( file_length < MAX_INTEGER ) {
+			program_buffer = malloc( file_length + 1 );
+			if( program_buffer ) {
+				file_length = load_file( file_name, program_buffer, message );
+				if( file_length >= 4 ) {
+					if( !strncmp( program_buffer, "TTFX", 4 ) ) {
+						env->datfile_length = file_length;
+						/* Extract program from bank 1 of datfile. */
+						file_length = datfile_extract( program_buffer, file_length, 1, NULL );
+						if( file_length >= 0 ) {
+							env->datfile = program_buffer;
+							program_buffer = malloc( file_length + 1 );
+							file_length = datfile_extract( env->datfile, env->datfile_length, 1, program_buffer );
+						} else {
+							strcpy( message, "Invalid datfile." );
+						}
+					}
+				}
+			}
+			if( program_buffer ) {
+				if( file_length >= 0 ) {
+					program_buffer[ file_length ] = 0;
+					/* Parse program structure.*/
+					env->env.file = file_name;
+					success = parse_tt_program( program_buffer, &env->env, message );
+				}
+				free( program_buffer );
+			} else {
+				strcpy( message, OUT_OF_MEMORY );
+			}
+		} else {
+			strcpy( message, "File too large." );
+		}
+	}
+	return success;
+}
+
 int main( int argc, char **argv ) {
 	int exit_code = EXIT_FAILURE;
 	char *file_name, message[ 256 ] = "";
@@ -1293,7 +1359,7 @@ int main( int argc, char **argv ) {
 		&& add_event_constants( fxenv, message ) ) {
 			env->statements = fxstatements;
 			env->operators = fxoperators;
-			if( parse_tt_file( file_name, env, message ) ) {
+			if( parse_ttfx_program( file_name, fxenv, message ) ) {
 				if( env->entry_points ) {
 					/* Initialize SDL. */
 					if( SDL_Init( SDL_INIT_AUDIO | SDL_INIT_VIDEO | SDL_INIT_TIMER ) == 0 ) {

@@ -5,14 +5,15 @@ rem {
 
 # Return a datfile composed from the specified array of byte-strings.
 function datfile_create( byte_strings ) {
-	var header = $array( +( $len( byte_strings ) 1 ) );
+	var header = $array( +( $len( byte_strings ) 2 ) );
 	var offset = *( $len( header ) 4 ), idx;
+	set [ header 0 ] = $unpack( "TTFX", 0 );
 	while <( idx $len( byte_strings ) ) {
-		set [ header idx ] = offset;
+		set [ header +( idx 1 ) ] = offset;
 		let offset = +( offset $len( [ byte_strings idx ] ) );
 		inc idx;
 	}
-	set [ header idx ] = offset;
+	set [ header +( idx 1 ) ] = offset;
 	var dat = $pack( header );
 	let idx = 0;
 	while <( idx $len( byte_strings ) ) {
@@ -30,7 +31,8 @@ function datfile_extract( datfile, index ) {
 
 program datfile_test {
 	var dat = datfile_create( $array( ${ "1" "hello" "abc" } ) );
-	print datfile_extract(dat 0);
+	print $sub( dat, 0, 4 );
 	print datfile_extract(dat 1);
 	print datfile_extract(dat 2);
+	print datfile_extract(dat 3);
 }
