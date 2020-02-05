@@ -52,8 +52,7 @@ struct fxchannel {
 
 struct fxenvironment {
 	struct environment env;
-	char *datfile;
-	int datfile_length;
+	struct variable datfile;
 	struct SDL_Window *window;
 	struct SDL_Renderer *renderer;
 	struct SDL_Texture *target, *surfaces[ NUM_SURFACES ];
@@ -374,7 +373,7 @@ static struct fxenvironment* new_fxenvironment() {
 static void dispose_fxenvironment( struct fxenvironment *fxenv ) {
 	int idx;
 	if( fxenv ) {
-		free( fxenv->datfile );
+		dispose_variable( &fxenv->datfile );
 		if( fxenv->window ) {
 			SDL_DestroyWindow( fxenv->window );
 		}
@@ -1180,6 +1179,14 @@ static enum result evaluate_fxpath_expression( struct expression *this, struct v
 	return ret;
 }
 
+/* If a program was loaded from bank 0 of a datfile, return the entire datfile as a string. */
+static enum result evaluate_datfile_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	struct fxenvironment *fxenv = ( struct fxenvironment * ) this->function->env;
+	assign_variable( &fxenv->datfile, result );
+	return OKAY;
+}
+
 static struct constant fxconstants[] = {
 	{ "FX_WINDOW", SDL_WINDOWEVENT, NULL },
 	{ "FX_KEYDOWN", SDL_KEYDOWN, NULL },
@@ -1233,7 +1240,8 @@ static struct operator fxoperators[] = {
 	{ "$fxpath",'$', 1, evaluate_fxpath_expression, &fxoperators[ 12 ] },
 	{ "$midimsg",'$', 0, evaluate_midimsg_expression, &fxoperators[ 13 ] },
 	{ "$window",'$', 0, evaluate_window_expression, &fxoperators[ 14 ] },
-	{ "$keyheld",'$', 0, evaluate_keyheld_expression, operators }
+	{ "$keyheld",'$', 0, evaluate_keyheld_expression, &fxoperators[ 15 ] },
+	{ "$datfile",'$', 0, evaluate_datfile_expression, operators }
 };
 
 static struct keyword fxstatements[] = {
@@ -1280,9 +1288,9 @@ static int unpack( char *str, int idx ) {
 
 static int datfile_extract( char *datfile, int datfile_length, int bank, char *buffer ) {
 	int offset, end, length = -1;
-	if( ( bank + 2 ) * 4 <= datfile_length ) {
-		offset = unpack( datfile, bank );
-		end = unpack( datfile, bank + 1 );
+	if( bank >= 0 && ( bank + 3 ) * 4 <= datfile_length && !strncmp( datfile, "TTFX", 4 ) ) {
+		offset = unpack( datfile, bank + 1 );
+		end = unpack( datfile, bank + 2 );
 		if( offset > 0 && end >= offset && end < datfile_length ) {
 			length = end - offset;
 			if( buffer ) {
@@ -1295,37 +1303,36 @@ static int datfile_extract( char *datfile, int datfile_length, int bank, char *b
 
 static int parse_ttfx_program( char *file_name, struct fxenvironment *env, char *message ) {
 	long file_length, success = 0;
-	char *program_buffer;
+	struct string *program_buffer;
 	/* Load program file into string.*/
 	file_length = load_file( file_name, NULL, message );
 	if( file_length >= 0 ) {
 		if( file_length < MAX_INTEGER ) {
-			program_buffer = malloc( file_length + 1 );
+			program_buffer = new_string_value( file_length );
 			if( program_buffer ) {
-				file_length = load_file( file_name, program_buffer, message );
-				if( file_length >= 4 ) {
-					if( !strncmp( program_buffer, "TTFX", 4 ) ) {
-						env->datfile_length = file_length;
-						/* Extract program from bank 1 of datfile. */
-						file_length = datfile_extract( program_buffer, file_length, 1, NULL );
-						if( file_length >= 0 ) {
-							env->datfile = program_buffer;
-							program_buffer = malloc( file_length + 1 );
-							file_length = datfile_extract( env->datfile, env->datfile_length, 1, program_buffer );
-						} else {
-							strcpy( message, "Invalid datfile." );
+				file_length = load_file( file_name, program_buffer->string, message );
+				if( file_length >= 4 && !strncmp( program_buffer->string, "TTFX", 4 ) ) {
+					/* Extract program from bank 0 of datfile. */
+					file_length = datfile_extract( program_buffer->string, file_length, 0, NULL );
+					if( file_length >= 0 ) {
+						env->datfile.string_value = program_buffer;
+						program_buffer = new_string_value( file_length );
+						if( program_buffer ) {
+							file_length = datfile_extract( env->datfile.string_value->string, 
+								env->datfile.string_value->length, 0, program_buffer->string );
 						}
+					} else {
+						strcpy( message, "Invalid datfile." );
 					}
 				}
 			}
 			if( program_buffer ) {
 				if( file_length >= 0 ) {
-					program_buffer[ file_length ] = 0;
 					/* Parse program structure.*/
 					env->env.file = file_name;
-					success = parse_tt_program( program_buffer, &env->env, message );
+					success = parse_tt_program( program_buffer->string, &env->env, message );
 				}
-				free( program_buffer );
+				unref_string( program_buffer );
 			} else {
 				strcpy( message, OUT_OF_MEMORY );
 			}
