@@ -90,6 +90,25 @@ static Uint32 timer_callback( Uint32 interval, void *param ) {
 	return interval;
 }
 
+static int datfile_extract( char *datfile, int datfile_length, int bank, char *buffer ) {
+	int offset, end, length = -1;
+	if( datfile_length < 4 || strncmp( datfile, "TTFX", 4 ) ) {
+		/* Not a datfile. */
+		return -2;
+	}
+	if( bank >= 0 && ( bank + 3 ) * 4 <= datfile_length ) {
+		offset = unpack( datfile, bank + 1 );
+		end = unpack( datfile, bank + 2 );
+		if( offset > 0 && end >= offset && end <= datfile_length ) {
+			length = end - offset;
+			if( buffer ) {
+				memcpy( buffer, &datfile[ offset ], length );
+			}
+		}
+	}
+	return length;
+}
+
 static void volume_ramp( int *mix_buf, int *ramp_buf, int tick_len ) {
 	int idx, a1, a2;
 	for( idx = 0, a1 = 0; a1 < 32; idx += 2, a1++ ) {
@@ -1187,6 +1206,47 @@ static enum result evaluate_datfile_expression( struct expression *this, struct 
 	return OKAY;
 }
 
+/* Extract the specified bank from the specified datfile. */
+static enum result evaluate_extract_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	int bank_length;
+	struct string *str;
+	struct variable datfile = { 0 }, bank = { 0 };
+	struct expression *parameter = this->parameters;
+	enum result ret = parameter->evaluate( parameter, variables, &datfile, exception );
+	if( ret ) {
+		if( datfile.string_value ) {
+			parameter = parameter->next;
+			ret = parameter->evaluate( parameter, variables, &bank, exception );
+			if( ret ) {
+				bank_length = datfile_extract( datfile.string_value->string,
+					datfile.string_value->length, bank.integer_value, NULL );
+				if( bank_length >= 0 ) {
+					str = new_string_value( bank_length );
+					if( str ) {
+						datfile_extract( datfile.string_value->string,
+							datfile.string_value->length, bank.integer_value, str->string );
+						dispose_variable( result );
+						result->integer_value = 0;
+						result->string_value = str;
+					} else {
+						ret = throw( exception, this, 0, OUT_OF_MEMORY );
+					}
+				} else if( bank_length == -1 ) {
+					ret = throw( exception, this, bank.integer_value, "Invalid bank." );
+				} else {
+					ret = throw( exception, this, bank_length, "Not a datfile." );
+				}
+				dispose_variable( &bank );
+			}
+		} else {
+			ret = throw( exception, this, 0, "Not a string." );
+		}
+		dispose_variable( &datfile );
+	}
+	return ret;
+}
+
 static struct constant fxconstants[] = {
 	{ "FX_WINDOW", SDL_WINDOWEVENT, NULL },
 	{ "FX_KEYDOWN", SDL_KEYDOWN, NULL },
@@ -1241,7 +1301,8 @@ static struct operator fxoperators[] = {
 	{ "$midimsg",'$', 0, evaluate_midimsg_expression, &fxoperators[ 13 ] },
 	{ "$window",'$', 0, evaluate_window_expression, &fxoperators[ 14 ] },
 	{ "$keyheld",'$', 0, evaluate_keyheld_expression, &fxoperators[ 15 ] },
-	{ "$datfile",'$', 0, evaluate_datfile_expression, operators }
+	{ "$datfile",'$', 0, evaluate_datfile_expression, &fxoperators[ 16 ] },
+	{ "$extract",'$', 2, evaluate_extract_expression, operators }
 };
 
 static struct keyword fxstatements[] = {
@@ -1281,63 +1342,39 @@ static int add_event_constants( struct fxenvironment *env, char *message ) {
 	return 0;
 }
 
-static int unpack( char *str, int idx ) {
-	return ( ( str[ idx * 4 ] & 0xFF ) << 24 ) | ( ( str[ idx * 4 + 1 ] & 0xFF ) << 16 )
-		| ( (  str[ idx * 4 + 2 ] & 0xFF ) <<  8 ) | ( str[ idx * 4 + 3 ] & 0xFF );
-}
-
-static int datfile_extract( char *datfile, int datfile_length, int bank, char *buffer ) {
-	int offset, end, length = -1;
-	if( bank >= 0 && ( bank + 3 ) * 4 <= datfile_length && !strncmp( datfile, "TTFX", 4 ) ) {
-		offset = unpack( datfile, bank + 1 );
-		end = unpack( datfile, bank + 2 );
-		if( offset > 0 && end >= offset && end < datfile_length ) {
-			length = end - offset;
-			if( buffer ) {
-				memcpy( buffer, &datfile[ offset ], length );
-			}
-		}
-	}
-	return length;
-}
-
 static int parse_ttfx_program( char *file_name, struct fxenvironment *env, char *message ) {
-	long file_length, success = 0;
+	long file_length, bank_length, success = 0;
 	struct string *program_buffer;
 	/* Load program file into string.*/
 	file_length = load_file( file_name, NULL, message );
-	if( file_length >= 0 ) {
-		if( file_length < MAX_INTEGER ) {
-			program_buffer = new_string_value( file_length );
-			if( program_buffer ) {
-				file_length = load_file( file_name, program_buffer->string, message );
-				if( file_length >= 4 && !strncmp( program_buffer->string, "TTFX", 4 ) ) {
-					/* Extract program from bank 0 of datfile. */
-					file_length = datfile_extract( program_buffer->string, file_length, 0, NULL );
-					if( file_length >= 0 ) {
-						env->datfile.string_value = program_buffer;
-						program_buffer = new_string_value( file_length );
-						if( program_buffer ) {
-							file_length = datfile_extract( env->datfile.string_value->string, 
-								env->datfile.string_value->length, 0, program_buffer->string );
-						}
-					} else {
-						strcpy( message, "Invalid datfile." );
-					}
+	if( file_length >= MAX_INTEGER ) {
+		strcpy( message, "File too large." );
+	} else if( file_length >= 0 ) {
+		program_buffer = new_string_value( file_length );
+		if( program_buffer ) {
+			file_length = load_file( file_name, program_buffer->string, message );
+			bank_length = datfile_extract( program_buffer->string, file_length, 0, NULL );
+			if( bank_length >= 0 ) {
+				/* Extract program from bank 0 of datfile. */
+				env->datfile.string_value = program_buffer;
+				program_buffer = new_string_value( bank_length );
+				if( program_buffer ) {
+					file_length = datfile_extract( env->datfile.string_value->string, 
+						env->datfile.string_value->length, 0, program_buffer->string );
 				}
+			} else if( bank_length == -1 ) {
+				strcpy( message, "Invalid program file." );
 			}
-			if( program_buffer ) {
-				if( file_length >= 0 ) {
-					/* Parse program structure.*/
-					env->env.file = file_name;
-					success = parse_tt_program( program_buffer->string, &env->env, message );
-				}
-				unref_string( program_buffer );
-			} else {
-				strcpy( message, OUT_OF_MEMORY );
+		}
+		if( program_buffer ) {
+			if( file_length >= 0 ) {
+				/* Parse program structure.*/
+				env->env.file = file_name;
+				success = parse_tt_program( program_buffer->string, &env->env, message );
 			}
+			unref_string( program_buffer );
 		} else {
-			strcpy( message, "File too large." );
+			strcpy( message, OUT_OF_MEMORY );
 		}
 	}
 	return success;

@@ -2783,25 +2783,24 @@ static enum result evaluate_pack_expression( struct expression *this, struct var
 	return ret;
 }
 
+static int unpack( char *str, int idx ) {
+	return ( ( str[ idx * 4 ] & 0xFF ) << 24 ) | ( ( str[ idx * 4 + 1 ] & 0xFF ) << 16 )
+		| ( (  str[ idx * 4 + 2 ] & 0xFF ) <<  8 ) | ( str[ idx * 4 + 3 ] & 0xFF );
+}
+
 static enum result evaluate_unpack_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct expression *parameter = this->parameters;
 	struct variable str = { 0, NULL }, idx = { 0, NULL };
-	signed char *chr;
 	enum result ret = parameter->evaluate( parameter, variables, &str, exception );
 	if( ret ) {
 		parameter = parameter->next;
 		ret = parameter->evaluate( parameter, variables, &idx, exception );
 		if( ret ) {
-			if( str.string_value && str.string_value->string ) {
-				chr = ( signed char * ) str.string_value->string;
-				idx.integer_value <<= 2;
-				if( idx.integer_value >= 0 && idx.integer_value < str.string_value->length - 3 ) {
+			if( str.string_value ) {
+				if( idx.integer_value >= 0 && idx.integer_value * 4 < str.string_value->length - 3 ) {
 					dispose_variable( result );
-					str.integer_value = chr[ idx.integer_value ] << 24;
-					str.integer_value |= ( chr[ idx.integer_value + 1 ] & 0xFF ) << 16;
-					str.integer_value |= ( chr[ idx.integer_value + 2 ] & 0xFF ) << 8;
-					result->integer_value = str.integer_value | ( chr[ idx.integer_value + 3 ] & 0xFF );
+					result->integer_value = unpack( str.string_value->string, idx.integer_value );
 					result->string_value = NULL;
 				} else {
 					ret = throw( exception, this, idx.integer_value, "String index out of bounds." );
