@@ -864,7 +864,7 @@ static struct element* parse_fxshow_statement( struct element *elem, struct envi
 	if( stmt ) {
 		stmt->source = calloc( 1, sizeof( struct expression ) );
 		if( stmt->source ) {
-			stmt->source->line = next->str.line;
+			stmt->source->line = elem->str.line;
 			stmt->source->function = func;
 			stmt->execute = execute_fxshow_statement;
 			prev->next = stmt;

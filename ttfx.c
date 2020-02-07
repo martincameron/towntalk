@@ -11,7 +11,7 @@
 #endif
 
 #if defined( __MINGW32__ )
-#define canonicalize_file_name( path ) _fullpath( NULL, ( path ), 0 )
+#define realpath( path, resolved_path ) _fullpath( NULL, ( path ), 0 )
 #endif
 
 #define NUM_SURFACES 16
@@ -52,12 +52,14 @@ struct fxchannel {
 
 struct fxenvironment {
 	struct environment env;
+	struct variable datfile;
 	struct SDL_Surface *surfaces[ NUM_SURFACES ];
 	SDL_TimerID timer;
 	SDLKey key;
 	struct fxsample samples[ NUM_SAMPLES ];
 	struct fxchannel channels[ NUM_CHANNELS ];
-	int tick, tick_len, audio_idx, audio_end, seq_msg, midi_msg;
+	int timer_event_type, seq_event_type, midi_event_type;
+	int tick, tick_len, audio_idx, audio_end, seq_msg, midi_msg, win_event, key_held;
 	int audio[ ( MAX_TICK_LEN + 33 ) * 4 ], ramp_buf[ 64 ];
 	#if defined( ALSA_MIDI )
 	int midi_buf, midi_idx;
@@ -79,11 +81,30 @@ static void signal_handler( int signum ) {
 
 static Uint32 timer_callback( Uint32 interval, void *param ) {
 	SDL_Event event;
-	event.type = SDL_USEREVENT;
+	event.type = fxenv->timer_event_type;
 	event.user.code = 0;
 	event.user.data1 = event.user.data2 = NULL;
 	SDL_PushEvent( &event );
 	return interval;
+}
+
+static int datfile_extract( char *datfile, int datfile_length, int bank, char *buffer ) {
+	int offset, end, length = -1;
+	if( datfile_length < 4 || strncmp( datfile, "TTFX", 4 ) ) {
+		/* Not a datfile. */
+		return -2;
+	}
+	if( bank >= 0 && ( bank + 3 ) * 4 <= datfile_length ) {
+		offset = unpack( datfile, bank + 1 );
+		end = unpack( datfile, bank + 2 );
+		if( offset > 0 && end >= offset && end <= datfile_length ) {
+			length = end - offset;
+			if( buffer ) {
+				memcpy( buffer, &datfile[ offset ], length );
+			}
+		}
+	}
+	return length;
 }
 
 static void volume_ramp( int *mix_buf, int *ramp_buf, int tick_len ) {
@@ -246,7 +267,7 @@ static void process_sequence( struct fxenvironment *fxenv, int channel_idx ) {
 						}
 					} else if( ( cmd & 0xF000000 ) == 0x8000000 ) {
 						/* 0x08xxxxxx sequencer event. */
-						event.type = SDL_USEREVENT + 1;
+						event.type = fxenv->seq_event_type;
 						event.user.code = ( channel_idx << 24 ) | ( cmd & 0xFFFFFF );
 						SDL_PushEvent( &event );
 					}
@@ -293,7 +314,7 @@ static void audio_callback( void *userdata, Uint8 *stream, int len ) {
 			}
 			if( fxenv->midi_idx == 3 ) {
 				/* Push message.*/
-				event.type = SDL_USEREVENT + 2;
+				event.type = fxenv->midi_event_type;
 				event.user.code = fxenv->midi_buf;
 				SDL_PushEvent( &event );
 				fxenv->midi_idx = 0;
@@ -592,7 +613,7 @@ static enum result execute_fxtimer_statement( struct statement *this, struct var
 	if( ret ) {
 		if( millis.integer_value > 0 ) {
 			fxenv->timer = SDL_AddTimer( millis.integer_value, timer_callback, fxenv );
-			if( fxenv->timer == NULL ) {
+			if( !fxenv->timer ) {
 				ret = throw( exception, this->source, millis.integer_value, "Unable to start timer." );
 			}
 		} else {
@@ -791,9 +812,16 @@ static struct element* parse_fxshow_statement( struct element *elem, struct envi
 	struct element *next = elem->next;
 	struct statement *stmt = new_statement( message );
 	if( stmt ) {
-		stmt->execute = execute_fxshow_statement;
-		prev->next = stmt;
-		next = next->next;
+		stmt->source = calloc( 1, sizeof( struct expression ) );
+		if( stmt->source ) {
+			stmt->source->line = elem->str.line;
+			stmt->source->function = func;
+			stmt->execute = execute_fxshow_statement;
+			prev->next = stmt;
+			next = next->next;
+		} else {
+			strcpy( message, OUT_OF_MEMORY );
+		}
 	}
 	return next;
 }
@@ -859,16 +887,14 @@ static enum result handle_event_expression( struct expression *this, SDL_Event *
 	if( event->type == SDL_QUIT ) {
 		ret = throw( exception, this, 0, NULL );
 	} else {
-		switch( event->type ) {
-			case SDL_KEYDOWN: case SDL_KEYUP:
-				fxenv->key = event->key.keysym.sym;
-				break;
-			case SDL_USEREVENT + 1:
-				fxenv->seq_msg = event->user.code;
-				break;
-			case SDL_USEREVENT + 2:
-				fxenv->midi_msg = event->user.code;
-				break;
+		if( event->type == fxenv->seq_event_type ) {
+			fxenv->seq_msg = event->user.code;
+		} else if( event->type == fxenv->midi_event_type ) {
+			fxenv->midi_msg = event->user.code;
+		} else if( event->type == SDL_VIDEOEXPOSE ) {
+			fxenv->win_event = SDL_VIDEOEXPOSE;
+		} else if( event->type == SDL_KEYDOWN || event->type == SDL_KEYUP ) {
+			fxenv->key = event->key.keysym.sym;
 		}
 		dispose_variable( result );
 		result->integer_value = event->type;
@@ -959,7 +985,7 @@ static enum result evaluate_keyshift_expression( struct expression *this, struct
 static enum result evaluate_keyheld_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	dispose_variable( result );
-	result->integer_value = 0;
+	result->integer_value = ( ( struct fxenvironment * ) this->function->env )->key_held;
 	result->string_value = NULL;
 	return OKAY;
 }
@@ -1000,7 +1026,7 @@ static enum result evaluate_fxdir_expression( struct expression *this, struct va
 	if( ret ) {
 		if( var.string_value && var.string_value->string ) {
 			errno = 0;
-			path = canonicalize_file_name( var.string_value->string );
+			path = realpath( var.string_value->string, NULL );
 			if( path ) {
 				pathlen = strlen( path );
 				sep = path[ chop( path, "/:\\" ) - 1 ];
@@ -1094,7 +1120,7 @@ static enum result evaluate_fxpath_expression( struct expression *this, struct v
 	if( ret ) {
 		if( var.string_value ) {
 			errno = 0;
-			path = canonicalize_file_name( var.string_value->string );
+			path = realpath( var.string_value->string, NULL );
 			if( path ) {
 				str = new_string_value( strlen( path ) );
 				if( str ) {
@@ -1121,17 +1147,62 @@ static enum result evaluate_fxpath_expression( struct expression *this, struct v
 	return ret;
 }
 
+/* If a program was loaded from bank 0 of a datfile, return the entire datfile as a string. */
+static enum result evaluate_datfile_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	struct fxenvironment *fxenv = ( struct fxenvironment * ) this->function->env;
+	assign_variable( &fxenv->datfile, result );
+	return OKAY;
+}
+
+/* Extract the specified bank from the specified datfile. */
+static enum result evaluate_extract_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	int bank_length;
+	struct string *str;
+	struct variable datfile = { 0 }, bank = { 0 };
+	struct expression *parameter = this->parameters;
+	enum result ret = parameter->evaluate( parameter, variables, &datfile, exception );
+	if( ret ) {
+		if( datfile.string_value ) {
+			parameter = parameter->next;
+			ret = parameter->evaluate( parameter, variables, &bank, exception );
+			if( ret ) {
+				bank_length = datfile_extract( datfile.string_value->string,
+					datfile.string_value->length, bank.integer_value, NULL );
+				if( bank_length >= 0 ) {
+					str = new_string_value( bank_length );
+					if( str ) {
+						datfile_extract( datfile.string_value->string,
+							datfile.string_value->length, bank.integer_value, str->string );
+						dispose_variable( result );
+						result->integer_value = 0;
+						result->string_value = str;
+					} else {
+						ret = throw( exception, this, 0, OUT_OF_MEMORY );
+					}
+				} else if( bank_length == -1 ) {
+					ret = throw( exception, this, bank.integer_value, "Invalid bank." );
+				} else {
+					ret = throw( exception, this, bank_length, "Not a datfile." );
+				}
+				dispose_variable( &bank );
+			}
+		} else {
+			ret = throw( exception, this, 0, "Not a string." );
+		}
+		dispose_variable( &datfile );
+	}
+	return ret;
+}
+
 static struct constant fxconstants[] = {
+	{ "FX_WINDOW", SDL_VIDEOEXPOSE, NULL },
 	{ "FX_KEYDOWN", SDL_KEYDOWN, NULL },
 	{ "FX_KEYUP", SDL_KEYUP, NULL },
 	{ "FX_MOUSEMOTION", SDL_MOUSEMOTION, NULL },
 	{ "FX_MOUSEKEYDOWN", SDL_MOUSEBUTTONDOWN, NULL },
 	{ "FX_MOUSEKEYUP", SDL_MOUSEBUTTONUP, NULL },
-	{ "FX_WINDOW", SDL_VIDEOEXPOSE, NULL },
-	{ "FX_WINDOW_EXPOSED", SDL_VIDEOEXPOSE, NULL },
-	{ "FX_TIMER", SDL_USEREVENT, NULL },
-	{ "FX_SEQUENCER", SDL_USEREVENT + 1, NULL },
-	{ "FX_MIDI", SDL_USEREVENT + 2, NULL },
 	{ "FX_KEY_BACKSPACE", SDLK_BACKSPACE, NULL },
 	{ "FX_KEY_TAB", SDLK_TAB, NULL },
 	{ "FX_KEY_RETURN", SDLK_RETURN, NULL },
@@ -1159,6 +1230,7 @@ static struct constant fxconstants[] = {
 	{ "FX_KEY_PAGE_UP", SDLK_PAGEUP, NULL },
 	{ "FX_KEY_PAGE_DOWN", SDLK_PAGEDOWN, NULL },
 	{ "FX_KEY_F1", SDLK_F1, NULL },
+	{ "FX_WINDOW_EXPOSED", SDL_VIDEOEXPOSE, NULL },
 	{ NULL }
 };
 
@@ -1177,7 +1249,9 @@ static struct operator fxoperators[] = {
 	{ "$fxpath",'$', 1, evaluate_fxpath_expression, &fxoperators[ 12 ] },
 	{ "$midimsg",'$', 0, evaluate_midimsg_expression, &fxoperators[ 13 ] },
 	{ "$window",'$', 0, evaluate_window_expression, &fxoperators[ 14 ] },
-	{ "$keyheld",'$', 0, evaluate_keyheld_expression, operators }
+	{ "$keyheld",'$', 0, evaluate_keyheld_expression, &fxoperators[ 15 ] },
+	{ "$datfile",'$', 0, evaluate_datfile_expression, &fxoperators[ 16 ] },
+	{ "$extract",'$', 2, evaluate_extract_expression, operators }
 };
 
 static struct keyword fxstatements[] = {
@@ -1194,6 +1268,65 @@ static struct keyword fxstatements[] = {
 	{ "fxplay", "xx;", parse_fxplay_statement, &fxstatements[ 11 ] },
 	{ "fxmidi", "x;", parse_fxmidi_statement, statements }
 };
+
+static int add_event_constants( struct fxenvironment *env, char *message ) {
+	int event_type = SDL_USEREVENT;
+	struct constant event[ 2 ] = { NULL };
+	event[ 0 ].name = "FX_TIMER";
+	event[ 0 ].integer_value = event_type;
+	if( add_constants( &event[ 0 ], &env->env, message ) ) {
+		env->timer_event_type = event_type++;
+		event[ 0 ].name = "FX_SEQUENCER";
+		event[ 0 ].integer_value = event_type;
+		if( add_constants( &event[ 0 ], &env->env, message ) ) {
+			env->seq_event_type = event_type++;
+			event[ 0 ].name = "FX_MIDI";
+			event[ 0 ].integer_value = event_type;
+			if( add_constants( &event[ 0 ], &env->env, message ) ) {
+				env->midi_event_type = event_type;
+				return 1;
+			}
+		}
+	}
+	return 0;
+}
+
+static int parse_ttfx_file( char *file_name, struct fxenvironment *env, char *message ) {
+	long file_length, bank_length, success = 0;
+	struct string *program_buffer;
+	/* Load program file into string.*/
+	file_length = load_file( file_name, NULL, message );
+	if( file_length >= MAX_INTEGER ) {
+		strcpy( message, "File too large." );
+	} else if( file_length >= 0 ) {
+		program_buffer = new_string_value( file_length );
+		if( program_buffer ) {
+			file_length = load_file( file_name, program_buffer->string, message );
+			bank_length = datfile_extract( program_buffer->string, file_length, 0, NULL );
+			if( bank_length >= 0 ) {
+				/* Extract program from bank 0 of datfile. */
+				env->datfile.string_value = program_buffer;
+				program_buffer = new_string_value( bank_length );
+				if( program_buffer ) {
+					file_length = datfile_extract( env->datfile.string_value->string, 
+						env->datfile.string_value->length, 0, program_buffer->string );
+				}
+			} else if( bank_length == -1 ) {
+				strcpy( message, "Invalid program file." );
+			}
+		}
+		if( program_buffer ) {
+			if( file_length >= 0 ) {
+				/* Parse program structure.*/
+				success = parse_tt_program( program_buffer->string, file_name, &env->env, message );
+			}
+			unref_string( program_buffer );
+		} else {
+			strcpy( message, OUT_OF_MEMORY );
+		}
+	}
+	return success;
+}
 
 int main( int argc, char **argv ) {
 	int exit_code = EXIT_FAILURE;
@@ -1214,10 +1347,11 @@ int main( int argc, char **argv ) {
 		env->argc = argc - 1;
 		env->argv = &argv[ 1 ];
 		if( add_constants( fxconstants, env, message )
-		&& add_constants( constants, env, message )  ) {
+		&& add_constants( constants, env, message )
+		&& add_event_constants( fxenv, message ) ) {
 			env->statements = fxstatements;
 			env->operators = fxoperators;
-			if( parse_tt_file( file_name, env, message ) ) {
+			if( parse_ttfx_file( file_name, fxenv, message ) ) {
 				if( env->entry_points ) {
 					/* Initialize SDL. */
 					if( SDL_Init( SDL_INIT_AUDIO | SDL_INIT_VIDEO | SDL_INIT_TIMER ) == 0 ) {
