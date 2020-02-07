@@ -1342,7 +1342,7 @@ static int add_event_constants( struct fxenvironment *env, char *message ) {
 	return 0;
 }
 
-static int parse_ttfx_program( char *file_name, struct fxenvironment *env, char *message ) {
+static int parse_ttfx_file( char *file_name, struct fxenvironment *env, char *message ) {
 	long file_length, bank_length, success = 0;
 	struct string *program_buffer;
 	/* Load program file into string.*/
@@ -1369,8 +1369,7 @@ static int parse_ttfx_program( char *file_name, struct fxenvironment *env, char 
 		if( program_buffer ) {
 			if( file_length >= 0 ) {
 				/* Parse program structure.*/
-				env->env.file = file_name;
-				success = parse_tt_program( program_buffer->string, &env->env, message );
+				success = parse_tt_program( program_buffer->string, file_name, &env->env, message );
 			}
 			unref_string( program_buffer );
 		} else {
@@ -1403,7 +1402,7 @@ int main( int argc, char **argv ) {
 		&& add_event_constants( fxenv, message ) ) {
 			env->statements = fxstatements;
 			env->operators = fxoperators;
-			if( parse_ttfx_program( file_name, fxenv, message ) ) {
+			if( parse_ttfx_file( file_name, fxenv, message ) ) {
 				if( env->entry_points ) {
 					/* Initialize SDL. */
 					if( SDL_Init( SDL_INIT_AUDIO | SDL_INIT_VIDEO | SDL_INIT_TIMER ) == 0 ) {

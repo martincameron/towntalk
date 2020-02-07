@@ -232,7 +232,7 @@ struct statement {
 /* Execution environment. */
 struct environment {
 	int argc;
-	char **argv, *file, interrupted;
+	char **argv, interrupted;
 	struct array arrays;
 	struct keyword *statements;
 	struct operator *operators;
@@ -262,9 +262,10 @@ struct operator {
 
 /* Function declaration list. */
 struct function_declaration {
-	char *name, *file;
+	char *name;
 	int line, num_parameters, num_variables;
 	struct function_reference ref;
+	struct string file;
 	struct element *elem;
 	struct environment *env;
 	struct string_list *variable_decls, *variable_decls_tail;
@@ -772,7 +773,7 @@ static void dispose_function_declarations( struct function_declaration *function
 	while( function ) {
 		next = function->next;
 		free( function->name );
-		free( function->file );
+		free( function->file.string );
 		dispose_string_list( function->variable_decls );
 		dispose_statements( function->statements );
 		free( function );
@@ -847,7 +848,7 @@ static enum result throw( struct variable *exception, struct expression *source,
 		str = new_string_value( strlen( string ) + 64 );
 		if( str ) {
 			if( sprintf( str->string, "%s (on line %d of '%.32s')",
-			string, source->line, source->function->file ) < 0 ) {
+			string, source->line, source->function->file.string ) < 0 ) {
 				strcpy( str->string, string );
 			}
 			str->length = strlen( str->string );
@@ -1054,9 +1055,11 @@ static struct function_declaration* new_function_declaration( char *name, char *
 			func->ref.str.line = -2;
 			func->ref.str.string = func->name;
 			func->ref.func = func;
-			func->file = new_string( file );
+			func->file.reference_count = 1;
+			func->file.length = strlen( file );
+			func->file.string = new_string( file );
 		}
-		if( !( func->name && func->file ) ) {
+		if( !func->file.string ) {
 			dispose_function_declarations( func );
 			strcpy( message, OUT_OF_MEMORY );
 			func = NULL;
@@ -2882,6 +2885,14 @@ static enum result evaluate_interrupted_expression( struct expression *this, str
 	return OKAY;
 }
 
+static enum result evaluate_source_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	struct variable src = { 0, NULL };
+	src.string_value = &this->function->file;
+	assign_variable( &src, result );
+	return OKAY;
+}
+
 static struct operator operators[] = {
 	{ ":", ':',-1, evaluate_function_expression, &operators[ 1 ] },
 	{ "%", '%', 2, evaluate_arithmetic_expression, &operators[ 2 ] },
@@ -2933,7 +2944,8 @@ static struct operator operators[] = {
 	{ "$unpack", '$', 2, evaluate_unpack_expression, &operators[ 48 ] },
 	{ "$quote", '$', 1, evaluate_quote_expression, &operators[ 49 ] },
 	{ "$unquote", '$', 1, evaluate_unquote_expression, &operators[ 50 ] },
-	{ "$interrupted", '$', 0, evaluate_interrupted_expression, NULL }
+	{ "$interrupted", '$', 0, evaluate_interrupted_expression, &operators[ 51 ] },
+	{ "$src", '$', 0, evaluate_source_expression, NULL }
 };
 
 static struct operator* get_operator( char *name, struct environment *env ) {
@@ -3117,16 +3129,6 @@ static struct element* parse_expression( struct element *elem, struct environmen
 				expr->global = constant;
 				expr->evaluate = evaluate_global;
 				next = parse_constant( elem, &constant->value, message );
-			}
-		} else if( strcmp( value, "$src" ) == 0 ) {
-			/* Source file. */
-			constant = new_global_variable( "#Const#", message );
-			if( constant ) {
-				add_constant( env, constant );
-				expr->global = constant;
-				expr->evaluate = evaluate_global;
-				constant->value.string_value = new_string_value( strlen( env->file ) );
-				strcpy( constant->value.string_value->string, env->file );
 			}
 		} else if( value[ 0 ] == '\'' ) {
 			/* Infix operator.*/
@@ -3872,7 +3874,7 @@ static struct element* parse_function_declaration( struct element *elem, struct 
 	struct function_declaration *decl, struct statement *prev, char *message ) {
 	struct element *next = elem->next, *child;
 	if( validate_decl( next, env, message ) ) {
-		decl = new_function_declaration( next->str.string, env->file, message );
+		decl = new_function_declaration( next->str.string, decl->file.string, message );
 		if( decl ) {
 			decl->next = env->functions;
 			env->functions = decl;
@@ -3901,7 +3903,7 @@ static struct element* parse_program_declaration( struct element *elem, struct e
 	struct function_declaration *decl, struct statement *prev, char *message ) {
 	struct element *next = elem->next;
 	if( validate_decl( next, env, message ) ) {
-		decl = new_function_declaration( next->str.string, env->file, message );
+		decl = new_function_declaration( next->str.string, decl->file.string, message );
 		if( decl ) {
 			decl->next = env->entry_points;
 			env->entry_points = decl;
@@ -3917,11 +3919,11 @@ static struct element* parse_program_declaration( struct element *elem, struct e
 static struct element* parse_include( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message ) {
 	struct element *next = elem->next;
-	int path_len = chop( env->file, "/:\\" );
+	int path_len = chop( func->file.string, "/:\\" );
 	int name_len = unquote_string( next->str.string, NULL );
 	char *path = malloc( path_len + name_len + 1 );
 	if( path ) {
-		memcpy( path, env->file, path_len );
+		memcpy( path, func->file.string, path_len );
 		unquote_string( next->str.string, &path[ path_len ] );
 		path[ path_len + name_len ] = 0;
 		if( parse_tt_file( path, env, message ) ) {
@@ -4102,13 +4104,13 @@ static void parse_function_body( struct function_declaration *func, struct envir
 	}
 }
 
-static int parse_tt_program( char *program, struct environment *env, char *message ) {
+static int parse_tt_program( char *program, char *file_name, struct environment *env, char *message ) {
 	struct element *elem;
 	struct function_declaration *empty, *func;
 	elem = parse_element( program, message );
 	if( elem ) {
 		/* Create empty function for global evaluation. */
-		empty = new_function_declaration( "", env->file, message );
+		empty = new_function_declaration( "", file_name, message );
 		if( empty ) {
 			empty->next = env->functions;
 			env->functions = empty;
@@ -4136,7 +4138,7 @@ static int parse_tt_program( char *program, struct environment *env, char *messa
 
 static int parse_tt_file( char *file_name, struct environment *env, char *message ) {
 	long file_length, success = 0;
-	char *program_buffer, error[ 128 ] = "", *prev_file;
+	char *program_buffer, error[ 128 ] = "";
 	/* Load program file into string.*/
 	file_length = load_file( file_name, NULL, message );
 	if( file_length >= 0 ) {
@@ -4148,10 +4150,7 @@ static int parse_tt_file( char *file_name, struct environment *env, char *messag
 				if( file_length >= 0 ) {
 					program_buffer[ file_length ] = 0;
 					/* Parse program structure.*/
-					prev_file = env->file;
-					env->file = file_name;
-					success = parse_tt_program( program_buffer, env, message );
-					env->file = prev_file;
+					success = parse_tt_program( program_buffer, file_name, env, message );
 				}
 				free( program_buffer );
 			} else {
