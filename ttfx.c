@@ -885,7 +885,7 @@ static enum result handle_event_expression( struct expression *this, SDL_Event *
 	struct fxenvironment *fxenv = ( struct fxenvironment * ) this->function->env;
 	enum result ret = OKAY;
 	if( event->type == SDL_QUIT ) {
-		ret = throw( exception, this, 0, NULL );
+		ret = throw_exit( exception, 0 );
 	} else {
 		if( event->type == fxenv->seq_event_type ) {
 			fxenv->seq_msg = event->user.code;

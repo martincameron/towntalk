@@ -183,6 +183,11 @@ struct function_reference {
 	struct function_declaration *func;
 };
 
+struct exception {
+	struct string str;
+	struct element *location;
+};
+
 /* Variable. */
 struct variable {
 	int integer_value;
@@ -591,6 +596,9 @@ static void unref_string( struct string *str ) {
 			}
 			free( arr->array );
 			free( arr );
+		} else if( str->line == -2 ) {
+			unref_string( &( ( struct exception * ) str )->location->str );
+			free( str );
 		} else {
 			free( str );
 		}
@@ -853,16 +861,19 @@ static enum result throw( struct variable *exception, struct expression *source,
 			}
 			str->length = strlen( str->string );
 		}
-	} else {
-		/* Uncatchable exception for exit statement. */
-		str = new_string_value( 0 );
-		if( str ) {
-			str->string = NULL;
-		}
 	}
 	dispose_variable( exception );
 	exception->integer_value = integer;
 	exception->string_value = str;
+	return EXCEPTION;
+}
+
+static enum result throw_exit( struct variable *exception, int exit_code ) {
+	static struct string EXIT_STRING = { 2 };
+	/* Throw an uncatchable exception. */
+	dispose_variable( exception );
+	exception->integer_value = exit_code;
+	exception->string_value = &EXIT_STRING;
 	return EXCEPTION;
 }
 
@@ -1220,7 +1231,7 @@ static enum result execute_exit_statement( struct statement *this, struct variab
 	struct variable exit_code = { 0, NULL };
 	enum result ret = this->source->evaluate( this->source, variables, &exit_code, exception );
 	if( ret ) {
-		ret = throw( exception, this->source, exit_code.integer_value, NULL );
+		ret = throw_exit( exception, exit_code.integer_value );
 	}
 	return ret;
 }
