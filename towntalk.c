@@ -183,11 +183,6 @@ struct function_reference {
 	struct function_declaration *func;
 };
 
-struct exception {
-	struct string str;
-	struct element *location;
-};
-
 /* Variable. */
 struct variable {
 	int integer_value;
@@ -596,9 +591,6 @@ static void unref_string( struct string *str ) {
 			}
 			free( arr->array );
 			free( arr );
-		} else if( str->line == -2 ) {
-			unref_string( &( ( struct exception * ) str )->location->str );
-			free( str );
 		} else {
 			free( str );
 		}
