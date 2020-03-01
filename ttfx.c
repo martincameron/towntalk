@@ -379,43 +379,6 @@ static void audio_callback( void *userdata, Uint8 *stream, int len ) {
 	}
 }
 
-static struct fxenvironment* new_fxenvironment() {
-	int idx;
-	struct fxenvironment *fxenv = calloc( 1, sizeof( struct fxenvironment ) );
-	for( idx = 0; idx < NUM_CHANNELS; idx++ ) {
-		fxenv->channels[ idx ].gain = 4096;
-	}
-	return fxenv;
-}
-
-static void dispose_fxenvironment( struct fxenvironment *fxenv ) {
-	int idx;
-	if( fxenv ) {
-		for( idx = 0; idx < NUM_SURFACES; idx++ ) {
-			if( fxenv->surfaces[ idx ] ) {
-				SDL_FreeSurface( fxenv->surfaces[ idx ] );
-			}
-		}
-		for( idx = 0; idx < NUM_SAMPLES; idx++ ) {
-			dispose_variable( &fxenv->samples[ idx ].sample_data );
-		}
-		for( idx = 0; idx < NUM_CHANNELS; idx++ ) {
-			dispose_variable( &fxenv->channels[ idx ].sequence );
-			dispose_variable( &fxenv->channels[ idx ].next_sequence );
-		}
-		if( fxenv->timer ) {
-			SDL_RemoveTimer( fxenv->timer );
-		}
-		#if defined( ALSA_MIDI )
-		if( fxenv->midi_in ) {
-			SDL_CloseAudio();
-			snd_rawmidi_close( fxenv->midi_in );
-		}
-		#endif
-		dispose_environment( ( struct environment * ) fxenv );
-	}
-}
-
 static enum result execute_fxopen_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct variable width = { 0, NULL }, height = { 0, NULL }, caption = { 0, NULL };
@@ -1292,6 +1255,55 @@ static int add_event_constants( struct fxenvironment *env, char *message ) {
 	return 0;
 }
 
+static void dispose_fxenvironment( struct fxenvironment *fxenv ) {
+	int idx;
+	if( fxenv ) {
+		for( idx = 0; idx < NUM_SURFACES; idx++ ) {
+			if( fxenv->surfaces[ idx ] ) {
+				SDL_FreeSurface( fxenv->surfaces[ idx ] );
+			}
+		}
+		for( idx = 0; idx < NUM_SAMPLES; idx++ ) {
+			dispose_variable( &fxenv->samples[ idx ].sample_data );
+		}
+		for( idx = 0; idx < NUM_CHANNELS; idx++ ) {
+			dispose_variable( &fxenv->channels[ idx ].sequence );
+			dispose_variable( &fxenv->channels[ idx ].next_sequence );
+		}
+		if( fxenv->timer ) {
+			SDL_RemoveTimer( fxenv->timer );
+		}
+		#if defined( ALSA_MIDI )
+		if( fxenv->midi_in ) {
+			SDL_CloseAudio();
+			snd_rawmidi_close( fxenv->midi_in );
+		}
+		#endif
+		dispose_environment( ( struct environment * ) fxenv );
+	}
+}
+
+static struct fxenvironment* new_fxenvironment( char *message ) {
+	int idx;
+	struct fxenvironment *fxenv = calloc( 1, sizeof( struct fxenvironment ) );
+	if( fxenv ) {
+		for( idx = 0; idx < NUM_CHANNELS; idx++ ) {
+			fxenv->channels[ idx ].gain = 4096;
+		}
+		if( !( initialize_environment( &fxenv->env, message )
+		&& add_constants( fxconstants, &fxenv->env, message )
+		&& add_event_constants( fxenv, message )
+		&& add_statements( fxstatements, &fxenv->env, message )
+		&& add_operators( fxoperators, &fxenv->env, message ) ) ) {
+			dispose_fxenvironment( fxenv );
+			fxenv = NULL;
+		}
+	} else {
+		strcpy( message, OUT_OF_MEMORY );
+	}
+	return fxenv;
+}
+
 static int parse_ttfx_file( char *file_name, struct fxenvironment *env, char *message ) {
 	long file_length, bank_length, success = 0;
 	struct string *program_buffer;
@@ -1342,56 +1354,48 @@ int main( int argc, char **argv ) {
 	}
 	file_name = argv[ 1 ];
 	/* Parse program file. */
-	fxenv = new_fxenvironment();
+	fxenv = new_fxenvironment( message );
 	if( fxenv ) {
 		env = &fxenv->env;
 		env->argc = argc - 1;
 		env->argv = &argv[ 1 ];
-		if( add_constants( fxconstants, env, message )
-		&& add_constants( constants, env, message )
-		&& add_event_constants( fxenv, message ) ) {
-			env->statements = fxstatements;
-			env->operators = fxoperators;
-			if( parse_ttfx_file( file_name, fxenv, message ) ) {
-				if( env->entry_points ) {
-					/* Initialize SDL. */
-					if( SDL_Init( SDL_INIT_AUDIO | SDL_INIT_VIDEO | SDL_INIT_TIMER ) == 0 ) {
-						/* Install signal handler. */
-						interrupt_handler = signal( SIGINT, signal_handler );
-						if( interrupt_handler != SIG_ERR ) {
-							/* Evaluate entry-point function. */
-							expr.line = env->entry_points->line;
-							expr.function = env->entry_points;
-							expr.evaluate = evaluate_function_expression;
-							if( initialize_globals( env, &except ) && expr.evaluate( &expr, NULL, &result, &except ) ) {
-								exit_code = EXIT_SUCCESS;
-							} else if( except.string_value && except.string_value->string == NULL ) {
-								exit_code = except.integer_value;
-							} else {
-								fprintf( stderr, "Unhandled exception %d.\n", except.integer_value );
-								if( except.string_value && except.string_value->string ) {
-									fprintf( stderr, "%s\n", except.string_value->string );
-								}
-							}
-							dispose_variable( &result );
-							dispose_variable( &except );
+		if( parse_ttfx_file( file_name, fxenv, message ) ) {
+			if( env->entry_points ) {
+				/* Initialize SDL. */
+				if( SDL_Init( SDL_INIT_AUDIO | SDL_INIT_VIDEO | SDL_INIT_TIMER ) == 0 ) {
+					/* Install signal handler. */
+					interrupt_handler = signal( SIGINT, signal_handler );
+					if( interrupt_handler != SIG_ERR ) {
+						/* Evaluate the last entry-point function. */
+						initialize_function_expr( &expr, env->entry_points );
+						if( initialize_globals( env, &except ) && expr.evaluate( &expr, NULL, &result, &except ) ) {
+							exit_code = EXIT_SUCCESS;
+						} else if( except.string_value && except.string_value->string == NULL ) {
+							exit_code = except.integer_value;
 						} else {
-							fprintf( stderr, "Unable to install signal handler: %s\n", strerror( errno ) );
+							fprintf( stderr, "Unhandled exception %d.\n", except.integer_value );
+							if( except.string_value && except.string_value->string ) {
+								fprintf( stderr, "%s\n", except.string_value->string );
+							}
 						}
-						SDL_Quit();
+						dispose_variable( &result );
+						dispose_variable( &except );
 					} else {
-						fprintf( stderr, "Unable to initialise SDL: %s\n", SDL_GetError() );
+						fprintf( stderr, "Unable to install signal handler: %s\n", strerror( errno ) );
 					}
+					SDL_Quit();
 				} else {
-					fprintf( stderr, "No programs found.\n" );
+					fprintf( stderr, "Unable to initialise SDL: %s\n", SDL_GetError() );
 				}
 			} else {
-				fprintf( stderr, "%s\n", message );
+				fprintf( stderr, "No programs found.\n" );
 			}
+		} else {
+			fprintf( stderr, "%s\n", message );
 		}
 		dispose_fxenvironment( ( struct fxenvironment * ) env );
 	} else {
-		fputs( "Out of memory.\n", stderr );
+		fputs( message, stderr );
 	}
 	return exit_code;
 }

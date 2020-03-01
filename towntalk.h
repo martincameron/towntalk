@@ -134,12 +134,15 @@ struct constant {
 	char *string_value;
 };
 
-struct keyword statements[ 22 ];
-struct operator operators[ 52 ];
-
 /* Initialize env with the the standard statements, operators and constants.
    Returns zero and writes message on failure. */
 int initialize_environment( struct environment *env, char *message );
+
+/* Add a copy of the specified statement list to env. Returns zero and writes message on failure. */
+int add_statements( struct keyword *statements, struct environment *env, char *message );
+
+/* Add a copy of the specified operator list to env. Returns zero and writes message on failure. */
+int add_operators( struct operator *operators, struct environment *env, char *message );
 
 /* Add the specified constants to env. Returns zero and writes message on failure. */
 int add_constants( struct constant *constants, struct environment *env, char *message );

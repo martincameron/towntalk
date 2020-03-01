@@ -609,6 +609,24 @@ static int compare_variables( struct variable *var1, struct variable *var2 ) {
 	return result;
 }
 
+static void dispose_keywords( struct keyword *keywords ) {
+	struct keyword *next;
+	while( keywords ) {
+		next = keywords->next;
+		free( keywords );
+		keywords = next;
+	}
+}
+
+static void dispose_operators( struct operator *operators ) {
+	struct operator *next;
+	while( operators ) {
+		next = operators->next;
+		free( operators );
+		operators = next;
+	}
+}
+
 static void dispose_expressions( struct expression *expr ) {
 	struct expression *next;
 	while( expr ) {
@@ -684,6 +702,8 @@ static void dispose_structure_declarations( struct structure *sct ) {
 /* Deallocate the specified environment and all types referenced by it. */
 void dispose_environment( struct environment *env ) {
 	if( env ) {
+		dispose_keywords( env->statements );
+		dispose_operators( env->operators );
 		dispose_global_variables( env->constants );
 		dispose_global_variables( env->globals );
 		dispose_arrays( &env->arrays );
@@ -2775,7 +2795,7 @@ static enum result evaluate_source_expression( struct expression *this, struct v
 	return OKAY;
 }
 
-struct operator operators[] = {
+static struct operator operators[] = {
 	{ ":", ':',-1, evaluate_function_expression, &operators[ 1 ] },
 	{ "%", '%', 2, evaluate_arithmetic_expression, &operators[ 2 ] },
 	{ "&", '&', 2, evaluate_arithmetic_expression, &operators[ 3 ] },
@@ -3400,7 +3420,7 @@ static struct element* parse_switch_statement( struct element *elem, struct envi
 	return next;
 }
 
-struct keyword statements[] = {
+static struct keyword statements[] = {
 	{ "rem", "{", parse_comment, &statements[ 1 ] },
 	{ "var", "V;", parse_local_declaration, &statements[ 2 ] },
 	{ "let", "d=x;", parse_assignment_statement, &statements[ 3 ] },
@@ -4078,12 +4098,48 @@ int initialize_globals( struct environment *env, struct variable *exception ) {
 	return 1;
 }
 
+/* Add a copy of the specified statement list to env. Returns zero and writes message on failure. */
+int add_statements( struct keyword *statements, struct environment *env, char *message ) {
+	struct keyword *statement;
+	while( statements ) {
+		statement = calloc( 1, sizeof( struct keyword ) );
+		if( statement ) {
+			memcpy( statement, statements, sizeof( struct keyword ) );
+			statement->next = env->statements;
+			env->statements = statement;
+		} else {
+			strcpy( message, OUT_OF_MEMORY );
+			return 0;
+		}
+		statements = statements->next;
+	}
+	return 1;
+}
+
+/* Add a copy of the specified operator list to env. Returns zero and writes message on failure. */
+int add_operators( struct operator *operators, struct environment *env, char *message ) {
+	struct operator *operator;
+	while( operators ) {
+		operator = calloc( 1, sizeof( struct operator ) );
+		if( operator ) {
+			memcpy( operator, operators, sizeof( struct operator ) );
+			operator->next = env->operators;
+			env->operators = operator;
+		} else {
+			strcpy( message, OUT_OF_MEMORY );
+			return 0;
+		}
+		operators = operators->next;
+	}
+	return 1;
+}
+
 /* Initialize env with the the standard statements, operators and constants.
    Returns zero and writes message on failure. */
 int initialize_environment( struct environment *env, char *message ) {
-	env->statements = statements;
-	env->operators = operators;
-	return add_constants( constants, env, message );
+	return add_statements( statements, env, message )
+		&& add_operators( operators, env, message )
+		&& add_constants( constants, env, message );
 }
 
 /* Initialize expr to execute the specified function when evaluated. */
@@ -4093,3 +4149,4 @@ void initialize_function_expr( struct expression *expr, struct function_declarat
 	expr->line = func->line;
 	expr->function = func;
 }
+
