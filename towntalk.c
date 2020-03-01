@@ -6,9 +6,10 @@
 #endif
 #include "errno.h"
 #include "stdio.h"
-#include "stdlib.h"
 #include "string.h"
 #include "time.h"
+
+#include "towntalk.h"
 
 /*
 	Towntalk (c)2020 Martin Cameron.
@@ -155,130 +156,6 @@
 static const int MAX_INTEGER = ( 1 << ( sizeof( int ) * 8 - 1 ) ) - 1u;
 static const char *OUT_OF_MEMORY = "Out of memory.";
 
-enum result {
-	EXCEPTION, OKAY, RETURN, BREAK, CONTINUE
-};
-
-/* Reference-counted string. */
-struct string {
-	size_t reference_count;
-	int length, line;
-	char *string;
-};
-
-struct element {
-	struct string str;
-	struct element *child, *next;
-};
-
-struct array {
-	struct string str;
-	int length;
-	struct variable *array;
-	struct array *prev, *next;
-};
-
-struct function_reference {
-	struct string str;
-	struct function_declaration *func;
-};
-
-/* Variable. */
-struct variable {
-	int integer_value;
-	struct string *string_value;
-};
-
-struct string_list {
-	char *value;
-	struct string_list *next;
-};
-
-struct structure {
-	char *name;
-	int length;
-	struct string_list *fields, *fields_tail;
-	struct structure *next;
-};
-
-/* Global variables. */
-struct global_variable {
-	char *name;
-	struct variable value;
-	struct expression *initializer;
-	struct global_variable *next;
-};
-
-/* Expression list. */
-struct expression {
-	int line, index;
-	struct global_variable *global;
-	struct function_declaration *function;
-	struct expression *parameters, *next;
-	enum result ( *evaluate )( struct expression *this, struct variable *variables,
-		struct variable *result, struct variable *exception );
-};
-
-/* Statement list. */
-struct statement {
-	int local;
-	struct variable *global;
-	struct expression *source, *destination, *index;
-	struct statement *if_block, *else_block, *next;
-	enum result ( *execute )( struct statement *this, struct variable *variables,
-		struct variable *result, struct variable *exception );
-};
-
-/* Execution environment. */
-struct environment {
-	int argc;
-	char **argv, interrupted;
-	struct array arrays;
-	struct keyword *statements;
-	struct operator *operators;
-	struct structure *structures;
-	struct global_variable *constants, *constants_tail;
-	struct global_variable *globals, *globals_tail;
-	struct function_declaration *functions, *entry_points;
-};
-
-/* Parser keyword. */
-struct keyword {
-	char *name, *syntax;
-	/* Parse the current declaration into env, or statement into prev->next. */
-	struct element* ( *parse )( struct element *elem, struct environment *env,
-		struct function_declaration *func, struct statement *prev, char *message );
-	struct keyword *next;
-};
-
-/* Parser operator. */
-struct operator {
-	char *name, oper;
-	int num_operands;
-	enum result ( *evaluate )( struct expression *this, struct variable *variables,
-		struct variable *result, struct variable *exception );
-	struct operator *next;
-};
-
-/* Function declaration list. */
-struct function_declaration {
-	char *name;
-	int line, num_parameters, num_variables;
-	struct function_reference ref;
-	struct string file;
-	struct element *elem;
-	struct environment *env;
-	struct string_list *variable_decls, *variable_decls_tail;
-	struct statement *statements, *statements_tail;
-	struct function_declaration *next;
-};
-
-struct constant {
-	char *name;
-	int integer_value;
-	char *string_value;
-};
-
 static struct constant constants[] = {
 	{ "FALSE", 0, NULL },
 	{  "TRUE", 1, NULL },
@@ -286,10 +163,8 @@ static struct constant constants[] = {
 };
 
 /* Forward declarations. */
-static void dispose_variable( struct variable *var );
 static int validate_name( char *name, struct environment *env );
 static int validate_decl( struct element *elem, struct environment *env, char *message );
-static int parse_tt_file( char *file_name, struct environment *env, char *message );
 static void parse_keywords( struct keyword *keywords, struct element *elem,
 	struct environment *env, struct function_declaration *func, struct statement *stmt, char *message );
 static struct element* parse_expression( struct element *elem, struct environment *env,
@@ -692,7 +567,9 @@ static void dispose_string_list( struct string_list *str ) {
 	}
 }
 
-static void dispose_variable( struct variable *var ) {
+/* Decrement the reference-count of any types referenced by var, and deallocate if necessary.
+   This must be called for all variables assigned during program execution. */
+void dispose_variable( struct variable *var ) {
 	if( var->string_value ) {
 		unref_string( var->string_value );
 		var->string_value = NULL;
@@ -804,7 +681,8 @@ static void dispose_structure_declarations( struct structure *sct ) {
 	}
 }
 
-static void dispose_environment( struct environment *env ) {
+/* Deallocate the specified environment and all types referenced by it. */
+void dispose_environment( struct environment *env ) {
 	if( env ) {
 		dispose_global_variables( env->constants );
 		dispose_global_variables( env->globals );
@@ -1130,7 +1008,8 @@ static void add_global( struct environment *env, struct global_variable *global 
 	env->globals_tail = global;
 }
 
-static int add_constants( struct constant *constants, struct environment *env, char *message ) {
+/* Add the specified constants to env. Returns zero and writes message on failure. */
+int add_constants( struct constant *constants, struct environment *env, char *message ) {
 	struct global_variable *global;
 	int idx = 0;
 	struct constant *con = &constants[ idx++ ];
@@ -2896,7 +2775,7 @@ static enum result evaluate_source_expression( struct expression *this, struct v
 	return OKAY;
 }
 
-static struct operator operators[] = {
+struct operator operators[] = {
 	{ ":", ':',-1, evaluate_function_expression, &operators[ 1 ] },
 	{ "%", '%', 2, evaluate_arithmetic_expression, &operators[ 2 ] },
 	{ "&", '&', 2, evaluate_arithmetic_expression, &operators[ 3 ] },
@@ -3521,7 +3400,7 @@ static struct element* parse_switch_statement( struct element *elem, struct envi
 	return next;
 }
 
-static struct keyword statements[] = {
+struct keyword statements[] = {
 	{ "rem", "{", parse_comment, &statements[ 1 ] },
 	{ "var", "V;", parse_local_declaration, &statements[ 2 ] },
 	{ "let", "d=x;", parse_assignment_statement, &statements[ 3 ] },
@@ -4139,7 +4018,9 @@ static int parse_tt_program( char *program, char *file_name, struct environment 
 	return message[ 0 ] == 0;
 }
 
-static int parse_tt_file( char *file_name, struct environment *env, char *message ) {
+/* Parse the specified program file into env.
+   Returns zero and writes up to 256 bytes to message on failure. */
+int parse_tt_file( char *file_name, struct environment *env, char *message ) {
 	long file_length, success = 0;
 	char *program_buffer, error[ 128 ] = "";
 	/* Load program file into string.*/
@@ -4174,7 +4055,9 @@ static int parse_tt_file( char *file_name, struct environment *env, char *messag
 	return success;
 }
 
-static int initialize_globals( struct environment *env, struct variable *exception ) {
+/* Evaluate the global-variable initialization expressions for env.
+   Returns zero and assigns exception on failure. */
+int initialize_globals( struct environment *env, struct variable *exception ) {
 	struct expression *init;
 	struct global_variable *global = env->constants;
 	while( global ) {
@@ -4193,4 +4076,20 @@ static int initialize_globals( struct environment *env, struct variable *excepti
 		global = global->next;
 	}
 	return 1;
+}
+
+/* Initialize env with the the standard statements, operators and constants.
+   Returns zero and writes message on failure. */
+int initialize_environment( struct environment *env, char *message ) {
+	env->statements = statements;
+	env->operators = operators;
+	return add_constants( constants, env, message );
+}
+
+/* Initialize expr to execute the specified function when evaluated. */
+void initialize_function_expr( struct expression *expr, struct function_declaration *func ) {
+	memset( expr, 0, sizeof( struct expression ) );
+	expr->evaluate = evaluate_function_expression;
+	expr->line = func->line;
+	expr->function = func;
 }

@@ -1,6 +1,10 @@
 
-#include "towntalk.c"
+#include "errno.h"
 #include "signal.h"
+#include "stdio.h"
+#include "string.h"
+
+#include "towntalk.h"
 
 static struct environment *env;
 
@@ -25,17 +29,13 @@ int main( int argc, char **argv ) {
 	if( env ) {
 		env->argc = argc - 1;
 		env->argv = &argv[ 1 ];
-		if( add_constants( constants, env, message ) ) {
-			env->statements = statements;
-			env->operators = operators;
+		if( initialize_environment( env, message ) ) {
 			if( parse_tt_file( file_name, env, message ) ) {
 				if( env->entry_points ) {
 					/* Install signal handler. */
 					if( signal( SIGINT, interrupt_handler ) != SIG_ERR ) {
-						/* Evaluate entry-point function. */
-						expr.line = env->entry_points->line;
-						expr.function = env->entry_points;
-						expr.evaluate = evaluate_function_expression;
+						/* Evaluate the last entry-point function. */
+						initialize_function_expr( &expr, env->entry_points );
 						if( initialize_globals( env, &except ) && expr.evaluate( &expr, NULL, &result, &except ) ) {
 							exit_code = EXIT_SUCCESS;
 						} else if( except.string_value && except.string_value->string == NULL ) {
