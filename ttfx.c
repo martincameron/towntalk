@@ -287,6 +287,7 @@ static void audio_callback( void *userdata, Uint8 *stream, int len ) {
 	int out_idx, out_end, aud_idx, ampl;
 	int chan_idx, count, offset = 0;
 	#if defined( ALSA_MIDI )
+	SDL_Event event = { 0 };
 	unsigned char chr;
 	if( fxenv->midi_in ) {
 		while( snd_rawmidi_read( fxenv->midi_in, &chr, 1 ) > 0 ) {
