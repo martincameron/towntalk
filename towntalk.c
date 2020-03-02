@@ -153,8 +153,11 @@
 		$interrupted             Check and clear program interrupt status.
 */
 
-static const int MAX_INTEGER = ( 1 << ( sizeof( int ) * 8 - 1 ) ) - 1u;
-static const char *OUT_OF_MEMORY = "Out of memory.";
+/* The maximum integer value. */
+const int MAX_INTEGER = ( 1 << ( sizeof( int ) * 8 - 1 ) ) - 1u;
+
+/* Message to be used to avoid memory allocation in out-of-memory error paths. */
+const char *OUT_OF_MEMORY = "Out of memory.";
 
 static struct constant constants[] = {
 	{ "FALSE", 0, NULL },
@@ -182,7 +185,8 @@ static struct element* parse_case_statement( struct element *elem, struct enviro
 static struct element* parse_default_statement( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev, char *message );
 
-static int chop( char *str, const char *separators ) {
+/* Return the index of the last separator char encountered in str. */
+int chop( char *str, const char *separators ) {
 	int idx = 0, offset = 0;
 	char chr = str[ idx++ ];
 	while( chr ) {
@@ -234,7 +238,8 @@ static struct element* new_element( int str_len ) {
 	return elem;
 }
 
-static struct array* new_array( struct environment *env, int length ) {
+/* Allocate and return a new array of the specified number of elements. */
+struct array* new_array( struct environment *env, int length ) {
 	struct array *arr = calloc( 1, sizeof( struct array ) );
 	if( arr ) {
 		arr->str.string = "#Array#";
@@ -258,7 +263,8 @@ static struct array* new_array( struct environment *env, int length ) {
 	return arr;
 }
 
-static struct string* new_string_value( int length ) {
+/* Allocate and return a string of the specified length and reference count of 1. */
+struct string* new_string_value( int length ) {
 	struct string *str = malloc( sizeof( struct string ) + sizeof( char ) * ( length + 1 ) );
 	if( str ) {
 		memset( str, 0, sizeof( struct string ) );
@@ -432,7 +438,8 @@ static int parse_child_element( char *buffer, int idx, struct element *parent, c
 	return idx;
 }
 
-static void unref_string( struct string *str ) {
+/* Decrement the reference count of the specified value and deallocate if necessary. */
+void unref_string( struct string *str ) {
 	int idx, len;
 	struct array *arr;
 	struct element *elem;
@@ -494,7 +501,9 @@ static struct element* parse_element( char *buffer, char *message ) {
 	return elem.child;
 }
 
-static long load_file( char *file_name, char *buffer, char *message ) {
+/* Load the specified file into buffer (if not null) and returns the file length.
+   Returns -1 and writes message on failure. */
+long load_file( char *file_name, char *buffer, char *message ) {
 	long file_length = -1, bytes_read;
 	FILE *input_file = fopen( file_name, "rb" );
 	if( input_file != NULL ) {
@@ -576,7 +585,8 @@ void dispose_variable( struct variable *var ) {
 	}
 }
 
-static void assign_variable( struct variable *src, struct variable *dest ) {
+/* Assign src variable to dest, managing reference counts. */
+void assign_variable( struct variable *src, struct variable *dest ) {
 	dispose_variable( dest );
 	dest->integer_value = src->integer_value;
 	dest->string_value = src->string_value;
@@ -740,7 +750,8 @@ static int get_string_list_index( struct string_list *list, char *value ) {
 	return idx;
 }
 
-static enum result throw( struct variable *exception, struct expression *source, int integer, const char *string ) {
+/* Assign the specified error code and message to the exception variable and return EXCEPTION. */
+enum result throw( struct variable *exception, struct expression *source, int integer, const char *string ) {
 	struct string *str;
 	if( string ) {
 		str = new_string_value( strlen( string ) + 64 );
@@ -758,9 +769,9 @@ static enum result throw( struct variable *exception, struct expression *source,
 	return EXCEPTION;
 }
 
-static enum result throw_exit( struct variable *exception, int exit_code ) {
+/* Assign an uncatchable exception variable with the specified exit code. */
+enum result throw_exit( struct variable *exception, int exit_code ) {
 	static struct string EXIT_STRING = { 2 };
-	/* Throw an uncatchable exception. */
 	dispose_variable( exception );
 	exception->integer_value = exit_code;
 	exception->string_value = &EXIT_STRING;
@@ -1002,7 +1013,8 @@ static struct global_variable* new_array_variable( struct environment *env,
 	return global;
 }
 
-static struct statement* new_statement( char *message ) {
+/* Allocate and return a new statement. Returns NULL and writes message on failure. */
+struct statement* new_statement( char *message ) {
 	struct statement *stmt = calloc( 1, sizeof( struct statement ) );
 	if( stmt == NULL ) {
 		strcpy( message, OUT_OF_MEMORY );
@@ -2688,7 +2700,8 @@ static enum result evaluate_pack_expression( struct expression *this, struct var
 	return ret;
 }
 
-static int unpack( char *str, int idx ) {
+/* Unpack a 32-bit big-endian integer from str at the specified index. */
+int unpack( char *str, int idx ) {
 	return ( ( str[ idx * 4 ] & 0xFF ) << 24 ) | ( ( str[ idx * 4 + 1 ] & 0xFF ) << 16 )
 		| ( (  str[ idx * 4 + 2 ] & 0xFF ) <<  8 ) | ( str[ idx * 4 + 3 ] & 0xFF );
 }
@@ -3257,7 +3270,8 @@ static struct element* parse_assignment_statement( struct element *elem, struct 
 	return next;
 }
 
-static struct element* parse_expr_list_statement( struct element *elem, struct environment *env,
+/* Parse a statement that expects one or more expressions after the keyword. */
+struct element* parse_expr_list_statement( struct element *elem, struct environment *env,
 	struct function_declaration *func, struct statement *prev,
 	enum result ( *execute )( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ), char *message ) {
@@ -4006,7 +4020,8 @@ static void parse_function_body( struct function_declaration *func, struct envir
 	}
 }
 
-static int parse_tt_program( char *program, char *file_name, struct environment *env, char *message ) {
+/* Parse the specified program text into env. Returns zero and writes message on failure. */
+int parse_tt_program( char *program, char *file_name, struct environment *env, char *message ) {
 	struct element *elem;
 	struct function_declaration *empty, *func;
 	elem = parse_element( program, message );

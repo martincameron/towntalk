@@ -1,14 +1,17 @@
 
-#include "towntalk.c"
+#include "dirent.h"
+#include "errno.h"
+#include "signal.h"
+#include "string.h"
+#include "sys/stat.h"
 
 #include "SDL.h"
-#include "dirent.h"
-#include "signal.h"
-#include "sys/stat.h"
 
 #if defined( ALSA_MIDI )
 #include "alsa/asoundlib.h"
 #endif
+
+#include "towntalk.h"
 
 #if defined( __MINGW32__ )
 #define realpath( path, resolved_path ) _fullpath( NULL, ( path ), 0 )
@@ -1215,7 +1218,7 @@ static struct operator fxoperators[] = {
 	{ "$window",'$', 0, evaluate_window_expression, &fxoperators[ 14 ] },
 	{ "$keyheld",'$', 0, evaluate_keyheld_expression, &fxoperators[ 15 ] },
 	{ "$datfile",'$', 0, evaluate_datfile_expression, &fxoperators[ 16 ] },
-	{ "$extract",'$', 2, evaluate_extract_expression, operators }
+	{ "$extract",'$', 2, evaluate_extract_expression, NULL }
 };
 
 static struct keyword fxstatements[] = {
@@ -1230,7 +1233,7 @@ static struct keyword fxstatements[] = {
 	{ "fxsample", "xxxx;", parse_fxsample_statement, &fxstatements[ 9 ] },
 	{ "fxqueue", "xx;", parse_fxqueue_statement, &fxstatements[ 10 ] },
 	{ "fxplay", "xx;", parse_fxplay_statement, &fxstatements[ 11 ] },
-	{ "fxmidi", "x;", parse_fxmidi_statement, statements }
+	{ "fxmidi", "x;", parse_fxmidi_statement, NULL }
 };
 
 static int add_event_constants( struct fxenvironment *env, char *message ) {

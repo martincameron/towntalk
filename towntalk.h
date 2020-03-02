@@ -134,6 +134,12 @@ struct constant {
 	char *string_value;
 };
 
+/* The maximum integer value. */
+const int MAX_INTEGER;
+
+/* Message to be used to avoid memory allocation in out-of-memory error paths. */
+const char *OUT_OF_MEMORY;
+
 /* Initialize env with the the standard statements, operators and constants.
    Returns zero and writes message on failure. */
 int initialize_environment( struct environment *env, char *message );
@@ -151,6 +157,9 @@ int add_constants( struct constant *constants, struct environment *env, char *me
    Returns zero and writes up to 256 bytes to message on failure. */
 int parse_tt_file( char *file_name, struct environment *env, char *message );
 
+/* Parse the specified program text into env. Returns zero and writes message on failure. */
+int parse_tt_program( char *program, char *file_name, struct environment *env, char *message );
+
 /* Initialize expr to execute the specified function when evaluated. */
 void initialize_function_expr( struct expression *expr, struct function_declaration *func );
 
@@ -164,5 +173,42 @@ void dispose_variable( struct variable *var );
 
 /* Deallocate the specified environment and all types referenced by it. */
 void dispose_environment( struct environment *env );
+
+/* Parse a statement that expects one or more expressions after the keyword. */
+struct element* parse_expr_list_statement( struct element *elem, struct environment *env,
+	struct function_declaration *func, struct statement *prev,
+	enum result ( *execute )( struct statement *this, struct variable *variables,
+	struct variable *result, struct variable *exception ), char *message );
+
+/* Allocate and return a new statement. Returns NULL and writes message on failure. */
+struct statement* new_statement( char *message );
+
+/* Allocate and return a string of the specified length and reference count of 1. */
+struct string* new_string_value( int length );
+
+/* Allocate and return a new array of the specified number of elements and reference count of 1. */
+struct array* new_array( struct environment *env, int length );
+
+/* Decrement the reference count of the specified value and deallocate if necessary. */
+void unref_string( struct string *str );
+
+/* Assign src variable to dest, managing reference counts. */
+void assign_variable( struct variable *src, struct variable *dest );
+
+/* Assign the specified error code and message to the exception variable and return EXCEPTION. */
+enum result throw( struct variable *exception, struct expression *source, int integer, const char *string );
+
+/* Assign an uncatchable exception variable with the specified exit code and return EXCEPTION. */
+enum result throw_exit( struct variable *exception, int exit_code );
+
+/* Load the specified file into buffer (if not null) and returns the file length.
+   Returns -1 and writes message on failure. */
+long load_file( char *file_name, char *buffer, char *message );
+
+/* Return the index of the last separator char encountered in str. */
+int chop( char *str, const char *separators );
+
+/* Unpack a 32-bit big-endian integer from str at the specified index. */
+int unpack( char *str, int idx );
 
 /* --- */
