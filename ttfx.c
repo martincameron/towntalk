@@ -1237,25 +1237,17 @@ static struct keyword fxstatements[] = {
 };
 
 static int add_event_constants( struct fxenvironment *env, char *message ) {
-	int event_type = SDL_USEREVENT;
-	struct constant event[ 2 ] = { NULL };
+	struct constant event[ 4 ] = { NULL };
+	env->timer_event_type = SDL_USEREVENT;
 	event[ 0 ].name = "FX_TIMER";
-	event[ 0 ].integer_value = event_type;
-	if( add_constants( &event[ 0 ], &env->env, message ) ) {
-		env->timer_event_type = event_type++;
-		event[ 0 ].name = "FX_SEQUENCER";
-		event[ 0 ].integer_value = event_type;
-		if( add_constants( &event[ 0 ], &env->env, message ) ) {
-			env->seq_event_type = event_type++;
-			event[ 0 ].name = "FX_MIDI";
-			event[ 0 ].integer_value = event_type;
-			if( add_constants( &event[ 0 ], &env->env, message ) ) {
-				env->midi_event_type = event_type;
-				return 1;
-			}
-		}
-	}
-	return 0;
+	event[ 0 ].integer_value = env->timer_event_type;
+	env->seq_event_type = SDL_USEREVENT + 1;
+	event[ 1 ].name = "FX_SEQUENCER";
+	event[ 1 ].integer_value = env->seq_event_type;
+	env->midi_event_type = SDL_USEREVENT + 2;
+	event[ 2 ].name = "FX_MIDI";
+	event[ 2 ].integer_value = env->midi_event_type;
+	return add_constants( &event[ 0 ], &env->env, message );
 }
 
 static void dispose_fxenvironment( struct fxenvironment *fxenv ) {
