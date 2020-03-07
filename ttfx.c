@@ -388,13 +388,13 @@ static void audio_callback( void *userdata, Uint8 *stream, int len ) {
 	}
 }
 
-#if SDL_MAJOR_VERSION > 1
-
 static enum result execute_fxopen_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct variable width = { 0, NULL }, height = { 0, NULL }, caption = { 0, NULL };
 	struct expression *expr = this->source;
+#if SDL_MAJOR_VERSION > 1
 	struct fxenvironment *fxenv = ( struct fxenvironment * ) expr->function->env;
+#endif
 	enum result ret = expr->evaluate( expr, variables, &width, exception );
 	if( ret ) {
 		expr = expr->next;
@@ -403,6 +403,7 @@ static enum result execute_fxopen_statement( struct statement *this, struct vari
 			expr = expr->next;
 			ret = expr->evaluate( expr, variables, &caption, exception );
 			if( ret ) {
+#if SDL_MAJOR_VERSION > 1
 				if( !fxenv->window ) {
 					fxenv->window = SDL_CreateWindow(
 						caption.string_value ? caption.string_value->string : "",
@@ -439,6 +440,14 @@ static enum result execute_fxopen_statement( struct statement *this, struct vari
 				} else {
 					ret = throw( exception, this->source, 0, "Window already open." );
 				}
+#else
+				if( caption.string_value ) {
+					SDL_WM_SetCaption( caption.string_value->string, "" );
+				}
+				if( SDL_SetVideoMode( width.integer_value, height.integer_value, 32, SDL_HWSURFACE ) == NULL ) {
+					ret = throw( exception, this->source, 0, SDL_GetError() );
+				}
+#endif
 				dispose_variable( &caption );
 			}
 			dispose_variable( &height );
@@ -455,7 +464,11 @@ static enum result execute_fxsurface_statement( struct statement *this, struct v
 	struct variable params[ 4 ], *values;
 	struct array *arr;
 	Uint32 *pixels;
+#if SDL_MAJOR_VERSION > 1
 	struct SDL_Texture *texture = NULL;
+#else
+	struct SDL_Surface *surface = NULL;
+#endif
 	struct expression *expr = this->source;
 	struct fxenvironment *fxenv = ( struct fxenvironment * ) expr->function->env;
 	memset( params, 0, 4 * sizeof( struct variable ) );
@@ -471,6 +484,7 @@ static enum result execute_fxsurface_statement( struct statement *this, struct v
 			width = params[ 1 ].integer_value;
 			height = params[ 2 ].integer_value;
 			if( width > 0 && height > 0 ) {
+#if SDL_MAJOR_VERSION > 1
 				texture = SDL_CreateTexture( fxenv->renderer,
 					SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, width, height );
 				if( texture ) {
@@ -514,157 +528,7 @@ static enum result execute_fxsurface_statement( struct statement *this, struct v
 				} else {
 					ret = throw( exception, this->source, 0, SDL_GetError() );
 				}
-			} else {
-				ret = throw( exception, this->source, 0, "Invalid surface dimensions." );
-			}
-		} else {
-			ret = throw( exception, this->source, surf, "Surface index out of bounds." );
-		}
-	}
-	idx = 0;
-	while( idx < 4 ) {
-		dispose_variable( &params[ idx++ ] );
-	}
-	return ret;
-}
-
-static enum result execute_fxblit_statement( struct statement *this, struct variable *variables,
-	struct variable *result, struct variable *exception ) {
-	int idx = 0;
-	enum result ret;
-	struct SDL_Rect clip, dest;
-	struct variable params[ 7 ];
-	struct expression *expr = this->source;
-	struct fxenvironment *fxenv = ( struct fxenvironment * ) expr->function->env;
-	memset( params, 0, 7 * sizeof( struct variable ) );
-	ret = expr->evaluate( expr, variables, &params[ idx++ ], exception );
-	expr = expr->next;
-	while( ret && expr ) {
-		ret = expr->evaluate( expr, variables, &params[ idx++ ], exception );
-		expr = expr->next;
-	}
-	if( ret ) {
-		idx = params[ 0 ].integer_value;
-		if( idx >= 0 && idx < NUM_SURFACES ) {
-			clip.x = params[ 5 ].integer_value;
-			clip.y = params[ 6 ].integer_value;
-			clip.w = params[ 3 ].integer_value;
-			clip.h = params[ 4 ].integer_value;
-			dest.x = clip.x - params[ 1 ].integer_value;
-			dest.y = clip.y - params[ 2 ].integer_value;
-			SDL_QueryTexture( fxenv->surfaces[ idx ], NULL, NULL, &dest.w, &dest.h );
-			SDL_RenderSetClipRect( fxenv->renderer, &clip );
-			if( SDL_RenderCopy( fxenv->renderer, fxenv->surfaces[ idx ], NULL, &dest ) ) {
-				ret = throw( exception, this->source, 0, SDL_GetError() );
-			}
-		} else {
-			ret = throw( exception, this->source, idx, "Surface index out of bounds." );
-		}
-	}
-	idx = 0;
-	while( idx < 7 ) {
-		dispose_variable( &params[ idx++ ] );
-	}
-	return ret;
-}
-
-static enum result execute_fxrect_statement( struct statement *this, struct variable *variables,
-	struct variable *result, struct variable *exception ) {
-	enum result ret;
-	int colour, idx = 0;
-	struct SDL_Rect rect;
-	struct variable params[ 5 ];
-	struct expression *expr = this->source;
-	struct fxenvironment *fxenv = ( struct fxenvironment * ) expr->function->env;
-	memset( params, 0, 5 * sizeof( struct variable ) );
-	ret = expr->evaluate( expr, variables, &params[ idx++ ], exception );
-	expr = expr->next;
-	while( ret && expr ) {
-		ret = expr->evaluate( expr, variables, &params[ idx++ ], exception );
-		expr = expr->next;
-	}
-	if( ret ) {
-		rect.x = params[ 0 ].integer_value;
-		rect.y = params[ 1 ].integer_value;
-		rect.w = params[ 2 ].integer_value;
-		rect.h = params[ 3 ].integer_value;
-		colour = params[ 4 ].integer_value;
-		SDL_RenderSetClipRect( fxenv->renderer, NULL );
-		SDL_SetRenderDrawColor( fxenv->renderer,
-			( colour >> 16 ) & 0xFF, ( colour >> 8 ) & 0xFF, colour & 0xFF, 0xFF );
-		if( SDL_RenderFillRect( fxenv->renderer, &rect ) ) {
-			ret = throw( exception, this->source, 0, SDL_GetError() );
-		}
-	}
-	idx = 0;
-	while( idx < 5 ) {
-		dispose_variable( &params[ idx++ ] );
-	}
-	return ret;
-}
-
-static enum result execute_fxshow_statement( struct statement *this, struct variable *variables,
-	struct variable *result, struct variable *exception ) {
-	struct fxenvironment *fxenv = ( struct fxenvironment * ) this->source->function->env;
-	SDL_SetRenderTarget( fxenv->renderer, NULL );
-	SDL_RenderCopy( fxenv->renderer, fxenv->target, NULL, NULL );
-	SDL_RenderPresent( fxenv->renderer );
-	SDL_SetRenderTarget( fxenv->renderer, fxenv->target );
-	return OKAY;
-}
-
 #else
-
-static enum result execute_fxopen_statement( struct statement *this, struct variable *variables,
-	struct variable *result, struct variable *exception ) {
-	struct variable width = { 0, NULL }, height = { 0, NULL }, caption = { 0, NULL };
-	struct expression *expr = this->source;
-	enum result ret = expr->evaluate( expr, variables, &width, exception );
-	if( ret ) {
-		expr = expr->next;
-		ret = expr->evaluate( expr, variables, &height, exception );
-		if( ret ) {
-			expr = expr->next;
-			ret = expr->evaluate( expr, variables, &caption, exception );
-			if( ret ) {
-				if( caption.string_value ) {
-					SDL_WM_SetCaption( caption.string_value->string, "" );
-				}
-				if( SDL_SetVideoMode( width.integer_value, height.integer_value, 32, SDL_HWSURFACE ) == NULL ) {
-					ret = throw( exception, this->source, 0, SDL_GetError() );
-				}
-				dispose_variable( &caption );
-			}
-			dispose_variable( &height );
-		}
-		dispose_variable( &width );
-	}
-	return ret;
-}
-
-static enum result execute_fxsurface_statement( struct statement *this, struct variable *variables,
-	struct variable *result, struct variable *exception ) {
-	enum result ret;
-	int surf, width, height, len, idx = 0;
-	struct variable params[ 4 ], *values;
-	struct array *arr;
-	Uint32 *pixels;
-	struct SDL_Surface *surface = NULL;
-	struct expression *expr = this->source;
-	struct fxenvironment *fxenv = ( struct fxenvironment * ) expr->function->env;
-	memset( params, 0, 4 * sizeof( struct variable ) );
-	ret = expr->evaluate( expr, variables, &params[ idx++ ], exception );
-	expr = expr->next;
-	while( ret && expr ) {
-		ret = expr->evaluate( expr, variables, &params[ idx++ ], exception );
-		expr = expr->next;
-	}
-	if( ret ) {
-		surf = params[ 0 ].integer_value;
-		if( surf >= 0 && surf < NUM_SURFACES ) {
-			width = params[ 1 ].integer_value;
-			height = params[ 2 ].integer_value;
-			if( width > 0 && height > 0 ) {
 				surface = SDL_CreateRGBSurface( SDL_HWSURFACE, width, height,
 					32, 0xFF000000, 0x00FF0000, 0x0000FF00, 0x000000FF );
 				if( surface ) {
@@ -704,6 +568,7 @@ static enum result execute_fxsurface_statement( struct statement *this, struct v
 				} else {
 					ret = throw( exception, this->source, 0, SDL_GetError() );
 				}
+#endif
 			} else {
 				ret = throw( exception, this->source, 0, "Invalid surface dimensions." );
 			}
@@ -722,7 +587,11 @@ static enum result execute_fxblit_statement( struct statement *this, struct vari
 	struct variable *result, struct variable *exception ) {
 	int idx = 0;
 	enum result ret;
+#if SDL_MAJOR_VERSION > 1
+	struct SDL_Rect clip, dest;
+#else
 	struct SDL_Rect src, dest;
+#endif
 	struct variable params[ 7 ];
 	struct expression *expr = this->source;
 	struct fxenvironment *fxenv = ( struct fxenvironment * ) expr->function->env;
@@ -736,6 +605,19 @@ static enum result execute_fxblit_statement( struct statement *this, struct vari
 	if( ret ) {
 		idx = params[ 0 ].integer_value;
 		if( idx >= 0 && idx < NUM_SURFACES ) {
+#if SDL_MAJOR_VERSION > 1
+			clip.x = params[ 5 ].integer_value;
+			clip.y = params[ 6 ].integer_value;
+			clip.w = params[ 3 ].integer_value;
+			clip.h = params[ 4 ].integer_value;
+			dest.x = clip.x - params[ 1 ].integer_value;
+			dest.y = clip.y - params[ 2 ].integer_value;
+			SDL_QueryTexture( fxenv->surfaces[ idx ], NULL, NULL, &dest.w, &dest.h );
+			SDL_RenderSetClipRect( fxenv->renderer, &clip );
+			if( SDL_RenderCopy( fxenv->renderer, fxenv->surfaces[ idx ], NULL, &dest ) ) {
+				ret = throw( exception, this->source, 0, SDL_GetError() );
+			}
+#else
 			src.x = params[ 1 ].integer_value;
 			src.y = params[ 2 ].integer_value;
 			src.w = params[ 3 ].integer_value;
@@ -745,6 +627,7 @@ static enum result execute_fxblit_statement( struct statement *this, struct vari
 			if( SDL_BlitSurface( fxenv->surfaces[ idx ], &src, SDL_GetVideoSurface(), &dest ) ) {
 				ret = throw( exception, this->source, 0, SDL_GetError() );
 			}
+#endif
 		} else {
 			ret = throw( exception, this->source, idx, "Surface index out of bounds." );
 		}
@@ -758,11 +641,15 @@ static enum result execute_fxblit_statement( struct statement *this, struct vari
 
 static enum result execute_fxrect_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	int idx = 0;
 	enum result ret;
+	int idx = 0;
 	struct SDL_Rect rect;
 	struct variable params[ 5 ];
 	struct expression *expr = this->source;
+#if SDL_MAJOR_VERSION > 1
+	int colour;
+	struct fxenvironment *fxenv = ( struct fxenvironment * ) expr->function->env;
+#endif
 	memset( params, 0, 5 * sizeof( struct variable ) );
 	ret = expr->evaluate( expr, variables, &params[ idx++ ], exception );
 	expr = expr->next;
@@ -775,9 +662,19 @@ static enum result execute_fxrect_statement( struct statement *this, struct vari
 		rect.y = params[ 1 ].integer_value;
 		rect.w = params[ 2 ].integer_value;
 		rect.h = params[ 3 ].integer_value;
+#if SDL_MAJOR_VERSION > 1
+		colour = params[ 4 ].integer_value;
+		SDL_RenderSetClipRect( fxenv->renderer, NULL );
+		SDL_SetRenderDrawColor( fxenv->renderer,
+			( colour >> 16 ) & 0xFF, ( colour >> 8 ) & 0xFF, colour & 0xFF, 0xFF );
+		if( SDL_RenderFillRect( fxenv->renderer, &rect ) ) {
+			ret = throw( exception, this->source, 0, SDL_GetError() );
+		}
+#else
 		if( SDL_FillRect( SDL_GetVideoSurface(), &rect, params[ 4 ].integer_value ) ) {
 			ret = throw( exception, this->source, 0, SDL_GetError() );
 		}
+#endif
 	}
 	idx = 0;
 	while( idx < 5 ) {
@@ -788,11 +685,17 @@ static enum result execute_fxrect_statement( struct statement *this, struct vari
 
 static enum result execute_fxshow_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
+#if SDL_MAJOR_VERSION > 1
+	struct fxenvironment *fxenv = ( struct fxenvironment * ) this->source->function->env;
+	SDL_SetRenderTarget( fxenv->renderer, NULL );
+	SDL_RenderCopy( fxenv->renderer, fxenv->target, NULL, NULL );
+	SDL_RenderPresent( fxenv->renderer );
+	SDL_SetRenderTarget( fxenv->renderer, fxenv->target );
+#else
 	SDL_UpdateRect( SDL_GetVideoSurface(), 0, 0, 0, 0 );
+#endif
 	return OKAY;
 }
-
-#endif
 
 static enum result execute_fxsleep_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
