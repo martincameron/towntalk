@@ -752,7 +752,7 @@ static int get_string_list_index( struct string_list *list, char *value ) {
 
 /* Assign the specified error code and message to the exception variable and return EXCEPTION. */
 enum result throw( struct variable *exception, struct expression *source, int integer, const char *string ) {
-	struct string *str;
+	struct string *str = NULL;
 	if( string ) {
 		str = new_string_value( strlen( string ) + 64 );
 		if( str ) {

@@ -1,6 +1,6 @@
 
 CC=gcc
-CFLAGS=-Wall -g
+CFLAGS=-Wall -Og
 ANSI_C=-ansi -pedantic
 
 all: tt
