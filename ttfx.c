@@ -57,25 +57,26 @@ struct fxchannel {
 struct fxenvironment {
 	struct environment env;
 	struct variable datfile;
-	#if SDL_MAJOR_VERSION > 1
+#if SDL_MAJOR_VERSION > 1
 	SDL_Keycode key;
 	struct SDL_Window *window;
 	struct SDL_Renderer *renderer;
 	struct SDL_Texture *target, *surfaces[ NUM_SURFACES ];
-	#else
+#else
 	SDLKey key;
 	struct SDL_Surface *surfaces[ NUM_SURFACES ];
-	#endif
+#endif
 	SDL_TimerID timer;
+	int win_event, key_held, wheel;
 	struct fxsample samples[ NUM_SAMPLES ];
 	struct fxchannel channels[ NUM_CHANNELS ];
 	int timer_event_type, seq_event_type, midi_event_type;
-	int tick, tick_len, audio_idx, audio_end, seq_msg, midi_msg, win_event, key_held;
+	int tick, tick_len, audio_idx, audio_end, seq_msg, midi_msg;
 	int audio[ ( MAX_TICK_LEN + 33 ) * 4 ], ramp_buf[ 64 ];
-	#if defined( ALSA_MIDI )
+#if defined( ALSA_MIDI )
 	int midi_buf, midi_idx;
 	snd_rawmidi_t *midi_in;
-	#endif
+#endif
 };
 
 static struct fxenvironment *fxenv;
@@ -1007,6 +1008,8 @@ static enum result handle_event_expression( struct expression *this, SDL_Event *
 			fxenv->key = event->key.keysym.sym;
 #if SDL_MAJOR_VERSION > 1
 			fxenv->key_held = event->key.repeat;
+		} else if( event->type == SDL_MOUSEWHEEL ) {
+			fxenv->wheel = event->wheel.y;
 #endif
 		}
 		dispose_variable( result );
@@ -1083,6 +1086,14 @@ static enum result evaluate_mousekey_expression( struct expression *this, struct
 	struct variable *result, struct variable *exception ) {
 	dispose_variable( result );
 	result->integer_value = SDL_GetMouseState( NULL, NULL );
+	result->string_value = NULL;
+	return OKAY;
+}
+
+static enum result evaluate_mousewheel_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	dispose_variable( result );
+	result->integer_value = ( ( struct fxenvironment * ) this->function->env )->wheel;
 	result->string_value = NULL;
 	return OKAY;
 }
@@ -1330,6 +1341,11 @@ static struct constant fxconstants[] = {
 	{ "FX_MOUSEMOTION", SDL_MOUSEMOTION, NULL },
 	{ "FX_MOUSEKEYDOWN", SDL_MOUSEBUTTONDOWN, NULL },
 	{ "FX_MOUSEKEYUP", SDL_MOUSEBUTTONUP, NULL },
+#if SDL_MAJOR_VERSION > 1
+	{ "FX_MOUSEWHEEL", SDL_MOUSEWHEEL, NULL },
+#else
+	{ "FX_MOUSEWHEEL", SDL_NOEVENT, NULL },
+#endif
 	{ "FX_KEY_BACKSPACE", SDLK_BACKSPACE, NULL },
 	{ "FX_KEY_TAB", SDLK_TAB, NULL },
 	{ "FX_KEY_RETURN", SDLK_RETURN, NULL },
@@ -1366,23 +1382,24 @@ static struct constant fxconstants[] = {
 };
 
 static struct operator fxoperators[] = {
-	{ "$millis",'$', 0, evaluate_millis_expression, &fxoperators[ 1 ] },
-	{ "$fxpoll",'$', 0, evaluate_fxpoll_expression, &fxoperators[ 2 ] },
-	{ "$fxwait",'$', 0, evaluate_fxwait_expression, &fxoperators[ 3 ] },
-	{ "$xmouse",'$', 0, evaluate_xmouse_expression, &fxoperators[ 4 ] },
-	{ "$ymouse",'$', 0, evaluate_ymouse_expression, &fxoperators[ 5 ] },
-	{ "$mousekey",'$', 0, evaluate_mousekey_expression, &fxoperators[ 6 ] },
-	{ "$keyboard",'$', 0, evaluate_keyboard_expression, &fxoperators[ 7 ] },
-	{ "$keyshift",'$', 0, evaluate_keyshift_expression, &fxoperators[ 8 ] },
-	{ "$fxtick",'$', 0, evaluate_fxtick_expression, &fxoperators[ 9 ] },
-	{ "$fxseq",'$', 0, evaluate_fxseq_expression, &fxoperators[ 10 ] },
-	{ "$fxdir",'$', 1, evaluate_fxdir_expression, &fxoperators[ 11 ] },
-	{ "$fxpath",'$', 1, evaluate_fxpath_expression, &fxoperators[ 12 ] },
-	{ "$midimsg",'$', 0, evaluate_midimsg_expression, &fxoperators[ 13 ] },
-	{ "$window",'$', 0, evaluate_window_expression, &fxoperators[ 14 ] },
-	{ "$keyheld",'$', 0, evaluate_keyheld_expression, &fxoperators[ 15 ] },
-	{ "$datfile",'$', 0, evaluate_datfile_expression, &fxoperators[ 16 ] },
-	{ "$extract",'$', 2, evaluate_extract_expression, NULL }
+	{ "$millis", '$', 0, evaluate_millis_expression, &fxoperators[ 1 ] },
+	{ "$fxpoll", '$', 0, evaluate_fxpoll_expression, &fxoperators[ 2 ] },
+	{ "$fxwait", '$', 0, evaluate_fxwait_expression, &fxoperators[ 3 ] },
+	{ "$xmouse", '$', 0, evaluate_xmouse_expression, &fxoperators[ 4 ] },
+	{ "$ymouse", '$', 0, evaluate_ymouse_expression, &fxoperators[ 5 ] },
+	{ "$mousekey", '$', 0, evaluate_mousekey_expression, &fxoperators[ 6 ] },
+	{ "$mousewheel", '$', 0, evaluate_mousewheel_expression, &fxoperators[ 7 ] },
+	{ "$keyboard", '$', 0, evaluate_keyboard_expression, &fxoperators[ 8 ] },
+	{ "$keyshift", '$', 0, evaluate_keyshift_expression, &fxoperators[ 9 ] },
+	{ "$fxtick", '$', 0, evaluate_fxtick_expression, &fxoperators[ 10 ] },
+	{ "$fxseq", '$', 0, evaluate_fxseq_expression, &fxoperators[ 11 ] },
+	{ "$fxdir", '$', 1, evaluate_fxdir_expression, &fxoperators[ 12 ] },
+	{ "$fxpath", '$', 1, evaluate_fxpath_expression, &fxoperators[ 13 ] },
+	{ "$midimsg", '$', 0, evaluate_midimsg_expression, &fxoperators[ 14 ] },
+	{ "$window", '$', 0, evaluate_window_expression, &fxoperators[ 15 ] },
+	{ "$keyheld", '$', 0, evaluate_keyheld_expression, &fxoperators[ 16 ] },
+	{ "$datfile", '$', 0, evaluate_datfile_expression, &fxoperators[ 17 ] },
+	{ "$extract", '$', 2, evaluate_extract_expression, NULL }
 };
 
 static struct keyword fxstatements[] = {
