@@ -817,6 +817,14 @@ function tg_scan( event ) {
 				let tg_sely = 0;
 			}
 		}
+		case FX_MOUSEWHEEL {
+			let n = tg_find( $xmouse, $ymouse, 0 );
+			if &&( =( [ tg_type n ] 6 ) >( [ tg_link n ] 0 ) ) {
+				let w = tg_wintofront( n );
+				set [ tg_a [ tg_link n ] ] = -( [ tg_a [ tg_link n ] ] $mousewheel );
+				call tg_draw( n );
+			}
+		}
 		case FX_KEYDOWN {
 			let n = tg_focus;
 			if =( [ tg_type n ] 4 ) {
