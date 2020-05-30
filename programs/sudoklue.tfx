@@ -196,15 +196,19 @@ function solve( board ) {
 	let temp = $array( 81 );
 	let idx = 0;
 	while <( idx 81 ) {
-		set [ temp idx ] = [ board idx ];
+		if &&( [ board idx ] !( check( board idx ) ) ) {
+			return FALSE;
+		} else {
+			set [ temp idx ] = [ board idx ];
+		}
 		inc idx;
 	}
 	let idx = 0;
 	while <( idx 81 ) {
-		if &&( >( [ temp idx ] 0 ) check( temp, idx ) ) {
+		if &&( [ temp idx ] check( temp, idx ) ) {
 			inc idx;
 		} else {
-			while ||( >e( [ temp idx ] 9 ) >( [ board idx ] 0 ) ) {
+			while ||( >e( [ temp idx ] 9 ) [ board idx ] ) {
 				set [ temp idx ] = [ board idx ];
 				dec idx;
 				if <( idx 0 ) {
