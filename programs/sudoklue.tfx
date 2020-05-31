@@ -191,8 +191,8 @@ function check( board, idx ) {
 	return TRUE;
 }
 
-function solve( board ) {
-	var temp, idx;
+function solve( board, iterations ) {
+	var temp, idx, itr;
 	let temp = $array( 81 );
 	let idx = 0;
 	while <( idx 81 ) {
@@ -203,6 +203,7 @@ function solve( board ) {
 		}
 		inc idx;
 	}
+	let itr = 0;
 	let idx = 0;
 	while <( idx 81 ) {
 		if &&( [ temp idx ] check( temp, idx ) ) {
@@ -212,10 +213,14 @@ function solve( board ) {
 				set [ temp idx ] = [ board idx ];
 				dec idx;
 				if <( idx 0 ) {
-					return FALSE;
+					return 0;
 				}
 			}
 			set [ temp idx ] = +( [ temp idx ] 1 );
+		}
+		inc itr;
+		if >e( itr iterations ) {
+			return 0;
 		}
 	}
 	let idx = 0;
@@ -223,7 +228,7 @@ function solve( board ) {
 		set [ board idx ] = [ temp idx ];
 		inc idx;
 	}
-	return TRUE;
+	return itr;
 }
 
 function draw_board( board, selected, palette ) {
@@ -303,7 +308,7 @@ program sudoklue {
 						set [ board selected ] = 0;
 					}
 					case FX_KEY_F1 {
-						print solve( board );
+						print solve( board, 1000000 );
 					}
 					default {
 						if &&( >e( $keyboard FX_KEY_PAD_1 ) <( $keyboard FX_KEY_PAD_0 ) ) {
