@@ -17,7 +17,6 @@
 #define realpath( path, resolved_path ) _fullpath( NULL, ( path ), 0 )
 #endif
 
-#define NUM_SURFACES 256
 #define NUM_SAMPLES 64
 #define NUM_CHANNELS 32
 #define NUM_SURFACES 256
