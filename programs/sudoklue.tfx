@@ -290,37 +290,43 @@ program sudoklue {
 		let event = $fxwait;
 		while event {
 			# Handle all events in queue.
-			if =( event FX_KEYDOWN ) {
-				switch $keyboard {
-					case FX_KEY_UP {
-						let selected = %( +( selected 72 ) 81 );
-					}
-					case FX_KEY_DOWN {
-						let selected = %( +( selected 9 ) 81 );
-					}
-					case FX_KEY_LEFT {
-						let selected = %( +( selected 80 ) 81 );
-					}
-					case FX_KEY_RIGHT {
-						let selected = %( +( selected 1 ) 81 );
-					}
-					case FX_KEY_BACKSPACE, FX_KEY_DELETE, FX_KEY_PAD_0 {
-						set [ board selected ] = 0;
-					}
-					case FX_KEY_F1 {
-						print solve( board, 1000000 );
-					}
-					default {
-						if &&( >e( $keyboard FX_KEY_PAD_1 ) <( $keyboard FX_KEY_PAD_0 ) ) {
-							set [ board selected ] = +( -( $keyboard FX_KEY_PAD_1 ) 1 );
-						} else {
-							if &&( >e( $keyboard FX_KEY_0 ) <( $keyboard +( FX_KEY_0 10 ) ) ) {
-								set [ board selected ] = -( $keyboard FX_KEY_0 );
+			switch event {
+				case FX_KEYDOWN {
+					switch $keyboard {
+						case FX_KEY_UP {
+							let selected = %( +( selected 72 ) 81 );
+						}
+						case FX_KEY_DOWN {
+							let selected = %( +( selected 9 ) 81 );
+						}
+						case FX_KEY_LEFT {
+							let selected = %( +( selected 80 ) 81 );
+						}
+						case FX_KEY_RIGHT {
+							let selected = %( +( selected 1 ) 81 );
+						}
+						case FX_KEY_BACKSPACE, FX_KEY_DELETE, FX_KEY_PAD_0 {
+							set [ board selected ] = 0;
+						}
+						case FX_KEY_F1 {
+							print solve( board, 1000000 );
+						}
+						default {
+							if &&( >e( $keyboard FX_KEY_PAD_1 ) <( $keyboard FX_KEY_PAD_0 ) ) {
+								set [ board selected ] = +( -( $keyboard FX_KEY_PAD_1 ) 1 );
+							} else {
+								if &&( >e( $keyboard FX_KEY_0 ) <( $keyboard +( FX_KEY_0 10 ) ) ) {
+									set [ board selected ] = -( $keyboard FX_KEY_0 );
+								}
 							}
 						}
 					}
+					call draw_board( board, selected, palette );
 				}
-				call draw_board( board, selected, palette );
+				case FX_MOUSEKEYDOWN {
+					let selected = %( +( *( /( -( $ymouse 16 ) 48 ) 9 ) /( -( $xmouse 16 ) 48 ) ) 81 );
+					call draw_board( board, selected, palette );
+				}
 			}
 			let event = $fxpoll;
 		}
