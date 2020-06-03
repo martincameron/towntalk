@@ -135,10 +135,10 @@ struct constant {
 };
 
 /* The maximum integer value. */
-const int MAX_INTEGER;
+extern const int MAX_INTEGER;
 
 /* Message to be used to avoid memory allocation in out-of-memory error paths. */
-const char *OUT_OF_MEMORY;
+extern const char *OUT_OF_MEMORY;
 
 /* Initialize env with the the standard statements, operators and constants.
    Returns zero and writes message on failure. */
