@@ -486,7 +486,7 @@ static enum result execute_fxsurface_statement( struct statement *this, struct v
 			if( width > 0 && height > 0 ) {
 #if SDL_MAJOR_VERSION > 1
 				texture = SDL_CreateTexture( fxenv->renderer,
-					SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, width, height );
+					SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STATIC, width, height );
 				if( texture ) {
 					if( params[ 3 ].string_value ) {
 						if( params[ 3 ].string_value->line == -1 ) {
