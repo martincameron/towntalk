@@ -70,8 +70,8 @@ struct fxenvironment {
 	struct fxsample samples[ NUM_SAMPLES ];
 	struct fxchannel channels[ NUM_CHANNELS ];
 	int timer_event_type, seq_event_type, midi_event_type;
-	int tick, tick_len, audio_idx, audio_end, seq_msg, midi_msg;
-	int audio[ ( MAX_TICK_LEN + 33 ) * 4 ], ramp_buf[ 64 ];
+	int tick, tick_len, audio_idx, audio_end, stream_idx, seq_msg, midi_msg;
+	int audio[ ( MAX_TICK_LEN + 33 ) * 4 ], stream[ MAX_TICK_LEN * 2 ], ramp_buf[ 64 ];
 #if defined( ALSA_MIDI )
 	int midi_buf, midi_idx;
 	snd_rawmidi_t *midi_in;
@@ -292,8 +292,8 @@ static void audio_callback( void *userdata, Uint8 *stream, int len ) {
 	Sint16 *output = ( Sint16 * ) stream;
 	struct fxchannel *channel;
 	int samples = len >> 2;
-	int *audio = fxenv->audio;
-	int out_idx, out_end, aud_idx, ampl;
+	int *fxaudio = fxenv->audio, *fxstream = fxenv->stream;
+	int out_idx, out_end, aud_idx, aud_end, ampl;
 	int chan_idx, count, offset = 0;
 	#if defined( ALSA_MIDI )
 	SDL_Event event = { 0 };
@@ -341,7 +341,7 @@ static void audio_callback( void *userdata, Uint8 *stream, int len ) {
 		out_end = ( offset + count ) << 1;
 		aud_idx = fxenv->audio_idx << 1;
 		while( out_idx < out_end ) {
-			ampl = audio[ aud_idx++ ];
+			ampl = fxaudio[ aud_idx++ ];
 			if( ampl > 32767 ) {
 				ampl = 32767;
 			}
@@ -383,6 +383,13 @@ static void audio_callback( void *userdata, Uint8 *stream, int len ) {
 			}
 			downsample( fxenv->audio, fxenv->tick_len + 32 );
 			volume_ramp( fxenv->audio, fxenv->ramp_buf, fxenv->tick_len );
+			aud_idx = 0;
+			aud_end = fxenv->stream_idx << 1;
+			while( aud_idx < aud_end ) {
+				fxaudio[ aud_idx ] += fxstream[ aud_idx ];
+				aud_idx++;
+			}
+			fxenv->stream_idx = 0;
 			fxenv->tick++;
 		}
 	}
@@ -1327,6 +1334,62 @@ static enum result evaluate_extract_expression( struct expression *this, struct 
 	return ret;
 }
 
+/*
+	Write up to the specified number of 16-bit pairs of stereo samples from the specified array
+	into the audio output buffer. The number of samples written is returned.
+*/
+static enum result evaluate_fxstream_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	/* count = $fxstream( array offset count ) */
+	int length, samples, idx, end, off;
+	struct expression *parameter = this->parameters;
+	struct variable arr = { 0, NULL }, offset = { 0, NULL }, count = { 0, NULL }, *values;
+	struct fxenvironment *fxenv = ( struct fxenvironment * ) this->function->env;
+	enum result ret = parameter->evaluate( parameter, variables, &arr, exception );
+	if( ret ) {
+		parameter = parameter->next;
+		ret = parameter->evaluate( parameter, variables, &offset, exception );
+		if( ret ) {
+			parameter = parameter->next;
+			ret = parameter->evaluate( parameter, variables, &count, exception );
+			if( ret ) {
+				if( arr.string_value && arr.string_value->string && arr.string_value->line == -1 ) {
+					values = ( ( struct array * ) arr.string_value )->array;
+					length = ( ( ( struct array * ) arr.string_value )->length ) >> 1;
+					if( offset.integer_value >= 0 && count.integer_value >= 0
+					&& MAX_INTEGER - count.integer_value >= offset.integer_value
+					&& offset.integer_value + count.integer_value <= length ) {
+						SDL_LockAudio();
+						samples = fxenv->audio_end - fxenv->stream_idx;
+						if( samples > count.integer_value ) {
+							samples = count.integer_value;
+						}
+						idx = fxenv->stream_idx << 1;
+						end = idx + ( samples << 1 );
+						off = offset.integer_value << 1;
+						while( idx < end ) {
+							fxenv->stream[ idx++ ] = values[ off++ ].integer_value;
+						}
+						fxenv->stream_idx += samples;
+						SDL_UnlockAudio();
+						dispose_variable( result );
+						result->integer_value = samples;
+						result->string_value = NULL;
+					} else {
+						ret = throw( exception, this, offset.integer_value, "Range out of bounds." );
+					}
+				} else {
+					ret = throw( exception, this, 0, "Not an array." );
+				}	
+				dispose_variable( &count );
+			}
+			dispose_variable( &offset );
+		}
+		dispose_variable( &arr );
+	}
+	return ret;
+}
+
 static struct constant fxconstants[] = {
 #if SDL_MAJOR_VERSION > 1
 	{ "FX_WINDOW", SDL_WINDOWEVENT, NULL },
@@ -1398,7 +1461,8 @@ static struct operator fxoperators[] = {
 	{ "$window", '$', 0, evaluate_window_expression, &fxoperators[ 15 ] },
 	{ "$keyheld", '$', 0, evaluate_keyheld_expression, &fxoperators[ 16 ] },
 	{ "$datfile", '$', 0, evaluate_datfile_expression, &fxoperators[ 17 ] },
-	{ "$extract", '$', 2, evaluate_extract_expression, NULL }
+	{ "$extract", '$', 2, evaluate_extract_expression, &fxoperators[ 18 ] },
+	{ "$fxstream", '$', 3, evaluate_fxstream_expression, NULL }
 };
 
 static struct keyword fxstatements[] = {
