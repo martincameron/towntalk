@@ -1,0 +1,23 @@
+
+# Self-replicating program
+program quine {
+	var prg = "/# Self-replicating program/program quine {/.var prg = ?;/.var idx;/.while <( idx $len( prg ) ) {/..switch $chr( prg idx ) {/...case 46 {/....write $asc( 9 );/...}/...case 47 {/....write $asc( 10 );/...}/...case 63 {/....write $cat( $asc( 34 ) prg $asc( 34 ) );/...}/...default {/....write $sub( prg idx 1 );/...}/..}/..inc idx;/.}/}/";
+	var idx;
+	while <( idx $len( prg ) ) {
+		switch $chr( prg idx ) {
+			case 46 {
+				write $asc( 9 );
+			}
+			case 47 {
+				write $asc( 10 );
+			}
+			case 63 {
+				write $cat( $asc( 34 ) prg $asc( 34 ) );
+			}
+			default {
+				write $sub( prg idx 1 );
+			}
+		}
+		inc idx;
+	}
+}
