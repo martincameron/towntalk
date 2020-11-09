@@ -64,7 +64,7 @@ function rle7_decode( input, output ) {
 }
 
 program rle7 {
-	var org, buf, enc, dec;
+	var org, buf, enc, out;
 	if =( $argc 3 ) {
 		let org = $load( $argv( 1 ) );
 		print $cat( "Original length: " $len( org ) );
@@ -75,9 +75,9 @@ program rle7 {
 		
 		let buf = $array( rle7_decode( enc 0 ) );
 		print $cat( "Decompressed length: " rle7_decode( enc buf ) );
-		let dec = $sub( buf 0 $len( buf ) );
+		let out = $sub( buf 0 $len( buf ) );
 		
-		if $cmp( org dec ) {
+		if $cmp( org out ) {
 			throw "Decoded data differs from original!";
 		}
 		save enc $argv( 2 );
