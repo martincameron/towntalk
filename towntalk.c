@@ -4036,15 +4036,19 @@ int parse_tt_program( char *program, char *file_name, struct environment *env, c
 			parse_keywords( declarations, elem, env, empty, NULL, message );
 			/* Parse function bodies. */
 			func = env->functions;
-			while( func && func->elem && message[ 0 ] == 0 ) {
-				parse_function_body( func, env, message );
-				func->elem = NULL;
+			while( func && message[ 0 ] == 0 ) {
+				if( func->elem ) {
+					parse_function_body( func, env, message );
+					func->elem = NULL;
+				}
 				func = func->next;
 			}
 			func = env->entry_points;
-			while( func && func->elem && message[ 0 ] == 0 ) {
-				parse_function_body( func, env, message );
-				func->elem = NULL;
+			while( func && message[ 0 ] == 0 ) {
+				if( func->elem ) {
+					parse_function_body( func, env, message );
+					func->elem = NULL;
+				}
 				func = func->next;
 			}
 		}
@@ -4062,7 +4066,7 @@ int parse_tt_file( char *file_name, struct environment *env, char *message ) {
 	file_length = load_file( file_name, NULL, message );
 	if( file_length >= 0 ) {
 		if( file_length < MAX_INTEGER ) {
-			/*printf( "Parsing '%s'. Length %d\n", file_name, file_length );*/
+			/* printf( "Parsing '%s'. Length %ld\n", file_name, file_length ); */
 			program_buffer = malloc( file_length + 1 );
 			if( program_buffer ) {
 				file_length = load_file( file_name, program_buffer, message );
