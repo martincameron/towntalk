@@ -1,0 +1,122 @@
+
+rem {
+	Simplified LZ77 compression using single-entry lookup table.
+}
+
+# Return the encoded length and encode to output if not null.
+function lze_encode( input, output ) {
+	var hash, in_idx, out_idx, lit, off, len, max;
+	let hash = $array( 65536 );
+	while <e( in_idx $len( input ) ) {
+		let len = 1;
+		if >( -( $len( input ) in_idx ) 2 ) {
+			let off = -( in_idx [ hash |( <<( &( $chr( input in_idx ) 0xFF ) 8 ) ^( &( $chr( input +( in_idx 1 ) ) 0xFF ) &( $chr( input +( in_idx 2 ) ) 0xFF ) ) ) ] );
+			if &&( off &&( <( off 65536 ) =( $chr( input -( in_idx off ) ) $chr( input in_idx ) ) ) ) {
+				while &&( <( +( in_idx len ) $len( input ) ) =( $chr( input +( -( in_idx off ) len ) ) $chr( input +( in_idx len ) ) ) ) {
+					inc len;
+				}
+			}
+		}
+		if ||( >( len 3 ) =( in_idx $len( input ) ) ) {
+			while lit {
+				let max = lit;
+				if >( max 127 ) {
+					let max = 127;
+				}
+				let lit = -( lit max );
+				if output {
+					set [ output out_idx ] = max;
+					inc out_idx;
+					while max {
+						set[ output out_idx ] = $chr( input -( in_idx +( lit max ) ) );
+						inc out_idx;
+						dec max;
+					}
+				} else {
+					let out_idx = +( out_idx +( 1 max ) );
+				}
+			}
+		}
+		if &&( >( len 2 ) =( lit 0 ) ) {
+			if >( len 127 ) {
+				let len = 127;
+			}
+			if output {
+				set [ output out_idx ] = |( 0x80 len );
+				set [ output +( out_idx 1 ) ] = >>( off 8 );
+				set [ output +( out_idx 2 ) ] = &( off 0xFF );
+			}
+			let out_idx = +( out_idx 3 );
+		} else {
+			let lit = +( lit len );
+		}
+		while len {
+			if <( +( in_idx 2 ) $len( input ) ) {
+				set [ hash |( <<( &( $chr( input in_idx ) 0xFF ) 8 ) ^( &( $chr( input +( in_idx 1 ) ) 0xFF ) &( $chr( input +( in_idx 2 ) ) 0xFF ) ) ) ] = in_idx;
+			}
+			inc in_idx;
+			dec len;
+		}
+	}
+	return out_idx;
+}
+
+# Return the decoded length and decode to output if not null.
+function lze_decode( input, output ) {
+	var in_idx, out_idx, len, off;
+	while <( in_idx $len( input ) ) {
+		let len = &( $chr( input in_idx ) 0xFF );
+		inc in_idx;
+		if <( len 128 ) {
+			if output {
+				while len {
+					set [ output out_idx ] = $chr( input in_idx );
+					inc out_idx;
+					inc in_idx;
+					dec len;
+				}
+			} else {
+				let in_idx = +( in_idx len );
+				let out_idx = +( out_idx len );
+			}
+		} else {
+			let off = |( <<( &( $chr( input in_idx ) 0xFF ) 8 ) &( $chr( input +( in_idx 1 ) ) 0xFF ) );
+			let in_idx = +( in_idx 2 );
+			let len = &( len 0x7F );
+			if output {
+				while len {
+					set [ output out_idx ] = [ output -( out_idx off ) ];
+					inc out_idx;
+					dec len;
+				}
+			} else {
+				let out_idx = +( out_idx len );
+			}
+		}
+	}
+	return out_idx;
+}
+
+program rle {
+	var org, buf, enc, out;
+	if =( $argc 3 ) {
+		let org = $load( $argv( 1 ) );
+		print $cat( "Original length: " $len( org ) );
+		
+		let buf = $array( lze_encode( org 0 ) );
+		print $cat( "Compressed length: " lze_encode( org buf ) );
+		let enc = $sub( buf 0 $len( buf ) );
+		
+		let buf = $array( lze_decode( enc 0 ) );
+		print $cat( "Decompressed length: " lze_decode( enc buf ) );
+		let out = $sub( buf 0 $len( buf ) );
+
+		if $cmp( org out ) {
+			throw "Decoded data differs from original!";
+		}
+		save enc $argv( 2 );
+	} else {
+		error "LZ77 compression.";
+		error "Usage lze.tt input output.lze";
+	}
+}
