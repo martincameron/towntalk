@@ -5,57 +5,62 @@ rem {
 
 # Return the encoded length and encode to output if not null.
 function rle_encode( input, output ) {
-	var in_idx, in_end, out_idx, code, prev, run, lit;
+	var in_idx, in_end, out_idx, code, prev, run, lit, max;
 	let in_end = -( $len( input ) 1 );
 	while <e( in_idx in_end ) {
 		let code = $chr( input in_idx );
-		if &&( &&( =( code prev ) <( in_idx in_end ) ) <( run 128 ) ) {
+		if &&( =( code prev ) <( in_idx in_end ) ) {
 			inc run;
 		} else {
 			let prev = code;
-			if output {
-				if ||( ||( >e( lit 127 ) run ) >e( in_idx in_end ) ) {
-					if lit {
-						set [ output out_idx ] = lit;
+			if ||( run >e( in_idx in_end ) ) {
+				if output {
+					while lit {
+						let max = lit;
+						if >( max 127 ) {
+							let max = 127;
+						}
+						set [ output out_idx ] = max;
 						inc out_idx;
-						while lit {
-							set [ output out_idx ] = $chr( input -( -( in_idx lit ) run ) );
+						let lit = -( lit max );
+						while max {
+							set [ output out_idx ] = $chr( input -( -( -( in_idx lit ) max ) run ) );
 							inc out_idx;
-							dec lit;
+							dec max;
 						}
 					}
-					if run {
-						set [ output out_idx ] = -( 0 run );
+					while run {
+						let max = run;
+						if >( max 127 ) {
+							let max = 127;
+						}
+						set [ output out_idx ] = -( 0 max );
 						inc out_idx;
-						let run = 0;
+						let run = -( run max );
 					}
-					if >e( in_idx in_end ) {
-						set [ output out_idx ] = 1;
+				} else {
+					let out_idx = +( out_idx lit );
+					while >( lit 0 ) {
 						inc out_idx;
-						set [ output out_idx ] = code;
+						let lit = -( lit 127 );
+					}
+					let lit = 0;
+					while >( run 0 ) {
 						inc out_idx;
+						let run = -( run 127 );
 					}
-				}
-			} else {
-				if ||( ||( >e( lit 127 ) run ) >e( in_idx in_end ) ) {
-					if lit {
-						let out_idx = +( +( out_idx lit ) 1 );
-						let lit = 0;
-					}
-					if run {
-						inc out_idx;
-						let run = 0;
-					}
-					if >e( in_idx in_end ) {
-						let out_idx = +( out_idx 2 );
-					}
+					let run = 0;
 				}
 			}
 			inc lit;
 		}
 		inc in_idx;
 	}
-	return out_idx;
+	if output {
+		set [ output out_idx ] = 1;
+		set [ output +( out_idx 1 ) ] = code;
+	}
+	return +( out_idx 2 );
 }
 
 # Return the decoded length and decode to output if not null.
