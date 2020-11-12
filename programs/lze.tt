@@ -3,6 +3,11 @@ rem {
 	Simplified LZ77 compression using single-entry lookup table.
 }
 
+# Return a 16-bit hash-code from 3 characters at the specified index.
+function lze_hash( input, idx ) {
+	return ^( <<( &( $chr( input idx ) 0xFF ) 8 ) ^( <<( &( $chr( input +( idx 1 ) ) 0xFF ) 4 ) &( $chr( input +( idx 2 ) ) 0xFF ) ) );
+}
+
 # Return the encoded length and encode to output if not null.
 function lze_encode( input, output ) {
 	var hash, in_idx, out_idx, lit, off, len, max;
@@ -10,7 +15,7 @@ function lze_encode( input, output ) {
 	while <e( in_idx $len( input ) ) {
 		let len = 1;
 		if >( -( $len( input ) in_idx ) 2 ) {
-			let off = -( in_idx [ hash |( <<( &( $chr( input in_idx ) 0xFF ) 8 ) ^( &( $chr( input +( in_idx 1 ) ) 0xFF ) &( $chr( input +( in_idx 2 ) ) 0xFF ) ) ) ] );
+			let off = -( in_idx [ hash lze_hash( input in_idx ) ] );
 			if &&( off &&( <( off 65536 ) =( $chr( input -( in_idx off ) ) $chr( input in_idx ) ) ) ) {
 				while &&( <( +( in_idx len ) $len( input ) ) =( $chr( input +( -( in_idx off ) len ) ) $chr( input +( in_idx len ) ) ) ) {
 					inc len;
@@ -52,7 +57,7 @@ function lze_encode( input, output ) {
 		}
 		while len {
 			if <( +( in_idx 2 ) $len( input ) ) {
-				set [ hash |( <<( &( $chr( input in_idx ) 0xFF ) 8 ) ^( &( $chr( input +( in_idx 1 ) ) 0xFF ) &( $chr( input +( in_idx 2 ) ) 0xFF ) ) ) ] = in_idx;
+				set [ hash lze_hash( input in_idx ) ] = in_idx;
 			}
 			inc in_idx;
 			dec len;
