@@ -97,7 +97,7 @@ function lze_decode( input, output ) {
 	return out_idx;
 }
 
-program rle {
+program lze {
 	var org, buf, enc, out;
 	if =( $argc 3 ) {
 		let org = $load( $argv( 1 ) );
