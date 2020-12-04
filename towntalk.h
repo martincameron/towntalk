@@ -35,29 +35,22 @@ struct array {
 	struct array *prev, *next;
 };
 
-/* Reference-counted function reference. */
-struct function_reference {
-	struct string str;
-	struct function_declaration *func;
-};
-
-/* Variable value. */
-struct variable {
-	int integer_value;
-	struct string *string_value;
-};
-
-/* Function declaration list. */
+/* Reference-counted function declaration list. */
 struct function_declaration {
-	char *name;
+	struct string str;
 	int line, num_parameters, num_variables;
-	struct function_reference ref;
 	struct string file;
 	struct element *elem;
 	struct environment *env;
 	struct string_list *variable_decls, *variable_decls_tail;
 	struct statement *statements, *statements_tail;
 	struct function_declaration *next;
+};
+
+/* Variable value. */
+struct variable {
+	int integer_value;
+	struct string *string_value;
 };
 
 /* Execution environment. */

@@ -438,49 +438,6 @@ static int parse_child_element( char *buffer, int idx, struct element *parent, c
 	return idx;
 }
 
-/* Decrement the reference count of the specified value and deallocate if necessary. */
-void unref_string( struct string *str ) {
-	int idx, len;
-	struct array *arr;
-	struct element *elem;
-	if( str->reference_count == 1 ) {
-		if( str->line == 0 ) {
-			free( str );
-		} else if( str->line > 0 ) {
-			while( str ) {
-				if( str->reference_count == 1 ) {
-					elem = ( struct element * ) str;
-					if( elem->child ) {
-						unref_string( &elem->child->str );
-					}
-					elem = elem->next;
-					free( str );
-					str = &elem->str;
-				} else {
-					str->reference_count--;
-					str = NULL;
-				}
-			}
-		} else if( str->line == -1 ) {
-			arr = ( struct array * ) str;
-			idx = 0, len = arr->length;
-			while( idx < len ) {
-				dispose_variable( &arr->array[ idx++ ] );
-			}
-			arr->prev->next = arr->next;
-			if( arr->next ) {
-				arr->next->prev = arr->prev;
-			}
-			free( arr->array );
-			free( arr );
-		} else {
-			free( str );
-		}
-	} else {
-		str->reference_count--;
-	}
-}
-
 static struct element* parse_element( char *buffer, char *message ) {
 	int idx;
 	struct element elem;
@@ -673,15 +630,62 @@ static void dispose_statements( struct statement *statements ) {
 	}
 }
 
+/* Decrement the reference count of the specified value and deallocate if necessary. */
+void unref_string( struct string *str ) {
+	int idx, len;
+	struct array *arr;
+	struct element *elem;
+	struct function_declaration *func;
+	if( str->reference_count == 1 ) {
+		if( str->line == 0 ) {
+			free( str );
+		} else if( str->line > 0 ) {
+			while( str ) {
+				if( str->reference_count == 1 ) {
+					elem = ( struct element * ) str;
+					if( elem->child ) {
+						unref_string( &elem->child->str );
+					}
+					elem = elem->next;
+					free( str );
+					str = &elem->str;
+				} else {
+					str->reference_count--;
+					str = NULL;
+				}
+			}
+		} else if( str->line == -1 ) {
+			arr = ( struct array * ) str;
+			idx = 0, len = arr->length;
+			while( idx < len ) {
+				dispose_variable( &arr->array[ idx++ ] );
+			}
+			arr->prev->next = arr->next;
+			if( arr->next ) {
+				arr->next->prev = arr->prev;
+			}
+			free( arr->array );
+			free( arr );
+		} else if( str->line == -2 ) {
+			func = ( struct function_declaration * ) str;
+			free( func->str.string );
+			free( func->file.string );
+			dispose_string_list( func->variable_decls );
+			dispose_statements( func->statements );
+			free( func );
+		} else {
+			free( str );
+		}
+	} else {
+		str->reference_count--;
+	}
+}
+
 static void dispose_function_declarations( struct function_declaration *function ) {
 	struct function_declaration *next;
 	while( function ) {
 		next = function->next;
-		free( function->name );
-		free( function->file.string );
-		dispose_string_list( function->variable_decls );
-		dispose_statements( function->statements );
-		free( function );
+		unref_string( &function->str );
 		function = next;
 	}
 }
@@ -960,13 +964,11 @@ static struct function_declaration* new_function_declaration( char *name, char *
 	struct function_declaration *func = calloc( 1, sizeof( struct function_declaration ) );
 	if( func ) {
 		/*printf("Function '%s'\n", name);*/
-		func->name = new_string( name );
-		if( func->name ) {
-			func->ref.str.reference_count = 1;
-			func->ref.str.length = strlen( func->name );
-			func->ref.str.line = -2;
-			func->ref.str.string = func->name;
-			func->ref.func = func;
+		func->str.string = new_string( name );
+		if( func->str.string ) {
+			func->str.reference_count = 1;
+			func->str.length = strlen( func->str.string );
+			func->str.line = -2;
 			func->file.reference_count = 1;
 			func->file.length = strlen( file );
 			func->file.string = new_string( file );
@@ -1441,7 +1443,7 @@ static enum result evaluate_function_expression( struct expression *this, struct
 		ret = parameter->evaluate( parameter, variables, &func, exception );
 		if( ret ) {
 			if( func.string_value && func.string_value->line == -2 ) {
-				function = ( ( struct function_reference * ) func.string_value )->func;
+				function = ( struct function_declaration * ) func.string_value;
 				parameter = parameter->next;
 				count = 0;
 				while( parameter ) {
@@ -1602,12 +1604,12 @@ static struct structure* get_structure( struct structure *structures, char *name
 
 static struct function_declaration* get_function_declaration( struct environment *env, char *name ) {
 	struct function_declaration *func = env->functions;
-	while( func && strcmp( func->name, name ) ) {
+	while( func && strcmp( func->str.string, name ) ) {
 		func = func->next;
 	}
 	if( func == NULL ) {
 		func = env->entry_points;
-		while( func && strcmp( func->name, name ) ) {
+		while( func && strcmp( func->str.string, name ) ) {
 			func = func->next;
 		}
 	}
@@ -2736,7 +2738,7 @@ static enum result evaluate_unpack_expression( struct expression *this, struct v
 static enum result evaluate_func_ref_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct variable src = { 0, NULL };
-	src.string_value = &this->function->ref.str;
+	src.string_value = &this->function->str;
 	assign_variable( &src, result );
 	return OKAY;
 }
