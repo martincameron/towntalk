@@ -233,7 +233,7 @@ static struct element* new_element( int str_len ) {
 		elem->str.string[ str_len ] = 0;
 		elem->str.reference_count = 1;
 		elem->str.length = str_len;
-		elem->str.line = 1;
+		elem->str.type = ELEMENT;
 	}
 	return elem;
 }
@@ -245,7 +245,7 @@ struct array* new_array( struct environment *env, int length ) {
 		arr->str.string = "#Array#";
 		arr->str.reference_count = 1;
 		arr->str.length = strlen( arr->str.string );
-		arr->str.line = -1;
+		arr->str.type = ARRAY;
 		arr->length = length;
 		arr->array = calloc( length + 1, sizeof( struct variable ) );
 		if( arr->array ) {
@@ -345,7 +345,7 @@ static struct string* new_string_literal( char *source ) {
 
 static int parse_child_element( char *buffer, int idx, struct element *parent, char *message ) {
 	struct element *elem = NULL;
-	int offset = idx, length = 0, line = parent->str.line, end, str_len;
+	int offset = idx, length = 0, line = parent->line, end, str_len;
 	char *bracket, chr = '\n';
 	while( chr ) {
 		chr = buffer[ idx++ ];
@@ -359,7 +359,7 @@ static int parse_child_element( char *buffer, int idx, struct element *parent, c
 					elem = elem->next;
 				}
 				if( elem ) {
-					elem->str.line = line;
+					elem->line = line;
 					memcpy( elem->str.string, &buffer[ offset ], length );
 					/*printf("%d %d %c :%s\n",offset,length,chr,elem->str.string);*/
 				} else {
@@ -391,7 +391,7 @@ static int parse_child_element( char *buffer, int idx, struct element *parent, c
 					elem = elem->next;
 				}
 				if( elem ) {
-					elem->str.line = line;
+					elem->line = line;
 					if( chr == '"' ) {
 						idx = parse_string( buffer, idx - 1, elem, line, message );
 						if( idx < 0 ) {
@@ -404,10 +404,10 @@ static int parse_child_element( char *buffer, int idx, struct element *parent, c
 							elem->str.string[ 1 ] = bracket[ 1 ];
 							idx = parse_child_element( buffer, idx, elem, message );
 							if( idx > 0 ) {
-								/* Exchange line and elem->str.line. */
-								line = elem->str.line - line;
-								elem->str.line = elem->str.line - line;
-								line = elem->str.line + line;
+								/* Exchange line and elem->line. */
+								line = elem->line - line;
+								elem->line = elem->line - line;
+								line = elem->line + line;
 								if( buffer[ idx - 1 ] != bracket[ 1 ] ) {
 									sprintf( message, "Unclosed element on line %d.", line );
 									return -2;
@@ -426,7 +426,7 @@ static int parse_child_element( char *buffer, int idx, struct element *parent, c
 					return -1;
 				}
 			} else if( chr == ')' || chr == ']' || chr == '}' ) {
-				parent->str.line = line;
+				parent->line = line;
 				return idx;
 			}
 			offset = idx;
@@ -441,13 +441,14 @@ static int parse_child_element( char *buffer, int idx, struct element *parent, c
 static struct element* parse_element( char *buffer, char *message ) {
 	int idx;
 	struct element elem;
-	elem.str.line = 1;
+	elem.line = 1;
 	elem.str.string = NULL;
+	elem.str.type = ELEMENT;
 	elem.child = elem.next = NULL;
 	idx = parse_child_element( buffer, 0, &elem, message );
 	if( idx > 0 ) {
 		if( buffer[ idx - 1 ] != 0 ) {
-			sprintf( message, "Unexpected closing bracket '%c' on line %d.", buffer[ idx - 1 ], elem.str.line );
+			sprintf( message, "Unexpected closing bracket '%c' on line %d.", buffer[ idx - 1 ], elem.line );
 			idx = -4;
 		}
 	}
@@ -637,9 +638,9 @@ void unref_string( struct string *str ) {
 	struct element *elem;
 	struct function_declaration *func;
 	if( str->reference_count == 1 ) {
-		if( str->line == 0 ) {
+		if( str->type == STRING ) {
 			free( str );
-		} else if( str->line > 0 ) {
+		} else if( str->type == ELEMENT ) {
 			while( str ) {
 				if( str->reference_count == 1 ) {
 					elem = ( struct element * ) str;
@@ -654,7 +655,7 @@ void unref_string( struct string *str ) {
 					str = NULL;
 				}
 			}
-		} else if( str->line == -1 ) {
+		} else if( str->type == ARRAY ) {
 			arr = ( struct array * ) str;
 			idx = 0, len = arr->length;
 			while( idx < len ) {
@@ -666,15 +667,13 @@ void unref_string( struct string *str ) {
 			}
 			free( arr->array );
 			free( arr );
-		} else if( str->line == -2 ) {
+		} else if( str->type == FUNCTION ) {
 			func = ( struct function_declaration * ) str;
 			free( func->str.string );
 			free( func->file.string );
 			dispose_string_list( func->variable_decls );
 			dispose_statements( func->statements );
 			free( func );
-		} else {
-			free( str );
 		}
 	} else {
 		str->reference_count--;
@@ -880,7 +879,7 @@ static struct element* parse_constant( struct element *elem, struct variable *co
 			}
 			next = next->next;
 		} else {
-			sprintf( message, "Expected '{' after '$' on line %d.", elem->str.line );
+			sprintf( message, "Expected '{' after '$' on line %d.", elem->line );
 		}
 	} else if( strcmp( elem->str.string, "$str" ) == 0 ) {
 		/* Concatenated string constant. */
@@ -897,7 +896,7 @@ static struct element* parse_constant( struct element *elem, struct variable *co
 						strcpy( message, OUT_OF_MEMORY );
 					}
 				} else {
-					sprintf( message, "Invalid string literal on line %d.", child->str.line );
+					sprintf( message, "Invalid string literal on line %d.", child->line );
 				}
 				if( child->next && child->next->str.string[ 0 ] == ',' ) {
 					child = child->next;
@@ -913,10 +912,10 @@ static struct element* parse_constant( struct element *elem, struct variable *co
 				}
 				free( str );
 			} else {
-				sprintf( message, "Invalid string literal on line %d.", next->str.line );
+				sprintf( message, "Invalid string literal on line %d.", next->line );
 			}
 		} else {
-			sprintf( message, "Expected '(' after '$str' on line %d.", elem->str.line );
+			sprintf( message, "Expected '(' after '$str' on line %d.", elem->line );
 		}
 	} else if( strcmp( elem->str.string, "$tup" ) == 0 ) {
 		/* Tuple constant. */
@@ -934,25 +933,25 @@ static struct element* parse_constant( struct element *elem, struct variable *co
 						if( end[ 0 ] == 0 ) {
 							next = next->next;
 						} else {
-							sprintf( message, "Invalid tuple integer on line %d.", next->str.line );
+							sprintf( message, "Invalid tuple integer on line %d.", next->line );
 						}
 					} else {
-						sprintf( message, "Invalid tuple constant on line %d.", next->str.line );
+						sprintf( message, "Invalid tuple constant on line %d.", next->line );
 					}
 				} else {
 					strcpy( message, OUT_OF_MEMORY );
 				}
 			} else {
-				sprintf( message, "Invalid tuple string on line %d.", next->str.line );
+				sprintf( message, "Invalid tuple string on line %d.", next->line );
 			}
 		} else {
-			sprintf( message, "Expected '(' after '$tup' on line %d.", elem->str.line );
+			sprintf( message, "Expected '(' after '$tup' on line %d.", elem->line );
 		}
 	} else {
 		/* Integer constant. */
 		integer_value = ( int ) strtol( elem->str.string, &end, 0 );
 		if( end[ 0 ] != 0 ) {
-			sprintf( message, "Invalid integer constant '%.64s' at line %d.", elem->str.string, elem->str.line );
+			sprintf( message, "Invalid integer constant '%.64s' at line %d.", elem->str.string, elem->line );
 		}
 	}
 	constant->integer_value = integer_value;
@@ -966,9 +965,9 @@ static struct function_declaration* new_function_declaration( char *name, char *
 		/*printf("Function '%s'\n", name);*/
 		func->str.string = new_string( name );
 		if( func->str.string ) {
-			func->str.reference_count = 1;
 			func->str.length = strlen( func->str.string );
-			func->str.line = -2;
+			func->str.reference_count = 1;
+			func->str.type = FUNCTION;
 			func->file.reference_count = 1;
 			func->file.length = strlen( file );
 			func->file.string = new_string( file );
@@ -1265,7 +1264,7 @@ static enum result execute_dim_statement( struct statement *this, struct variabl
 	if( ret ) {
 		ret = this->source->evaluate( this->source, variables, &len, exception );
 		if( ret ) {
-			if( var.string_value && var.string_value->line == -1 ) {
+			if( var.string_value && var.string_value->type == ARRAY ) {
 				if( len.integer_value >= 0 ) {
 					if( !resize_array( ( struct array * ) var.string_value, len.integer_value ) ) {
 						ret = throw( exception, this->source, 0, OUT_OF_MEMORY );
@@ -1291,7 +1290,7 @@ static enum result execute_array_assignment( struct statement *this, struct vari
 	if( ret ) {
 		ret = this->index->evaluate( this->index, variables, &idx, exception );
 		if( ret ) {
-			if( var.string_value && var.string_value->line == -1 ) {
+			if( var.string_value && var.string_value->type == ARRAY ) {
 				arr = ( struct array * ) var.string_value;
 				if( idx.integer_value >= 0 && idx.integer_value < arr->length ) {
 					ret = this->source->evaluate( this->source, variables,
@@ -1442,7 +1441,7 @@ static enum result evaluate_function_expression( struct expression *this, struct
 		/* Reference call. */
 		ret = parameter->evaluate( parameter, variables, &func, exception );
 		if( ret ) {
-			if( func.string_value && func.string_value->line == -2 ) {
+			if( func.string_value && func.string_value->type == FUNCTION ) {
 				function = ( struct function_declaration * ) func.string_value;
 				parameter = parameter->next;
 				count = 0;
@@ -1513,7 +1512,7 @@ static enum result evaluate_array_expression( struct expression *this, struct va
 	struct array *arr;
 	enum result ret = this->parameters->evaluate( this->parameters, variables, &var, exception );
 	if( ret ) {
-		if( var.string_value && var.string_value->line > 0 ) {
+		if( var.string_value && var.string_value->type == ELEMENT ) {
 			inputs.next = NULL;
 			len = parse_constant_list( ( struct element * ) var.string_value, &inputs, msg );
 			if( msg[ 0 ] == 0 ) {
@@ -1563,7 +1562,7 @@ static enum result evaluate_index_expression( struct expression *this, struct va
 		parameter = parameter->next;
 		ret = parameter->evaluate( parameter, variables, &idx, exception );
 		if( ret ) {
-			if( var.string_value && var.string_value->line == -1 ) {
+			if( var.string_value && var.string_value->type == ARRAY ) {
 				arr = ( struct array * ) var.string_value;
 				if( idx.integer_value >= 0 && idx.integer_value < arr->length ) {
 					assign_variable( &arr->array[ idx.integer_value ], result );
@@ -1679,7 +1678,7 @@ static int add_local_variable( struct element *elem, struct environment *env,
 			}
 		} else {
 			dispose_string_list( param );
-			sprintf( message, "Local variable '%.8s' already defined on line %d.", name, elem->str.line );
+			sprintf( message, "Local variable '%.8s' already defined on line %d.", name, elem->line );
 		}
 	} else {
 		strcpy( message, OUT_OF_MEMORY );
@@ -1703,7 +1702,7 @@ static struct element* parse_variable_declaration( struct element *elem,
 			if( message[ 0 ] == 0 ) {
 				array_expr = calloc( 1, sizeof( struct expression ) );
 				if( array_expr ) {
-					array_expr->line = elem->str.line;
+					array_expr->line = elem->line;
 					array_expr->function = func;
 					array_expr->parameters = expr.next;
 					array_expr->evaluate = evaluate_array_expression;
@@ -2003,7 +2002,7 @@ static enum result evaluate_len_expression( struct expression *this, struct vari
 	if( ret ) {
 		if( len.string_value ) {
 			dispose_variable( result );
-			if( len.string_value->line == -1 ) {
+			if( len.string_value->type == ARRAY ) {
 				result->integer_value = ( ( struct array * ) len.string_value )->length;
 			} else {
 				result->integer_value = len.string_value->length;
@@ -2164,7 +2163,7 @@ static enum result evaluate_sub_expression( struct expression *this, struct vari
 			ret = parameter->evaluate( parameter, variables, &len, exception );
 			if( ret ) {
 				if( var.string_value && var.string_value->string ) {
-					if( var.string_value->line == -1 ) {
+					if( var.string_value->type == ARRAY ) {
 						length = ( ( struct array * ) var.string_value )->length;
 					} else {
 						length = var.string_value->length;
@@ -2174,7 +2173,7 @@ static enum result evaluate_sub_expression( struct expression *this, struct vari
 					&& idx.integer_value + len.integer_value <= length ) {
 						str = new_string_value( len.integer_value );
 						if( str ) {
-							if( var.string_value->line == -1 ) {
+							if( var.string_value->type == ARRAY ) {
 								data = str->string;
 								arr = ( ( struct array * ) var.string_value )->array;
 								offset = 0;
@@ -2275,7 +2274,7 @@ static struct element* array_to_element( struct array *arr ) {
 	while( idx < count ) {
 		var = &arr->array[ idx++ ];
 		if( var->string_value ) {
-			if( var->string_value->line > 0 ) {
+			if( var->string_value->type == ELEMENT ) {
 				elem = new_literal_element( ( struct element * ) var->string_value );
 			} else if( var->integer_value ) {
 				elem = new_tuple_element( var->integer_value, var->string_value );
@@ -2310,7 +2309,7 @@ static enum result evaluate_values_expression( struct expression *this, struct v
 	struct element *elem;
 	enum result ret = parameter->evaluate( parameter, variables, &arr, exception );
 	if( ret ) {
-		if( arr.string_value && arr.string_value->line == -1
+		if( arr.string_value && arr.string_value->type == ARRAY
 		&& ( ( struct array * ) arr.string_value )->length > 0 ) {
 			elem = array_to_element( ( struct array * ) arr.string_value );
 			if( elem ) {
@@ -2389,7 +2388,7 @@ static enum result evaluate_next_expression( struct expression *this, struct var
 	struct element *next;
 	enum result ret = parameter->evaluate( parameter, variables, &prev, exception );
 	if( ret ) {
-		if( prev.string_value && prev.string_value->line > 0 ) {
+		if( prev.string_value && prev.string_value->type == ELEMENT ) {
 			next = ( ( struct element * ) prev.string_value )->next;
 			if( next ) {
 				next->str.reference_count++;
@@ -2412,7 +2411,7 @@ static enum result evaluate_child_expression( struct expression *this, struct va
 	struct element *child;
 	enum result ret = parameter->evaluate( parameter, variables, &parent, exception );
 	if( ret ) {
-		if( parent.string_value && parent.string_value->line > 0 ) {
+		if( parent.string_value && parent.string_value->type == ELEMENT ) {
 			child = ( ( struct element * ) parent.string_value )->child;
 			if( child ) {
 				child->str.reference_count++;
@@ -2435,22 +2434,22 @@ static enum result evaluate_elem_expression( struct expression *this, struct var
 	struct element *value;
 	enum result ret = parameter->evaluate( parameter, variables, &elem, exception );
 	if( ret ) {
-		if( elem.string_value && elem.string_value->line > 0 ) {
+		if( elem.string_value && elem.string_value->type == ELEMENT ) {
 			parameter = parameter->next;
 			ret = parameter->evaluate( parameter, variables, &child, exception );
 			if( ret ) {
-				if( ( child.string_value && child.string_value->line > 0 )
+				if( ( child.string_value && child.string_value->type == ELEMENT )
 				|| !( child.string_value || child.integer_value ) ) {
 					if( !child.string_value || strchr( "([{", elem.string_value->string[ 0 ] ) ) {
 						parameter = parameter->next;
 						ret = parameter->evaluate( parameter, variables, &next, exception );
 						if( ret ) {
-							if( ( next.string_value && next.string_value->line > 0 )
+							if( ( next.string_value && next.string_value->type == ELEMENT )
 							|| !( next.string_value || next.integer_value ) ) {
 								if( elem.string_value->reference_count > 1 ) {
 									value = new_element( elem.string_value->length );
 									if( value ) {
-										value->str.line = elem.string_value->line;
+										value->line = ( ( struct element * ) elem.string_value )->line;
 										memcpy( value->str.string, elem.string_value->string, elem.string_value->length );
 									} else {
 										ret = throw( exception, this, 0, OUT_OF_MEMORY );
@@ -2534,7 +2533,7 @@ static enum result evaluate_unparse_expression( struct expression *this, struct 
 	struct variable elem = { 0, NULL };
 	enum result ret = parameter->evaluate( parameter, variables, &elem, exception );
 	if( ret ) {
-		if( elem.string_value && elem.string_value->line > 0 ) {
+		if( elem.string_value && elem.string_value->type == ELEMENT ) {
 			len = write_element( ( struct element * ) elem.string_value, NULL );
 			if( len >= 0 ) {
 				str = new_string_value( len );
@@ -2620,9 +2619,9 @@ static enum result evaluate_line_expression( struct expression *this, struct var
 	struct variable elem = { 0, NULL };
 	enum result ret = parameter->evaluate( parameter, variables, &elem, exception );
 	if( ret ) {
-		if( elem.string_value && elem.string_value->line > 0 ) {
+		if( elem.string_value && elem.string_value->type == ELEMENT ) {
 			dispose_variable( result );
-			result->integer_value = elem.string_value->line;
+			result->integer_value = ( ( struct element * ) elem.string_value )->line;
 			result->string_value = NULL;
 		} else {
 			ret = throw( exception, this, 0, "Not an element." );
@@ -2671,7 +2670,7 @@ static enum result evaluate_pack_expression( struct expression *this, struct var
 	struct variable val = { 0, NULL }, *src;
 	enum result ret = this->parameters->evaluate( this->parameters, variables, &val, exception );
 	if( ret ) {
-		if( val.string_value && val.string_value->line == -1 ) {
+		if( val.string_value && val.string_value->type == ARRAY ) {
 			src = ( ( struct array * ) val.string_value )->array;
 			len = ( ( struct array * ) val.string_value )->length * 4;
 		} else {
@@ -2897,21 +2896,21 @@ static struct element* parse_infix_expression( struct element *elem, struct envi
 							if( num_operands == oper->num_operands ) {
 								next = next->next;
 							} else {
-								sprintf( message, "Wrong number of arguments to '%.64s()' on line %d.", oper->name, child->str.line );
+								sprintf( message, "Wrong number of arguments to '%.64s()' on line %d.", oper->name, child->line );
 							}
 						}
 					} else {
-						sprintf( message, "Wrong number of arguments to '%.64s()' on line %d.", oper->name, child->str.line );
+						sprintf( message, "Wrong number of arguments to '%.64s()' on line %d.", oper->name, child->line );
 					}
 				} else {
-					sprintf( message, "Unhandled operator '%.64s' on line %d.", child->str.string, child->str.line );
+					sprintf( message, "Unhandled operator '%.64s' on line %d.", child->str.string, child->line );
 				}
 			} else {
-				sprintf( message, "Expected operator after '( on line %d.", elem->str.line );
+				sprintf( message, "Expected operator after '( on line %d.", elem->line );
 			}
 		} 
 	} else {
-		sprintf( message, "Expected expression after '( on line %d.", elem->str.line );
+		sprintf( message, "Expected expression after '( on line %d.", elem->line );
 	}
 	return next;
 }
@@ -2934,15 +2933,15 @@ static struct element* parse_operator_expression( struct element *elem, struct e
 					if( num_operands == oper->num_operands || ( oper->num_operands < 0 && num_operands > 0 ) ) {
 						next = next->next;
 					} else {
-						sprintf( message, "Wrong number of arguments to '%.64s()' on line %d.", oper->name, next->str.line );
+						sprintf( message, "Wrong number of arguments to '%.64s()' on line %d.", oper->name, next->line );
 					}
 				}
 			} else {
-				sprintf( message, "Expected '(' after '%.64s' on line %d.", oper->name, elem->str.line );
+				sprintf( message, "Expected '(' after '%.64s' on line %d.", oper->name, elem->line );
 			}
 		}
 	} else {
-		sprintf( message, "Unhandled expression '%.64s' on line %d.", elem->str.string, elem->str.line );
+		sprintf( message, "Unhandled expression '%.64s' on line %d.", elem->str.string, elem->line );
 	}
 	return next;
 }
@@ -2962,11 +2961,11 @@ static struct element* parse_function_expression( struct element *elem, struct e
 			if( num_params == expr->function->num_parameters ) {
 				next = next->next;
 			} else {
-				sprintf( message, "Wrong number of arguments to '%.64s()' on line %d.", elem->str.string, next->str.line );
+				sprintf( message, "Wrong number of arguments to '%.64s()' on line %d.", elem->str.string, next->line );
 			}
 		}
 	} else {
-		sprintf( message, "Expected '(' after function name on line %d.", next->str.line );
+		sprintf( message, "Expected '(' after function name on line %d.", next->line );
 	}
 	return next;
 }
@@ -2979,7 +2978,7 @@ static struct element* parse_func_ref_expression( struct element *elem, struct e
 		expr->function = function;
 		expr->evaluate = evaluate_func_ref_expression;
 	} else {
-		sprintf( message, "Function '%.64s' not defined on line %d.", name, elem->str.line );
+		sprintf( message, "Function '%.64s' not defined on line %d.", name, elem->line );
 	}
 	return elem->next;
 }
@@ -2995,7 +2994,7 @@ static struct element* parse_index_expression( struct element *elem, struct envi
 		if( num_params == 2 ) {
 			expr->evaluate = evaluate_index_expression;
 		} else {
-			sprintf( message, "Invalid index expression on line %d.", elem->str.line );
+			sprintf( message, "Invalid index expression on line %d.", elem->line );
 		}
 	}
 	return elem->next;
@@ -3010,7 +3009,7 @@ static struct element* parse_struct_expression( struct element *elem, struct env
 		if( idx >= 0 ) {
 			expr->index = idx;
 		} else {
-			sprintf( message, "Field '%.64s' not declared on line %d.", elem->str.string, elem->str.line );
+			sprintf( message, "Field '%.64s' not declared on line %d.", elem->str.string, elem->line );
 		}
 	} else {
 		expr->index = struc->length;
@@ -3030,7 +3029,7 @@ static struct element* parse_expression( struct element *elem, struct environmen
 	struct function_declaration *decl;
 	struct expression *expr = calloc( 1, sizeof( struct expression ) );
 	if( expr ) {
-		expr->line = elem->str.line;
+		expr->line = elem->line;
 		expr->function = func;
 		if( ( value[ 0 ] >= '0' && value[ 0 ] <= '9' )
 			|| ( value[ 0 ] == '-' && ( value[ 1 ] >= '0' && value[ 1 ] <= '9' ) ) ) {
@@ -3090,7 +3089,7 @@ static struct element* parse_expression( struct element *elem, struct environmen
 			}
 		}
 		if( message[ 0 ] == 0 && next && next->str.string[ 0 ] == '(' ) {
-			sprintf( message, "Unexpected '(' after expression on line %d.", next->str.line );
+			sprintf( message, "Unexpected '(' after expression on line %d.", next->line );
 		}
 		if( message[ 0 ] == 0 ) {
 			prev->next = expr;
@@ -3111,7 +3110,7 @@ static struct element* parse_expressions( struct element *elem, struct environme
 		prev = prev->next;
 		count++;
 		while( elem && message[ 0 ] == 0 && elem->str.string[ 0 ] == ',' ) {
-			line = elem->str.line;
+			line = elem->line;
 			elem = elem->next;
 			if( elem && elem->str.string[ 0 ] != ',' ) {
 				elem = parse_expression( elem, env, func, prev, message );
@@ -3140,7 +3139,7 @@ static struct element* parse_increment_statement( struct element *elem, struct e
 			stmt->source = calloc( 1, sizeof( struct expression ) );
 			if( stmt->source ) {
 				stmt->local = local;
-				stmt->source->line = next->str.line;
+				stmt->source->line = next->line;
 				stmt->source->function = func;
 				stmt->execute = execute_increment_statement;
 				next = next->next->next;
@@ -3148,7 +3147,7 @@ static struct element* parse_increment_statement( struct element *elem, struct e
 				strcpy( message, OUT_OF_MEMORY );
 			}
 		} else {
-			sprintf( message, "Undeclared local variable '%.64s' on line %d.", next->str.string, next->str.line );
+			sprintf( message, "Undeclared local variable '%.64s' on line %d.", next->str.string, next->line );
 		}
 	}
 	return next;
@@ -3166,7 +3165,7 @@ static struct element* parse_decrement_statement( struct element *elem, struct e
 			stmt->source = calloc( 1, sizeof( struct expression ) );
 			if( stmt->source ) {
 				stmt->local = local;
-				stmt->source->line = next->str.line;
+				stmt->source->line = next->line;
 				stmt->source->function = func;
 				stmt->execute = execute_decrement_statement;
 				next = next->next->next;
@@ -3174,7 +3173,7 @@ static struct element* parse_decrement_statement( struct element *elem, struct e
 				strcpy( message, OUT_OF_MEMORY );
 			}
 		} else {
-			sprintf( message, "Undeclared local variable '%.64s' on line %d.", next->str.string, next->str.line );
+			sprintf( message, "Undeclared local variable '%.64s' on line %d.", next->str.string, next->line );
 		}
 	}
 	return next;
@@ -3265,7 +3264,7 @@ static struct element* parse_assignment_statement( struct element *elem, struct 
 					next = next->next;
 				}
 			} else {
-				sprintf( message, "Undeclared variable '%.64s' on line %d.", next->str.string, next->str.line );
+				sprintf( message, "Undeclared variable '%.64s' on line %d.", next->str.string, next->line );
 			}
 		}
 	}
@@ -3509,10 +3508,10 @@ static int is_keyword( struct keyword *keywords, char *value ) {
 
 static struct element* validate_syntax( char *syntax, struct element *elem,
 	struct element *key, struct environment *env, char *message ) {
-	int idx = 1, chr = syntax[ 0 ], line = key->str.line;
+	int idx = 1, chr = syntax[ 0 ], line = key->line;
 	while( chr && message[ 0 ] == 0 ) {
 		if( elem ) {
-			line = elem->str.line;
+			line = elem->line;
 		}
 		if( chr == '0' ) {
 			/* List end. */
@@ -3660,7 +3659,7 @@ static void parse_keywords( struct keyword *keywords, struct element *elem,
 				}
 			}
 		} else {
-			sprintf( message, "Unrecognized keyword '%.64s' on line %d.", elem->str.string, elem->str.line );
+			sprintf( message, "Unrecognized keyword '%.64s' on line %d.", elem->str.string, elem->line );
 		}
 	}
 }
@@ -3696,7 +3695,7 @@ static struct element* parse_if_statement( struct element *elem, struct environm
 							next = next->next;
 						}
 					} else {
-						sprintf( message, "Expected '{' after 'else' on line %d.", next->str.line );
+						sprintf( message, "Expected '{' after 'else' on line %d.", next->line );
 					}
 				}
 			}
@@ -3756,7 +3755,7 @@ static struct element* parse_try_statement( struct element *elem, struct environ
 				}
 				stmt->execute = execute_try_statement;
 			} else {
-				sprintf( message, "Undeclared local variable '%.64s' on line %d.", next->str.string, next->str.line );
+				sprintf( message, "Undeclared local variable '%.64s' on line %d.", next->str.string, next->line );
 			}
 		}
 		prev->next = stmt;
@@ -3780,7 +3779,7 @@ static int add_function_parameter( struct function_declaration *func, struct ele
 			func->variable_decls_tail = param;
 		} else {
 			dispose_string_list( param );
-			sprintf( message, "Parameter '%.64s' already defined on line %d.", name, elem->str.line );
+			sprintf( message, "Parameter '%.64s' already defined on line %d.", name, elem->line );
 		}
 	} else {
 		strcpy( message, OUT_OF_MEMORY );
@@ -3796,7 +3795,7 @@ static struct element* parse_function_declaration( struct element *elem, struct 
 		if( decl ) {
 			decl->next = env->functions;
 			env->functions = decl;
-			decl->line = elem->str.line;
+			decl->line = elem->line;
 			decl->elem = elem;
 			decl->env = env;
 			next = next->next;
@@ -3825,7 +3824,7 @@ static struct element* parse_program_declaration( struct element *elem, struct e
 		if( decl ) {
 			decl->next = env->entry_points;
 			env->entry_points = decl;
-			decl->line = elem->str.line;
+			decl->line = elem->line;
 			decl->elem = elem;
 			decl->env = env;
 			next = next->next->next;
@@ -3901,23 +3900,23 @@ static struct element* parse_struct_declaration( struct element *elem, struct en
 					if( struc ) {
 						field = struc->fields;
 						while( field && message[ 0 ] == 0 ) {
-							if( add_structure_field( env, field->value, child->str.line, message ) ) {
+							if( add_structure_field( env, field->value, child->line, message ) ) {
 								field = field->next;
 							}
 						}
 						next = next->next;
 					} else {
-						sprintf( message, "Structure '%.64s' not declared on line %d.", child->str.string, child->str.line );
+						sprintf( message, "Structure '%.64s' not declared on line %d.", child->str.string, child->line );
 					}
 				} else {
-					sprintf( message, "Invalid parent structure declaration on line %d.", next->str.line );
+					sprintf( message, "Invalid parent structure declaration on line %d.", next->line );
 				}
 			}
 			if( message[ 0 ] == 0 ) {
 				if( next && next->str.string[ 0 ] == '{' ) {
 					child = next->child;
 					while( child && message[ 0 ] == 0 ) {
-						if( add_structure_field( env, child->str.string, child->str.line, message ) ) {
+						if( add_structure_field( env, child->str.string, child->line, message ) ) {
 							child = child->next;
 							if( child && ( child->str.string[ 0 ] == ',' || child->str.string[ 0 ] == ';' ) ) {
 								child = child->next;
@@ -3928,10 +3927,10 @@ static struct element* parse_struct_declaration( struct element *elem, struct en
 					if( next && next->str.string[ 0 ] == ';' ) {
 						next = next->next;
 					} else {
-						sprintf( message, "Expected ';' after 'struct' on line %d.", elem->str.line );
+						sprintf( message, "Expected ';' after 'struct' on line %d.", elem->line );
 					}
 				} else {
-					sprintf( message, "Expected '{' after 'struct' on line %d.", elem->str.line );
+					sprintf( message, "Expected '{' after 'struct' on line %d.", elem->line );
 				}
 			}
 		} else {
@@ -3992,7 +3991,7 @@ static int validate_decl( struct element *elem, struct environment *env, char *m
 	|| get_global_variable( env->constants, name )
 	|| get_function_declaration( env, name )
 	|| get_structure( env->structures, name ) ) {
-		sprintf( message, "Name '%.64s' already defined on line %d.", elem->str.string, elem->str.line );
+		sprintf( message, "Name '%.64s' already defined on line %d.", elem->str.string, elem->line );
 		return 0;
 	}
 	return 1;

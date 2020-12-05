@@ -496,7 +496,7 @@ static enum result execute_fxsurface_statement( struct statement *this, struct v
 					SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STATIC, width, height );
 				if( texture ) {
 					if( params[ 3 ].string_value ) {
-						if( params[ 3 ].string_value->line == -1 ) {
+						if( params[ 3 ].string_value->type == ARRAY ) {
 							arr = ( struct array * ) params[ 3 ].string_value;
 							values = arr->array;
 							pixels = malloc( arr->length * sizeof( Uint32 ) );
@@ -540,7 +540,7 @@ static enum result execute_fxsurface_statement( struct statement *this, struct v
 					32, 0xFF000000, 0x00FF0000, 0x0000FF00, 0x000000FF );
 				if( surface ) {
 					if( params[ 3 ].string_value ) {
-						if( params[ 3 ].string_value->line == -1 ) {
+						if( params[ 3 ].string_value->type == ARRAY ) {
 							arr = ( struct array * ) params[ 3 ].string_value;
 							values = arr->array;
 							if( SDL_LockSurface( surface ) == 0 ) {
@@ -858,7 +858,7 @@ static enum result execute_fxplay_statement( struct statement *this, struct vari
 		ret = expr->evaluate( expr, variables, &sequence, exception );
 		if( ret ) {
 			if( channel.integer_value >= 0 && channel.integer_value < NUM_CHANNELS ) {
-				if( sequence.string_value && sequence.string_value->line == 0 ) {
+				if( sequence.string_value && sequence.string_value->type == STRING ) {
 					SDL_LockAudio();
 					if( this->local && fxenv->channels[ channel.integer_value ].sequence.string_value ) {
 						assign_variable( &sequence, &fxenv->channels[ channel.integer_value ].next_sequence );
@@ -926,7 +926,7 @@ static struct element* parse_fxshow_statement( struct element *elem, struct envi
 	if( stmt ) {
 		stmt->source = calloc( 1, sizeof( struct expression ) );
 		if( stmt->source ) {
-			stmt->source->line = elem->str.line;
+			stmt->source->line = elem->line;
 			stmt->source->function = func;
 			stmt->execute = execute_fxshow_statement;
 			prev->next = stmt;
@@ -1353,7 +1353,7 @@ static enum result evaluate_fxstream_expression( struct expression *this, struct
 			parameter = parameter->next;
 			ret = parameter->evaluate( parameter, variables, &count, exception );
 			if( ret ) {
-				if( arr.string_value && arr.string_value->string && arr.string_value->line == -1 ) {
+				if( arr.string_value && arr.string_value->string && arr.string_value->type == ARRAY ) {
 					values = ( ( struct array * ) arr.string_value )->array;
 					length = ( ( ( struct array * ) arr.string_value )->length ) >> 1;
 					if( offset.integer_value >= 0 && count.integer_value >= 0

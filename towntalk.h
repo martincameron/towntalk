@@ -8,6 +8,11 @@ enum result {
 	EXCEPTION, OKAY, RETURN, BREAK, CONTINUE
 };
 
+/* Reference type. */
+enum reference_type {
+	STRING, ELEMENT, ARRAY, FUNCTION
+};
+
 /* String list. */
 struct string_list {
 	char *value;
@@ -17,22 +22,24 @@ struct string_list {
 /* Reference-counted string. */
 struct string {
 	size_t reference_count;
-	int length, line;
+	enum reference_type type;
 	char *string;
+	int length;
 };
 
 /* Reference-counted parse-tree element. */
 struct element {
 	struct string str;
 	struct element *child, *next;
+	int line;
 };
 
 /* Reference-counted array. */
 struct array {
 	struct string str;
-	int length;
 	struct variable *array;
 	struct array *prev, *next;
+	int length;
 };
 
 /* Reference-counted function declaration list. */
