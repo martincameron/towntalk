@@ -42,8 +42,8 @@ struct array {
 	int length;
 };
 
-/* Reference-counted function declaration list. */
-struct function_declaration {
+/* Reference-counted function list. */
+struct function {
 	struct string str;
 	int line, num_parameters, num_variables;
 	struct string file;
@@ -51,7 +51,7 @@ struct function_declaration {
 	struct environment *env;
 	struct string_list *variable_decls, *variable_decls_tail;
 	struct statement *statements, *statements_tail;
-	struct function_declaration *next;
+	struct function *next;
 };
 
 /* Variable value. */
@@ -70,7 +70,7 @@ struct environment {
 	struct structure *structures;
 	struct global_variable *constants, *constants_tail;
 	struct global_variable *globals, *globals_tail;
-	struct function_declaration *functions, *entry_points;
+	struct function *functions, *entry_points;
 };
 
 /* Struct declaration list.*/
@@ -93,7 +93,7 @@ struct global_variable {
 struct expression {
 	int line, index;
 	struct global_variable *global;
-	struct function_declaration *function;
+	struct function *function;
 	struct expression *parameters, *next;
 	enum result ( *evaluate )( struct expression *this, struct variable *variables,
 		struct variable *result, struct variable *exception );
@@ -114,7 +114,7 @@ struct keyword {
 	char *name, *syntax;
 	/* Parse the current declaration into env, or statement into prev->next. */
 	struct element* ( *parse )( struct element *elem, struct environment *env,
-		struct function_declaration *func, struct statement *prev, char *message );
+		struct function *func, struct statement *prev, char *message );
 	struct keyword *next;
 };
 
@@ -161,7 +161,7 @@ int parse_tt_file( char *file_name, struct environment *env, char *message );
 int parse_tt_program( char *program, char *file_name, struct environment *env, char *message );
 
 /* Initialize expr to execute the specified function when evaluated. */
-void initialize_function_expr( struct expression *expr, struct function_declaration *func );
+void initialize_function_expr( struct expression *expr, struct function *func );
 
 /* Evaluate the global-variable initialization expressions for env before program execution.
    Returns zero and assigns exception on failure. */
@@ -176,7 +176,7 @@ void dispose_environment( struct environment *env );
 
 /* Parse a statement that expects one or more expressions after the keyword. */
 struct element* parse_expr_list_statement( struct element *elem, struct environment *env,
-	struct function_declaration *func, struct statement *prev,
+	struct function *func, struct statement *prev,
 	enum result ( *execute )( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ), char *message );
 

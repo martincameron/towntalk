@@ -915,12 +915,12 @@ static enum result execute_fxmidi_statement( struct statement *this, struct vari
 }
 
 static struct element* parse_fxopen_statement( struct element *elem, struct environment *env,
-	struct function_declaration *func, struct statement *prev, char *message ) {
+	struct function *func, struct statement *prev, char *message ) {
 	return parse_expr_list_statement( elem, env, func, prev, execute_fxopen_statement, message );
 }
 
 static struct element* parse_fxshow_statement( struct element *elem, struct environment *env,
-	struct function_declaration *func, struct statement *prev, char *message ) {
+	struct function *func, struct statement *prev, char *message ) {
 	struct element *next = elem->next;
 	struct statement *stmt = new_statement( message );
 	if( stmt ) {
@@ -939,47 +939,47 @@ static struct element* parse_fxshow_statement( struct element *elem, struct envi
 }
 
 static struct element* parse_fxsurface_statement( struct element *elem, struct environment *env,
-	struct function_declaration *func, struct statement *prev, char *message ) {
+	struct function *func, struct statement *prev, char *message ) {
 	return parse_expr_list_statement( elem, env, func, prev, execute_fxsurface_statement, message );
 }
 
 static struct element* parse_fxblit_statement( struct element *elem, struct environment *env,
-	struct function_declaration *func, struct statement *prev, char *message ) {
+	struct function *func, struct statement *prev, char *message ) {
 	return parse_expr_list_statement( elem, env, func, prev, execute_fxblit_statement, message );
 }
 
 static struct element* parse_fxrect_statement( struct element *elem, struct environment *env,
-	struct function_declaration *func, struct statement *prev, char *message ) {
+	struct function *func, struct statement *prev, char *message ) {
 	return parse_expr_list_statement( elem, env, func, prev, execute_fxrect_statement, message );
 }
 
 static struct element* parse_fxsleep_statement( struct element *elem, struct environment *env,
-	struct function_declaration *func, struct statement *prev, char *message ) {
+	struct function *func, struct statement *prev, char *message ) {
 	return parse_expr_list_statement( elem, env, func, prev, execute_fxsleep_statement, message );
 }
 
 static struct element* parse_fxtimer_statement( struct element *elem, struct environment *env,
-	struct function_declaration *func, struct statement *prev, char *message ) {
+	struct function *func, struct statement *prev, char *message ) {
 	return parse_expr_list_statement( elem, env, func, prev, execute_fxtimer_statement, message );
 }
 
 static struct element* parse_fxaudio_statement( struct element *elem, struct environment *env,
-	struct function_declaration *func, struct statement *prev, char *message ) {
+	struct function *func, struct statement *prev, char *message ) {
 	return parse_expr_list_statement( elem, env, func, prev, execute_fxaudio_statement, message );
 }
 
 static struct element* parse_fxsample_statement( struct element *elem, struct environment *env,
-	struct function_declaration *func, struct statement *prev, char *message ) {
+	struct function *func, struct statement *prev, char *message ) {
 	return parse_expr_list_statement( elem, env, func, prev, execute_fxsample_statement, message );
 }
 
 static struct element* parse_fxplay_statement( struct element *elem, struct environment *env,
-	struct function_declaration *func, struct statement *prev, char *message ) {
+	struct function *func, struct statement *prev, char *message ) {
 	return parse_expr_list_statement( elem, env, func, prev, execute_fxplay_statement, message );
 }
 
 static struct element* parse_fxqueue_statement( struct element *elem, struct environment *env,
-	struct function_declaration *func, struct statement *prev, char *message ) {
+	struct function *func, struct statement *prev, char *message ) {
 	struct element *next = parse_expr_list_statement( elem, env, func, prev, execute_fxplay_statement, message );
 	if( prev->next ) {
 		prev->next->local = 1;
@@ -988,7 +988,7 @@ static struct element* parse_fxqueue_statement( struct element *elem, struct env
 }
 
 static struct element* parse_fxmidi_statement( struct element *elem, struct environment *env,
-	struct function_declaration *func, struct statement *prev, char *message ) {
+	struct function *func, struct statement *prev, char *message ) {
 	return parse_expr_list_statement( elem, env, func, prev, execute_fxmidi_statement, message );
 }
 
