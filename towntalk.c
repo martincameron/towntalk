@@ -3766,67 +3766,83 @@ static struct element* parse_try_statement( struct element *elem, struct environ
 static int add_function_parameter( struct function *func, struct element *elem,
 	struct environment *env, char *message ) {
 	char *name = elem->str.string;
-	struct string_list *param = new_string_list( name );
-	if( param ) {
-		/*printf("Function parameter '%s'\n", name);*/
-		if( get_string_list_index( func->variable_decls, name ) < 0 ) {
-			func->num_parameters = func->num_variables = func->num_parameters + 1;
-			if( func->variable_decls ) {
-				func->variable_decls_tail->next = param;
+	struct string_list *param;
+	if( validate_decl( elem, env, message ) ) {
+		param = new_string_list( name );
+		if( param ) {
+			/*printf("Function parameter '%s'\n", name);*/
+			if( get_string_list_index( func->variable_decls, name ) < 0 ) {
+				func->num_parameters = func->num_variables = func->num_parameters + 1;
+				if( func->variable_decls ) {
+					func->variable_decls_tail->next = param;
+				} else {
+					func->variable_decls = param;
+				}
+				func->variable_decls_tail = param;
 			} else {
-				func->variable_decls = param;
+				dispose_string_list( param );
+				sprintf( message, "Parameter '%.64s' already defined on line %d.", name, elem->line );
 			}
-			func->variable_decls_tail = param;
 		} else {
-			dispose_string_list( param );
-			sprintf( message, "Parameter '%.64s' already defined on line %d.", name, elem->line );
+			strcpy( message, OUT_OF_MEMORY );
 		}
-	} else {
-		strcpy( message, OUT_OF_MEMORY );
 	}
 	return message[ 0 ] == 0;
 }
 
+static struct function* parse_function( struct element *elem, char *name, char *file,
+	struct environment *env, char *message ) {
+	struct element *child;
+	struct function *func = new_function( name, file, message );
+	if( func ) {
+		func->line = elem->line;
+		func->body = elem->next;
+		func->env = env;
+		child = elem->child;
+		while( child && message[ 0 ] == 0 ) {
+			if( add_function_parameter( func, child, env, message ) ) {
+				child = child->next;
+				if( child && child->str.string[ 0 ] == ',' ) {
+					child = child->next;
+				}
+			}
+		}
+		if( message[ 0 ] ) {
+			unref_string( &func->str );
+			func = NULL;
+		}
+	}
+	return func;
+}
+
 static struct element* parse_function_declaration( struct element *elem, struct environment *env,
 	struct function *decl, struct statement *prev, char *message ) {
-	struct element *next = elem->next, *child;
+	struct element *next = elem->next;
+	char *name;
 	if( validate_decl( next, env, message ) ) {
-		decl = new_function( next->str.string, decl->file.string, message );
+		name = next->str.string;
+		next = next->next;
+		decl = parse_function( next, name, decl->file.string, env, message );
 		if( decl ) {
 			decl->next = env->functions;
 			env->functions = decl;
-			decl->line = elem->line;
-			decl->elem = elem;
-			decl->env = env;
-			next = next->next;
-			child = next->child;
-			while( child && message[ 0 ] == 0 ) {
-				if( add_function_parameter( decl, child, env, message ) ) {
-					child = child->next;
-					if( child && child->str.string[ 0 ] == ',' ) {
-						child = child->next;
-					}
-				}
-			}
-			if( message[ 0 ] == 0 ) {
-				next = next->next->next;
-			}
+			next = next->next->next;
 		}
 	}
 	return next;
 }
 
 static struct element* parse_program_declaration( struct element *elem, struct environment *env,
-	struct function *decl, struct statement *prev, char *message ) {
+	struct function *func, struct statement *prev, char *message ) {
 	struct element *next = elem->next;
 	if( validate_decl( next, env, message ) ) {
-		decl = new_function( next->str.string, decl->file.string, message );
-		if( decl ) {
-			decl->next = env->entry_points;
-			env->entry_points = decl;
-			decl->line = elem->line;
-			decl->elem = elem;
-			decl->env = env;
+		func = new_function( next->str.string, func->file.string, message );
+		if( func ) {
+			func->next = env->entry_points;
+			env->entry_points = func;
+			func->line = elem->line;
+			func->body = next->next;
+			func->env = env;
 			next = next->next->next;
 		}
 	}
@@ -3999,24 +4015,10 @@ static int validate_decl( struct element *elem, struct environment *env, char *m
 
 static void parse_function_body( struct function *func, struct environment *env, char *message ) {
 	struct statement stmt;
-	struct element *next = func->elem->next->next, *child;
-	if( next->str.string[ 0 ] == '(' ) {
-		child = next->child;
-		while( child && message[ 0 ] == 0 ) {
-			if( validate_decl( child, env, message ) ) {
-				child = child->next;
-				if( child && child->str.string[ 0 ] == ',' ) {
-					child = child->next;
-				}
-			}
-		}
-		if( message[ 0 ] == 0 ) {
-			next = next->next;
-		}
-	}
-	if( next->child && message[ 0 ] == 0 ) {
+	struct element *next = func->body->child;
+	if( next ) {
 		stmt.next = NULL;
-		parse_keywords( env->statements, next->child, env, func, &stmt, message );
+		parse_keywords( env->statements, next, env, func, &stmt, message );
 		func->statements = stmt.next;
 	}
 }
@@ -4038,17 +4040,17 @@ int parse_tt_program( char *program, char *file_name, struct environment *env, c
 			/* Parse function bodies. */
 			func = env->functions;
 			while( func && message[ 0 ] == 0 ) {
-				if( func->elem ) {
+				if( func->body ) {
 					parse_function_body( func, env, message );
-					func->elem = NULL;
+					func->body = NULL;
 				}
 				func = func->next;
 			}
 			func = env->entry_points;
 			while( func && message[ 0 ] == 0 ) {
-				if( func->elem ) {
+				if( func->body ) {
 					parse_function_body( func, env, message );
-					func->elem = NULL;
+					func->body = NULL;
 				}
 				func = func->next;
 			}

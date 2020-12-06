@@ -47,7 +47,7 @@ struct function {
 	struct string str;
 	int line, num_parameters, num_variables;
 	struct string file;
-	struct element *elem;
+	struct element *body;
 	struct environment *env;
 	struct string_list *variable_decls, *variable_decls_tail;
 	struct statement *statements, *statements_tail;
