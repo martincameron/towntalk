@@ -160,8 +160,8 @@ int parse_tt_file( char *file_name, struct environment *env, char *message );
 /* Parse the specified program text into env. Returns zero and writes message on failure. */
 int parse_tt_program( char *program, char *file_name, struct environment *env, char *message );
 
-/* Initialize expr to execute the specified function when evaluated. */
-void initialize_function_expr( struct expression *expr, struct function *func );
+/* Initialize expr to call the specified function when evaluated. */
+void initialize_call_expr( struct expression *expr, struct function *func );
 
 /* Evaluate the global-variable initialization expressions for env before program execution.
    Returns zero and assigns exception on failure. */

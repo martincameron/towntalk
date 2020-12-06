@@ -151,6 +151,7 @@
 		$quote(str)              Encode byte string with quotes and escapes.
 		$unquote(str)            Decode quoted-string into byte string.
 		$interrupted             Check and clear program interrupt status.
+		$function(${(){stmts}})  Compile a function reference from an element.
 */
 
 /* The maximum integer value. */
@@ -1429,76 +1430,84 @@ static enum result evaluate_global( struct expression *this, struct variable *va
 	return OKAY;
 }
 
-static enum result evaluate_function_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_call_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	int idx, count;
 	enum result ret = OKAY;
 	struct statement *stmt;
-	struct variable func = { 0, NULL }, *locals;
+	struct variable *locals;
 	struct expression *parameter = this->parameters;
 	struct function *function = this->function;
-	if( this->index == ':' ) {
-		/* Reference call. */
-		ret = parameter->evaluate( parameter, variables, &func, exception );
+	count = sizeof( struct variable ) * function->num_variables;
+	locals = alloca( count );
+	memset( locals, 0, count );
+	idx = 0, count = function->num_parameters;
+	while( idx < count ) {
+		ret = parameter->evaluate( parameter, variables, &locals[ idx++ ], exception );
 		if( ret ) {
-			if( func.string_value && func.string_value->type == FUNCTION ) {
-				function = ( struct function * ) func.string_value;
-				parameter = parameter->next;
-				count = 0;
-				while( parameter ) {
-					count++;
-					parameter = parameter->next;
-				}
-				if( function->num_parameters == count ) {
-					parameter = this->parameters->next;
-				} else {
-					ret = throw( exception, this, count, "Incorrect number of parameters to function." );
-				}
-			} else {
-				ret = throw( exception, this, func.integer_value, "Not a function reference." );
-			}
-			dispose_variable( &func );
+			parameter = parameter->next;
+		} else {
+			break;
 		}
 	}
 	if( ret ) {
-		count = sizeof( struct variable ) * function->num_variables;
-		locals = alloca( count );
-		memset( locals, 0, count );
-		idx = 0, count = function->num_parameters;
-		while( idx < count ) {
-			ret = parameter->evaluate( parameter, variables, &locals[ idx++ ], exception );
-			if( ret ) {
-				parameter = parameter->next;
+		stmt = function->statements;
+		while( stmt ) {
+			ret = stmt->execute( stmt, locals, result, exception );
+			if( ret == OKAY ) {
+				stmt = stmt->next;
+			} else if( ret == EXCEPTION ) {
+				break;
+			} else if( ret == RETURN ) {
+				ret = OKAY;
+				break;
 			} else {
+				ret = throw( exception, this, ret, "Unhandled 'break' or 'continue'." );
 				break;
 			}
 		}
-		if( ret ) {
-			stmt = function->statements;
-			while( stmt ) {
-				ret = stmt->execute( stmt, locals, result, exception );
-				if( ret == OKAY ) {
-					stmt = stmt->next;
-				} else if( ret == EXCEPTION ) {
-					break;
-				} else if( ret == RETURN ) {
-					ret = OKAY;
-					break;
-				} else {
-					ret = throw( exception, this, ret, "Unhandled 'break' or 'continue'." );
-					break;
-				}
-			}
-			if( ret && stmt == NULL ) {
-				dispose_variable( result );
-				result->integer_value = 0;
-				result->string_value = NULL;
-			}
+		if( ret && stmt == NULL ) {
+			dispose_variable( result );
+			result->integer_value = 0;
+			result->string_value = NULL;
 		}
-		idx = 0, count = function->num_variables;
-		while( idx < count ) {
-			dispose_variable( &locals[ idx++ ] );
+	}
+	idx = 0, count = function->num_variables;
+	while( idx < count ) {
+		dispose_variable( &locals[ idx++ ] );
+	}
+	return ret;
+}
+
+static enum result evaluate_refcall_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	int count;
+	struct function *function;
+	struct expression expr = { 0 };
+	struct variable func = { 0, NULL };
+	struct expression *parameter = this->parameters;
+	enum result ret = parameter->evaluate( parameter, variables, &func, exception );
+	if( ret ) {
+		if( func.string_value && func.string_value->type == FUNCTION ) {
+			function = ( struct function * ) func.string_value;
+			expr.line = this->line;
+			expr.function = function;
+			parameter = parameter->next;
+			count = 0;
+			while( parameter ) {
+				count++;
+				parameter = parameter->next;
+			}
+			if( function->num_parameters == count ) {
+				expr.parameters = this->parameters->next;
+				ret = evaluate_call_expression( &expr, variables, result, exception );
+			} else {
+				ret = throw( exception, this, count, "Incorrect number of parameters to function." );
+			}
+		} else {
+			ret = throw( exception, this, func.integer_value, "Not a function reference." );
 		}
+		dispose_variable( &func );
 	}
 	return ret;
 }
@@ -2809,61 +2818,6 @@ static enum result evaluate_source_expression( struct expression *this, struct v
 	return OKAY;
 }
 
-static struct operator operators[] = {
-	{ ":", ':',-1, evaluate_function_expression, &operators[ 1 ] },
-	{ "%", '%', 2, evaluate_arithmetic_expression, &operators[ 2 ] },
-	{ "&", '&', 2, evaluate_arithmetic_expression, &operators[ 3 ] },
-	{ "*", '*', 2, evaluate_arithmetic_expression, &operators[ 4 ] },
-	{ "+", '+', 2, evaluate_arithmetic_expression, &operators[ 5 ] },
-	{ "-", '-', 2, evaluate_arithmetic_expression, &operators[ 6 ] },
-	{ "/", '/', 2, evaluate_arithmetic_expression, &operators[ 7 ] },
-	{ "<", '<', 2, evaluate_arithmetic_expression, &operators[ 8 ] },
-	{ "<e",'L', 2, evaluate_arithmetic_expression, &operators[ 9 ] },
-	{ ">", '>', 2, evaluate_arithmetic_expression, &operators[ 10 ] },
-	{ ">e",'G', 2, evaluate_arithmetic_expression, &operators[ 11 ] },
-	{ "<<",'A', 2, evaluate_arithmetic_expression, &operators[ 12 ] },
-	{ ">>",'B', 2, evaluate_arithmetic_expression, &operators[ 13 ] },
-	{ "^", '^', 2, evaluate_arithmetic_expression, &operators[ 14 ] },
-	{ "=", '=', 2, evaluate_arithmetic_expression, &operators[ 15 ] },
-	{ "|", '|', 2, evaluate_arithmetic_expression, &operators[ 16 ] },
-	{ "~", '~', 1, evaluate_bitwise_not_expression, &operators[ 17 ] },
-	{ "!", '!', 1, evaluate_logical_expression, &operators[ 18 ] },
-	{ "&&",'&', 2, evaluate_logical_expression, &operators[ 19 ] },
-	{ "||",'|', 2, evaluate_logical_expression, &operators[ 20 ] },
-	{ "$eq", '$', 2, evaluate_eq_expression, &operators[ 21 ] },
-	{ "$str", '$',-1, evaluate_str_expression, &operators[ 22 ] },
-	{ "$cmp", '$', 2, evaluate_cmp_expression, &operators[ 23 ] },
-	{ "$cat", '$',-1, evaluate_str_expression, &operators[ 24 ] },
-	{ "$chr", '$', 2, evaluate_chr_expression, &operators[ 25 ] },
-	{ "$sub", '$', 3, evaluate_sub_expression, &operators[ 26 ] },
-	{ "$asc", '$', 1, evaluate_asc_expression, &operators[ 27 ] },
-	{ "$hex", '$', 1, evaluate_hex_expression, &operators[ 28 ] },
-	{ "$int", '$', 1, evaluate_int_expression, &operators[ 29 ] },
-	{ "$len", '$', 1, evaluate_len_expression, &operators[ 30 ] },
-	{ "$tup", '$', 2, evaluate_tup_expression, &operators[ 31 ] },
-	{ "$array", '$', 1, evaluate_array_expression, &operators[ 32 ] },
-	{ "$new", '$', 1, evaluate_array_expression, &operators[ 33 ] },
-	{ "$load", '$', 1, evaluate_load_expression, &operators[ 34 ] },
-	{ "$flen", '$', 1, evaluate_flen_expression, &operators[ 35 ] },
-	{ "$chop", '$', 2, evaluate_chop_expression, &operators[ 36 ] },
-	{ "$argc", '$', 0, evaluate_argc_expression, &operators[ 37 ] },
-	{ "$argv", '$', 1, evaluate_argv_expression, &operators[ 38 ] },
-	{ "$time", '$', 0, evaluate_time_expression, &operators[ 39 ] },
-	{ "$parse", '$', 1, evaluate_parse_expression, &operators[ 40 ] },
-	{ "$unparse", '$', 1, evaluate_unparse_expression, &operators[ 41 ] },
-	{ "$next", '$', 1, evaluate_next_expression, &operators[ 42 ] },
-	{ "$child", '$', 1, evaluate_child_expression, &operators[ 43 ] },
-	{ "$line", '$', 1, evaluate_line_expression, &operators[ 44 ] },
-	{ "$elem", '$', 3, evaluate_elem_expression, &operators[ 45 ] },
-	{ "$values", '$', 1, evaluate_values_expression, &operators[ 46 ] },
-	{ "$pack", '$', 1, evaluate_pack_expression, &operators[ 47 ] },
-	{ "$unpack", '$', 2, evaluate_unpack_expression, &operators[ 48 ] },
-	{ "$quote", '$', 1, evaluate_quote_expression, &operators[ 49 ] },
-	{ "$unquote", '$', 1, evaluate_unquote_expression, &operators[ 50 ] },
-	{ "$interrupted", '$', 0, evaluate_interrupted_expression, &operators[ 51 ] },
-	{ "$src", '$', 0, evaluate_source_expression, NULL }
-};
-
 static struct operator* get_operator( char *name, struct environment *env ) {
 	struct operator *oper = env->operators;
 	while( oper && strcmp( oper->name, name ) ) {
@@ -2946,14 +2900,14 @@ static struct element* parse_operator_expression( struct element *elem, struct e
 	return next;
 }
 
-static struct element* parse_function_expression( struct element *elem, struct environment *env,
+static struct element* parse_call_expression( struct element *elem, struct environment *env,
 	struct function *func, struct function *decl, struct expression *expr, char *message ) {
 	struct element *next = elem->next;
 	struct expression prev;
 	int num_params;
 	if( next && next->str.string[ 0 ] == '(' ) {
 		expr->function = decl;
-		expr->evaluate = evaluate_function_expression;
+		expr->evaluate = evaluate_call_expression;
 		prev.next = NULL;
 		parse_expressions( next->child, env, func, 0, &prev, &num_params, message );
 		expr->parameters = prev.next;
@@ -3073,8 +3027,8 @@ static struct element* parse_expression( struct element *elem, struct environmen
 				} else {
 					decl = get_function( env, elem->str.string );
 					if( decl ) {
-						/* Function.*/
-						next = parse_function_expression( elem, env, func, decl, expr, message );
+						/* Function call.*/
+						next = parse_call_expression( elem, env, func, decl, expr, message );
 					} else {
 						struc = get_structure( env->structures, elem->str.string );
 						if( struc ) {
@@ -3815,6 +3769,54 @@ static struct function* parse_function( struct element *elem, char *name, char *
 	return func;
 }
 
+static int parse_function_body( struct function *func, struct environment *env, char *message ) {
+	struct statement stmt;
+	struct element *next = func->body->child;
+	if( next ) {
+		stmt.next = NULL;
+		parse_keywords( env->statements, next, env, func, &stmt, message );
+		func->statements = stmt.next;
+	}
+	return message[ 0 ] == 0;
+}
+
+static enum result evaluate_function_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	struct expression *parameter = this->parameters;
+	struct variable var = { 0, NULL };
+	struct function *func;
+	struct element *elem;
+	char message[ 128 ] = "";
+	enum result ret = parameter->evaluate( parameter, variables, &var, exception );
+	if( ret ) {
+		if( var.string_value && var.string_value->type == ELEMENT ) {
+			elem = ( struct element * ) var.string_value;
+			validate_syntax( "({0", elem, elem, this->function->env, message );
+			if( message[ 0 ] == 0 ) {
+				func = parse_function( elem, "function", this->function->file.string, this->function->env, message );
+				if( func ) {
+					if( parse_function_body( func, this->function->env, message ) ) {
+						dispose_variable( result );
+						result->integer_value = 0;
+						result->string_value = &func->str;
+					} else {
+						unref_string( &func->str );
+						ret = throw( exception, this, 0, message );
+					}
+				} else {
+					ret = throw( exception, this, 0, message );
+				}
+			} else {
+				ret = throw( exception, this, 0, message );
+			}
+		} else {
+			ret = throw( exception, this, 0, "Not an element." );
+		}
+		dispose_variable( &var );
+	}
+	return ret;
+}
+
 static struct element* parse_function_declaration( struct element *elem, struct environment *env,
 	struct function *decl, struct statement *prev, char *message ) {
 	struct element *next = elem->next;
@@ -3958,6 +3960,62 @@ static struct element* parse_struct_declaration( struct element *elem, struct en
 	return next;
 }
 
+static struct operator operators[] = {
+	{ ":", ':',-1, evaluate_refcall_expression, &operators[ 1 ] },
+	{ "%", '%', 2, evaluate_arithmetic_expression, &operators[ 2 ] },
+	{ "&", '&', 2, evaluate_arithmetic_expression, &operators[ 3 ] },
+	{ "*", '*', 2, evaluate_arithmetic_expression, &operators[ 4 ] },
+	{ "+", '+', 2, evaluate_arithmetic_expression, &operators[ 5 ] },
+	{ "-", '-', 2, evaluate_arithmetic_expression, &operators[ 6 ] },
+	{ "/", '/', 2, evaluate_arithmetic_expression, &operators[ 7 ] },
+	{ "<", '<', 2, evaluate_arithmetic_expression, &operators[ 8 ] },
+	{ "<e",'L', 2, evaluate_arithmetic_expression, &operators[ 9 ] },
+	{ ">", '>', 2, evaluate_arithmetic_expression, &operators[ 10 ] },
+	{ ">e",'G', 2, evaluate_arithmetic_expression, &operators[ 11 ] },
+	{ "<<",'A', 2, evaluate_arithmetic_expression, &operators[ 12 ] },
+	{ ">>",'B', 2, evaluate_arithmetic_expression, &operators[ 13 ] },
+	{ "^", '^', 2, evaluate_arithmetic_expression, &operators[ 14 ] },
+	{ "=", '=', 2, evaluate_arithmetic_expression, &operators[ 15 ] },
+	{ "|", '|', 2, evaluate_arithmetic_expression, &operators[ 16 ] },
+	{ "~", '~', 1, evaluate_bitwise_not_expression, &operators[ 17 ] },
+	{ "!", '!', 1, evaluate_logical_expression, &operators[ 18 ] },
+	{ "&&",'&', 2, evaluate_logical_expression, &operators[ 19 ] },
+	{ "||",'|', 2, evaluate_logical_expression, &operators[ 20 ] },
+	{ "$eq", '$', 2, evaluate_eq_expression, &operators[ 21 ] },
+	{ "$str", '$',-1, evaluate_str_expression, &operators[ 22 ] },
+	{ "$cmp", '$', 2, evaluate_cmp_expression, &operators[ 23 ] },
+	{ "$cat", '$',-1, evaluate_str_expression, &operators[ 24 ] },
+	{ "$chr", '$', 2, evaluate_chr_expression, &operators[ 25 ] },
+	{ "$sub", '$', 3, evaluate_sub_expression, &operators[ 26 ] },
+	{ "$asc", '$', 1, evaluate_asc_expression, &operators[ 27 ] },
+	{ "$hex", '$', 1, evaluate_hex_expression, &operators[ 28 ] },
+	{ "$int", '$', 1, evaluate_int_expression, &operators[ 29 ] },
+	{ "$len", '$', 1, evaluate_len_expression, &operators[ 30 ] },
+	{ "$tup", '$', 2, evaluate_tup_expression, &operators[ 31 ] },
+	{ "$array", '$', 1, evaluate_array_expression, &operators[ 32 ] },
+	{ "$new", '$', 1, evaluate_array_expression, &operators[ 33 ] },
+	{ "$load", '$', 1, evaluate_load_expression, &operators[ 34 ] },
+	{ "$flen", '$', 1, evaluate_flen_expression, &operators[ 35 ] },
+	{ "$chop", '$', 2, evaluate_chop_expression, &operators[ 36 ] },
+	{ "$argc", '$', 0, evaluate_argc_expression, &operators[ 37 ] },
+	{ "$argv", '$', 1, evaluate_argv_expression, &operators[ 38 ] },
+	{ "$time", '$', 0, evaluate_time_expression, &operators[ 39 ] },
+	{ "$parse", '$', 1, evaluate_parse_expression, &operators[ 40 ] },
+	{ "$unparse", '$', 1, evaluate_unparse_expression, &operators[ 41 ] },
+	{ "$next", '$', 1, evaluate_next_expression, &operators[ 42 ] },
+	{ "$child", '$', 1, evaluate_child_expression, &operators[ 43 ] },
+	{ "$line", '$', 1, evaluate_line_expression, &operators[ 44 ] },
+	{ "$elem", '$', 3, evaluate_elem_expression, &operators[ 45 ] },
+	{ "$values", '$', 1, evaluate_values_expression, &operators[ 46 ] },
+	{ "$pack", '$', 1, evaluate_pack_expression, &operators[ 47 ] },
+	{ "$unpack", '$', 2, evaluate_unpack_expression, &operators[ 48 ] },
+	{ "$quote", '$', 1, evaluate_quote_expression, &operators[ 49 ] },
+	{ "$unquote", '$', 1, evaluate_unquote_expression, &operators[ 50 ] },
+	{ "$interrupted", '$', 0, evaluate_interrupted_expression, &operators[ 51 ] },
+	{ "$function", '$', 1, evaluate_function_expression, &operators[ 52 ] },
+	{ "$src", '$', 0, evaluate_source_expression, NULL }
+};
+
 static struct keyword declarations[] = {
 	{ "rem", "{", parse_comment, &declarations[ 1 ] },
 	{ "include", "\";", parse_include, &declarations[ 2 ] },
@@ -4011,16 +4069,6 @@ static int validate_decl( struct element *elem, struct environment *env, char *m
 		return 0;
 	}
 	return 1;
-}
-
-static void parse_function_body( struct function *func, struct environment *env, char *message ) {
-	struct statement stmt;
-	struct element *next = func->body->child;
-	if( next ) {
-		stmt.next = NULL;
-		parse_keywords( env->statements, next, env, func, &stmt, message );
-		func->statements = stmt.next;
-	}
 }
 
 /* Parse the specified program text into env. Returns zero and writes message on failure. */
@@ -4165,9 +4213,9 @@ int initialize_environment( struct environment *env, char *message ) {
 }
 
 /* Initialize expr to execute the specified function when evaluated. */
-void initialize_function_expr( struct expression *expr, struct function *func ) {
+void initialize_call_expr( struct expression *expr, struct function *func ) {
 	memset( expr, 0, sizeof( struct expression ) );
-	expr->evaluate = evaluate_function_expression;
+	expr->evaluate = evaluate_call_expression;
 	expr->line = func->line;
 	expr->function = func;
 }

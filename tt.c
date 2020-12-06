@@ -35,7 +35,7 @@ int main( int argc, char **argv ) {
 					/* Install signal handler. */
 					if( signal( SIGINT, interrupt_handler ) != SIG_ERR ) {
 						/* Evaluate the last entry-point function. */
-						initialize_function_expr( &expr, env->entry_points );
+						initialize_call_expr( &expr, env->entry_points );
 						if( initialize_globals( env, &except ) && expr.evaluate( &expr, NULL, &result, &except ) ) {
 							exit_code = EXIT_SUCCESS;
 						} else if( except.string_value && except.string_value->string == NULL ) {
