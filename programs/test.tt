@@ -26,6 +26,25 @@ function assert( value, elem ) {
 	}
 }
 
+function assert_equals( expected, value, elem ) {
+	if $cmp( expected value ) {
+		throw $str( "Assertion failed on line " $line( elem )
+			". Expected '" expected "', actual '" value "'." );
+	}
+}
+
+function assert_throws( func, expected, elem ) {
+	var err;
+	try {
+		call :( func );
+	} catch err {
+		if <e( $len( expected ) $len( err ) ) {
+			let err = $sub( err 0 $len( expected ) );
+		}
+	}
+	call assert_equals( expected, err, elem );
+}
+
 function except( elem ) {
 	throw $tup( elem, $line( elem ) );
 }
@@ -769,23 +788,15 @@ function testvalues() {
 }
 
 function testfunction() {
-	var err;
-	try { call $function( 0 ); } catch err {}
-	call assert( err, ${-} );
-	let err = 0;
-	try { call :( $function( ${ x } ) ); } catch err {}
-	call assert( err, ${-} );
-	let err = 0;
-	try { call :( $function( ${ ( 1 ){ } } ) ); } catch err {}
-	call assert( err, ${-} );
-	let err = 0;
-	try { call :( $function( ${ (){ x } } ) ); } catch err {}
-	call assert( err, ${-} );
-	let err = 0;
-	call assert( =( :(
+	call assert_equals( ONE :(
 		$function( ${ () { 
 			return :( $function( $parse( "( param ) { return param; }" ) ) ONE );
-		} } ) ) ONE ), ${-} );
+		} } ) ), ${-} );
+	call assert_throws( $function( ${ () { call $function( except( ${ 1 } ) ); } } ), "1", ${-} );
+	call assert_throws( $function( ${ () { call $function( 0 ); } } ), "Not an element.", ${-} );
+	call assert_throws( $function( ${ () { call $function( ${ x } ); } } ), "Expected '(' after '$function'", ${-} );
+	call assert_throws( $function( ${ () { call $function( ${ ( 1 ) {} } ); } } ), "Invalid name '1'", ${-} );
+	call assert_throws( $function( ${ () { call $function( ${ () { x } } ); } } ), "Unrecognized keyword 'x'", ${-} );
 }
 
 program test {

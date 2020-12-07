@@ -3786,13 +3786,14 @@ static enum result evaluate_function_expression( struct expression *this, struct
 	struct expression *parameter = this->parameters;
 	struct variable var = { 0, NULL };
 	struct function *func;
-	struct element *elem;
+	struct element *elem, key = { { 1, ELEMENT, "$function", 9 } };
 	char message[ 128 ] = "";
 	enum result ret = parameter->evaluate( parameter, variables, &var, exception );
 	if( ret ) {
 		if( var.string_value && var.string_value->type == ELEMENT ) {
 			elem = ( struct element * ) var.string_value;
-			validate_syntax( "({0", elem, elem, this->function->env, message );
+			key.line = this->line;
+			validate_syntax( "({0", elem, &key, this->function->env, message );
 			if( message[ 0 ] == 0 ) {
 				func = parse_function( elem, "function", this->function->file.string, this->function->env, message );
 				if( func ) {
