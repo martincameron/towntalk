@@ -669,24 +669,24 @@ void unref_string( struct string *str ) {
 			free( arr->array );
 			free( arr );
 		} else if( str->type == FUNCTION ) {
-			func = ( struct function * ) str;
-			free( func->str.string );
-			free( func->file.string );
-			dispose_string_list( func->variable_decls );
-			dispose_statements( func->statements );
-			free( func );
+			while( str ) {
+				if( str->reference_count == 1 ) {
+					func = ( struct function * ) str;
+					free( func->str.string );
+					free( func->file.string );
+					dispose_string_list( func->variable_decls );
+					dispose_statements( func->statements );
+					func = func->next;
+					free( str );
+					str = &func->str;
+				} else {
+					str->reference_count--;
+					str = NULL;
+				}
+			}
 		}
 	} else {
 		str->reference_count--;
-	}
-}
-
-static void dispose_functions( struct function *function ) {
-	struct function *next;
-	while( function ) {
-		next = function->next;
-		unref_string( &function->str );
-		function = next;
 	}
 }
 
@@ -721,8 +721,8 @@ void dispose_environment( struct environment *env ) {
 		dispose_global_variables( env->constants );
 		dispose_global_variables( env->globals );
 		dispose_arrays( &env->arrays );
-		dispose_functions( env->functions );
-		dispose_functions( env->entry_points );
+		unref_string( &env->functions->str );
+		unref_string( &env->entry_points->str );
 		dispose_structure_declarations( env->structures );
 		free( env );
 	}
@@ -974,7 +974,7 @@ static struct function* new_function( char *name, char *file, char *message ) {
 			func->file.string = new_string( file );
 		}
 		if( !func->file.string ) {
-			dispose_functions( func );
+			unref_string( &func->str );
 			strcpy( message, OUT_OF_MEMORY );
 			func = NULL;
 		}
