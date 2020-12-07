@@ -15,15 +15,16 @@
 	Towntalk (c)2020 Martin Cameron.
 
 	A program file consists of a list of declarations.
-	Variables are integers, strings, elements or array references.
+	A variable is an integer with an associated referenced value.
+	Referenced values may be null, strings, elements, arrays or functions.
+	Non-null referenced values may evaluate to zero in integer expressions.
 	When a '#' character is encountered, the rest of the line is ignored.
-	Variable/Function/Array names must match "[A-Za-Z][A-Za-z0-9_]*".
-	Strings have value-semantics and are immutable, can be used as byte arrays.
+	Variable and function names must be alphanumeric.
+	Strings are immutable and can be used as byte arrays.
 	String literals support the escape sequences "\"", "\\", and octal "\nnn".
-	Strings are non-null, but evaluate to zero in integer expressions.
 	Commas within name and argument lists are optional.
 	Elements are immutable trees of strings with next and child references.
-	Element strings use the same syntax as program files.
+	A valid program file may be parsed into an element tree.
 	Elements are separated by whitespace, commas, ';' or '='.
 	Elements may contain spaces and separators by enclosing them in quotes.
 	Child elements are enclosed in parentheses, square brackets or braces.
