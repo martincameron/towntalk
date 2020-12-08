@@ -51,6 +51,7 @@ struct function {
 	struct environment *env;
 	struct string_list *variable_decls, *variable_decls_tail;
 	struct statement *statements, *statements_tail;
+	struct global_variable *literals;
 	struct function *next;
 };
 

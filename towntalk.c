@@ -677,6 +677,7 @@ void unref_string( struct string *str ) {
 					free( func->file.string );
 					dispose_string_list( func->variable_decls );
 					dispose_statements( func->statements );
+					dispose_global_variables( func->literals );
 					func = func->next;
 					free( str );
 					str = &func->str;
@@ -985,14 +986,16 @@ static struct function* new_function( char *name, char *file, char *message ) {
 
 static struct global_variable* new_global_variable( char *name, char *message ) {
 	struct global_variable *global = calloc( 1, sizeof( struct global_variable ) );
-	if( global ) {
+	if( global && name ) {
 		/*printf("Global '%s'\n", name);*/
 		global->name = new_string( name );
 		if( global->name == NULL ) {
 			free( global );
-			strcpy( message, OUT_OF_MEMORY );
 			global = NULL;
 		}
+	}
+	if( global == NULL ) {
+		strcpy( message, OUT_OF_MEMORY );
 	}
 	return global;
 }
@@ -2976,7 +2979,7 @@ static struct element* parse_struct_expression( struct element *elem, struct env
 static struct element* parse_expression( struct element *elem, struct environment *env,
 	struct function *func, struct expression *prev, char *message ) {
 	struct element *next = elem->next;
-	struct global_variable *constant, *global;
+	struct global_variable *literal, *global;
 	char *value = elem->str.string;
 	int local;
 	struct variable var;
@@ -2994,12 +2997,13 @@ static struct element* parse_expression( struct element *elem, struct environmen
 			expr->evaluate = evaluate_integer_constant_expression;
 		} else if( value[ 0 ] == '"' || ( value[ 0 ] == '$' && value[ 1 ] == 0 ) ) {
 			/* String or element literal. */
-			constant = new_global_variable( "#Const#", message );
-			if( constant ) {
-				add_constant( env, constant );
-				expr->global = constant;
+			literal = new_global_variable( NULL, message );
+			if( literal ) {
+				literal->next = func->literals;
+				func->literals = literal;
+				expr->global = literal;
 				expr->evaluate = evaluate_global;
-				next = parse_constant( elem, &constant->value, message );
+				next = parse_constant( elem, &literal->value, message );
 			}
 		} else if( value[ 0 ] == '\'' ) {
 			/* Infix operator.*/
