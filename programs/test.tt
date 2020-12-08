@@ -648,63 +648,47 @@ function teststruct() {
 }
 
 function testfuncref() {
-	var err;
-	call assert( =( $cmp( @testfuncref "testfuncref" ) 0 ), ${-} );
-	try { call :( $tup( "a" 1 ) ); } catch err {}
-	call assert( =( err 1 ), ${-} );
-	try { call :( @setg 1 2 ); } catch err {}
-	call assert( =( err 2 ), ${-} );
+	call assert_equals( "testfuncref", @testfuncref, ${-} );
 	call setg( 0 );
 	call :( @setg 1 );
-	call assert( =( g 1 ), ${-} );
+	call assert_equals( 1, g, ${-} );
+	call assert_throws( $function( ${ () { call :( $tup( "a" 1 ) ); } } ), "Not a function reference.", ${-} );
+	call assert_throws( $function( ${ () { call :( @setg 1 2 ); } } ), "Incorrect number of parameters", ${-} );
 }
 
 function testeq() {
-	var err;
-	call setg( 0 );
-	try { call $eq( except( ${ 1 } ) setg( 2 ) ); } catch err {}
-	call assert( =( $cmp( $str( err ) "1" ) 0 ), ${-} );
-	call assert( =( g 0 ), ${-} );
-	let err = 0;
-	try { call $eq( 0 except( ${ 2 } ) ); } catch err {}
-	call assert( =( $cmp( $str( err ) "2" ) 0 ), ${-} );
-	call assert( =( $eq( 0 0 ) 1 ), ${-} );
-	call assert( =( $eq( "" "" ) 1 ), ${-} );
-	call assert( =( $eq( "a" "a" ) 1 ), ${-} );
-	call assert( =( $eq( STR STR ) 1 ), ${-} );
-	call assert( =( $eq( @testeq @testeq ) 1 ), ${-} );
-	call assert( =( $eq( 0 1 ) 0 ), ${-} );
-	call assert( =( $eq( 0 "a" ) 0 ), ${-} );
-	call assert( =( $eq( "a" 0 ) 0 ), ${-} );
-	call assert( =( $eq( "a" "aa" ) 0 ), ${-} );
+	call assert_equals( 1, $eq( 0 0 ), ${-} );
+	call assert_equals( 1, $eq( "" "" ), ${-} );
+	call assert_equals( 1, $eq( "a" "a" ), ${-} );
+	call assert_equals( 1, $eq( STR STR ), ${-} );
+	call assert_equals( 1, $eq( @testeq @testeq ), ${-} );
+	call assert_equals( 0, $eq( 0 1 ), ${-} );
+	call assert_equals( 0, $eq( 0 "a" ), ${-} );
+	call assert_equals( 0, $eq( "a" 0 ), ${-} );
+	call assert_equals( 0, $eq( "a" "aa" ), ${-} );
+	call assert_throws( $function( ${ () { call setg( 0 ); call $eq( except( ${ 1 } ) setg( 2 ) ); } } ), "1", ${-} );
+	call assert_equals( 0, g, ${-} );
+	call assert_throws( $function( ${ () { call $eq( 0, except( ${ 2 } ) ); } } ), "2", ${-} );
 }
 
 function testsrc() {
-	call assert( $eq( $sub( $src, -( $len( $src ) 7 ), 7 ) "test.tt" ), ${-} );
+	call assert_equals( "test.tt", $sub( $src, -( $len( $src ) 7 ), 7 ), ${-} );
 }
 
 function testchop() {
-	var err;
-	call setg( 0 );
-	try { call $chop( except( ${ 1 } ), setg( 2 ) ); } catch err {}
-	call assert( =( $cmp( $str( err ) "1" ) 0 ), ${-} );
-	call assert( =( g 0 ), ${-} );
-	let err = 0;
-	try { call $chop( setg( 1 ), except( ${ 2 } ) ); } catch err {}
-	call assert( =( $cmp( $str( err ) "2" ) 0 ), ${-} );
-	call assert( =( g 1 ), ${-} );
-	let err = 0;
-	try { call $chop( 0, "" ); } catch err { let err = 1; }
-	call assert( =( err 1 ), ${-} );
-	try { call $chop( "", 0 ); } catch err { let err = 1; }
-	call assert( =( err 1 ), ${-} );
-	call assert( =( $cmp( $chop( "", "" ), "" ) 0 ), ${-} );
-	call assert( =( $cmp( $chop( "file", "" ), "" ) 0 ), ${-} );
-	call assert( =( $cmp( $chop( "file", "/" ), "" ) 0 ), ${-} );
-	call assert( =( $cmp( $chop( "dir/file", "/" ), "dir/" ) 0 ), ${-} );
-	call assert( =( $cmp( $chop( "c:file", "/:" ), "c:" ) 0 ), ${-} );
-	call assert( =( $cmp( $chop( "dir\\file", "/:\\" ), "dir\\" ) 0 ), ${-} );
-	call assert( =( $cmp( $chop( "c:\\dir\\file", "/:\\" ), "c:\\dir\\" ) 0 ), ${-} );
+	call assert_equals( "", $chop( "", "" ), ${-} );
+	call assert_equals( "", $chop( "file", "" ), ${-} );
+	call assert_equals( "", $chop( "file", "/" ), ${-} );
+	call assert_equals( "dir/", $chop( "dir/file", "/" ), ${-} );
+	call assert_equals( "c:", $chop( "c:file", "/:" ), ${-} );
+	call assert_equals( "dir\\", $chop( "dir\\file", "/:\\" ), ${-} );
+	call assert_equals( "c:\\dir\\", $chop( "c:\\dir\\file", "/:\\" ), ${-} );
+	call assert_throws( $function( ${ () { call setg( 0 ); call $chop( except( ${ 1 } ), setg( 2 ) ); } } ), "1", ${-} );
+	call assert_equals( 0, g, ${-} );
+	call assert_throws( $function( ${ () { call $chop( setg( 1 ), except( ${ 2 } ) ); } } ), "2", ${-} );
+	call assert_equals( 1, g, ${-} );
+	call assert_throws( $function( ${ () { call $chop( 0, "" ); } } ), "Not a string.", ${-} );
+	call assert_throws( $function( ${ () { call $chop( "", 0 ); } } ), "Not a string.", ${-} );
 }
 
 function testinterrupted() {
@@ -715,76 +699,52 @@ function testinterrupted() {
 }
 
 function testinc() {
-	var int = "", err;
-	try { inc int; } catch err {}
-	call assert( err, ${-} );
-	let int = 0;
+	var int;
 	inc int;
-	call assert( =( int 1 ), ${-} );
+	call assert_equals( 1, int, ${-} );
+	call assert_throws( $function( ${ () { var int = ""; inc int; } } ), "Not an integer.", ${-} );
 }
 
 function testdec() {
-	var int = "", err;
-	try { dec int; } catch err {}
-	call assert( err, ${-} );
-	let int = 0;
+	var int;
 	dec int;
-	call assert( =( int -1 ), ${-} );
+	call assert_equals( -1, int, ${-} );
+	call assert_throws( $function( ${ () { var int = ""; dec int; } } ), "Not an integer.", ${-} );
 }
 
 function testelem() {
-	var err;
-	try { call $elem( except( ${ 1 } ), 0, 0 ); } catch err {}
-	call assert( =( $cmp( $str( err ) "1" ) 0 ), ${-} );
-	let err = 0;
-	try { call $elem( 1, 0, 0 ); } catch err {}
-	call assert( =( err 1 ), ${-} );
-	let err = 0;
-	try { call $elem( ${-}, except( ${ 2 } ), 0 ); } catch err {}
-	call assert( =( $cmp( $str( err ) "2" ) 0 ), ${-} );
-	let err = 0;
-	try { call $elem( ${-}, 2, 0 ); } catch err {}
-	call assert( =( err 2 ), ${-} );
-	let err = 0;
-	try { call $elem( ${-}, 0, except( ${ 3 } ) ); } catch err {}
-	call assert( =( $cmp( $str( err ) "3" ) 0 ), ${-} );
-	let err = 0;
-	try { call $elem( ${-}, 0, 3 ); } catch err {}
-	call assert( =( err 3 ), ${-} );
-	call assert( =( $cmp( $elem( ${ 1 }, 0, 0 ) "1" ) 0 ), ${-} );
-	let err = 0;
-	try { call $elem( ${-}, ${ 2 }, 0 ); } catch err {}
-	call assert( err, ${-} );
-	call assert( =( $cmp( $child( $elem( ${()}, ${ 2 }, 0 ) ) "2" ) 0 ), ${-} );
-	call assert( =( $cmp( $child( $elem( ${[]}, ${ 2 }, 0 ) ) "2" ) 0 ), ${-} );
-	call assert( =( $cmp( $child( $elem( ${{}}, ${ 2 }, 0 ) ) "2" ) 0 ), ${-} );
-	call assert( =( $cmp( $child( $elem( ${{}}, $elem( ${ 2 }, 0, 0 ), 0 ) ) "2" ) 0 ), ${-} );
-	call assert( =( $cmp( $next( $elem( ${ 1 }, 0, ${ 3 } ) ) "3" ) 0 ), ${-} );
-	call assert( =( $cmp( $next( $elem( ${ 1 }, 0, $elem( ${ 3 }, 0, 0 ) ) ) "3" ) 0 ), ${-} );
-	call assert( =( $cmp( $elem( $parse( "(abc) def" ), 0, 0 ) "()" ) 0 ), ${-} );
-	call assert( !( $child( $elem( $parse( "(abc) def" ), 0, 0 ) ) ), ${-} );
-	call assert( =( $cmp( $child( $elem( $parse( "(abc) def" ), ${ 2 }, 0 ) ) "2" ) 0 ), ${-} );
-	call assert( !( $next( $elem( $parse( "(abc) def" ), 0, 0 ) ) ), ${-} );
-	call assert( =( $cmp( $next( $elem( $parse( "(abc) def" ), ${ 2 }, ${ 3 } ) ) "3" ) 0 ), ${-} );
-	call assert( =( $cmp( $next( $elem( $elem( ${()}, ${ abc }, ${ def } ), ${ 2 }, ${ 3 } ) ) "3" ) 0 ), ${-} );
+	call assert_equals( "1", $elem( ${ 1 }, 0, 0 ), ${-} );
+	call assert_equals( "2", $child( $elem( ${()}, ${ 2 }, 0 ) ), ${-} );
+	call assert_equals( "2", $child( $elem( ${[]}, ${ 2 }, 0 ) ), ${-} );
+	call assert_equals( "2", $child( $elem( ${{}}, ${ 2 }, 0 ) ), ${-} );
+	call assert_equals( "2", $child( $elem( ${{}}, $elem( ${ 2 }, 0, 0 ), 0 ) ), ${-} );
+	call assert_equals( "3", $next( $elem( ${ 1 }, 0, ${ 3 } ) ), ${-} );
+	call assert_equals( "3", $next( $elem( ${ 1 }, 0, $elem( ${ 3 }, 0, 0 ) ) ), ${-} );
+	call assert_equals( "()", $elem( $parse( "(abc) def" ), 0, 0 ), ${-} );
+	call assert_equals( 0, $child( $elem( $parse( "(abc) def" ), 0, 0 ) ), ${-} );
+	call assert_equals( "2", $child( $elem( $parse( "(abc) def" ), ${ 2 }, 0 ) ), ${-} );
+	call assert_equals( 0, $next( $elem( $parse( "(abc) def" ), 0, 0 ) ), ${-} );
+	call assert_equals( "3", $next( $elem( $parse( "(abc) def" ), ${ 2 }, ${ 3 } ) ), ${-} );
+	call assert_equals( "3", $next( $elem( $elem( ${()}, ${ abc }, ${ def } ), ${ 2 }, ${ 3 } ) ), ${-} );
+	call assert_throws( $function( ${ () { call $elem( except( ${ 1 } ), 0, 0 ); } } ), "1", ${-} );
+	call assert_throws( $function( ${ () { call $elem( 1, 0, 0 ); } } ), "Not an element.", ${-} );
+	call assert_throws( $function( ${ () { call $elem( ${-}, except( ${ 2 } ), 0 ); } } ), "2", ${-} );
+	call assert_throws( $function( ${ () { call $elem( ${-}, 2, 0 ); } } ), "Not an element.", ${-} );
+	call assert_throws( $function( ${ () { call $elem( ${-}, 0, except( ${ 3 } ) ); } } ), "3", ${-} );
+	call assert_throws( $function( ${ () { call $elem( ${-}, 0, 3 ); } } ), "Not an element.", ${-} );
+	call assert_throws( $function( ${ () { call $elem( ${-}, ${ 2 }, 0 ); } } ), "Parent elements must", ${-} );
 }
 
 function testvalues() {
-	var err, arr;
-	try { call $values( except( ${ 1 } ) ); } catch err {}
-	call assert( =( $cmp( $str( err ) "1" ) 0 ), ${-} );
-	let err = 0;
-	try { call $values( 0 ); } catch err {}
-	call assert( err, ${-} );
-	let err = 0;
-	try { call $values( $array( 0 ) ); } catch err {}
-	call assert( err, ${-} );
-	let arr = $array( $parse( $unparse( $values( $array( ${ 0 1 "2" $tup( "Three" 3 ) ${ [4] } } ) ) ) ) );
-	call assert( =( [ arr 0 ] 0 ), ${-} );
-	call assert( =( [ arr 1 ] 1 ), ${-} );
-	call assert( =( $cmp( [ arr 2 ] "2" ) 0 ), ${-} );
-	call assert( =( $cmp( [ arr 3 ] $tup( "Three" 3 ) ) 0 ), ${-} );
-	call assert( =( $cmp( $child( [ arr 4 ] ) "4" ) 0 ), ${-} );
+	var arr = $array( $parse( $unparse( $values( $array( ${ 0 1 "2" $tup( "Three" 3 ) ${ [4] } } ) ) ) ) );
+	call assert_equals( 0, [ arr 0 ], ${-} );
+	call assert_equals( 1, [ arr 1 ], ${-} );
+	call assert_equals( "2", [ arr 2 ], ${-} );
+	call assert_equals( $tup( "Three" 3 ), [ arr 3 ], ${-} );
+	call assert_equals( "4", $child( [ arr 4 ] ), ${-} );
+	call assert_throws( $function( ${ () { call $values( except( ${ 1 } ) ); } } ), "1", ${-} );
+	call assert_throws( $function( ${ () { call $values( 0 ); } } ), "Not an array or no values.", ${-} );
+	call assert_throws( $function( ${ () { call $values( $array( 0 ) ); } } ), "Not an array or no values.", ${-} );
 }
 
 function testfunction() {
