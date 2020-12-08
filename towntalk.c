@@ -723,8 +723,12 @@ void dispose_environment( struct environment *env ) {
 		dispose_global_variables( env->constants );
 		dispose_global_variables( env->globals );
 		dispose_arrays( &env->arrays );
-		unref_string( &env->functions->str );
-		unref_string( &env->entry_points->str );
+		if( env->functions ) {
+			unref_string( &env->functions->str );
+		}
+		if( env->entry_points ) {
+			unref_string( &env->entry_points->str );
+		}
 		dispose_structure_declarations( env->structures );
 		free( env );
 	}
