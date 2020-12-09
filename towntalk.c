@@ -454,7 +454,7 @@ static struct element* parse_element( char *buffer, char *message ) {
 			idx = -4;
 		}
 	}
-	if( idx < 0 ) {
+	if( idx < 0 && elem.child ) {
 		unref_string( &elem.child->str );
 		elem.child = NULL;
 	}
