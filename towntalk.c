@@ -15,14 +15,14 @@
 	Towntalk (c)2020 Martin Cameron.
 
 	A program file consists of a list of declarations.
-	A variable is an integer with an associated referenced value.
-	Referenced values may be null, strings, elements, arrays or functions.
-	Non-null referenced values may evaluate to zero in integer expressions.
 	When a '#' character is encountered, the rest of the line is ignored.
 	Variable and function names must be alphanumeric.
-	Strings are immutable and can be used as byte arrays.
-	String literals support the escape sequences "\"", "\\", and octal "\nnn".
 	Commas within name and argument lists are optional.
+	A value is an integer with an associated reference.
+	References may be null, strings, elements, arrays or functions.
+	Non-null values may evaluate to zero in integer expressions.
+	Strings are immutable and can be used as byte arrays.
+	String literals may include the escape sequences "\"", "\\", and octal "\nnn".
 	Elements are immutable trees of strings with next and child references.
 	A valid program file may be parsed into an element tree.
 	Elements are separated by whitespace, commas, ';' or '='.
@@ -79,8 +79,8 @@
 		try {statements}         Execute statements unless exception thrown.
 		   catch a {statements}  Assign exception to local var and execute.
 		call expr;               Evaluate expression and discard result.
-		dim [arr len];           Resize specified array.
-		set [arr idx] = expr;    Variable/Array assignment (same as let).
+		dim [ arr len ];         Resize specified array.
+		set [ arr idx ] = expr;  Variable/Array assignment (same as let).
 		inc a;                   Increment local variable.
 		dec a;                   Decrement local variable.
 		save str, "file";        Save bytes from string to file.

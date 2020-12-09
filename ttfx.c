@@ -13,6 +13,113 @@
 
 #include "towntalk.h"
 
+/*
+	SDL graphics and sound extension for Towntalk (c)2020 Martin Cameron.
+	
+	Statements:
+		fxopen w, h, "caption";                Open a display window.
+		fxrect x, y, w, h, 0xRRGGBB;           Draw an opaque rectangle.
+		fxshow;                                Update the display. May wait for the next vertical blank.
+		fxsurface num, width, height, pixels;  Set the specified surface to specified size and RGBA pixel array.
+		fxblit num, x, y, cx, cy, cw, ch;      Draw the specified surface clipped to the specified region.
+		fxsleep millis;                        Wait for the specified time period.
+		fxtimer millis;                        Generate timer events at the specified interval (0 to disable).
+		fxaudio period;                        Enable the audio system (period in samples per tick at 24000hz).
+		fxsample num, "str", loop, looplength; Set the specified sample to the specified signed 8-bit string and loop points.
+		fxplay channel, "sequence";            Play the specified sequence on the specified channel offset.
+		fxqueue channel, "sequence";           Queue the specified sequence on the specified channel offset.
+		fxmidi "device";                       Open the named MIDI input device for recieving events.
+	
+	Expressions:
+		$millis                                Value incremented every millisecond.
+		$fxpoll                                Return an event or 0 if none avaliable.
+		$fxwait                                Wait for an event and return it.
+		$xmouse                                The horizontal mouse coordinate from the latest mouse event.
+		$ymouse                                The vertical mouse coordinate from the latest mouse event.
+		$mousekey                              The state of the mouse buttons from the latest mouse event.
+		$mousewheel                            The state of the mouse wheel from the latest mouse event.
+		$keyboard                              The key associated with the latet keyboard event.
+		$keyshift                              The currently pressed modifier keys (least significant 2 bits are shift keys).
+		$fxtick                                Value incremented every sequencer period.
+		$fxseq                                 The channel and parameter of the latest sequencer event (0xccpppppp).
+		$fxdir("path")                         An array containing name/size tuples of all files in the specified dir.
+		$fxpath("file")                        The full path of the specified file.
+		$midimsg                               The message associated with the latest MIDI event.
+		$window                                The value of the latest window event.
+		$keyheld                               Whether the latest keyboard event was from a held-down key.
+		$datfile                               A string containing the datfile the current program was run from, or 0.
+		$extract(datfile index)                Extract the specified string from the specified datfile.
+		$fxstream(arr offset count)            Stream 16-bit stereo sample pairs to the audio system and return count written.
+		
+	Event Constants (for $fxpoll and $fxwait):
+		FX_WINDOW                              Window event.
+		FX_KEYDOWN                             Key pressed event.
+		FX_KEYUP                               Key released event.
+		FX_MOUSEMOTION                         Mouse moved event.
+		FX_MOUSEKEYDOWN                        Mouse button pressed event.
+		FX_MOUSEKEYUP                          Mouse button released event.
+		FX_MOUSEWHEEL                          Mouse wheel event.
+		FX_TIMER                               Timer event.
+		FX_SEQUENCER                           Sequencer event.
+		FX_MIDI                                MIDI event.
+		
+	Window Event Constants (for $window):
+		FX_WINDOW_EXPOSED                      Window exposed.
+	
+	Key Constants (for $keyboard):
+		FX_KEY_BACKSPACE                       Backspace.
+		FX_KEY_TAB                             Tab.
+		FX_KEY_RETURN                          Return.
+		FX_KEY_ESCAPE                          Escape.
+		FX_KEY_SPACE                           Space.
+		FX_KEY_0                               Zero (other number keys can be calculated by adding to this value).
+		FX_KEY_A                               A (other alphabetical keys can be calculated by adding to this value).
+		FX_KEY_PAD_0                           Key pad zero.
+		FX_KEY_PAD_1                           Key pad one (keys up to 9 can be calculated by adding to this value).
+		FX_KEY_PAD_PERIOD                      Key pad period.
+		FX_KEY_PAD_DIVIDE                      Key pad divide.
+		FX_KEY_PAD_MULTIPLY                    Key pad multiply.
+		FX_KEY_PAD_MINUS                       Key pad minus.
+		FX_KEY_PAD_PLUS                        Key pad plus.
+		FX_KEY_PAD_ENTER                       Key pad enter.
+		FX_KEY_PAD_EQUALS                      Key pad equals.
+		FX_KEY_UP                              Cursor up.
+		FX_KEY_DOWN                            Cursor down.
+		FX_KEY_LEFT                            Cursor left.
+		FX_KEY_RIGHT                           Cursor right.
+		FX_KEY_INSERT                          Insert.
+		FX_KEY_DELETE                          Delete.
+		FX_KEY_HOME                            Home.
+		FX_KEY_END                             End.
+		FX_KEY_PAGE_UP                         Page Up.
+		FX_KEY_PAGE_DOWN                       Page Down.
+		FX_KEY_F1                              F1 (other function keys can be calculated by adding to this value).
+		
+	Audio Sequencer Commands (2 and 4-bytes each packed into big-endian string for fxplay statement):
+		0x00xx do nothing (used to pad 2-byte commands to 4).
+		0x08xxxxxx fire an event containing the specified 24-bit parameter.
+		0x1kkkiicc set key k, instrument i and sample offset 0 on channel c.
+			Instrument 0 / key 0 ignored.
+			If instrument >= 0x40, set volume / panning instead.
+			Keys specified in 96ths of an octave (480 = 16744hz).
+		0x2kkkiicc set key k and instrument i on channel c.
+			The sample offset is not reset.
+		0x3ssssscc set sample offset s on channel c.
+		0xvvcc set volume (0x40-0x80) on channel c.
+		0xppcc set panning (0x81-0xBF) on channel c.
+		0xCxxx set sequence gain (default 0x40).
+		0xDxxx set sequence transpose (default 0x800).
+		0xEttt set tempo in samples per tick (at 24000hz).
+		0xFwww wait w ticks.
+		
+	Datfiles:
+		A datfile is a simple indexed file format which can be used to combine programs and data.
+		The first 4 bytes is the ASCII string "TTFX", followed by 4-byte big-endian offsets into the file.
+		The length of an item can be calculated by subtracting one offset from the next.
+		The last item is typically identified by having zero length.
+		An executable datfile has the program at the first offset.
+*/
+
 #if defined( __MINGW32__ )
 #define realpath( path, resolved_path ) _fullpath( NULL, ( path ), 0 )
 #endif
@@ -830,25 +937,6 @@ static enum result execute_fxsample_statement( struct statement *this, struct va
 
 static enum result execute_fxplay_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	/*
-		Play sequence: fxplay channel sequence$;
-		Queue sequence: fxqueue channel sequence$;
-		2 and 4-byte sequencer commands packed into byte string:
-			0x00xx do nothing (used to pad 2-byte cmds to 4).
-			0x08xxxxxx fire an event containing the specified 24-bit parameter.
-			0x1kkkiicc set key k, instrument i and sample offset 0 on channel c.
-			0x2kkkiicc set key k and instrument i on channel c.
-			0x3ssssscc set sample offset s on channel c.
-			0xvvcc set volume (0x40-0x80) on channel c.
-			0xppcc set panning (0x81-0xBF) on channel c.
-			0xCxxx set sequence gain (default 0x40).
-			0xDxxx set sequence transpose (default 0x800).
-			0xEttt set tempo in samples per tick (at 24000hz).
-			0xFwww wait w ticks.
-		Instrument 0 / key 0 ignored.
-		If instrument >= 0x40, set volume / panning instead.
-		Keys specified in 96ths of an octave (480 = 16744hz).
-	*/
 	struct expression *expr = this->source;
 	struct variable channel = { 0, NULL }, sequence = { 0, NULL };
 	struct fxenvironment *fxenv = ( struct fxenvironment * ) this->source->function->env;
