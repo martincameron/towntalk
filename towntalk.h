@@ -187,6 +187,9 @@ struct statement* new_statement( char *message );
 /* Allocate and return a string of the specified length and reference count of 1. */
 struct string* new_string_value( int length );
 
+/* Allocate and return a new element with the specified string length. */
+struct element* new_element( int str_len );
+
 /* Allocate and return a new array of the specified number of elements and reference count of 1. */
 struct array* new_array( struct environment *env, int length );
 
@@ -201,6 +204,10 @@ enum result throw( struct variable *exception, struct expression *source, int in
 
 /* Assign an uncatchable exception variable with the specified exit code and return EXCEPTION. */
 enum result throw_exit( struct variable *exception, int exit_code );
+
+/* Write the specified bytes as a string literal to output (if not null).
+   The encoded length is returned. */
+int write_byte_string( char *bytes, int count, char *output );
 
 /* Load the specified file into buffer (if not null) and returns the file length.
    Returns -1 and writes message on failure. */

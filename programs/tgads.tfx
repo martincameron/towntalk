@@ -924,6 +924,25 @@ function tg_scan( event ) {
 	return selected;
 }
 
+function read_dir( path ) {
+	var head, elem, len, arr;
+	let head = $fxdir( path );
+	let elem = head;
+	while elem {
+		let elem = $next( elem );
+		inc len;
+	}
+	let arr = $array( len );
+	let len = 0;
+	let elem = head;
+	while elem {
+		set[ arr len ] = $tup( $unquote( $child( elem ) ) $int( $next( $child( elem ) ) ) );
+		let elem = $next( elem );
+		inc len;
+	}
+	return arr;
+}
+
 function sort_dir( vals ) {
 	var progress, idx, tmp, lhs, rhs;
 	let progress = TRUE;
@@ -1006,7 +1025,7 @@ function tg_file_selector( title ) {
 	call tg_vslider( fs_slider, fs_win, 396, 32, 20, 226, 10, 100 );
 	call tg_anchors( fs_slider, 1, 0, 1, 1 );
 	let fs_list = tg_unused();
-	call tg_listbox( fs_list, fs_win, 10, 64, 380, 160, $fxdir( fs_path ), fs_slider );
+	call tg_listbox( fs_list, fs_win, 10, 64, 380, 160, read_dir( fs_path ), fs_slider );
 	set [ tg_c fs_list ] = -1;
 	call tg_anchors( fs_list, 1, 1, 1, 1 );
 	call sort_dir( [ tg_a fs_list ] );
@@ -1078,7 +1097,7 @@ function fs_okay_selected() {
 				let path = $sub( path, 6, -( $len( path ) 6 ) );
 				let path = $fxpath( $str( [ tg_a fs_dir ] sep path ) );
 			}
-			set [ tg_a fs_list ] = $fxdir( path );
+			set [ tg_a fs_list ] = read_dir( path );
 			call sort_dir( [ tg_a fs_list ] );
 			call format_dir( [ tg_a fs_list ] );
 			set [ tg_b fs_list ] = 0;

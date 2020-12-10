@@ -42,7 +42,7 @@
 		$keyshift                              The currently pressed modifier keys (least significant 2 bits are shift keys).
 		$fxtick                                Value incremented every sequencer period.
 		$fxseq                                 The channel and parameter of the latest sequencer event (0xccpppppp).
-		$fxdir("path")                         An array containing name/size tuples of all files in the specified dir.
+		$fxdir("path")                         An element tree of the names and sizes of all files in the specified dir.
 		$fxpath("file")                        The full path of the specified file.
 		$midimsg                               The message associated with the latest MIDI event.
 		$window                                The value of the latest window event.
@@ -1237,15 +1237,68 @@ static enum result evaluate_fxseq_expression( struct expression *this, struct va
 	return OKAY;
 }
 
+static struct element *new_directory_element( char *name, off_t size, struct element *prev ) {
+	struct element *parent, *elem;
+	int len = strlen( name );
+	char num[ 24 ];
+	parent = new_element( 2 );
+	if( parent ) {
+		parent->str.string = "{}";
+		elem = new_element( write_byte_string( name, len, NULL ) );
+		if( elem ) {
+			parent->child = elem;
+			write_byte_string( name, len, elem->str.string );
+			sprintf( num, "%ld", size );
+			elem = new_element( strlen( num ) ); 
+			if( elem ) {
+				parent->child->next = elem;
+				strcpy( elem->str.string, num );
+			}
+		}
+		if( elem == NULL ) {
+			unref_string( &parent->str );
+			parent = NULL;
+		}
+	}
+	if( prev ) {
+		prev->next = parent;
+	}
+	return parent;
+}
+
+static int get_file_length( char *path, char *name ) {
+	struct stat status;
+	int pathlen = strlen( path ), length = 0;
+	char *file = malloc( pathlen + strlen( name ) + 2 );
+	if( file ) {
+		strcpy( file, path );
+		if( path[ 0 ] == '/' ) {
+			file[ pathlen ] = '/';
+		} else {
+			file[ pathlen ] = '\\';
+		}
+		strcpy( &file[ pathlen + 1 ], name );
+		if( stat( file, &status ) ) {
+			errno = status.st_mode = status.st_size = 0;
+		}
+		if( status.st_mode & S_IFDIR ) {
+			length = -1;
+		} else if( status.st_size > MAX_INTEGER ) {
+			length = MAX_INTEGER;
+		} else {
+			length = status.st_size;
+		}
+		free( file );
+	}
+	return length;
+}
+
 static enum result evaluate_fxdir_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	DIR *dir;
-	struct array *arr;
-	struct string *str;
-	struct stat status;
+	char *path;
 	struct dirent *dentry;
-	int len, idx, pathlen;
-	char *path, *file, sep;
+	struct element *elem = NULL, *head = NULL;
 	struct variable var = { 0, NULL };
 	struct expression *parameter = this->parameters;
 	enum result ret = parameter->evaluate( parameter, variables, &var, exception );
@@ -1254,67 +1307,33 @@ static enum result evaluate_fxdir_expression( struct expression *this, struct va
 			errno = 0;
 			path = realpath( var.string_value->string, NULL );
 			if( path ) {
-				pathlen = strlen( path );
-				sep = path[ chop( path, "/:\\" ) - 1 ];
 				dir = opendir( path );
 				if( dir ) {
-					len = 0;
 					dentry = readdir( dir );
-					while( dentry ) {
-						len++;
-						dentry = readdir( dir );
-					}
-					if( errno == 0 ) {
-						arr = new_array( this->function->env, len );
-						if( arr ) {
-							rewinddir( dir );
-							errno = idx = 0;
+					while( dentry && ret ) {
+						elem = new_directory_element( dentry->d_name, get_file_length( path, dentry->d_name ), elem );
+						if( head == NULL ) {
+							head = elem;
+						}
+						if( elem ) {
 							dentry = readdir( dir );
-							while( dentry && ret && idx < len ) {
-								str = new_string_value( strlen( dentry->d_name ) );
-								if( str ) {
-									file = malloc( pathlen + 1 + str->length + 1 );
-									if( file ) {
-										strcpy( file, path );
-										file[ pathlen ] = sep;
-										strcpy( &file[ pathlen + 1 ], dentry->d_name );
-										if( stat( file, &status ) ) {
-											errno = status.st_mode = status.st_size = 0;
-										}
-										if( status.st_mode & S_IFDIR ) {
-											arr->array[ idx ].integer_value = -1;
-										} else if( status.st_size > MAX_INTEGER ) {
-											arr->array[ idx ].integer_value = MAX_INTEGER;
-										} else {
-											arr->array[ idx ].integer_value = status.st_size;
-										}
-										memcpy( str->string, dentry->d_name, str->length );
-										arr->array[ idx++ ].string_value = str;
-										dentry = readdir( dir );
-										free( file );
-									} else {
-										unref_string( str );
-										ret = throw( exception, this, 0, OUT_OF_MEMORY );
-									}
-								} else {
-									ret = throw( exception, this, 0, OUT_OF_MEMORY );
-								}
-							}
-							if( errno ) {
-								ret = throw( exception, this, errno, strerror( errno ) );
-							}
-							if( ret ) {
-								dispose_variable( result );
-								result->integer_value = 0;
-								result->string_value = &arr->str;
-							} else {
-								unref_string( &arr->str );
-							}
 						} else {
 							ret = throw( exception, this, 0, OUT_OF_MEMORY );
 						}
-					} else {
+					}
+					if( errno ) {
 						ret = throw( exception, this, errno, strerror( errno ) );
+					}
+					if( ret ) {
+						dispose_variable( result );
+						result->integer_value = 0;
+						if( head ) {
+							result->string_value = &head->str;
+						} else {
+							result->string_value = NULL;
+						}
+					} else if( head ) {
+						unref_string( &head->str );
 					}
 					closedir( dir );
 				} else {

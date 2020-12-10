@@ -227,7 +227,8 @@ static int parse_string( char *buffer, int idx, struct element *elem, int line, 
 	return idx;
 }
 
-static struct element* new_element( int str_len ) {
+/* Allocate and return a new element with the specified string length. */
+struct element* new_element( int str_len ) {
 	struct element *elem = malloc( sizeof( struct element ) + sizeof( char ) * ( str_len + 1 ) );
 	if( elem ) {
 		memset( elem, 0, sizeof( struct element ) );
@@ -788,7 +789,9 @@ enum result throw_exit( struct variable *exception, int exit_code ) {
 	return EXCEPTION;
 }
 
-static int write_byte_string( char *bytes, int count, char *output ) {
+/* Write the specified bytes as a string literal to output (if not null).
+   The encoded length is returned. */
+int write_byte_string( char *bytes, int count, char *output ) {
 	int chr, size, idx = 0, length = 0;
 	if( output ) {
 		output[ length++ ] = '"';
