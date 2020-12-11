@@ -187,7 +187,7 @@ program raster {
 						call tg_file_selector( "Load RMS/RWS" );
 					}
 					case 4 {
-						call tg_file_selector( $tup( "Save RMS" 1 ) );
+						call tg_file_selector( "Save RMS" );
 					}
 					case 5 {
 						call fill_array( foreground, -1 );
@@ -259,7 +259,7 @@ program raster {
 					}
 					case fs_okay {
 						try {
-							if =( [ tg_a fs_win ] 1 ) {
+							if $eq( $sub( [ tg_a fs_win ] 0 4 ) "Save" ) {
 								let file = fs_okay_selected();
 								if file {
 									call fore_to_back();
