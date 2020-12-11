@@ -7,7 +7,7 @@ const MAX_WORDS = 0x80000;
 
 global wordfile;
 
-array words, stat, stats, keys, index, chain;
+array words, stat, stats, index;
 
 function calculate_stats( wordidx ) {
 	var word, widx, wlen, sidx, hash;
@@ -30,11 +30,10 @@ function calculate_stats( wordidx ) {
 		inc widx;
 	}
 	let hash = &( hash 0xFFFF );
-	# Store stat-string and hash key.
-	set [ stats wordidx ] = word;
-	set [ keys wordidx ] = hash;
+	# Store stat-string/hash tuple.
+	set [ stats wordidx ] = $tup( word hash );
 	# Link word into chain indexed by the hash.
-	set [ chain wordidx ] = [ index hash ];
+	set [ words wordidx ] = $tup( [ words wordidx ] [ index hash ] );
 	set [ index hash ] = wordidx;
 }
 
@@ -66,10 +65,10 @@ function find_most_anagrams( wordcount ) {
 		# Calculate number of anagrams of current word.
 		let count = 0;
 		let wordstat = [ stats wordidx ];
-		let chainidx = [ index [ keys wordidx ] ];
+		let chainidx = [ index [ stats wordidx ] ];
 		while '( chainidx > 0 ) {
 			let count = +( count !( $cmp( wordstat [ stats chainidx ] ) ) );
-			let chainidx = [ chain chainidx ];
+			let chainidx = $tup( 0 [ words chainidx ] );
 		}
 		# If more anagrams or word is longer then update.
 		if '( '( count > anacount )
@@ -86,12 +85,12 @@ function list_anagrams( wordidx ) {
 	# List the anagrams of the word at the specified index.
 	var wordstat, chainidx;
 	let wordstat = [ stats wordidx ];
-	let chainidx = [ index [ keys wordidx ] ];
+	let chainidx = [ index [ stats wordidx ] ];
 	while >( chainidx 0 ) {
 		if !( $cmp( wordstat [ stats chainidx ] ) ) {
 			print [ words chainidx ];
 		}
-		let chainidx = [ chain chainidx ];
+		let chainidx = $tup( 0 [ words chainidx ] );
 	}
 }
 
@@ -103,9 +102,7 @@ program anagrams {
 		dim [ words MAX_WORDS ];
 		dim [ stat 32 ];
 		dim [ stats MAX_WORDS ];
-		dim [ keys MAX_WORDS ];
 		dim [ index 0x10000 ];
-		dim [ chain MAX_WORDS ];
 		let wordcount = parse_words( $load( $argv( 1 ) ) );
 		if '( $argc > 2 ) {
 			let word = $argv( 2 );
