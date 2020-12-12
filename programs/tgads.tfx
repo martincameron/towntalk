@@ -371,12 +371,7 @@ function tg_draw_listbox( n ) {
 	let end = +( idx th );
 	while <( idx end ) {
 		let txt = [ [ tg_a n ] idx ];
-		if <( $chr( txt 0 ) 32 ) {
-			let tc = $chr( txt 0 );
-			let txt = $sub( txt 1 -( $len( txt ) 1 ) );
-		} else {
-			let tc = 0;
-		}
+		let tc = $tup( 0, txt );
 		if =( [ tg_c n ] idx ) {
 			fxrect +( x 8 ), ty, -( [ tg_w n ] 16 ), 16, [ palette 3 ];
 			let tc = 1;
@@ -941,7 +936,7 @@ function read_dir( path ) {
 	let len = 0;
 	let elem = head;
 	while elem {
-		set[ arr len ] = $child( elem );
+		set[ arr len ] = $tup( $unquote( $child( elem ) ) $int( $next( $child( elem ) ) ) );
 		let elem = $next( elem );
 		inc len;
 	}
@@ -949,27 +944,24 @@ function read_dir( path ) {
 }
 
 function sort_dir( vals ) {
-	var progress, idx, tmp, cmp;
+	var progress, idx, tmp, lhs, rhs;
 	let progress = TRUE;
 	while progress {
 		let idx = 1;
 		let progress = FALSE;
 		while <( idx $len( vals ) ) {
 			let tmp = [ vals -( idx 1 ) ];
-			if $eq( $next( tmp ) "-1" ) {
-				if $eq( $next( [ vals idx ] ) "-1" ) {
-					let cmp = $cmp( tmp [ vals idx ] );
-				} else {
-					let cmp = 0;
-				}
+			if <( tmp 0 ) {
+				let lhs = tmp;
 			} else {
-				if $eq( $next( [ vals idx ] ) "-1" ) {
-					let cmp = 1;
-				} else {
-					let cmp = $cmp( tmp [ vals idx ] );
-				}
+				let lhs = $tup( tmp, 0 );
 			}
-			if >( cmp 0 ) {
+			if <( [ vals idx ] 0 ) {
+				let rhs = [ vals idx ];
+			} else {
+				let rhs = $tup( [ vals idx ] 0 );
+			}
+			if >( $cmp( lhs rhs ) 0 ) {
 				set [ vals -( idx 1 ) ] = [ vals idx ];
 				set [ vals idx ] = tmp;
 				let progress = TRUE;
@@ -982,10 +974,10 @@ function sort_dir( vals ) {
 function format_dir( vals ) {
 	var idx, len;
 	while <( idx $len( vals ) ) {
-		let len = $int( $next( [ vals idx ] ) );
-		if <( len 0 ) {
-			set [ vals idx ] = $str( "\1" "[Dir] " $unquote( [ vals idx ] ) ); 
+		if <( [ vals idx ] 0 ) {
+			set [ vals idx ] = $tup( $str( "[Dir] " [ vals idx ] ) 1 ); 
 		} else {
+			let len = $tup( 0 [ vals idx ] );
 			if >( len 9999 ) {
 				if >( len *( 1048576 2047 ) ) {
 					let len = "(+2g)";
@@ -1002,7 +994,7 @@ function format_dir( vals ) {
 			while <( $len( len ) 5 ) {
 				let len = $str( " " len );
 			}
-			set [ vals idx ] = $str( "\0" len " " $unquote( [ vals idx ] ) ); 
+			set [ vals idx ] = $tup( $str( len " " [ vals idx ] ) 0 ); 
 		}
 		inc idx;
 	}
@@ -1084,10 +1076,10 @@ function fs_dir_selected() {
 function fs_list_selected() {
 	var file;
 	let file = [ [ tg_a fs_list ] [ tg_c fs_list ] ];
-	if $chr( file 0 ) {
-		set [ tg_a fs_file ] = "";
+	if =( file 0 ) {
+		set [ tg_a fs_file ] = $sub( file, 6, -( $len( file ) 6 ) );
 	} else {
-		set [ tg_a fs_file ] = $sub( file, 7, -( $len( file ) 7 ) );
+		set [ tg_a fs_file ] = "";
 	}
 	call tg_draw( fs_file );
 }
@@ -1102,7 +1094,7 @@ function fs_okay_selected() {
 				let path = $fxpath( $str( [ tg_a fs_dir ] sep [ tg_a fs_file ] ) );
 			} else {
 				let path = [ [ tg_a fs_list ] [ tg_c fs_list ] ];
-				let path = $sub( path, 7, -( $len( path ) 7 ) );
+				let path = $sub( path, 6, -( $len( path ) 6 ) );
 				let path = $fxpath( $str( [ tg_a fs_dir ] sep path ) );
 			}
 			set [ tg_a fs_list ] = read_dir( path );
