@@ -59,71 +59,57 @@ function testvoid() {
 
 function testvars( x ) {
 	var y = x, z = +( y 1 );
-	call assert( =( y x ), ${-} );
-	call assert( =( z +( x 1 ) ), ${-} );
-	call assert( =( g 0 ), ${-} );
-	call assert( =( g1 1 ), ${-} );
-	call assert( =( g2 2 ), ${-} );
+	call assert_equals( x, y, ${-} );
+	call assert_equals( +( x 1 ), z, ${-} );
+	call assert_equals( 0, g, ${-} );
+	call assert_equals( 1, g1, ${-} );
+	call assert_equals( 2, g2, ${-} );
 	call setg( y );
-	call assert( =( g x ), ${-} );
-	call assert( =( TRUE 1 ), ${-} );
-	call assert( =( FALSE 0 ), ${-} );
+	call assert_equals( x, g, ${-} );
+	call assert_equals( 1, TRUE, ${-} );
+	call assert_equals( 0, FALSE, ${-} );
 	return g;
 }
 
 function testarray() {
 	var b, c, err, [ arr *( TWO TWO ) ];
-	call setg( 0 );
-	try { dim [ except( ${ 1 } ) setg( 2 ) ]; } catch err {}
-	call assert( =( $cmp( $str( err ) "1" ) 0 ), ${-} );
-	call assert( =( g 0 ), ${-} );
-	let err = 0;
-	try { dim [ a except( ${-} ) ]; } catch err {}
-	call assert( err, ${-} );
-	let err = 0;
-	try { dim [ 0 0 ]; } catch err {}
-	call assert( err, ${-} );
-	let err = 0;
-	try { dim [ a -1 ]; } catch err {}
-	call assert( err, ${-} );
-	call assert( =( $len( a ) 0 ), ${-} );
-	call assert( =( $len( a1 ) 1 ), ${-} );
-	call assert( =( $len( a2 ) 2 ), ${-} );
-	call assert( =( $len( a3 ) 3 ), ${-} );
-	call assert( =( $len( arr ) 4 ), ${-} );
+	call setg( 0 );	
+	call assert_throws( $function( ${ () { dim [ except( ${ 1 } ) setg( 2 ) ]; } } ), "1", ${-} );
+	call assert_equals( 0, g, ${-} );
+	call assert_throws( $function( ${ () { dim [ a except( ${ 1 } ) ]; } } ), "1", ${-} );
+	call assert_throws( $function( ${ () { dim[ 0 0 ]; } } ), "Not an array.", ${-} );
+	call assert_throws( $function( ${ () { dim[ a -1 ]; } } ), "Negative array size.", ${-} );
+	call assert_equals( 0, $len( a ), ${-} );
+	call assert_equals( 1, $len( a1 ), ${-} );
+	call assert_equals( 2, $len( a2 ), ${-} );
+	call assert_equals( 3, $len( a3 ), ${-} );
+	call assert_equals( 4, $len( arr ), ${-} );
 	dim [ a 3 ];
 	set [ a 0 ] = "a";
 	set [ a 1 ] = 1;
 	set [ a 2 ] = [ a 0 ];
 	dim [ a 2 ];
-	try {
-		set [ a 2 ] = 2;
-		throw 0;
-	} catch err {
-	}
-	call assert( =( err 2 ), ${-} );
+	call assert_throws( $function( ${ () { set [ a 2 ] = except( ${ 0 } ); } } ), "Array index", ${-} );
 	dim [ a 1 ];
-	call assert( =( $cmp( [ a 0 ] "a" ) 0 ), ${-} );
+	call assert_equals( "a", [ a 0 ], ${-} );
 	let a = $array( ${ 0, $str( "\"one" "\"" ), $tup( "\\two\\"2 ), "\063", ${ four(4) }, 84, 84 } );
 	let a = $array( $parse( $unparse( $values( a ) ) ) );
-	call assert( =( $len( a ) 7 ), ${-} );
-	call assert( =( [ a 0 ] 0 ), ${-} );
-	call assert( =( $cmp( [ a 1 ] "\"one\"" ) 0 ), ${-} );
-	call assert( =( $cmp( $str( [ a 2 ] ) "\\two\\" ) 0 ), ${-} );
-	call assert( =( [ a 2 ] 2 ), ${-} );
-	call assert( =( $cmp( [ a 3 ] "3" ) 0 ), ${-} );
-	call assert( =( $cmp( [ a 4 ] "four" ) 0 ), ${-} );
-	call assert( =( $cmp( $child( $next( [ a 4 ] ) ) "4" ) 0 ), ${-} );
-	call assert( =( $cmp( $sub( a, 5, 2 ) "TT" ) 0 ), ${-} );
-	call assert( =( $cmp( a "#Array#" ) 0 ), ${-} );
-	call assert( =( $len( $array( 1 ) ) 1 ), ${-} );
-	let err = 0;
-	try { let b = $array( -1 ); } catch err {}
-	call assert( err, ${-} );
+	call assert_equals( 7, $len( a ), ${-} );
+	call assert_equals( 0, [ a 0 ], ${-} );
+	call assert_equals( "\"one\"", [ a 1 ], ${-} );
+	call assert_equals( "\\two\\", $str( [ a 2 ] ), ${-} );
+	call assert_equals( 2, $tup( 0, [ a 2 ] ), ${-} );
+	call assert_equals( "3", [ a 3 ], ${-} );
+	call assert_equals( "four", [ a 4 ], ${-} );
+	call assert_equals( "4", $child( $next( [ a 4 ] ) ), ${-} );
+	call assert_equals( "TT", $sub( a, 5, 2 ), ${-} );
+	call assert_equals( "#Array#", a, ${-} );
+	call assert_equals( 1, $len( $array( 1 ) ), ${-} );
+	call assert_throws( $function( ${ () { call $array( -1 ); } } ), "Invalid array length.", ${-} );
 	let b = $array( 2 );
 	let c = $array( ${ "a" 1 } );
-	call assert( =( $cmp( [ c 0 ] "a" ) 0 ), ${-} );
-	call assert( =( [ c 1 ] 1 ), ${-} );
+	call assert_equals( "a", [ c 0 ], ${-} );
+	call assert_equals( 1, [ c 1 ], ${-} );
 	set [ b 0 ] = b;
 	set [ b 1 ] = c;
 	set [ c 0 ] = c;
