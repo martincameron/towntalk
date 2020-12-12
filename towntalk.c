@@ -119,7 +119,7 @@
 		!(expr)                  Evaluates to 1 if argument is null.
 		&&(expr)                 Evaluates to 1 if both arguments are non-null.
 		||(expr)                 Evaluates to 1 if either argument is non-null.
-		?(expr expr expr)        Evaluates second expr if first is non null, else third.
+		?(expr expr expr)        Evaluates second expr if first is non-null, else third.
 		$eq(expr expr)           Evaluates to 1 if arguments have the same value.
 		$str(str int ...)        Integer to string and string concatenation.
 		$cmp(str str)            String/Tuple comparison, returns 0 if equal.
