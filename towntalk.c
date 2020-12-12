@@ -119,6 +119,7 @@
 		!(expr)                  Evaluates to 1 if argument is null.
 		&&(expr)                 Evaluates to 1 if both arguments are non-null.
 		||(expr)                 Evaluates to 1 if either argument is non-null.
+		?(expr expr expr)        Evaluates second expr if first is non null, else third.
 		$eq(expr expr)           Evaluates to 1 if arguments have the same value.
 		$str(str int ...)        Integer to string and string concatenation.
 		$cmp(str str)            String/Tuple comparison, returns 0 if equal.
@@ -1842,6 +1843,22 @@ static enum result evaluate_logical_expression( struct expression *this, struct 
 				}
 			}
 		}
+	}
+	return ret;
+}
+
+static enum result evaluate_ternary_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	struct variable condition = { 0, NULL };
+	struct expression *parameter = this->parameters;
+	enum result ret = parameter->evaluate( parameter, variables, &condition, exception );
+	if( ret ) {
+		parameter = parameter->next;
+		if( !( condition.integer_value || condition.string_value ) ) {
+			parameter = parameter->next;
+		}
+		ret = parameter->evaluate( parameter, variables, result, exception );
+		dispose_variable( &condition );
 	}
 	return ret;
 }
@@ -3994,38 +4011,39 @@ static struct operator operators[] = {
 	{ "!", '!', 1, evaluate_logical_expression, &operators[ 18 ] },
 	{ "&&",'&', 2, evaluate_logical_expression, &operators[ 19 ] },
 	{ "||",'|', 2, evaluate_logical_expression, &operators[ 20 ] },
-	{ "$eq", '$', 2, evaluate_eq_expression, &operators[ 21 ] },
-	{ "$str", '$',-1, evaluate_str_expression, &operators[ 22 ] },
-	{ "$cmp", '$', 2, evaluate_cmp_expression, &operators[ 23 ] },
-	{ "$cat", '$',-1, evaluate_str_expression, &operators[ 24 ] },
-	{ "$chr", '$', 2, evaluate_chr_expression, &operators[ 25 ] },
-	{ "$sub", '$', 3, evaluate_sub_expression, &operators[ 26 ] },
-	{ "$asc", '$', 1, evaluate_asc_expression, &operators[ 27 ] },
-	{ "$hex", '$', 1, evaluate_hex_expression, &operators[ 28 ] },
-	{ "$int", '$', 1, evaluate_int_expression, &operators[ 29 ] },
-	{ "$len", '$', 1, evaluate_len_expression, &operators[ 30 ] },
-	{ "$tup", '$', 2, evaluate_tup_expression, &operators[ 31 ] },
-	{ "$array", '$', 1, evaluate_array_expression, &operators[ 32 ] },
-	{ "$new", '$', 1, evaluate_array_expression, &operators[ 33 ] },
-	{ "$load", '$', 1, evaluate_load_expression, &operators[ 34 ] },
-	{ "$flen", '$', 1, evaluate_flen_expression, &operators[ 35 ] },
-	{ "$chop", '$', 2, evaluate_chop_expression, &operators[ 36 ] },
-	{ "$argc", '$', 0, evaluate_argc_expression, &operators[ 37 ] },
-	{ "$argv", '$', 1, evaluate_argv_expression, &operators[ 38 ] },
-	{ "$time", '$', 0, evaluate_time_expression, &operators[ 39 ] },
-	{ "$parse", '$', 1, evaluate_parse_expression, &operators[ 40 ] },
-	{ "$unparse", '$', 1, evaluate_unparse_expression, &operators[ 41 ] },
-	{ "$next", '$', 1, evaluate_next_expression, &operators[ 42 ] },
-	{ "$child", '$', 1, evaluate_child_expression, &operators[ 43 ] },
-	{ "$line", '$', 1, evaluate_line_expression, &operators[ 44 ] },
-	{ "$elem", '$', 3, evaluate_elem_expression, &operators[ 45 ] },
-	{ "$values", '$', 1, evaluate_values_expression, &operators[ 46 ] },
-	{ "$pack", '$', 1, evaluate_pack_expression, &operators[ 47 ] },
-	{ "$unpack", '$', 2, evaluate_unpack_expression, &operators[ 48 ] },
-	{ "$quote", '$', 1, evaluate_quote_expression, &operators[ 49 ] },
-	{ "$unquote", '$', 1, evaluate_unquote_expression, &operators[ 50 ] },
-	{ "$interrupted", '$', 0, evaluate_interrupted_expression, &operators[ 51 ] },
-	{ "$function", '$', 1, evaluate_function_expression, &operators[ 52 ] },
+	{ "?", '?', 3, evaluate_ternary_expression, &operators[ 21 ] },
+	{ "$eq", '$', 2, evaluate_eq_expression, &operators[ 22 ] },
+	{ "$str", '$',-1, evaluate_str_expression, &operators[ 23 ] },
+	{ "$cmp", '$', 2, evaluate_cmp_expression, &operators[ 24 ] },
+	{ "$cat", '$',-1, evaluate_str_expression, &operators[ 25 ] },
+	{ "$chr", '$', 2, evaluate_chr_expression, &operators[ 26 ] },
+	{ "$sub", '$', 3, evaluate_sub_expression, &operators[ 27 ] },
+	{ "$asc", '$', 1, evaluate_asc_expression, &operators[ 28 ] },
+	{ "$hex", '$', 1, evaluate_hex_expression, &operators[ 29 ] },
+	{ "$int", '$', 1, evaluate_int_expression, &operators[ 30 ] },
+	{ "$len", '$', 1, evaluate_len_expression, &operators[ 31 ] },
+	{ "$tup", '$', 2, evaluate_tup_expression, &operators[ 32 ] },
+	{ "$array", '$', 1, evaluate_array_expression, &operators[ 33 ] },
+	{ "$new", '$', 1, evaluate_array_expression, &operators[ 34 ] },
+	{ "$load", '$', 1, evaluate_load_expression, &operators[ 35 ] },
+	{ "$flen", '$', 1, evaluate_flen_expression, &operators[ 36 ] },
+	{ "$chop", '$', 2, evaluate_chop_expression, &operators[ 37 ] },
+	{ "$argc", '$', 0, evaluate_argc_expression, &operators[ 38 ] },
+	{ "$argv", '$', 1, evaluate_argv_expression, &operators[ 39 ] },
+	{ "$time", '$', 0, evaluate_time_expression, &operators[ 40 ] },
+	{ "$parse", '$', 1, evaluate_parse_expression, &operators[ 41 ] },
+	{ "$unparse", '$', 1, evaluate_unparse_expression, &operators[ 42 ] },
+	{ "$next", '$', 1, evaluate_next_expression, &operators[ 43 ] },
+	{ "$child", '$', 1, evaluate_child_expression, &operators[ 44 ] },
+	{ "$line", '$', 1, evaluate_line_expression, &operators[ 45 ] },
+	{ "$elem", '$', 3, evaluate_elem_expression, &operators[ 46 ] },
+	{ "$values", '$', 1, evaluate_values_expression, &operators[ 47 ] },
+	{ "$pack", '$', 1, evaluate_pack_expression, &operators[ 48 ] },
+	{ "$unpack", '$', 2, evaluate_unpack_expression, &operators[ 49 ] },
+	{ "$quote", '$', 1, evaluate_quote_expression, &operators[ 50 ] },
+	{ "$unquote", '$', 1, evaluate_unquote_expression, &operators[ 51 ] },
+	{ "$interrupted", '$', 0, evaluate_interrupted_expression, &operators[ 52 ] },
+	{ "$function", '$', 1, evaluate_function_expression, &operators[ 53 ] },
 	{ "$src", '$', 0, evaluate_source_expression, NULL }
 };
 

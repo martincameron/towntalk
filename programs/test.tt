@@ -325,6 +325,14 @@ function testlogic() {
 	call assert( =( ||( 1 except( ${-} ) ) 1 ), ${-} );
 }
 
+function testternary() {
+	call assert_equals( 1, ?( 0, except( ${-} ), 1 ), ${-} );
+	call assert_equals( 1, ?( 1, 1, except( ${-} ) ), ${-} );
+	call assert_throws( $function( ${ () { call ?( except( ${ 1 } ), 0, 0 ); } } ), "1", ${-} );
+	call assert_throws( $function( ${ () { call ?( 0, 0, except( ${ 1 } ) ); } } ), "1", ${-} );
+	call assert_throws( $function( ${ () { call ?( 1, except( ${ 1 } ), 0 ); } } ), "1", ${-} );
+}
+
 function testcmp() {
 	var err;
 	call setg( 0 );
@@ -772,6 +780,7 @@ program test {
 	call testinfix();
 	call testarith();
 	call testlogic();
+	call testternary();
 	call testcmp();
 	call testcat();
 	call testchr();
