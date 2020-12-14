@@ -985,9 +985,11 @@ static struct function* new_function( char *name, char *file, char *message ) {
 		}
 		if( !func->file.string ) {
 			unref_string( &func->str );
-			strcpy( message, OUT_OF_MEMORY );
 			func = NULL;
 		}
+	}
+	if( !func ) {
+		strcpy( message, OUT_OF_MEMORY );
 	}
 	return func;
 }
