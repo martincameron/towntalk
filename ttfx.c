@@ -185,13 +185,13 @@ struct fxenvironment {
 #endif
 };
 
-static struct fxenvironment *fxenv;
+static char interrupted;
 
 static void ( *interrupt_handler )( int signum );
 
 static void signal_handler( int signum ) {
 	signal( signum, signal_handler );
-	fxenv->env.interrupted = 1;
+	interrupted = 1;
 	if( signum == SIGINT && interrupt_handler ) {
 		interrupt_handler( SIGINT );
 	}
@@ -1085,7 +1085,7 @@ static enum result handle_event_expression( struct expression *this, SDL_Event *
 	struct fxenvironment *fxenv = ( struct fxenvironment * ) this->function->env;
 	enum result ret = OKAY;
 	if( event->type == SDL_QUIT ) {
-		ret = throw_exit( exception, 0 );
+		ret = throw_exit( &fxenv->env, exception, 0 );
 	} else {
 		if( event->type == fxenv->seq_event_type ) {
 			fxenv->seq_msg = event->user.code;
@@ -1706,6 +1706,7 @@ int main( int argc, char **argv ) {
 	int exit_code = EXIT_FAILURE;
 	char *file_name, message[ 256 ] = "";
 	struct environment *env;
+	struct fxenvironment *fxenv;
 	struct variable result = { 0 }, except = { 0 };
 	struct expression expr = { 0 };
 	/* Handle command-line.*/
@@ -1727,6 +1728,7 @@ int main( int argc, char **argv ) {
 					/* Install signal handler. */
 					interrupt_handler = signal( SIGINT, signal_handler );
 					if( interrupt_handler != SIG_ERR ) {
+						env->interrupted = &interrupted;
 						/* Evaluate the last entry-point function. */
 						initialize_call_expr( &expr, env->entry_points );
 						if( initialize_globals( env, &except ) && expr.evaluate( &expr, NULL, &result, &except ) ) {

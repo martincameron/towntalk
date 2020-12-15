@@ -10,7 +10,7 @@ enum result {
 
 /* Reference type. */
 enum reference_type {
-	STRING, ELEMENT, ARRAY, FUNCTION
+	STRING, ELEMENT, ARRAY, FUNCTION, WORKER, EXIT
 };
 
 /* String list. */
@@ -64,7 +64,8 @@ struct variable {
 /* Execution environment. */
 struct environment {
 	int argc;
-	char **argv, interrupted;
+	char **argv, *interrupted;
+	struct string exit;
 	struct array arrays;
 	struct keyword *statements;
 	struct operator *operators;
@@ -72,6 +73,18 @@ struct environment {
 	struct global_variable *constants, *constants_tail;
 	struct global_variable *globals, *globals_tail;
 	struct function *functions, *entry_points;
+	struct worker *worker;
+};
+
+/* Reference-counted worker function. */
+struct worker {
+	struct string str;
+	struct environment *env;
+	struct variable *args, result, exception;
+	struct string *strings;
+	struct global_variable *globals;
+	struct expression *parameters;
+	enum result status;
 };
 
 /* Struct declaration list.*/
@@ -203,7 +216,7 @@ void assign_variable( struct variable *src, struct variable *dest );
 enum result throw( struct variable *exception, struct expression *source, int integer, const char *string );
 
 /* Assign an uncatchable exception variable with the specified exit code and return EXCEPTION. */
-enum result throw_exit( struct variable *exception, int exit_code );
+enum result throw_exit( struct environment *env, struct variable *exception, int exit_code );
 
 /* Write the specified bytes as a string literal to output (if not null).
    The encoded length is returned. */

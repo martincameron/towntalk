@@ -154,6 +154,9 @@
 		$unquote(str)            Decode quoted-string into byte string.
 		$interrupted             Check and clear program interrupt status.
 		$function(${(){stmts}})  Compile a function reference from an element.
+		$worker(${(){stmts}})    Compile a worker function from an element.
+		$execute(worker arg ...) Begin execution of the specified worker and return it.
+		$result(worker)          Wait for the return value of a worker function.
 */
 
 /* The maximum integer value. */
@@ -187,6 +190,8 @@ static struct element* parse_case_statement( struct element *elem, struct enviro
 	struct function *func, struct statement *prev, char *message );
 static struct element* parse_default_statement( struct element *elem, struct environment *env,
 	struct function *func, struct statement *prev, char *message );
+static struct worker* parse_worker( struct element *elem, struct environment *env,
+	char *file, char *message );
 
 /* Return the index of the last separator char encountered in str. */
 int chop( char *str, const char *separators ) {
@@ -635,12 +640,55 @@ static void dispose_statements( struct statement *statements ) {
 	}
 }
 
+static void dispose_functions( struct function *func ) {
+	struct string *str;
+	while( func ) {
+		str = &func->str;
+		if( str->reference_count == 1 ) {
+			free( func->str.string );
+			free( func->file.string );
+			dispose_string_list( func->variable_decls );
+			dispose_statements( func->statements );
+			dispose_global_variables( func->literals );
+			func = func->next;
+			free( str );
+		} else {
+			str->reference_count--;
+			func = NULL;
+		}
+	}
+}
+
+static void dispose_worker( struct worker *work ) {
+	int idx, len = 0;
+	if( work->env ) {
+		work->env->operators = NULL;
+		work->env->statements = NULL;
+		if( work->env->entry_points ) {
+			len = work->env->entry_points->num_parameters;
+		}
+	}
+	dispose_variable( &work->result );
+	dispose_variable( &work->exception );
+	dispose_environment( work->env );
+	for( idx = 0; idx < len; idx++ ) {
+		dispose_variable( &work->args[ idx ] );
+	}
+	free( work->args );
+	free( work->strings );
+	free( work->globals );
+	free( work->parameters );
+	free( work );
+}
+
+void await_worker( struct worker *work, int cancel ) {
+}
+
 /* Decrement the reference count of the specified value and deallocate if necessary. */
 void unref_string( struct string *str ) {
 	int idx, len;
 	struct array *arr;
 	struct element *elem;
-	struct function *func;
 	if( str->reference_count == 1 ) {
 		if( str->type == STRING ) {
 			free( str );
@@ -672,22 +720,10 @@ void unref_string( struct string *str ) {
 			free( arr->array );
 			free( arr );
 		} else if( str->type == FUNCTION ) {
-			while( str ) {
-				if( str->reference_count == 1 ) {
-					func = ( struct function * ) str;
-					free( func->str.string );
-					free( func->file.string );
-					dispose_string_list( func->variable_decls );
-					dispose_statements( func->statements );
-					dispose_global_variables( func->literals );
-					func = func->next;
-					free( str );
-					str = &func->str;
-				} else {
-					str->reference_count--;
-					str = NULL;
-				}
-			}
+			dispose_functions( ( struct function * ) str );
+		} else if( str->type == WORKER ) {
+			await_worker( ( struct worker * ) str, 1 );
+			dispose_worker( ( struct worker * ) str );
 		}
 	} else {
 		str->reference_count--;
@@ -782,11 +818,12 @@ enum result throw( struct variable *exception, struct expression *source, int in
 }
 
 /* Assign an uncatchable exception variable with the specified exit code. */
-enum result throw_exit( struct variable *exception, int exit_code ) {
-	static struct string EXIT_STRING = { 2 };
+enum result throw_exit( struct environment *env, struct variable *exception, int exit_code ) {
+	env->exit.reference_count = 2;
+	env->exit.type = EXIT;
 	dispose_variable( exception );
 	exception->integer_value = exit_code;
-	exception->string_value = &EXIT_STRING;
+	exception->string_value = &env->exit;
 	return EXCEPTION;
 }
 
@@ -1150,7 +1187,7 @@ static enum result execute_exit_statement( struct statement *this, struct variab
 	struct variable exit_code = { 0, NULL };
 	enum result ret = this->source->evaluate( this->source, variables, &exit_code, exception );
 	if( ret ) {
-		ret = throw_exit( exception, exit_code.integer_value );
+		ret = throw_exit( this->source->function->env, exception, exit_code.integer_value );
 	}
 	return ret;
 }
@@ -1187,7 +1224,7 @@ static enum result execute_try_statement( struct statement *this, struct variabl
 		}
 	}
 	if( ret == EXCEPTION ) {
-		if( exc->string_value && exc->string_value->string == NULL ) {
+		if( exc->string_value && exc->string_value->type == EXIT ) {
 			assign_variable( exc, exception );
 		} else {
 			ret = OKAY;
@@ -1251,8 +1288,12 @@ static enum result execute_while_statement( struct statement *this, struct varia
 					return EXCEPTION;
 				}
 			}
-			if( env->interrupted ) {
-				return throw( exception, this->source, 0, "Interrupted.");
+			if( env->interrupted[ 0 ] ) {
+				if( env->worker ) {
+					return throw_exit( this->source->function->env, exception, 0 );
+				} else {
+					return throw( exception, this->source, 0, "Interrupted.");
+				}
 			}
 		} else {
 			dispose_variable( &condition );
@@ -2834,9 +2875,9 @@ static enum result evaluate_interrupted_expression( struct expression *this, str
 	struct variable *result, struct variable *exception ) {
 	struct environment *env = this->function->env; 
 	dispose_variable( result );
-	result->integer_value = env->interrupted;
+	result->integer_value = env->interrupted[ 0 ];
 	result->string_value = NULL;
-	env->interrupted = 0;
+	env->interrupted[ 0 ] = 0;
 	return OKAY;
 }
 
@@ -2863,7 +2904,7 @@ static struct element* parse_infix_expression( struct element *elem, struct envi
 	struct expression prev;
 	struct operator *oper;
 	int num_operands;
-	if( child ) {	
+	if( child ) {
 		prev.next = NULL;
 		child = parse_expression( child, env, func, &prev, message );
 		expr->parameters = prev.next;
@@ -3849,6 +3890,152 @@ static enum result evaluate_function_expression( struct expression *this, struct
 	return ret;
 }
 
+void start_worker( struct worker *work ) {
+	struct expression expr = { 0 };
+	expr.line = work->env->entry_points->line;
+	expr.function = work->env->entry_points;
+	expr.parameters = work->parameters;
+	work->status = evaluate_call_expression( &expr, NULL, &work->result, &work->exception );
+}
+
+static enum result evaluate_worker_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	struct expression *parameter = this->parameters;
+	struct element *elem, key = { { 1, ELEMENT, "$worker", 9 } };
+	struct variable var = { 0, NULL };
+	char message[ 128 ] = "";
+	struct worker *work;
+	enum result ret;
+	if( this->function->env->worker ) {
+		ret = throw( exception, this, 0, "Operation not permitted." );
+	} else {
+		ret = parameter->evaluate( parameter, variables, &var, exception );
+	}
+	if( ret ) {
+		if( var.string_value && var.string_value->type == ELEMENT ) {
+			elem = ( struct element * ) var.string_value;
+			key.line = this->line;
+			validate_syntax( "({0", elem, &key, this->function->env, message );
+			if( message[ 0 ] == 0 ) {
+				work = parse_worker( elem, this->function->env, this->function->file.string, message );
+				if( work ) {
+					dispose_variable( result );
+					result->integer_value = 0;
+					result->string_value = &work->str;
+				} else {
+					ret = throw( exception, this, 0, message );
+				}
+			} else {
+				ret = throw( exception, this, 0, message );
+			}
+		} else {
+			ret = throw( exception, this, 0, "Not an element." );
+		}
+		dispose_variable( &var );
+	}
+	return ret;
+}
+
+static enum result evaluate_execute_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	struct expression *parameter = this->parameters;
+	struct variable var = { 0, NULL };
+	struct worker *work;
+	int count, idx;
+	enum result ret = parameter->evaluate( parameter, variables, &var, exception );
+	if( ret ) {
+		if( var.string_value && var.string_value->type == WORKER ) {
+			work = ( struct worker * ) var.string_value;
+			parameter = parameter->next;
+			count = 0;
+			while( parameter ) {
+				count++;
+				parameter = parameter->next;
+			}
+			if( work->env->entry_points->num_parameters == count ) {
+				await_worker( work, 1 );
+				idx = 0;
+				parameter = this->parameters->next;
+				while( parameter && ret ) {
+					ret = parameter->evaluate( parameter, variables, &work->args[ idx ], exception );
+					if( ret ) {
+						work->globals[ idx ].value.integer_value = work->args[ idx ].integer_value;
+						if( work->args[ idx ].string_value ) {
+							if( work->args[ idx ].string_value->type == STRING ) {
+								work->strings[ idx ].reference_count = 1;
+								work->strings[ idx ].type = STRING;
+								work->strings[ idx ].string = work->args[ idx ].string_value->string;
+								work->strings[ idx ].length = work->args[ idx ].string_value->length;
+								work->globals[ idx ].value.string_value = &work->strings[ idx ];
+							} else {
+								ret = throw( exception, this, 0, "Values of this type cannot be passed to workers." );
+							}
+						}
+					}
+					parameter = parameter->next;
+					idx++;
+				}
+				if( ret ) {
+					start_worker( work );
+					assign_variable( &var, result );
+				}
+			} else {
+				ret = throw( exception, this, count, "Incorrect number of parameters to function." );
+			}
+		} else {
+			ret = throw( exception, this, 0, "Not a worker." );
+		}
+		dispose_variable( &var );
+	}
+	return ret;
+}
+
+static enum result evaluate_result_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	struct expression *parameter = this->parameters;
+	struct variable var = { 0, NULL };
+	struct worker *work;
+	int count, idx;
+	char *str;
+	enum result ret = parameter->evaluate( parameter, variables, &var, exception );
+	if( ret ) {
+		if( var.string_value && var.string_value->type == WORKER ) {
+			work = ( struct worker * ) var.string_value;
+			await_worker( work, 0 );
+			count = work->env->entry_points->num_parameters;
+			for( idx = 0; idx < count; idx++ ) {
+				if( work->args[ idx ].string_value ) {
+					/* Reassociate parameter strings if necessary. */
+					str = work->args[ idx ].string_value->string;
+					if( work->result.string_value && work->result.string_value->string == str ) {
+						assign_variable( &work->args[ idx ], &work->result );
+					}
+					if( work->exception.string_value && work->exception.string_value->string == str ) {
+						assign_variable( &work->args[ idx ], &work->exception );
+					}
+				}
+			}
+			if( work->status == OKAY ) {
+				if( work->result.string_value && work->result.string_value->type > ELEMENT ) {
+					/* Only strings and elements can safely be assigned from another environment. */
+					ret = throw( exception, this, 0, "Values of this type cannot be returned from workers." );
+				} else {
+					assign_variable( &work->result, result );
+				}
+			} else if( work->exception.string_value && work->exception.string_value->type == EXIT ) {
+				ret = throw( exception, this, 0, "Worker exited." );
+			} else {
+				assign_variable( &work->exception, exception );
+				ret = EXCEPTION;
+			}
+		} else {
+			ret = throw( exception, this, 0, "Not a worker." );
+		}
+		dispose_variable( &var );
+	}
+	return ret;
+}
+
 static struct element* parse_function_declaration( struct element *elem, struct environment *env,
 	struct function *decl, struct statement *prev, char *message ) {
 	struct element *next = elem->next;
@@ -4046,6 +4233,9 @@ static struct operator operators[] = {
 	{ "$unquote", '$', 1, evaluate_unquote_expression, &operators[ 51 ] },
 	{ "$interrupted", '$', 0, evaluate_interrupted_expression, &operators[ 52 ] },
 	{ "$function", '$', 1, evaluate_function_expression, &operators[ 53 ] },
+	{ "$worker", '$', 1, evaluate_worker_expression, &operators[ 54 ] },
+	{ "$execute", '$',-1, evaluate_execute_expression, &operators[ 55 ] },
+	{ "$result", '$', 1, evaluate_result_expression, &operators[ 56 ] },
 	{ "$src", '$', 0, evaluate_source_expression, NULL }
 };
 
@@ -4102,6 +4292,66 @@ static int validate_decl( struct element *elem, struct environment *env, char *m
 		return 0;
 	}
 	return 1;
+}
+
+static struct worker* new_worker( struct environment *env, char *file, char *message ) {
+	struct worker *work = calloc( 1, sizeof( struct worker ) );
+	if( work ) {
+		work->str.string = "worker";
+		work->str.length = strlen( work->str.string );
+		work->str.reference_count = 1;
+		work->str.type = WORKER;
+		work->status = OKAY;
+		work->env = calloc( 1, sizeof( struct environment ) );
+		if( work->env ) {
+			work->env->worker = work;
+			work->env->interrupted = env->interrupted;
+			work->env->operators = operators;
+			work->env->statements = statements;
+		} else {
+			unref_string( &work->str );
+			work = NULL;
+		}
+	}
+	if( !work ) {
+		strcpy( message, OUT_OF_MEMORY );
+	}
+	return work;
+}
+
+static struct worker* parse_worker( struct element *elem, struct environment *env, char *file, char *message ) {
+	int params, idx;
+	struct worker *work = new_worker( env, file, message );
+	if( work ) {
+		work->env->entry_points = parse_function( elem, work->str.string, file, work->env, message );
+		if( work->env->entry_points && parse_function_body( work->env->entry_points, work->env, message ) ) {
+			params = work->env->entry_points->num_parameters;
+			work->args = calloc( params, sizeof( struct variable ) );
+			if( work->args ) {
+				work->strings = calloc( params, sizeof( struct string ) );
+			}
+			if( work->strings ) {
+				work->globals = calloc( params, sizeof( struct global_variable ) );
+			}
+			if( work->globals ) {
+				work->parameters = calloc( params, sizeof( struct expression ) );
+			}
+			if( work->parameters ) {
+				for( idx = 0; idx < params; idx++ ) {
+					work->parameters[ idx ].evaluate = evaluate_global;
+					work->parameters[ idx ].global = &work->globals[ idx ];
+					work->parameters[ idx ].next = &work->parameters[ idx + 1 ];
+				}
+			} else {
+				strcpy( message, OUT_OF_MEMORY );
+			}
+		}
+		if( message[ 0 ] ) {
+			unref_string( &work->str );
+			work = NULL;
+		}
+	}
+	return work;
 }
 
 /* Parse the specified program text into env. Returns zero and writes message on failure. */

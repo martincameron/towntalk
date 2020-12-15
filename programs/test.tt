@@ -746,7 +746,25 @@ function testfunction() {
 	call assert_throws( $function( ${ () { call $function( 0 ); } } ), "Not an element.", ${-} );
 	call assert_throws( $function( ${ () { call $function( ${ x } ); } } ), "Expected '(' after '$function'", ${-} );
 	call assert_throws( $function( ${ () { call $function( ${ ( 1 ) {} } ); } } ), "Invalid name '1'", ${-} );
+	call assert_throws( $function( ${ () { call $function( ${ ( x x ) {} } ); } } ), "Parameter 'x' already", ${-} );
 	call assert_throws( $function( ${ () { call $function( ${ () { x } } ); } } ), "Unrecognized keyword 'x'", ${-} );
+}
+
+function testworker() {
+	call assert_equals( 1, $result( $execute( $worker( ${ () { return 1; } } ) ) ), ${-} );
+	call assert_equals( "1", $result( $execute( $worker( ${ ( a ) { return a; } } ), "1" ) ), ${-} );
+	call assert_throws( $function( ${ () { call $result( $execute( $worker( ${ ( a ) { throw a; } } ), "1" ) ); } } ), "1", ${-} );
+	call assert_throws( $function( ${ () { call $worker( 0 ); } } ), "Not an element.", ${-} );
+	call assert_throws( $function( ${ () { call $worker( ${ x } ); } } ), "Expected '(' after '$worker'", ${-} );
+	call assert_throws( $function( ${ () { call $worker( ${ ( 1 ) {} } ); } } ), "Invalid name '1'", ${-} );
+	call assert_throws( $function( ${ () { call $worker( ${ ( x x ) {} } ); } } ), "Parameter 'x' already", ${-} );
+	call assert_throws( $function( ${ () { call $execute( 0 ); } } ), "Not a worker", ${-} );
+	call assert_throws( $function( ${ () { call $execute( $worker( ${ ( a ) {} } ) ); } } ), "Incorrect number", ${-} );
+	call assert_throws( $function( ${ () { call $execute( $worker( ${ ( a ) {} } ), ${ x } ); } } ), "Values of this type", ${-} );
+	call assert_throws( $function( ${ () { call $result( 0 ); } } ), "Not a worker", ${-} );
+	call assert_throws( $function( ${ () { call $result( $execute( $worker( ${ () { exit 0; } } ) ) ); } } ), "Worker exited", ${-} );
+	call assert_throws( $function( ${ () { call $result( $execute( $worker( ${ () { return $array( 0 ); } } ) ) ); } } ), "Values of this type", ${-} );
+	call assert_throws( $function( ${ () { call $result( $execute( $worker( ${ () { call $worker( 0 ); } } ) ) ); } } ), "Operation", ${-} );
 }
 
 program test {
@@ -797,5 +815,6 @@ program test {
 	call testdec();
 	call testvalues();
 	call testfunction();
+	call testworker();
 	print "Tests passed.";
 }
