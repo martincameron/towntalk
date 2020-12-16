@@ -194,7 +194,7 @@ static struct worker* parse_worker( struct element *elem, struct environment *en
 	char *file, char *message );
 
 /* Return the index of the last separator char encountered in str. */
-int chop( char *str, const char *separators ) {
+static int chop( char *str, const char *separators ) {
 	int idx = 0, offset = 0;
 	char chr = str[ idx++ ];
 	while( chr ) {
@@ -714,9 +714,6 @@ static void dispose_worker( struct worker *work ) {
 	free( work->globals );
 	free( work->parameters );
 	free( work );
-}
-
-void await_worker( struct worker *work, int cancel ) {
 }
 
 /* Decrement the reference count of the specified value and deallocate if necessary. */
@@ -3925,6 +3922,8 @@ static enum result evaluate_function_expression( struct expression *this, struct
 	return ret;
 }
 
+#if !defined( MULTI_THREAD )
+/* Begin execution of the specified worker. */
 void start_worker( struct worker *work ) {
 	struct expression expr = { 0 };
 	expr.line = work->env->entry_points->line;
@@ -3932,6 +3931,12 @@ void start_worker( struct worker *work ) {
 	expr.parameters = work->parameters;
 	work->status = evaluate_call_expression( &expr, NULL, &work->result, &work->exception );
 }
+
+/* Wait for the completion of the specified worker.
+   If cancel is non-zero, the worker should be interrupted. */
+void await_worker( struct worker *work, int cancel ) {
+}
+#endif
 
 static enum result evaluate_worker_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {

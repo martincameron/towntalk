@@ -12,7 +12,7 @@ tt: tt.c towntalk.c towntalk.h
 	$(CC) $(CFLAGS) $(ANSI_C) tt.c towntalk.c -o tt
 
 ttfx: ttfx.c towntalk.c towntalk.h
-	$(CC) $(CFLAGS) ttfx.c towntalk.c -o ttfx `sdl2-config --cflags --libs`
+	$(CC) $(CFLAGS) -DMULTI_THREAD ttfx.c towntalk.c -o ttfx `sdl2-config --cflags --libs`
 
 ttfx-midi: ttfx.c towntalk.c towntalk.h
 	$(CC) $(CFLAGS) -DALSA_MIDI ttfx.c towntalk.c -o ttfx-midi `sdl2-config --cflags --libs` -lasound

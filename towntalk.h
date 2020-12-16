@@ -85,6 +85,8 @@ struct worker {
 	struct global_variable *globals;
 	struct expression *parameters;
 	enum result status;
+	char interrupted;
+	void *thread;
 };
 
 /* Struct declaration list.*/
@@ -226,10 +228,14 @@ int write_byte_string( char *bytes, int count, char *output );
    Returns -1 and writes message on failure. */
 long load_file( char *file_name, char *buffer, char *message );
 
-/* Return the index of the last separator char encountered in str. */
-int chop( char *str, const char *separators );
-
 /* Unpack a 32-bit big-endian integer from str at the specified index. */
 int unpack( char *str, int idx );
+
+/* Begin execution of the specified worker. */
+void start_worker( struct worker *work );
+
+/* Wait for the completion of the specified worker.
+   If cancel is non-zero, the worker should be interrupted. */
+void await_worker( struct worker *work, int cancel );
 
 /* --- */

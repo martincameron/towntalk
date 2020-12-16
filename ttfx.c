@@ -189,6 +189,36 @@ static char interrupted;
 
 static void ( *interrupt_handler )( int signum );
 
+#if defined( MULTI_THREAD )
+int worker_thread( void *data ) {
+	struct expression expr = { 0 };
+	struct worker *work = ( struct worker * ) data;
+	initialize_call_expr( &expr, work->env->entry_points );
+	expr.parameters = work->parameters;
+	work->interrupted = 0;
+	work->env->interrupted = &work->interrupted;
+	work->status = expr.evaluate( &expr, NULL, &work->result, &work->exception );
+	return 0;
+}
+
+/* Begin execution of the specified worker. */
+void start_worker( struct worker *work ) {
+	work->thread = SDL_CreateThread( worker_thread, work->str.string, work );
+}
+
+/* Wait for the completion of the specified worker.
+   If cancel is non-zero, the worker should be interrupted. */
+void await_worker( struct worker *work, int cancel ) {
+	if( work->thread ) {
+		if( cancel ) {
+			work->interrupted = 1;
+		}
+		SDL_WaitThread( ( SDL_Thread * ) work->thread, NULL );
+		work->thread = NULL;
+	}
+}
+#endif
+
 static void signal_handler( int signum ) {
 	signal( signum, signal_handler );
 	interrupted = 1;
