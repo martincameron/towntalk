@@ -352,6 +352,41 @@ static struct string* new_string_literal( char *source ) {
 	return str;
 }
 
+/* Return a copy of the specified element-tree. */
+static struct element* copy_element( struct element *source ) {
+	struct element *elem = NULL, *prev = NULL, *head = NULL;
+	while( source ) {
+		elem = new_element( source->str.length );
+		if( elem ) {
+			if( prev ) {
+				prev->next = elem;
+			}
+			prev = elem;
+			if( head == NULL ) {
+				head = elem;
+			}
+			memcpy( elem->str.string, source->str.string, elem->str.length );
+			if( source->child ) {
+				elem->child = copy_element( source->child );
+				if( elem->child ) {
+					source = source->next;
+				} else {
+					source = elem = NULL;
+				}
+			} else {
+				source = source->next;
+			}
+		} else {
+			source = NULL;
+		}
+	}
+	if( elem == NULL && head ) {
+		unref_string( &head->str );
+		head = NULL;
+	}
+	return head;
+}
+
 static int parse_child_element( char *buffer, int idx, struct element *parent, char *message ) {
 	struct element *elem = NULL;
 	int offset = idx, length = 0, line = parent->line, end, str_len;
@@ -3913,20 +3948,26 @@ static enum result evaluate_worker_expression( struct expression *this, struct v
 	}
 	if( ret ) {
 		if( var.string_value && var.string_value->type == ELEMENT ) {
-			elem = ( struct element * ) var.string_value;
-			key.line = this->line;
-			validate_syntax( "({0", elem, &key, this->function->env, message );
-			if( message[ 0 ] == 0 ) {
-				work = parse_worker( elem, this->function->env, this->function->file.string, message );
-				if( work ) {
-					dispose_variable( result );
-					result->integer_value = 0;
-					result->string_value = &work->str;
+			/* Copy source to avoid sharing element-literals. */
+			elem = copy_element( ( struct element * ) var.string_value );
+			if( elem ) {
+				key.line = this->line;
+				validate_syntax( "({0", elem, &key, this->function->env, message );
+				if( message[ 0 ] == 0 ) {
+					work = parse_worker( elem, this->function->env, this->function->file.string, message );
+					if( work ) {
+						dispose_variable( result );
+						result->integer_value = 0;
+						result->string_value = &work->str;
+					} else {
+						ret = throw( exception, this, 0, message );
+					}
 				} else {
 					ret = throw( exception, this, 0, message );
 				}
+				unref_string( &elem->str );
 			} else {
-				ret = throw( exception, this, 0, message );
+				ret = throw( exception, this, 0, OUT_OF_MEMORY );
 			}
 		} else {
 			ret = throw( exception, this, 0, "Not an element." );
