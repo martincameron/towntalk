@@ -4022,8 +4022,8 @@ static enum result evaluate_result_expression( struct expression *this, struct v
 				} else {
 					assign_variable( &work->result, result );
 				}
-			} else if( work->exception.string_value && work->exception.string_value->type == EXIT ) {
-				ret = throw( exception, this, 0, "Worker exited." );
+			} else if( work->exception.string_value && work->exception.string_value->type > ELEMENT ) {
+				ret = throw( exception, this, work->exception.integer_value, "Worker exited." );
 			} else {
 				assign_variable( &work->exception, exception );
 				ret = EXCEPTION;
