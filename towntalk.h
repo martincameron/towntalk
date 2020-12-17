@@ -64,7 +64,7 @@ struct variable {
 /* Execution environment. */
 struct environment {
 	int argc;
-	char **argv, *interrupted;
+	char **argv;
 	struct string exit;
 	struct array arrays;
 	struct keyword *statements;
@@ -73,6 +73,7 @@ struct environment {
 	struct global_variable *constants, *constants_tail;
 	struct global_variable *globals, *globals_tail;
 	struct function *functions, *entry_points;
+	volatile char interrupted;
 	struct worker *worker;
 };
 
@@ -85,7 +86,6 @@ struct worker {
 	struct global_variable *globals;
 	struct expression *parameters;
 	enum result status;
-	char interrupted;
 	void *thread;
 };
 
@@ -231,8 +231,8 @@ long load_file( char *file_name, char *buffer, char *message );
 /* Unpack a 32-bit big-endian integer from str at the specified index. */
 int unpack( char *str, int idx );
 
-/* Begin execution of the specified worker. */
-void start_worker( struct worker *work );
+/* Begin execution of the specified worker. Returns 0 on failure. */
+int start_worker( struct worker *work );
 
 /* Wait for the completion of the specified worker.
    If cancel is non-zero, the worker should be interrupted. */

@@ -6,11 +6,15 @@
 
 #include "towntalk.h"
 
-static char interrupted;
+static struct environment *env;
 
 static void interrupt_handler( int signum ) {
 	signal( signum, interrupt_handler );
-	interrupted = 1;
+	env->interrupted = 1;
+	if( env->worker ) {
+		/* Terminate current worker. */
+		env->worker->env->interrupted = 1;
+	}
 }
 
 int main( int argc, char **argv ) {
@@ -18,7 +22,6 @@ int main( int argc, char **argv ) {
 	char *file_name, message[ 256 ] = "";
 	struct variable result = { 0 }, except = { 0 };
 	struct expression expr = { 0 };
-	struct environment *env;
 	/* Handle command-line.*/
 	if( argc < 2 ) {
 		fprintf( stderr, "Usage: %s program.tt [args]\n", argv[ 0 ] );
@@ -35,7 +38,6 @@ int main( int argc, char **argv ) {
 				if( env->entry_points ) {
 					/* Install signal handler. */
 					if( signal( SIGINT, interrupt_handler ) != SIG_ERR ) {
-						env->interrupted = &interrupted;
 						/* Evaluate the last entry-point function. */
 						initialize_call_expr( &expr, env->entry_points );
 						if( initialize_globals( env, &except ) && expr.evaluate( &expr, NULL, &result, &except ) ) {

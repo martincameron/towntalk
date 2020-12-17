@@ -1320,7 +1320,7 @@ static enum result execute_while_statement( struct statement *this, struct varia
 					return EXCEPTION;
 				}
 			}
-			if( env->interrupted[ 0 ] ) {
+			if( env->interrupted ) {
 				if( env->worker ) {
 					return throw_exit( this->source->function->env, exception, 0 );
 				} else {
@@ -2907,9 +2907,9 @@ static enum result evaluate_interrupted_expression( struct expression *this, str
 	struct variable *result, struct variable *exception ) {
 	struct environment *env = this->function->env; 
 	dispose_variable( result );
-	result->integer_value = env->interrupted[ 0 ];
+	result->integer_value = env->interrupted;
 	result->string_value = NULL;
-	env->interrupted[ 0 ] = 0;
+	env->interrupted = 0;
 	return OKAY;
 }
 
@@ -3924,12 +3924,17 @@ static enum result evaluate_function_expression( struct expression *this, struct
 
 #if !defined( MULTI_THREAD )
 /* Begin execution of the specified worker. */
-void start_worker( struct worker *work ) {
+int start_worker( struct worker *work ) {
 	struct expression expr = { 0 };
 	expr.line = work->env->entry_points->line;
 	expr.function = work->env->entry_points;
 	expr.parameters = work->parameters;
 	work->status = evaluate_call_expression( &expr, NULL, &work->result, &work->exception );
+	if( work->exception.string_value && work->exception.string_value->type > ELEMENT ) {
+		/* Interrupted, exited or unsupported exception type. */
+		return 0;
+	}
+	return 1;
 }
 
 /* Wait for the completion of the specified worker.
@@ -4022,8 +4027,14 @@ static enum result evaluate_execute_expression( struct expression *this, struct 
 					idx++;
 				}
 				if( ret ) {
-					start_worker( work );
-					assign_variable( &var, result );
+					work->env->interrupted = this->function->env->interrupted;
+					this->function->env->worker = work;
+					if( start_worker( work ) ) {
+						assign_variable( &var, result );
+					} else {
+						ret = throw( exception, this, 0, "Worker exited." );
+					}
+					this->function->env->worker = NULL;
 				}
 			} else {
 				ret = throw( exception, this, count, "Incorrect number of parameters to function." );
@@ -4047,7 +4058,9 @@ static enum result evaluate_result_expression( struct expression *this, struct v
 	if( ret ) {
 		if( var.string_value && var.string_value->type == WORKER ) {
 			work = ( struct worker * ) var.string_value;
+			this->function->env->worker = work;
 			await_worker( work, 0 );
+			this->function->env->worker = NULL;
 			count = work->env->entry_points->num_parameters;
 			for( idx = 0; idx < count; idx++ ) {
 				if( work->args[ idx ].string_value ) {
@@ -4351,7 +4364,6 @@ static struct worker* new_worker( struct environment *env, char *file, char *mes
 		work->env = calloc( 1, sizeof( struct environment ) );
 		if( work->env ) {
 			work->env->worker = work;
-			work->env->interrupted = env->interrupted;
 			work->env->operators = operators;
 			work->env->statements = statements;
 		} else {

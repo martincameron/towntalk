@@ -38,7 +38,7 @@
 		$ymouse                                The vertical mouse coordinate from the latest mouse event.
 		$mousekey                              The state of the mouse buttons from the latest mouse event.
 		$mousewheel                            The state of the mouse wheel from the latest mouse event.
-		$keyboard                              The key associated with the latet keyboard event.
+		$keyboard                              The key associated with the latest keyboard event.
 		$keyshift                              The currently pressed modifier keys (least significant 2 bits are shift keys).
 		$fxtick                                Value incremented every sequencer period.
 		$fxseq                                 The channel and parameter of the latest sequencer event (0xccpppppp).
@@ -185,7 +185,7 @@ struct fxenvironment {
 #endif
 };
 
-static char interrupted;
+static struct fxenvironment *fxenv;
 
 static void ( *interrupt_handler )( int signum );
 
@@ -195,15 +195,14 @@ int worker_thread( void *data ) {
 	struct worker *work = ( struct worker * ) data;
 	initialize_call_expr( &expr, work->env->entry_points );
 	expr.parameters = work->parameters;
-	work->interrupted = 0;
-	work->env->interrupted = &work->interrupted;
 	work->status = expr.evaluate( &expr, NULL, &work->result, &work->exception );
 	return 0;
 }
 
 /* Begin execution of the specified worker. */
-void start_worker( struct worker *work ) {
+int start_worker( struct worker *work ) {
 	work->thread = SDL_CreateThread( worker_thread, work->str.string, work );
+	return work->thread != NULL;
 }
 
 /* Wait for the completion of the specified worker.
@@ -211,7 +210,7 @@ void start_worker( struct worker *work ) {
 void await_worker( struct worker *work, int cancel ) {
 	if( work->thread ) {
 		if( cancel ) {
-			work->interrupted = 1;
+			work->env->interrupted = 1;
 		}
 		SDL_WaitThread( ( SDL_Thread * ) work->thread, NULL );
 		work->thread = NULL;
@@ -221,7 +220,11 @@ void await_worker( struct worker *work, int cancel ) {
 
 static void signal_handler( int signum ) {
 	signal( signum, signal_handler );
-	interrupted = 1;
+	fxenv->env.interrupted = 1;
+	if( fxenv->env.worker ) {
+		/* Terminate current worker. */
+		fxenv->env.worker->env->interrupted = 1;
+	}
 	if( signum == SIGINT && interrupt_handler ) {
 		interrupt_handler( SIGINT );
 	}
@@ -1736,7 +1739,6 @@ int main( int argc, char **argv ) {
 	int exit_code = EXIT_FAILURE;
 	char *file_name, message[ 256 ] = "";
 	struct environment *env;
-	struct fxenvironment *fxenv;
 	struct variable result = { 0 }, except = { 0 };
 	struct expression expr = { 0 };
 	/* Handle command-line.*/
@@ -1758,7 +1760,6 @@ int main( int argc, char **argv ) {
 					/* Install signal handler. */
 					interrupt_handler = signal( SIGINT, signal_handler );
 					if( interrupt_handler != SIG_ERR ) {
-						env->interrupted = &interrupted;
 						/* Evaluate the last entry-point function. */
 						initialize_call_expr( &expr, env->entry_points );
 						if( initialize_globals( env, &except ) && expr.evaluate( &expr, NULL, &result, &except ) ) {
