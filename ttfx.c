@@ -195,14 +195,34 @@ int worker_thread( void *data ) {
 	struct worker *work = ( struct worker * ) data;
 	initialize_call_expr( &expr, work->env->entry_points );
 	expr.parameters = work->parameters;
-	work->status = expr.evaluate( &expr, NULL, &work->result, &work->exception );
+	work->ret = expr.evaluate( &expr, NULL, &work->result, &work->exception );
 	return 0;
 }
 
-/* Begin execution of the specified worker. */
+/* Begin execution of the specified worker. Returns 0 on failure. */
 int start_worker( struct worker *work ) {
-	work->thread = SDL_CreateThread( worker_thread, work->str.string, work );
-	return work->thread != NULL;
+	int success = 0;
+	work->mutex = SDL_CreateMutex();
+	if( work->mutex ) {
+		work->thread = SDL_CreateThread( worker_thread, work->str.string, work );
+		if( work->thread ) {
+			success = 1;
+		} else {
+			SDL_DestroyMutex( ( SDL_mutex * ) work->mutex );
+			work->mutex = NULL;
+		}
+	}
+	return success;
+}
+
+/* Lock the specified worker mutex. Returns 0 on failure. */
+int lock_worker( struct worker *work ) {
+	return work->mutex && SDL_LockMutex( ( SDL_mutex * ) work->mutex ) == 0;
+}
+
+/* Unlock the specified worker mutex. Returns 0 on failure. */
+int unlock_worker( struct worker *work ) {
+	return work->mutex && SDL_UnlockMutex( ( SDL_mutex * ) work->mutex ) == 0;
 }
 
 /* Wait for the completion of the specified worker.
@@ -213,7 +233,8 @@ void await_worker( struct worker *work, int cancel ) {
 			work->env->interrupted = 1;
 		}
 		SDL_WaitThread( ( SDL_Thread * ) work->thread, NULL );
-		work->thread = NULL;
+		SDL_DestroyMutex( ( SDL_mutex * ) work->mutex );
+		work->thread = work->mutex = NULL;
 	}
 }
 #endif

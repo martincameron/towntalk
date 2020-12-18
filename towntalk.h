@@ -81,12 +81,12 @@ struct environment {
 struct worker {
 	struct string str;
 	struct environment *env;
-	struct variable *args, result, exception;
+	struct variable *args, status, result, exception;
 	struct string *strings;
 	struct global_variable *globals;
 	struct expression *parameters;
-	enum result status;
-	void *thread;
+	void *thread, *mutex;
+	enum result ret;
 };
 
 /* Struct declaration list.*/
@@ -233,6 +233,12 @@ int unpack( char *str, int idx );
 
 /* Begin execution of the specified worker. Returns 0 on failure. */
 int start_worker( struct worker *work );
+
+/* Lock the specified worker mutex. Returns 0 on failure. */
+int lock_worker( struct worker *work );
+
+/* Unlock the specified worker mutex. Returns 0 on failure. */
+int unlock_worker( struct worker *work );
 
 /* Wait for the completion of the specified worker.
    If cancel is non-zero, the worker should be interrupted. */

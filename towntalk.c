@@ -156,6 +156,7 @@
 		$function(${(){stmts}})  Compile a function reference from an element.
 		$worker(${(){stmts}})    Compile a worker function from an element.
 		$execute(worker arg ...) Begin execution of the specified worker and return it.
+		$status(worker/str)      Receive or set worker status value during execution.
 		$result(worker)          Wait for the return value of a worker function.
 */
 
@@ -703,6 +704,7 @@ static void dispose_worker( struct worker *work ) {
 			len = work->env->entry_points->num_parameters;
 		}
 	}
+	dispose_variable( &work->status );
 	dispose_variable( &work->result );
 	dispose_variable( &work->exception );
 	dispose_environment( work->env );
@@ -3923,17 +3925,27 @@ static enum result evaluate_function_expression( struct expression *this, struct
 }
 
 #if !defined( MULTI_THREAD )
-/* Begin execution of the specified worker. */
+/* Begin execution of the specified worker. Returns 0 on failure. */
 int start_worker( struct worker *work ) {
 	struct expression expr = { 0 };
 	expr.line = work->env->entry_points->line;
 	expr.function = work->env->entry_points;
 	expr.parameters = work->parameters;
-	work->status = evaluate_call_expression( &expr, NULL, &work->result, &work->exception );
+	work->ret = evaluate_call_expression( &expr, NULL, &work->result, &work->exception );
 	if( work->exception.string_value && work->exception.string_value->type > ELEMENT ) {
 		/* Interrupted, exited or unsupported exception type. */
 		return 0;
 	}
+	return 1;
+}
+
+/* Lock the specified worker mutex. Returns 0 on failure. */
+int lock_worker( struct worker *work ) {
+	return 1;
+}
+
+/* Unlock the specified worker mutex. Returns 0 on failure. */
+int unlock_worker( struct worker *work ) {
 	return 1;
 }
 
@@ -4027,6 +4039,10 @@ static enum result evaluate_execute_expression( struct expression *this, struct 
 					idx++;
 				}
 				if( ret ) {
+					work->ret = OKAY;
+					dispose_variable( &work->status );
+					work->status.integer_value = 0;
+					work->status.string_value = NULL;
 					work->env->interrupted = this->function->env->interrupted;
 					this->function->env->worker = work;
 					if( start_worker( work ) ) {
@@ -4038,6 +4054,59 @@ static enum result evaluate_execute_expression( struct expression *this, struct 
 				}
 			} else {
 				ret = throw( exception, this, count, "Incorrect number of parameters to function." );
+			}
+		} else {
+			ret = throw( exception, this, 0, "Not a worker." );
+		}
+		dispose_variable( &var );
+	}
+	return ret;
+}
+
+static enum result evaluate_status_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	struct expression *parameter = this->parameters;
+	struct variable var = { 0, NULL };
+	struct string *str = NULL;
+	struct worker *work = this->function->env->worker;
+	enum result ret = parameter->evaluate( parameter, variables, &var, exception );
+	if( ret ) {
+		if( work ) {
+			if( lock_worker( work ) ) {
+				assign_variable( &var, &work->status );
+				dispose_variable( result );
+				result->integer_value = 0;
+				result->string_value = NULL;
+				unlock_worker( work );
+			} else {
+				ret = throw( exception, this, 0, "Unable to lock worker." );
+			}
+		} else if( var.string_value && var.string_value->type == WORKER ) {
+			work = ( struct worker * ) var.string_value;
+			if( work->ret == OKAY ) {
+				if( lock_worker( work ) ) {
+					if( work->status.string_value ) {
+						str = new_string_value( work->status.string_value->length );
+						if( str ) {
+							memcpy( str->string, work->status.string_value->string, str->length );
+						} else {
+							ret = throw( exception, this, 0, OUT_OF_MEMORY );
+						}
+					}
+					if( ret ) {
+						dispose_variable( result );
+						result->integer_value = work->status.integer_value;
+						result->string_value = str;
+					}
+					unlock_worker( work );
+				} else {
+					ret = throw( exception, this, 0, "Unable to lock worker." );
+				}
+			} else if( work->exception.string_value && work->exception.string_value->type > ELEMENT ) {
+				ret = throw( exception, this, work->exception.integer_value, "Worker exited." );
+			} else {
+				assign_variable( &work->exception, exception );
+				ret = EXCEPTION;
 			}
 		} else {
 			ret = throw( exception, this, 0, "Not a worker." );
@@ -4074,7 +4143,7 @@ static enum result evaluate_result_expression( struct expression *this, struct v
 					}
 				}
 			}
-			if( work->status == OKAY ) {
+			if( work->ret == OKAY ) {
 				if( work->result.string_value && work->result.string_value->type > ELEMENT ) {
 					/* Only strings and elements can safely be assigned from another environment. */
 					ret = throw( exception, this, 0, "Values of this type cannot be returned from workers." );
@@ -4294,7 +4363,8 @@ static struct operator operators[] = {
 	{ "$function", '$', 1, evaluate_function_expression, &operators[ 53 ] },
 	{ "$worker", '$', 1, evaluate_worker_expression, &operators[ 54 ] },
 	{ "$execute", '$',-1, evaluate_execute_expression, &operators[ 55 ] },
-	{ "$result", '$', 1, evaluate_result_expression, &operators[ 56 ] },
+	{ "$status", '$', 1, evaluate_status_expression, &operators[ 56 ] },
+	{ "$result", '$', 1, evaluate_result_expression, &operators[ 57 ] },
 	{ "$src", '$', 0, evaluate_source_expression, NULL }
 };
 
@@ -4360,7 +4430,6 @@ static struct worker* new_worker( struct environment *env, char *file, char *mes
 		work->str.length = strlen( work->str.string );
 		work->str.reference_count = 1;
 		work->str.type = WORKER;
-		work->status = OKAY;
 		work->env = calloc( 1, sizeof( struct environment ) );
 		if( work->env ) {
 			work->env->worker = work;
