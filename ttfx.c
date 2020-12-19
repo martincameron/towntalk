@@ -217,12 +217,12 @@ int start_worker( struct worker *work ) {
 
 /* Lock the specified worker mutex. Returns 0 on failure. */
 int lock_worker( struct worker *work ) {
-	return work->mutex && SDL_LockMutex( ( SDL_mutex * ) work->mutex ) == 0;
+	return work->mutex == NULL || SDL_LockMutex( ( SDL_mutex * ) work->mutex ) == 0;
 }
 
 /* Unlock the specified worker mutex. Returns 0 on failure. */
 int unlock_worker( struct worker *work ) {
-	return work->mutex && SDL_UnlockMutex( ( SDL_mutex * ) work->mutex ) == 0;
+	return work->mutex == NULL || SDL_UnlockMutex( ( SDL_mutex * ) work->mutex ) == 0;
 }
 
 /* Wait for the completion of the specified worker.
