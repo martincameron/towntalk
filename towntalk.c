@@ -3932,10 +3932,6 @@ int start_worker( struct worker *work ) {
 	expr.function = work->env->entry_points;
 	expr.parameters = work->parameters;
 	work->ret = evaluate_call_expression( &expr, NULL, &work->result, &work->exception );
-	if( work->exception.string_value && work->exception.string_value->type > ELEMENT ) {
-		/* Interrupted, exited or unsupported exception type. */
-		return 0;
-	}
 	return 1;
 }
 
@@ -4048,7 +4044,7 @@ static enum result evaluate_execute_expression( struct expression *this, struct 
 					if( start_worker( work ) ) {
 						assign_variable( &var, result );
 					} else {
-						ret = throw( exception, this, 0, "Worker exited." );
+						ret = throw( exception, this, 0, "Unable to start worker." );
 					}
 					this->function->env->worker = NULL;
 				}

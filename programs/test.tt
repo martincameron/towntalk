@@ -157,7 +157,7 @@ function testif() {
 	try { if except( ${-} ) { let err = 0; } } catch err {}
 	call assert( err, ${-} );
 	if FALSE { call assert( 0, ${-} ); }
-	if TRUE { let x = 2; }
+	if TRUE { let x = 2; } else { call assert( 0, ${-} ); }
 	call assert( =( x 2 ), ${-} );
 	if "" { let x = 3; }
 	call assert( =( x 3 ), ${-} );
@@ -751,7 +751,9 @@ function testfunction() {
 }
 
 function testworker() {
-	call assert_equals( 1, $result( $execute( $worker( ${ () { return 1; } } ) ) ), ${-} );
+	var worker = $execute( $worker( ${ () { call $status( "1" ); return 1; } } ) );
+	call assert_equals( 1, $result( worker ), ${-} );
+	call assert_equals( "1", $status( worker ), ${-} );
 	call assert_equals( "1", $result( $execute( $worker( ${ ( a ) { return a; } } ), "1" ) ), ${-} );
 	call assert_throws( $function( ${ () { call $result( $execute( $worker( ${ ( a ) { throw a; } } ), "1" ) ); } } ), "1", ${-} );
 	call assert_throws( $function( ${ () { call $worker( 0 ); } } ), "Not an element.", ${-} );
@@ -765,6 +767,11 @@ function testworker() {
 	call assert_throws( $function( ${ () { call $result( $execute( $worker( ${ () { exit 0; } } ) ) ); } } ), "Worker exited", ${-} );
 	call assert_throws( $function( ${ () { call $result( $execute( $worker( ${ () { return $array( 0 ); } } ) ) ); } } ), "Values of this type", ${-} );
 	call assert_throws( $function( ${ () { call $result( $execute( $worker( ${ () { call $worker( 0 ); } } ) ) ); } } ), "Operation", ${-} );
+	call assert_throws( $function( ${ () { call $status( 0 ); } } ), "Not a worker", ${-} );
+	call assert_throws( $function( ${ () { var err, worker = $execute( $worker( ${ () { exit 0; } } ) );
+		try { call $result( worker ); } catch err { call $status( worker ); } } } ), "Worker exited", ${-} );
+	call assert_throws( $function( ${ () { var err, worker = $execute( $worker( ${ () { throw "x"; } } ) );
+		try { call $result( worker ); } catch err { call $status( worker ); } } } ), "x", ${-} );
 }
 
 program test {

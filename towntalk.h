@@ -64,7 +64,7 @@ struct variable {
 /* Execution environment. */
 struct environment {
 	int argc;
-	char **argv;
+	char **argv, interrupted;
 	struct string exit;
 	struct array arrays;
 	struct keyword *statements;
@@ -73,7 +73,6 @@ struct environment {
 	struct global_variable *constants, *constants_tail;
 	struct global_variable *globals, *globals_tail;
 	struct function *functions, *entry_points;
-	volatile char interrupted;
 	struct worker *worker;
 };
 
