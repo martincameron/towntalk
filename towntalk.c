@@ -194,46 +194,6 @@ static struct element* parse_default_statement( struct element *elem, struct env
 static struct worker* parse_worker( struct element *elem, struct environment *env,
 	char *file, char *message );
 
-/* Return the index of the last separator char encountered in str. */
-static int chop( char *str, const char *separators ) {
-	int idx = 0, offset = 0;
-	char chr = str[ idx++ ];
-	while( chr ) {
-		if( strchr( separators, chr ) ) {
-			offset = idx;
-		}
-		chr = str[ idx++ ];
-	}
-	return offset;
-}
-
-static int parse_string( char *buffer, int idx, struct element *elem, int line, char *message ) {
-	int offset = idx;
-	char chr = buffer[ idx++ ];
-	if( chr == '"' ) {
-		while( ( chr & 0x7F ) >= 32 ) {
-			chr = buffer[ idx++ ];
-			if( chr == '\\' ) {
-				chr = buffer[ idx++ ];
-			} else if( chr == '"' ) {
-				break;
-			}
-		}
-		if( chr == '"' ) {
-			if( elem ) {
-				memcpy( &elem->str.string[ 0 ], &buffer[ offset ], idx - offset );
-			}
-		} else {
-			sprintf( message, "Unclosed string on line %d.", line );
-			idx = -3;
-		}
-	} else {
-		sprintf( message, "Expected '\"' on line %d.", line );
-		idx = -3;
-	}
-	return idx;
-}
-
 /* Allocate and return a new element with the specified string length. */
 struct element* new_element( int str_len ) {
 	struct element *elem = malloc( sizeof( struct element ) + sizeof( char ) * ( str_len + 1 ) );
@@ -306,6 +266,46 @@ static char* cat_string( char *left, int llen, char *right, int rlen ) {
 		str[ llen + rlen ] = 0;
 	}
 	return str;
+}
+
+/* Return the index of the last separator char encountered in str. */
+static int chop( char *str, const char *separators ) {
+	int idx = 0, offset = 0;
+	char chr = str[ idx++ ];
+	while( chr ) {
+		if( strchr( separators, chr ) ) {
+			offset = idx;
+		}
+		chr = str[ idx++ ];
+	}
+	return offset;
+}
+
+static int parse_string( char *input, int idx, char *output, int line, char *message ) {
+	int offset = idx;
+	char chr = input[ idx++ ];
+	if( chr == '"' ) {
+		while( ( chr & 0x7F ) >= 32 ) {
+			chr = input[ idx++ ];
+			if( chr == '\\' ) {
+				chr = input[ idx++ ];
+			} else if( chr == '"' ) {
+				break;
+			}
+		}
+		if( chr == '"' ) {
+			if( output ) {
+				memcpy( output, &input[ offset ], idx - offset );
+			}
+		} else {
+			sprintf( message, "Unclosed string on line %d.", line );
+			idx = -3;
+		}
+	} else {
+		sprintf( message, "Expected '\"' on line %d.", line );
+		idx = -3;
+	}
+	return idx;
 }
 
 static int unquote_string( char *string, char *output ) {
@@ -438,7 +438,7 @@ static int parse_child_element( char *buffer, int idx, struct element *parent, c
 				if( elem ) {
 					elem->line = line;
 					if( chr == '"' ) {
-						idx = parse_string( buffer, idx - 1, elem, line, message );
+						idx = parse_string( buffer, idx - 1, elem->str.string, line, message );
 						if( idx < 0 ) {
 							return idx;
 						}
