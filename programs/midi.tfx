@@ -52,7 +52,7 @@ function load_tmf( tmf, names ) {
 		}
 		let length = +( loopidx looplen );
 		if length {
-			fxsample idx, $sub( tmf offset length ), loopidx, looplen;
+			sample idx, $sub( tmf offset length ), loopidx, looplen;
 			let offset = +( offset length );
 		}
 		inc idx;
@@ -106,7 +106,7 @@ function load_mod( mod, names ) {
 			set [ names instrument ] = trim( $sub( mod -( *( instrument 30 ) 10 ) 22 ) );
 		}
 		if length {
-			fxsample instrument, $sub( mod offset length ), loopidx, looplen;
+			sample instrument, $sub( mod offset length ), loopidx, looplen;
 			let offset = +( offset length );
 		}
 		inc instrument;
@@ -150,7 +150,7 @@ function map_key( keymap, key ) {
 	return key;
 }
 
-program midi {
+program synthesizer {
 	var sequence, idx, name, names;
 	var cmd, chn, key, vel, ins, voc, va;
 	var keyvoice, voicekey, keymap, keyfreq, bank, c0;
@@ -179,34 +179,34 @@ program midi {
 			inc idx;
 		}
 		# Open window to accept keyboard events.
-		fxopen 640, 480, "test";
+		display 640, 480, "Midi Synthesizer";
 		# Open midi device.
-		#fxmidi "hw:2,0,0";
-		fxaudio 480;
-		#fxplay 0, sequence;
-		#fxqueue 0, sequence;
+		#midi "hw:2,0,0";
+		audio 480;
+		#play 0, sequence;
+		#queue 0, sequence;
 		let keyvoice = $array( 128 );
 		let voicekey = $array( 32 );
 		while TRUE {
 			let c0 = 480;
 			let cmd = 0;
-			switch $fxwait {
-				case FX_KEYDOWN {
+			switch $waitevent {
+				case KEY_PRESSED_EVENT {
 					if !( $keyheld ) {
 						switch $keyboard {
-							case FX_KEY_ESCAPE {
+							case KEY_ESCAPE {
 								# Escape, exit timestretch mode.
 								let attack = "";
 								let decay = fade();
 							}
-							case FX_KEY_PAGE_UP {
+							case KEY_PAGE_UP {
 								# Page up, next sample bank.
 								let bank = +( bank 10 );
 								if >( bank 50 ) {
 									let bank = 50;
 								}
 							}
-							case FX_KEY_PAGE_DOWN {
+							case KEY_PAGE_DOWN {
 								# Page down, previous sample bank.
 								let bank = -( bank 10 );
 								if <( bank 0 ) {
@@ -214,10 +214,10 @@ program midi {
 								}
 							}
 						}
-						if &&( >e( $keyboard FX_KEY_F1 ) <( $keyboard +( FX_KEY_F1 12 ) ) ) {
+						if &&( >e( $keyboard KEY_F1 ) <( $keyboard +( KEY_F1 12 ) ) ) {
 							# Function key, select sample.
 							let cmd = 0xC;
-							let key = +( bank -( $keyboard FX_KEY_F1 ) );
+							let key = +( bank -( $keyboard KEY_F1 ) );
 						} else {
 							if &( $keyshift 0x2000 ) {
 								# Drop an octave if caps lock on.
@@ -232,7 +232,7 @@ program midi {
 						}
 					}
 				}
-				case FX_KEYUP {
+				case KEY_RELEASED_EVENT {
 					let key = map_key( keymap, $keyboard );
 					if >( key 0 ) {
 						let cmd = 0x9;
@@ -240,7 +240,7 @@ program midi {
 						let vel = 0;
 					}
 				}
-				case FX_MIDI {
+				case MIDI_EVENT {
 					print $hex( $midimsg );
 					let cmd = >>( $midimsg 20 );
 					let chn = &( >>( $midimsg 16 ) 0xF );
@@ -252,9 +252,9 @@ program midi {
 						let vel = &( $midimsg 0x7F );
 					}
 				}
-				case FX_WINDOW {
-					if =( $window FX_WINDOW_EXPOSED ) {
-						fxshow;
+				case WINDOW_EVENT {
+					if =( $winmsg WINDOW_EXPOSED_MSG ) {
+						show;
 					}
 				}
 			}
@@ -276,12 +276,12 @@ program midi {
 							let attack = timestretch( key );
 							let decay = $pack( 0x4000 );
 						}
-						fxplay voc, $cat( $pack( 0x8000 ) $pack( +( +( 0x10000000 *( key 65536 ) ) *( +( ins 1 ) 256 ) ) ) );
-						fxplay voc, attack;
+						play voc, $cat( $pack( 0x8000 ) $pack( +( +( 0x10000000 *( key 65536 ) ) *( +( ins 1 ) 256 ) ) ) );
+						play voc, attack;
 					} else {
 						if =( [ voicekey voc ] key ) {
 							# Key off.
-							fxplay voc, decay;
+							play voc, decay;
 						}
 						set [ keyvoice key ] = 0;
 					}

@@ -3,7 +3,7 @@ array image;
 
 program fxtest {
 	var c, x, y, w, h, s;
-	fxopen 640, 480, "fxtest";
+	display 640, 480, "fxtest";
 
 	let w = 320;
 	let h = 240;
@@ -19,9 +19,9 @@ program fxtest {
 		inc y;
 	}
 
-	fxsurface 0, w, h, image;
+	surface 0, w, h, image;
 
-	fxtimer 40;
+	timer 40;
 
 	let x = 0;
 	while <( x 256 ) {
@@ -29,8 +29,8 @@ program fxtest {
 		inc x;
 	}
 
-	fxaudio 480;
-	fxsample 1, $sub( image 0 256 ), 0, 256;
+	audio 480;
+	sample 1, $sub( image 0 256 ), 0, 256;
 	let c = $cat(
 		$pack( 0x8000 ) $pack( 0xA000 ) $pack( 0x11E00100 )
 		$pack( 0x8001 ) $pack( 0xA001 ) $pack( 0x11E00101 ) );
@@ -39,28 +39,28 @@ program fxtest {
 		let c = $cat( c $pack( 0xF002 ) $pack( +( *( +( 0x1E0 /( *( x 192 ) 79 ) ) 0x10000 ) 0x10000000 ) ) );
 		inc x;
 	}
-	fxplay 0, c;
+	play 0, c;
 
 	let x = 0;
 	while TRUE {
-		switch $fxwait {
-			case FX_WINDOW {
-				fxshow;
+		switch $waitevent {
+			case WINDOW_EVENT {
+				show;
 			}
-			case FX_TIMER {
+			case TIMER_EVENT {
 				if <( x 640 ) {
-					fxrect x, 0, 8, 480, *( c 256 );
-					fxrect 160, 120, 320, 240, 0xFFFFFF;
-					fxblit 0, 0, 0, 320, 240, 160, 120;
-					fxshow;
+					rect x, 0, 8, 480, *( c 256 );
+					rect 160, 120, 320, 240, 0xFFFFFF;
+					blit 0, 0, 0, 320, 240, 160, 120;
+					show;
 					let c = +( c 3 );
 					let x = +( x 8 );
 				}
 			}
-			case FX_KEYDOWN {
+			case KEY_PRESSED_EVENT {
 				print $str( "asc = " $keyboard ", mod = " $keyshift );
 			}
-			case FX_MOUSEKEYDOWN {
+			case MOUSE_PRESSED_EVENT {
 				print $str( "x = " $xmouse ", y = " $ymouse ", but = " $mousekey );
 			}
 		}

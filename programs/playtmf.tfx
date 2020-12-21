@@ -41,7 +41,7 @@ function load_song( tmf, names ) {
 		}
 		let length = +( loopidx looplen );
 		if length {
-			fxsample idx, $sub( tmf offset length ), loopidx, looplen;
+			sample idx, $sub( tmf offset length ), loopidx, looplen;
 			let offset = +( offset length );
 		}
 		inc idx;
@@ -63,12 +63,12 @@ program playtmf {
 			}
 			inc idx;
 		}
-		fxaudio 480;
-		fxplay 0, sequence;
-		fxqueue 0, $str( sequence $pack( 0x8000000 ) );
+		audio 480;
+		play 0, sequence;
+		queue 0, $str( sequence $pack( 0x8000000 ) );
 		while TRUE {
-			let event = $fxwait;
-			if =( event FX_SEQUENCER ) {
+			let event = $waitevent;
+			if =( event SEQUENCER_EVENT ) {
 				exit 0;
 			} else {
 				print $hex( event );

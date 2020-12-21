@@ -120,14 +120,14 @@ program truevision {
 	let height = truevision_get_height( tga );
 	let pixels = truevision_get_pixels( tga );
 	
-	fxopen width height "Truevision";
-	fxsurface 0, width, height, pixels;
-	fxblit 0, 0, 0, width, height, 0, 0;
+	display width height "Truevision";
+	surface 0, width, height, pixels;
+	blit 0, 0, 0, width, height, 0, 0;
 	
 	while TRUE {
-		fxshow;
-		call $fxwait;
-		while $fxpoll {
+		show;
+		call $waitevent;
+		while $pollevent {
 			# Consume all events as show might block.
 		}
 	}

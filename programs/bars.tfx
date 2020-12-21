@@ -62,9 +62,9 @@ function redraw( br1, bv1, ba1, br2, bv2, ba2 ) {
 		let x1 = sine( +( *( time +( bv1 1 ) ) /( *( *( FP_ONE y ) br1 ) HEIGHT ) ) );
 		let x2 = sine( +( *( time +( bv2 1 ) ) /( *( *( FP_ONE y ) br2 ) HEIGHT ) ) );
 		let x = >>( *( +( *( x1 ba1 ) *( x2 ba2 ) ) WIDTH ) +( FP_SHIFT 2 ) );
-		fxblit 0, 0, 0, WIDTH, IMG_HEIGHT, -( x WIDTH ), y;
-		fxblit 0, 0, 0, WIDTH, IMG_HEIGHT, x , y;
-		fxblit 0, 0, 0, WIDTH, IMG_HEIGHT, +( x WIDTH ), y;
+		blit 0, 0, 0, WIDTH, IMG_HEIGHT, -( x WIDTH ), y;
+		blit 0, 0, 0, WIDTH, IMG_HEIGHT, x , y;
+		blit 0, 0, 0, WIDTH, IMG_HEIGHT, +( x WIDTH ), y;
 		let y = +( y IMG_HEIGHT );
 	}
 }
@@ -72,23 +72,23 @@ function redraw( br1, bv1, ba1, br2, bv2, ba2 ) {
 program bars {
 	var event;
 	
-	fxopen WIDTH, HEIGHT, "Bars";
+	display WIDTH, HEIGHT, "Bars";
 
-	fxsurface 0, WIDTH, IMG_HEIGHT, bar_pixels( WIDTH, IMG_HEIGHT, NUM_BARS, 255, 0, 128 );
+	surface 0, WIDTH, IMG_HEIGHT, bar_pixels( WIDTH, IMG_HEIGHT, NUM_BARS, 255, 0, 128 );
 
 	while TRUE {
 		call redraw( 1 1 2 1 2 2 );
 		# Show might block until the next frame.
-		fxshow;
+		show;
 		# Wait to limit frame rate.
-		fxsleep 16;
+		sleep 16;
 		# Handle all events.
-		let event = $fxpoll;
+		let event = $pollevent;
 		while event {
-			if =( event FX_KEYDOWN ) {
+			if =( event KEY_PRESSED_EVENT ) {
 				print $keyboard;
 			}
-			let event = $fxpoll;
+			let event = $pollevent;
 		}
 	}
 }

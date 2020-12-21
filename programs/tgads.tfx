@@ -44,30 +44,30 @@ function tg_charset( str ) {
 		}
 		inc clr;
 	}
-	fxsurface 0, w, h, charset;
+	surface 0, w, h, charset;
 }
 
 function tg_text( text, x, y, clr ) {
 	var idx, len;
 	let len = $len( text );
 	while <( idx len ) {
-		fxblit 0, *( -( $chr( text idx ) 32 ) 8 ), *( clr 16 ), 8, 16, +( x *( idx 8 ) ), y;
+		blit 0, *( -( $chr( text idx ) 32 ) 8 ), *( clr 16 ), 8, 16, +( x *( idx 8 ) ), y;
 		inc idx;
 	}
 }
 
 function tg_raise_box( x, y, w, h ) {
-	fxrect x, y, 2, h, [ palette 1 ];
-	fxrect +( x -( w 2 ) ), y, 2, h, [ palette 0 ];
-	fxrect x, y, -( w 1 ), 2, [ palette 1 ];
-	fxrect +( x 1 ), +( y -( h 2 ) ), -( w 1 ), 2, [ palette 0 ];
+	rect x, y, 2, h, [ palette 1 ];
+	rect +( x -( w 2 ) ), y, 2, h, [ palette 0 ];
+	rect x, y, -( w 1 ), 2, [ palette 1 ];
+	rect +( x 1 ), +( y -( h 2 ) ), -( w 1 ), 2, [ palette 0 ];
 }
 
 function tg_lower_box( x, y, w, h ) {
-	fxrect x, y, 2, h, [ palette 0 ];
-	fxrect +( x -( w 2 ) ), y, 2, h, [ palette 1 ];
-	fxrect x, y, -( w 1 ), 2, [ palette 0 ];
-	fxrect +( x 1 ), +( y -( h 2 ) ), -( w 1 ), 2, [ palette 1 ];
+	rect x, y, 2, h, [ palette 0 ];
+	rect +( x -( w 2 ) ), y, 2, h, [ palette 1 ];
+	rect x, y, -( w 1 ), 2, [ palette 0 ];
+	rect +( x 1 ), +( y -( h 2 ) ), -( w 1 ), 2, [ palette 1 ];
 }
 
 function tg_bevel_box( x, y, w, h ) {
@@ -255,8 +255,8 @@ function tg_draw_window( n ) {
 	let y = tg_gety( n );
 	let w = [ tg_w n ];
 	let h = [ tg_h n ];
-	fxrect x, y, w, 26, [ palette 2 ];
-	fxrect x, +( y 26 ), w, -( h 26 ), [ palette 3 ];
+	rect x, y, w, 26, [ palette 2 ];
+	rect x, +( y 26 ), w, -( h 26 ), [ palette 3 ];
 	call tg_raise_box( x, y, w, h );
 	call tg_lower_box( +( x 2 ), +( y 24 ), -( w 4 ), -( h 26 ) );
 	call tg_text( [ tg_a n ], +( x 6 ), +( y 6 ), 0 );
@@ -278,9 +278,9 @@ function tg_draw_vslider( n ) {
 	let h = [ tg_h n ];
 	let s = tg_slider_size( n, h );
 	let d = tg_slider_offset( n, h );
-	fxrect x, y, w, h, [ palette 3 ];
+	rect x, y, w, h, [ palette 3 ];
 	call tg_lower_box( x, y, w, h );
-	fxrect +( x, 2 ), +( +( y d ) 2 ), -( w 4 ), s, [ palette 2 ];
+	rect +( x, 2 ), +( +( y d ) 2 ), -( w 4 ), s, [ palette 2 ];
 	call tg_raise_box( +( x, 2 ), +( +( y d ) 2 ), -( w 4 ), s );
 }
 
@@ -292,9 +292,9 @@ function tg_draw_hslider( n ) {
 	let h = [ tg_h n ];
 	let s = tg_slider_size( n, w );
 	let d = tg_slider_offset( n, w );
-	fxrect x, y, w, h, [ palette 3 ];
+	rect x, y, w, h, [ palette 3 ];
 	call tg_lower_box( x, y, w, h );
-	fxrect +( +( x d ) 2 ), +( y, 2 ), s, -( h 4 ), [ palette 2 ];
+	rect +( +( x d ) 2 ), +( y, 2 ), s, -( h 4 ), [ palette 2 ];
 	call tg_raise_box( +( +( x d ) 2 ), +( y, 2 ), s, -( h 4 ) );
 }
 
@@ -304,10 +304,10 @@ function tg_draw_button( n ) {
 	let y = tg_gety( n );
 	if =( [ tg_b n ] 1 ) {
 		let c = 1;
-		fxrect x, y, [ tg_w n ], [ tg_h n ], [ palette 3 ];
+		rect x, y, [ tg_w n ], [ tg_h n ], [ palette 3 ];
 		call tg_lower_box( x, y, [ tg_w n ], [ tg_h n ] );
 	} else {
-		fxrect x, y, [ tg_w n ], [ tg_h n ], [ palette 2 ];
+		rect x, y, [ tg_w n ], [ tg_h n ], [ palette 2 ];
 		call tg_raise_box( x, y, [ tg_w n ], [ tg_h n ] );
 	}
 	call tg_text( [ tg_a n ],
@@ -335,9 +335,9 @@ function tg_draw_textbox( n ) {
 	if >( $len( t ) l ) {
 		let t = $sub( t, 0, l );
 	}
-	fxrect x, y, [ tg_w n ], [ tg_h n ], [ palette 2 ];
+	rect x, y, [ tg_w n ], [ tg_h n ], [ palette 2 ];
 	if =( tg_focus n ) {
-		fxrect +( x *( +( -( p s ) 1 ) 8 ) ), +( y 6 ), 8, 16, [ palette 3 ];
+		rect +( x *( +( -( p s ) 1 ) 8 ) ), +( y 6 ), 8, 16, [ palette 3 ];
 	}
 	call tg_bevel_box( x, y, [ tg_w n ], [ tg_h n ] );
 	call tg_text( t, +( x 8 ), +( y 6 ), 0 );
@@ -347,7 +347,7 @@ function tg_draw_sizegad( n ) {
 	var x, y;
 	let x = tg_getx( n );
 	let y = tg_gety( n );
-	fxrect x, y, [ tg_w n ], [ tg_h n ], [ palette 2 ];
+	rect x, y, [ tg_w n ], [ tg_h n ], [ palette 2 ];
 	call tg_raise_box( x, y, [ tg_w n ], [ tg_h n ] );
 }
 
@@ -359,7 +359,7 @@ function tg_draw_listbox( n ) {
 	}
 	let x = tg_getx( n );
 	let y = tg_gety( n );
-	fxrect x, y, [ tg_w n ], [ tg_h n ], [ palette 2 ];
+	rect x, y, [ tg_w n ], [ tg_h n ], [ palette 2 ];
 	call tg_lower_box( x, y, [ tg_w n ], [ tg_h n ] );
 	let tw = /( -( [ tg_w n ] 16 ) 8 );
 	let th = /( -( [ tg_h n ] 12 ) 16 );
@@ -373,7 +373,7 @@ function tg_draw_listbox( n ) {
 		let txt = [ [ tg_a n ] idx ];
 		let tc = $tup( 0, txt );
 		if =( [ tg_c n ] idx ) {
-			fxrect +( x 8 ), ty, -( [ tg_w n ] 16 ), 16, [ palette 3 ];
+			rect +( x 8 ), ty, -( [ tg_w n ] 16 ), 16, [ palette 3 ];
 			let tc = 1;
 		}
 		if >( $len( txt ) tw ) {
@@ -390,7 +390,7 @@ function tg_draw_box( n ) {
 	let x = tg_getx( n );
 	let y = tg_gety( n );
 	if >e( [ tg_c n ] 0 ) {
-		fxrect x, y, [ tg_w n ], [ tg_h n ], [ tg_c n ];
+		rect x, y, [ tg_w n ], [ tg_h n ], [ tg_c n ];
 	}
 	switch [ tg_b n ] {
 		case 1 {
@@ -439,7 +439,7 @@ function tg_draw( n ) {
 					if tg_draw_background {
 						call :( tg_draw_background );
 					} else {
-						fxrect 0, 0, [ tg_w 0 ], [ tg_h 0 ], 0;
+						rect 0, 0, [ tg_w 0 ], [ tg_h 0 ], 0;
 					}
 				} else {
 					call tg_draw_window( n );
@@ -593,7 +593,7 @@ function tg_unused() {
 function tg_scan( event ) {
 	var n, s, o, p, e, t, c, l, w, x, y, selected;
 	switch event {
-		case FX_MOUSEMOTION {
+		case MOUSE_MOTION_EVENT {
 			if =( $mousekey 1 ) {
 				if =( tg_selx 0 ) {
 					let tg_selx = $xmouse;
@@ -685,7 +685,7 @@ function tg_scan( event ) {
 				}
 			}
 		}
-		case FX_MOUSEKEYDOWN {
+		case MOUSE_PRESSED_EVENT {
 			let tg_selx = 0;
 			let tg_sely = 0;
 			if =( $mousekey 1 ) {
@@ -801,7 +801,7 @@ function tg_scan( event ) {
 				}
 			}
 		}
-		case FX_MOUSEKEYUP {
+		case MOUSE_RELEASED_EVENT {
 			if ||( tg_selx tg_sely ) {
 				let n = tg_find( tg_selx, tg_sely, 0 );
 				switch [ tg_type n ] {
@@ -817,7 +817,7 @@ function tg_scan( event ) {
 				let tg_sely = 0;
 			}
 		}
-		case FX_MOUSEWHEEL {
+		case MOUSE_WHEEL_EVENT {
 			let n = tg_find( $xmouse, $ymouse, 0 );
 			if &&( =( [ tg_type n ] 6 ) >( [ tg_link n ] 0 ) ) {
 				let w = tg_wintofront( n );
@@ -825,7 +825,7 @@ function tg_scan( event ) {
 				call tg_draw( n );
 			}
 		}
-		case FX_KEYDOWN {
+		case KEY_PRESSED_EVENT {
 			let n = tg_focus;
 			if =( [ tg_type n ] 4 ) {
 				let t = [ tg_a n ];
@@ -833,7 +833,7 @@ function tg_scan( event ) {
 				let l = /( -( [ tg_w n ] 16 ) 8 );
 				let c = $keyboard;
 				switch c {
-					case FX_KEY_BACKSPACE {
+					case KEY_BACKSPACE {
 						if &( $keyshift 3 ) {
 							set [ tg_a n ] = $sub( t p -( $len( t ) p ) );
 							set [ tg_b n ] = 0;
@@ -849,12 +849,12 @@ function tg_scan( event ) {
 							}
 						}
 					}
-					case FX_KEY_RETURN {
+					case KEY_RETURN {
 						let tg_focus = 0;
 						call tg_draw( n );
 						let n = [ tg_action n ];
 					}
-					case FX_KEY_LEFT {
+					case KEY_LEFT {
 						if >( p 0 ) {
 							let p = -( p 1 );
 						}
@@ -863,7 +863,7 @@ function tg_scan( event ) {
 							set [ tg_c n ] = p;
 						}
 					}
-					case FX_KEY_RIGHT {
+					case KEY_RIGHT {
 						if <( p $len( t ) ) {
 							inc p;
 						}
@@ -872,7 +872,7 @@ function tg_scan( event ) {
 							set [ tg_c n ] = +( -( p l ) 1 );
 						}
 					}
-					case FX_KEY_DELETE {
+					case KEY_DELETE {
 						if &( $keyshift 3 ) {
 							set [ tg_a n ] = $sub( t 0 p );
 						} else {
@@ -881,11 +881,11 @@ function tg_scan( event ) {
 							}
 						}
 					}
-					case FX_KEY_HOME {
+					case KEY_HOME {
 						set [ tg_b n ] = 0;
 						set [ tg_c n ] = 0;
 					}
-					case FX_KEY_END {
+					case KEY_END {
 						let p = $len( t );
 						set [ tg_b n ] = p;
 						if >e( -( p [ tg_c n ] ) l ) {
@@ -926,7 +926,7 @@ function tg_scan( event ) {
 
 function read_dir( path ) {
 	var head, elem, len, arr;
-	let head = $fxdir( path );
+	let head = $dir( path );
 	let elem = head;
 	while elem {
 		let elem = $next( elem );
@@ -1009,9 +1009,9 @@ function tg_file_selector( title ) {
 		call tg_dispose( fs_win );
 	}
 	try {
-		let fs_path = $fxpath( fs_path );
+		let fs_path = $path( fs_path );
 	} catch err {
-		let fs_path = $fxpath( "." );
+		let fs_path = $path( "." );
 	}
 	let fs_win = tg_unused();
 	call tg_window( fs_win, 50, 50, 510, 270, title );
@@ -1091,11 +1091,11 @@ function fs_okay_selected() {
 	if =( $len( [ tg_a fs_file ] ) 0 ) {
 		try {
 			if <( [ tg_c fs_list ] 0 ) {
-				let path = $fxpath( $str( [ tg_a fs_dir ] sep [ tg_a fs_file ] ) );
+				let path = $path( $str( [ tg_a fs_dir ] sep [ tg_a fs_file ] ) );
 			} else {
 				let path = [ [ tg_a fs_list ] [ tg_c fs_list ] ];
 				let path = $sub( path, 6, -( $len( path ) 6 ) );
-				let path = $fxpath( $str( [ tg_a fs_dir ] sep path ) );
+				let path = $path( $str( [ tg_a fs_dir ] sep path ) );
 			}
 			set [ tg_a fs_list ] = read_dir( path );
 			call sort_dir( [ tg_a fs_list ] );
@@ -1193,7 +1193,7 @@ program tgads {
 	var event, selected, file;
 	let palette = $array( ${ 0x000000, 0xFFFFFF, 0xA0A0A0, 0x6080B0 } );
 	
-	fxopen 640, 480, "tgads";
+	display 640, 480, "tgads";
 	
 	call tg_charset( $load( $str( $chop( $src, "/:\\" ) "topaz8.txt" ) ) );
 	call tg_init( 16, 640, 480 );
@@ -1212,11 +1212,11 @@ program tgads {
 
 	while TRUE {
 		# Show might block until the next frame.
-		fxshow;
+		show;
 		# Wait before handling events to reduce latency (at 60hz).
-		fxsleep 16;
+		sleep 16;
 		# Wait for at least one event.
-		let event = $fxwait;
+		let event = $waitevent;
 		while event {
 			# Handle all events in queue.
 			switch tg_scan( event ) {
@@ -1254,7 +1254,7 @@ program tgads {
 					call req_dispose();
 				}
 			}
-			let event = $fxpoll;
+			let event = $pollevent;
 		}
 	}
 }

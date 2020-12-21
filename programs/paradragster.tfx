@@ -79,32 +79,32 @@ function para_dragster_pixels( bar, width, offset, bg_colour, fg_colour ) {
 
 function redraw( frame ) {
 	var y = 0, z = 0;
-	#fxblit 0, 0, 0, WIDTH, 512, 0, 0;
+	#blit 0, 0, 0, WIDTH, 512, 0, 0;
 	while <( y 256 ) {
-		fxblit 0, 0, +( <<( &( y 0xF0 ) 1 ) &( frame 0x1F ) ), WIDTH, 1, 0, +( y 224 );
-		fxblit 0, 0, +( <<( &( y 0xF0 ) 1 ) &( frame 0x1F ) ), WIDTH, 1, 0, -( 256 y );
+		blit 0, 0, +( <<( &( y 0xF0 ) 1 ) &( frame 0x1F ) ), WIDTH, 1, 0, +( y 224 );
+		blit 0, 0, +( <<( &( y 0xF0 ) 1 ) &( frame 0x1F ) ), WIDTH, 1, 0, -( 256 y );
 		inc y;
 	}
 }
 
 program bars {
 	var event, frame;
-	fxopen WIDTH, HEIGHT, "Para Dragster";
-	fxsurface 0, WIDTH, 512, para_dragster_pixels( $array( ${ 0, 256, 0 } ), WIDTH, /( WIDTH 2 ), 0x000080, 0xFF0080 );
+	display WIDTH, HEIGHT, "Para Dragster";
+	surface 0, WIDTH, 512, para_dragster_pixels( $array( ${ 0, 256, 0 } ), WIDTH, /( WIDTH 2 ), 0x000080, 0xFF0080 );
 	while TRUE {
 		inc frame;
 		call redraw( frame );
 		# Show might block until the next frame.
-		fxshow;
+		show;
 		# Wait to limit frame rate.
-		fxsleep 10;
+		sleep 10;
 		# Handle all events.
-		let event = $fxpoll;
+		let event = $pollevent;
 		while event {
-			if =( event FX_KEYDOWN ) {
+			if =( event KEY_PRESSED_EVENT ) {
 				print $keyboard;
 			}
-			let event = $fxpoll;
+			let event = $pollevent;
 		}
 	}
 }

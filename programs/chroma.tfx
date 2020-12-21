@@ -38,7 +38,7 @@ function redraw( params, stripe ) {
 		let c = <<( [ stripe &( +( phase_r *( y [ params 0 ] ) ) 0xFF ) ] 16 );
 		let c = |( c <<( [ stripe &( +( phase_g *( y [ params 1 ] ) ) 0xFF ) ] 8 ) );
 		let c = |( c [ stripe &( +( phase_b *( y [ params 2 ] ) ) 0xFF ) ] );
-		fxrect 0, *( y dy ), WIDTH, dy, c;
+		rect 0, *( y dy ), WIDTH, dy, c;
 		inc y;
 	}
 }
@@ -46,7 +46,7 @@ function redraw( params, stripe ) {
 program bars {
 	var event;
 	
-	fxopen WIDTH, HEIGHT, "Chroma";
+	display WIDTH, HEIGHT, "Chroma";
 	
 	var idx = 0;
 	var stripe = $array( 256 );
@@ -61,16 +61,16 @@ program bars {
 	while TRUE {
 		call redraw( params, stripe );
 		# Show might block until the next frame.
-		fxshow;
+		show;
 		# Wait to limit frame rate.
-		fxsleep 16;
+		sleep 16;
 		# Handle all events.
-		let event = $fxpoll;
+		let event = $pollevent;
 		while event {
-			if =( event FX_KEYDOWN ) {
+			if =( event KEY_PRESSED_EVENT ) {
 				print $keyboard;
 			}
-			let event = $fxpoll;
+			let event = $pollevent;
 		}
 	}
 }

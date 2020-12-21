@@ -187,14 +187,14 @@ program gifview {
 	let height = gif_get_height( gif );
 	let pixels = gif_get_pixels( gif );
 	
-	fxopen width height "GIFView";
-	fxsurface 0, width, height, pixels;
-	fxblit 0, 0, 0, width, height, 0, 0;
+	display width height "GIFView";
+	surface 0, width, height, pixels;
+	blit 0, 0, 0, width, height, 0, 0;
 	
 	while TRUE {
-		fxshow;
-		call $fxwait;
-		while $fxpoll {
+		show;
+		call $waitevent;
+		while $pollevent {
 			# Consume all events as show might block.
 		}
 	}

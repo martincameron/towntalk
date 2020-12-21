@@ -109,9 +109,9 @@ function draw_background() {
 	let h = $len( background );
 	while <( y h ) {
 		if <( [ foreground y ] 0 ) {
-			fxrect 0, *( y 2 ), w, 2, [ background y ];
+			rect 0, *( y 2 ), w, 2, [ background y ];
 		} else {
-			fxrect 0, *( y 2 ), w, 2, blend( [ foreground y ], [ background y ], [ tg_a 21 ] );
+			rect 0, *( y 2 ), w, 2, blend( [ foreground y ], [ background y ], [ tg_a 21 ] );
 		}
 		inc y;
 	}
@@ -127,7 +127,7 @@ program raster {
 	dim [ background 240 ];
 	call parse_rws( $load( $str( $chop( $src, "/:\\" ) "rws/demo5.rws" ) ), background );
 
-	fxopen 640, 480, "Raster Master 2.0";
+	display 640, 480, "Raster Master 2.0";
 	
 	call tg_charset( $load( $str( $chop( $src, "/:\\" ) "topaz8.txt" ) ) );
 	call tg_init( 32, 640, 480 );
@@ -172,11 +172,11 @@ program raster {
 
 	while TRUE {
 		# Show might block until the next frame.
-		fxshow;
+		show;
 		# Wait before handling events to reduce latency (at 60hz).
-		fxsleep 16;
+		sleep 16;
 		# Wait for at least one event.
-		let event = $fxwait;
+		let event = $waitevent;
 		while event {
 			# Handle all events in queue.
 			let selected = tg_scan( event );
@@ -300,7 +300,7 @@ program raster {
 					}
 				}
 			}
-			let event = $fxpoll;
+			let event = $pollevent;
 		}
 	}
 }

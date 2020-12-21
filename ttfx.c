@@ -17,85 +17,85 @@
 	SDL graphics and sound extension for Towntalk (c)2020 Martin Cameron.
 	
 	Statements:
-		fxopen w, h, "caption";                Open a display window.
-		fxrect x, y, w, h, 0xRRGGBB;           Draw an opaque rectangle.
-		fxshow;                                Update the display. May wait for the next vertical blank.
-		fxsurface num, width, height, pixels;  Set the specified surface to specified size and RGBA pixel array.
-		fxblit num, x, y, cx, cy, cw, ch;      Draw the specified surface clipped to the specified region.
-		fxsleep millis;                        Wait for the specified time period.
-		fxtimer millis;                        Generate timer events at the specified interval (0 to disable).
-		fxaudio period;                        Enable the audio system (period in samples per tick at 24000hz).
-		fxsample num, "str", loop, looplength; Set the specified sample to the specified signed 8-bit string and loop points.
-		fxplay channel, "sequence";            Play the specified sequence on the specified channel offset.
-		fxqueue channel, "sequence";           Queue the specified sequence on the specified channel offset.
-		fxmidi "device";                       Open the named MIDI input device for recieving events.
+		display w, h, "caption";               Open a display window.
+		rect x, y, w, h, 0xrrggbb;             Draw an opaque rectangle.
+		show;                                  Update the display. May wait for the next vertical blank.
+		surface num, width, height, pixels;    Set the specified surface to specified size and RGBA pixel array.
+		blit num, x, y, cx, cy, cw, ch;        Draw the specified surface clipped to the specified region.
+		sleep millis;                          Wait for the specified time period.
+		timer millis;                          Generate timer events at the specified interval (0 to disable).
+		audio period;                          Enable the audio system (period in samples per tick at 24000hz).
+		sample num, "str", loop, looplength;   Set the specified sample to the specified signed 8-bit string and loop points.
+		play channel, "sequence";              Play the specified sequence on the specified channel offset.
+		queue channel, "sequence";             Queue the specified sequence on the specified channel offset.
+		midi "device";                         Open the named MIDI input device for recieving events.
 	
 	Expressions:
 		$millis                                Value incremented every millisecond.
-		$fxpoll                                Return an event or 0 if none avaliable.
-		$fxwait                                Wait for an event and return it.
+		$pollevent                             Return an event or 0 if none avaliable.
+		$waitevent                             Wait for an event and return it.
 		$xmouse                                The horizontal mouse coordinate from the latest mouse event.
 		$ymouse                                The vertical mouse coordinate from the latest mouse event.
 		$mousekey                              The state of the mouse buttons from the latest mouse event.
 		$mousewheel                            The state of the mouse wheel from the latest mouse event.
 		$keyboard                              The key associated with the latest keyboard event.
 		$keyshift                              The currently pressed modifier keys (least significant 2 bits are shift keys).
-		$fxtick                                Value incremented every sequencer period.
-		$fxseq                                 The channel and parameter of the latest sequencer event (0xccpppppp).
-		$fxdir("path")                         An element tree of the names and sizes of all files in the specified dir.
-		$fxpath("file")                        The full path of the specified file.
+		$seqtick                               Return an integer incremented every sequencer period.
+		$seqmsg                                The channel and parameter of the latest sequencer event (0xccpppppp).
+		$dir("path")                           An element tree of the names and sizes of all files in the specified dir.
+		$path("file")                          The full path of the specified file.
 		$midimsg                               The message associated with the latest MIDI event.
-		$window                                The value of the latest window event.
+		$winmsg                                The value of the latest window event.
 		$keyheld                               Whether the latest keyboard event was from a held-down key.
 		$datfile                               A string containing the datfile the current program was run from, or 0.
 		$extract(datfile index)                Extract the specified string from the specified datfile.
-		$fxstream(arr offset count)            Stream 16-bit stereo sample pairs to the audio system and return count written.
+		$stream(arr offset count)              Stream 16-bit stereo sample pairs to the audio system and return count written.
 		
-	Event Constants (for $fxpoll and $fxwait):
-		FX_WINDOW                              Window event.
-		FX_KEYDOWN                             Key pressed event.
-		FX_KEYUP                               Key released event.
-		FX_MOUSEMOTION                         Mouse moved event.
-		FX_MOUSEKEYDOWN                        Mouse button pressed event.
-		FX_MOUSEKEYUP                          Mouse button released event.
-		FX_MOUSEWHEEL                          Mouse wheel event.
-		FX_TIMER                               Timer event.
-		FX_SEQUENCER                           Sequencer event.
-		FX_MIDI                                MIDI event.
+	Event Constants (for $pollevent and $waitevent):
+		WINDOW_EVENT                           Window event.
+		KEY_PRESSED_EVENT                      Key pressed event.
+		KEY_RELEASED_EVENT                     Key released event.
+		MOUSE_MOTION_EVENT                     Mouse moved event.
+		MOUSE_PRESSED_EVENT                    Mouse button pressed event.
+		MOUSE_RELEASED_EVENT                   Mouse button released event.
+		MOUSE_WHEEL_EVENT                      Mouse wheel event.
+		TIMER_EVENT                            Timer event.
+		SEQUENCER_EVENT                        Sequencer event.
+		MIDI_EVENT                             MIDI event.
 		
-	Window Event Constants (for $window):
-		FX_WINDOW_EXPOSED                      Window exposed.
+	Window Event Constants (for $winmsg):
+		WINDOW_EXPOSED_MSG                     Window exposed.
 	
 	Key Constants (for $keyboard):
-		FX_KEY_BACKSPACE                       Backspace.
-		FX_KEY_TAB                             Tab.
-		FX_KEY_RETURN                          Return.
-		FX_KEY_ESCAPE                          Escape.
-		FX_KEY_SPACE                           Space.
-		FX_KEY_0                               Zero (other number keys can be calculated by adding to this value).
-		FX_KEY_A                               A (other alphabetical keys can be calculated by adding to this value).
-		FX_KEY_PAD_0                           Key pad zero.
-		FX_KEY_PAD_1                           Key pad one (keys up to 9 can be calculated by adding to this value).
-		FX_KEY_PAD_PERIOD                      Key pad period.
-		FX_KEY_PAD_DIVIDE                      Key pad divide.
-		FX_KEY_PAD_MULTIPLY                    Key pad multiply.
-		FX_KEY_PAD_MINUS                       Key pad minus.
-		FX_KEY_PAD_PLUS                        Key pad plus.
-		FX_KEY_PAD_ENTER                       Key pad enter.
-		FX_KEY_PAD_EQUALS                      Key pad equals.
-		FX_KEY_UP                              Cursor up.
-		FX_KEY_DOWN                            Cursor down.
-		FX_KEY_LEFT                            Cursor left.
-		FX_KEY_RIGHT                           Cursor right.
-		FX_KEY_INSERT                          Insert.
-		FX_KEY_DELETE                          Delete.
-		FX_KEY_HOME                            Home.
-		FX_KEY_END                             End.
-		FX_KEY_PAGE_UP                         Page Up.
-		FX_KEY_PAGE_DOWN                       Page Down.
-		FX_KEY_F1                              F1 (other function keys can be calculated by adding to this value).
+		KEY_BACKSPACE                          Backspace.
+		KEY_TAB                                Tab.
+		KEY_RETURN                             Return.
+		KEY_ESCAPE                             Escape.
+		KEY_SPACE                              Space.
+		KEY_0                                  Zero (other number keys can be calculated by adding to this value).
+		KEY_A                                  A (other alphabetical keys can be calculated by adding to this value).
+		KEY_PAD_0                              Key pad zero.
+		KEY_PAD_1                              Key pad one (keys up to 9 can be calculated by adding to this value).
+		KEY_PAD_PERIOD                         Key pad period.
+		KEY_PAD_DIVIDE                         Key pad divide.
+		KEY_PAD_MULTIPLY                       Key pad multiply.
+		KEY_PAD_MINUS                          Key pad minus.
+		KEY_PAD_PLUS                           Key pad plus.
+		KEY_PAD_ENTER                          Key pad enter.
+		KEY_PAD_EQUALS                         Key pad equals.
+		KEY_UP                                 Cursor up.
+		KEY_DOWN                               Cursor down.
+		KEY_LEFT                               Cursor left.
+		KEY_RIGHT                              Cursor right.
+		KEY_INSERT                             Insert.
+		KEY_DELETE                             Delete.
+		KEY_HOME                               Home.
+		KEY_END                                End.
+		KEY_PAGE_UP                            Page Up.
+		KEY_PAGE_DOWN                          Page Down.
+		KEY_F1                                 F1 (other function keys can be calculated by adding to this value).
 		
-	Audio Sequencer Commands (2 and 4-bytes each packed into big-endian string for fxplay statement):
+	Audio Sequencer Commands (2 and 4-bytes each packed into big-endian string for play and queue statements):
 		0x00xx do nothing (used to pad 2-byte commands to 4).
 		0x08xxxxxx fire an event containing the specified 24-bit parameter.
 		0x1kkkiicc set key k, instrument i and sample offset 0 on channel c.
@@ -556,7 +556,7 @@ static void audio_callback( void *userdata, Uint8 *stream, int len ) {
 	}
 }
 
-static enum result execute_fxopen_statement( struct statement *this, struct variable *variables,
+static enum result execute_display_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct variable width = { 0, NULL }, height = { 0, NULL }, caption = { 0, NULL };
 	struct expression *expr = this->source;
@@ -625,7 +625,7 @@ static enum result execute_fxopen_statement( struct statement *this, struct vari
 	return ret;
 }
 
-static enum result execute_fxsurface_statement( struct statement *this, struct variable *variables,
+static enum result execute_surface_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	enum result ret;
 	int surf, width, height, len, idx = 0;
@@ -751,7 +751,7 @@ static enum result execute_fxsurface_statement( struct statement *this, struct v
 	return ret;
 }
 
-static enum result execute_fxblit_statement( struct statement *this, struct variable *variables,
+static enum result execute_blit_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	int idx = 0;
 	enum result ret;
@@ -807,7 +807,7 @@ static enum result execute_fxblit_statement( struct statement *this, struct vari
 	return ret;
 }
 
-static enum result execute_fxrect_statement( struct statement *this, struct variable *variables,
+static enum result execute_rect_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	enum result ret;
 	int idx = 0;
@@ -851,7 +851,7 @@ static enum result execute_fxrect_statement( struct statement *this, struct vari
 	return ret;
 }
 
-static enum result execute_fxshow_statement( struct statement *this, struct variable *variables,
+static enum result execute_show_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 #if SDL_MAJOR_VERSION > 1
 	struct fxenvironment *fxenv = ( struct fxenvironment * ) this->source->function->env;
@@ -865,7 +865,7 @@ static enum result execute_fxshow_statement( struct statement *this, struct vari
 	return OKAY;
 }
 
-static enum result execute_fxsleep_statement( struct statement *this, struct variable *variables,
+static enum result execute_sleep_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct variable millis = { 0, NULL };
 	enum result ret = this->source->evaluate( this->source, variables, &millis, exception );
@@ -878,7 +878,7 @@ static enum result execute_fxsleep_statement( struct statement *this, struct var
 	return ret;
 }
 
-static enum result execute_fxtimer_statement( struct statement *this, struct variable *variables,
+static enum result execute_timer_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct variable millis = { 0, NULL };
 	struct fxenvironment *fxenv = ( struct fxenvironment * ) this->source->function->env;
@@ -899,7 +899,7 @@ static enum result execute_fxtimer_statement( struct statement *this, struct var
 	return ret;
 }
 
-static enum result execute_fxaudio_statement( struct statement *this, struct variable *variables,
+static enum result execute_audio_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct variable param = { 0, NULL };
 	struct fxenvironment *fxenv = ( struct fxenvironment * ) this->source->function->env;
@@ -907,7 +907,7 @@ static enum result execute_fxaudio_statement( struct statement *this, struct var
 	int ticklen;
 	enum result ret = this->source->evaluate( this->source, variables, &param, exception );
 	if( ret ) {
-		/* fxaudio ticklen; (Samples per tick at 24khz, 480 = 50hz) */
+		/* audio ticklen; (Samples per tick at 24khz, 480 = 50hz) */
 		if( param.integer_value > 0 ) {
 			ticklen = param.integer_value * SAMPLE_RATE / 24000;
 			if( ticklen >= MIN_TICK_LEN && ticklen <= MAX_TICK_LEN ) {
@@ -938,9 +938,9 @@ static enum result execute_fxaudio_statement( struct statement *this, struct var
 	return ret;
 }
 
-static enum result execute_fxsample_statement( struct statement *this, struct variable *variables,
+static enum result execute_sample_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	/* fxsample index data$ loopstart looplen; */
+	/* sample index "data" loopstart looplen; */
 	enum result ret;
 	int loop, llen, lend, idx = 0;
 	struct string *data;
@@ -989,7 +989,7 @@ static enum result execute_fxsample_statement( struct statement *this, struct va
 	return ret;
 }
 
-static enum result execute_fxplay_statement( struct statement *this, struct variable *variables,
+static enum result execute_play_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct expression *expr = this->source;
 	struct variable channel = { 0, NULL }, sequence = { 0, NULL };
@@ -1026,7 +1026,7 @@ static enum result execute_fxplay_statement( struct statement *this, struct vari
 	return ret;
 }
 
-static enum result execute_fxmidi_statement( struct statement *this, struct variable *variables,
+static enum result execute_midi_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	#if defined( ALSA_MIDI )
 	int err = 0;
@@ -1056,12 +1056,12 @@ static enum result execute_fxmidi_statement( struct statement *this, struct vari
 	return ret;
 }
 
-static struct element* parse_fxopen_statement( struct element *elem, struct environment *env,
+static struct element* parse_display_statement( struct element *elem, struct environment *env,
 	struct function *func, struct statement *prev, char *message ) {
-	return parse_expr_list_statement( elem, env, func, prev, execute_fxopen_statement, message );
+	return parse_expr_list_statement( elem, env, func, prev, execute_display_statement, message );
 }
 
-static struct element* parse_fxshow_statement( struct element *elem, struct environment *env,
+static struct element* parse_show_statement( struct element *elem, struct environment *env,
 	struct function *func, struct statement *prev, char *message ) {
 	struct element *next = elem->next;
 	struct statement *stmt = new_statement( message );
@@ -1070,7 +1070,7 @@ static struct element* parse_fxshow_statement( struct element *elem, struct envi
 		if( stmt->source ) {
 			stmt->source->line = elem->line;
 			stmt->source->function = func;
-			stmt->execute = execute_fxshow_statement;
+			stmt->execute = execute_show_statement;
 			prev->next = stmt;
 			next = next->next;
 		} else {
@@ -1080,58 +1080,58 @@ static struct element* parse_fxshow_statement( struct element *elem, struct envi
 	return next;
 }
 
-static struct element* parse_fxsurface_statement( struct element *elem, struct environment *env,
+static struct element* parse_surface_statement( struct element *elem, struct environment *env,
 	struct function *func, struct statement *prev, char *message ) {
-	return parse_expr_list_statement( elem, env, func, prev, execute_fxsurface_statement, message );
+	return parse_expr_list_statement( elem, env, func, prev, execute_surface_statement, message );
 }
 
-static struct element* parse_fxblit_statement( struct element *elem, struct environment *env,
+static struct element* parse_blit_statement( struct element *elem, struct environment *env,
 	struct function *func, struct statement *prev, char *message ) {
-	return parse_expr_list_statement( elem, env, func, prev, execute_fxblit_statement, message );
+	return parse_expr_list_statement( elem, env, func, prev, execute_blit_statement, message );
 }
 
-static struct element* parse_fxrect_statement( struct element *elem, struct environment *env,
+static struct element* parse_rect_statement( struct element *elem, struct environment *env,
 	struct function *func, struct statement *prev, char *message ) {
-	return parse_expr_list_statement( elem, env, func, prev, execute_fxrect_statement, message );
+	return parse_expr_list_statement( elem, env, func, prev, execute_rect_statement, message );
 }
 
-static struct element* parse_fxsleep_statement( struct element *elem, struct environment *env,
+static struct element* parse_sleep_statement( struct element *elem, struct environment *env,
 	struct function *func, struct statement *prev, char *message ) {
-	return parse_expr_list_statement( elem, env, func, prev, execute_fxsleep_statement, message );
+	return parse_expr_list_statement( elem, env, func, prev, execute_sleep_statement, message );
 }
 
-static struct element* parse_fxtimer_statement( struct element *elem, struct environment *env,
+static struct element* parse_timer_statement( struct element *elem, struct environment *env,
 	struct function *func, struct statement *prev, char *message ) {
-	return parse_expr_list_statement( elem, env, func, prev, execute_fxtimer_statement, message );
+	return parse_expr_list_statement( elem, env, func, prev, execute_timer_statement, message );
 }
 
-static struct element* parse_fxaudio_statement( struct element *elem, struct environment *env,
+static struct element* parse_audio_statement( struct element *elem, struct environment *env,
 	struct function *func, struct statement *prev, char *message ) {
-	return parse_expr_list_statement( elem, env, func, prev, execute_fxaudio_statement, message );
+	return parse_expr_list_statement( elem, env, func, prev, execute_audio_statement, message );
 }
 
-static struct element* parse_fxsample_statement( struct element *elem, struct environment *env,
+static struct element* parse_sample_statement( struct element *elem, struct environment *env,
 	struct function *func, struct statement *prev, char *message ) {
-	return parse_expr_list_statement( elem, env, func, prev, execute_fxsample_statement, message );
+	return parse_expr_list_statement( elem, env, func, prev, execute_sample_statement, message );
 }
 
-static struct element* parse_fxplay_statement( struct element *elem, struct environment *env,
+static struct element* parse_play_statement( struct element *elem, struct environment *env,
 	struct function *func, struct statement *prev, char *message ) {
-	return parse_expr_list_statement( elem, env, func, prev, execute_fxplay_statement, message );
+	return parse_expr_list_statement( elem, env, func, prev, execute_play_statement, message );
 }
 
-static struct element* parse_fxqueue_statement( struct element *elem, struct environment *env,
+static struct element* parse_queue_statement( struct element *elem, struct environment *env,
 	struct function *func, struct statement *prev, char *message ) {
-	struct element *next = parse_expr_list_statement( elem, env, func, prev, execute_fxplay_statement, message );
+	struct element *next = parse_expr_list_statement( elem, env, func, prev, execute_play_statement, message );
 	if( prev->next ) {
 		prev->next->local = 1;
 	}
 	return next;
 }
 
-static struct element* parse_fxmidi_statement( struct element *elem, struct environment *env,
+static struct element* parse_midi_statement( struct element *elem, struct environment *env,
 	struct function *func, struct statement *prev, char *message ) {
-	return parse_expr_list_statement( elem, env, func, prev, execute_fxmidi_statement, message );
+	return parse_expr_list_statement( elem, env, func, prev, execute_midi_statement, message );
 }
 
 static enum result handle_event_expression( struct expression *this, SDL_Event *event,
@@ -1167,7 +1167,7 @@ static enum result handle_event_expression( struct expression *this, SDL_Event *
 	return ret;
 }
 
-static enum result evaluate_window_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_winmsg_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	dispose_variable( result );
 #if SDL_MAJOR_VERSION > 1
@@ -1187,7 +1187,7 @@ static enum result evaluate_midimsg_expression( struct expression *this, struct 
 	return OKAY;
 }
 
-static enum result evaluate_fxpoll_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_pollevent_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	SDL_Event event = { 0 };
 #if SDL_MAJOR_VERSION > 1
@@ -1199,7 +1199,7 @@ static enum result evaluate_fxpoll_expression( struct expression *this, struct v
 	return handle_event_expression( this, &event, result, exception );
 }
 
-static enum result evaluate_fxwait_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_waitevent_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	SDL_Event event;
 	SDL_WaitEvent( &event );
@@ -1271,7 +1271,7 @@ static enum result evaluate_keyheld_expression( struct expression *this, struct 
 }
 
 /* Returns a value incremented every sequencer tick while the audio device is running. */
-static enum result evaluate_fxtick_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_seqtick_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	dispose_variable( result );
 	result->integer_value = ( ( struct fxenvironment * ) this->function->env )->tick;
@@ -1283,7 +1283,7 @@ static enum result evaluate_fxtick_expression( struct expression *this, struct v
 	Returns an integer of the form 0xccpppppp containing the
 	channel and parameter of the most recently handled sequencer event.
 */
-static enum result evaluate_fxseq_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_seqmsg_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	dispose_variable( result );
 	result->integer_value = ( ( struct fxenvironment * ) this->function->env )->seq_msg;
@@ -1347,7 +1347,7 @@ static int get_file_length( char *path, char *name ) {
 	return length;
 }
 
-static enum result evaluate_fxdir_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_dir_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	DIR *dir;
 	char *path;
@@ -1409,7 +1409,7 @@ static enum result evaluate_fxdir_expression( struct expression *this, struct va
 	return ret;
 }
 
-static enum result evaluate_fxpath_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_path_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct expression *parameter = this->parameters;
 	struct variable var = { 0, NULL };
@@ -1499,9 +1499,9 @@ static enum result evaluate_extract_expression( struct expression *this, struct 
 	Write up to the specified number of 16-bit pairs of stereo samples from the specified array
 	into the audio output buffer. The number of samples written is returned.
 */
-static enum result evaluate_fxstream_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_stream_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	/* count = $fxstream( array offset count ) */
+	/* count = $stream( array offset count ) */
 	int length, samples, idx, end, off;
 	struct expression *parameter = this->parameters;
 	struct variable arr = { 0, NULL }, offset = { 0, NULL }, count = { 0, NULL }, *values;
@@ -1553,92 +1553,92 @@ static enum result evaluate_fxstream_expression( struct expression *this, struct
 
 static struct constant fxconstants[] = {
 #if SDL_MAJOR_VERSION > 1
-	{ "FX_WINDOW", SDL_WINDOWEVENT, NULL },
-	{ "FX_WINDOW_EXPOSED", SDL_WINDOWEVENT_EXPOSED, NULL },
+	{ "WINDOW_EVENT", SDL_WINDOWEVENT, NULL },
+	{ "WINDOW_EXPOSED_MSG", SDL_WINDOWEVENT_EXPOSED, NULL },
 #else
-	{ "FX_WINDOW", SDL_VIDEOEXPOSE, NULL },
-	{ "FX_WINDOW_EXPOSED", SDL_VIDEOEXPOSE, NULL },
+	{ "WINDOW_EVENT", SDL_VIDEOEXPOSE, NULL },
+	{ "WINDOW_EXPOSED_MSG", SDL_VIDEOEXPOSE, NULL },
 #endif
-	{ "FX_KEYDOWN", SDL_KEYDOWN, NULL },
-	{ "FX_KEYUP", SDL_KEYUP, NULL },
-	{ "FX_MOUSEMOTION", SDL_MOUSEMOTION, NULL },
-	{ "FX_MOUSEKEYDOWN", SDL_MOUSEBUTTONDOWN, NULL },
-	{ "FX_MOUSEKEYUP", SDL_MOUSEBUTTONUP, NULL },
+	{ "KEY_PRESSED_EVENT", SDL_KEYDOWN, NULL },
+	{ "KEY_RELEASED_EVENT", SDL_KEYUP, NULL },
+	{ "MOUSE_MOTION_EVENT", SDL_MOUSEMOTION, NULL },
+	{ "MOUSE_PRESSED_EVENT", SDL_MOUSEBUTTONDOWN, NULL },
+	{ "MOUSE_RELEASED_EVENT", SDL_MOUSEBUTTONUP, NULL },
 #if SDL_MAJOR_VERSION > 1
-	{ "FX_MOUSEWHEEL", SDL_MOUSEWHEEL, NULL },
+	{ "MOUSE_WHEEL_EVENT", SDL_MOUSEWHEEL, NULL },
 #else
-	{ "FX_MOUSEWHEEL", SDL_NOEVENT, NULL },
+	{ "MOUSE_WHEEL_EVENT", SDL_NOEVENT, NULL },
 #endif
-	{ "FX_KEY_BACKSPACE", SDLK_BACKSPACE, NULL },
-	{ "FX_KEY_TAB", SDLK_TAB, NULL },
-	{ "FX_KEY_RETURN", SDLK_RETURN, NULL },
-	{ "FX_KEY_ESCAPE", SDLK_ESCAPE, NULL },
-	{ "FX_KEY_SPACE", SDLK_SPACE, NULL },
-	{ "FX_KEY_0", SDLK_0, NULL },
-	{ "FX_KEY_A", SDLK_a, NULL },
+	{ "KEY_BACKSPACE", SDLK_BACKSPACE, NULL },
+	{ "KEY_TAB", SDLK_TAB, NULL },
+	{ "KEY_RETURN", SDLK_RETURN, NULL },
+	{ "KEY_ESCAPE", SDLK_ESCAPE, NULL },
+	{ "KEY_SPACE", SDLK_SPACE, NULL },
+	{ "KEY_0", SDLK_0, NULL },
+	{ "KEY_A", SDLK_a, NULL },
 #if SDL_MAJOR_VERSION > 1
-	{ "FX_KEY_PAD_0", SDLK_KP_0, NULL },
-	{ "FX_KEY_PAD_1", SDLK_KP_1, NULL },
+	{ "KEY_PAD_0", SDLK_KP_0, NULL },
+	{ "KEY_PAD_1", SDLK_KP_1, NULL },
 #else
-	{ "FX_KEY_PAD_0", SDLK_KP0, NULL },
-	{ "FX_KEY_PAD_1", SDLK_KP1, NULL },
+	{ "KEY_PAD_0", SDLK_KP0, NULL },
+	{ "KEY_PAD_1", SDLK_KP1, NULL },
 #endif
-	{ "FX_KEY_PAD_PERIOD", SDLK_KP_PERIOD, NULL },
-	{ "FX_KEY_PAD_DIVIDE", SDLK_KP_DIVIDE, NULL },
-	{ "FX_KEY_PAD_MULTIPLY", SDLK_KP_MULTIPLY, NULL },
-	{ "FX_KEY_PAD_MINUS", SDLK_KP_MINUS, NULL },
-	{ "FX_KEY_PAD_PLUS", SDLK_KP_PLUS, NULL },
-	{ "FX_KEY_PAD_ENTER", SDLK_KP_ENTER, NULL },
-	{ "FX_KEY_PAD_EQUALS", SDLK_KP_EQUALS, NULL },
-	{ "FX_KEY_UP", SDLK_UP, NULL },
-	{ "FX_KEY_DOWN", SDLK_DOWN, NULL },
-	{ "FX_KEY_LEFT", SDLK_LEFT, NULL },
-	{ "FX_KEY_RIGHT", SDLK_RIGHT, NULL },
-	{ "FX_KEY_INSERT", SDLK_INSERT, NULL },
-	{ "FX_KEY_DELETE", SDLK_DELETE, NULL },
-	{ "FX_KEY_HOME", SDLK_HOME, NULL },
-	{ "FX_KEY_END", SDLK_END, NULL },
-	{ "FX_KEY_PAGE_UP", SDLK_PAGEUP, NULL },
-	{ "FX_KEY_PAGE_DOWN", SDLK_PAGEDOWN, NULL },
-	{ "FX_KEY_F1", SDLK_F1, NULL },
+	{ "KEY_PAD_PERIOD", SDLK_KP_PERIOD, NULL },
+	{ "KEY_PAD_DIVIDE", SDLK_KP_DIVIDE, NULL },
+	{ "KEY_PAD_MULTIPLY", SDLK_KP_MULTIPLY, NULL },
+	{ "KEY_PAD_MINUS", SDLK_KP_MINUS, NULL },
+	{ "KEY_PAD_PLUS", SDLK_KP_PLUS, NULL },
+	{ "KEY_PAD_ENTER", SDLK_KP_ENTER, NULL },
+	{ "KEY_PAD_EQUALS", SDLK_KP_EQUALS, NULL },
+	{ "KEY_UP", SDLK_UP, NULL },
+	{ "KEY_DOWN", SDLK_DOWN, NULL },
+	{ "KEY_LEFT", SDLK_LEFT, NULL },
+	{ "KEY_RIGHT", SDLK_RIGHT, NULL },
+	{ "KEY_INSERT", SDLK_INSERT, NULL },
+	{ "KEY_DELETE", SDLK_DELETE, NULL },
+	{ "KEY_HOME", SDLK_HOME, NULL },
+	{ "KEY_END", SDLK_END, NULL },
+	{ "KEY_PAGE_UP", SDLK_PAGEUP, NULL },
+	{ "KEY_PAGE_DOWN", SDLK_PAGEDOWN, NULL },
+	{ "KEY_F1", SDLK_F1, NULL },
 	{ NULL }
 };
 
 static struct operator fxoperators[] = {
 	{ "$millis", '$', 0, evaluate_millis_expression, &fxoperators[ 1 ] },
-	{ "$fxpoll", '$', 0, evaluate_fxpoll_expression, &fxoperators[ 2 ] },
-	{ "$fxwait", '$', 0, evaluate_fxwait_expression, &fxoperators[ 3 ] },
+	{ "$pollevent", '$', 0, evaluate_pollevent_expression, &fxoperators[ 2 ] },
+	{ "$waitevent", '$', 0, evaluate_waitevent_expression, &fxoperators[ 3 ] },
 	{ "$xmouse", '$', 0, evaluate_xmouse_expression, &fxoperators[ 4 ] },
 	{ "$ymouse", '$', 0, evaluate_ymouse_expression, &fxoperators[ 5 ] },
 	{ "$mousekey", '$', 0, evaluate_mousekey_expression, &fxoperators[ 6 ] },
 	{ "$mousewheel", '$', 0, evaluate_mousewheel_expression, &fxoperators[ 7 ] },
 	{ "$keyboard", '$', 0, evaluate_keyboard_expression, &fxoperators[ 8 ] },
 	{ "$keyshift", '$', 0, evaluate_keyshift_expression, &fxoperators[ 9 ] },
-	{ "$fxtick", '$', 0, evaluate_fxtick_expression, &fxoperators[ 10 ] },
-	{ "$fxseq", '$', 0, evaluate_fxseq_expression, &fxoperators[ 11 ] },
-	{ "$fxdir", '$', 1, evaluate_fxdir_expression, &fxoperators[ 12 ] },
-	{ "$fxpath", '$', 1, evaluate_fxpath_expression, &fxoperators[ 13 ] },
+	{ "$seqtick", '$', 0, evaluate_seqtick_expression, &fxoperators[ 10 ] },
+	{ "$seqmsg", '$', 0, evaluate_seqmsg_expression, &fxoperators[ 11 ] },
+	{ "$dir", '$', 1, evaluate_dir_expression, &fxoperators[ 12 ] },
+	{ "$path", '$', 1, evaluate_path_expression, &fxoperators[ 13 ] },
 	{ "$midimsg", '$', 0, evaluate_midimsg_expression, &fxoperators[ 14 ] },
-	{ "$window", '$', 0, evaluate_window_expression, &fxoperators[ 15 ] },
+	{ "$winmsg", '$', 0, evaluate_winmsg_expression, &fxoperators[ 15 ] },
 	{ "$keyheld", '$', 0, evaluate_keyheld_expression, &fxoperators[ 16 ] },
 	{ "$datfile", '$', 0, evaluate_datfile_expression, &fxoperators[ 17 ] },
 	{ "$extract", '$', 2, evaluate_extract_expression, &fxoperators[ 18 ] },
-	{ "$fxstream", '$', 3, evaluate_fxstream_expression, NULL }
+	{ "$stream", '$', 3, evaluate_stream_expression, NULL }
 };
 
 static struct keyword fxstatements[] = {
-	{ "fxopen", "xxx;", parse_fxopen_statement, &fxstatements[ 1 ] },
-	{ "fxshow", ";", parse_fxshow_statement, &fxstatements[ 2 ] },
-	{ "fxsurface", "xxxx;", parse_fxsurface_statement, &fxstatements[ 3 ] },
-	{ "fxblit", "xxxxxxx;", parse_fxblit_statement, &fxstatements[ 4 ] },
-	{ "fxrect", "xxxxx;", parse_fxrect_statement, &fxstatements[ 5 ] },
-	{ "fxsleep", "x;", parse_fxsleep_statement, &fxstatements[ 6 ] },
-	{ "fxtimer", "x;", parse_fxtimer_statement, &fxstatements[ 7 ] },
-	{ "fxaudio", "x;", parse_fxaudio_statement, &fxstatements[ 8 ] },
-	{ "fxsample", "xxxx;", parse_fxsample_statement, &fxstatements[ 9 ] },
-	{ "fxqueue", "xx;", parse_fxqueue_statement, &fxstatements[ 10 ] },
-	{ "fxplay", "xx;", parse_fxplay_statement, &fxstatements[ 11 ] },
-	{ "fxmidi", "x;", parse_fxmidi_statement, NULL }
+	{ "display", "xxx;", parse_display_statement, &fxstatements[ 1 ] },
+	{ "show", ";", parse_show_statement, &fxstatements[ 2 ] },
+	{ "surface", "xxxx;", parse_surface_statement, &fxstatements[ 3 ] },
+	{ "blit", "xxxxxxx;", parse_blit_statement, &fxstatements[ 4 ] },
+	{ "rect", "xxxxx;", parse_rect_statement, &fxstatements[ 5 ] },
+	{ "sleep", "x;", parse_sleep_statement, &fxstatements[ 6 ] },
+	{ "timer", "x;", parse_timer_statement, &fxstatements[ 7 ] },
+	{ "audio", "x;", parse_audio_statement, &fxstatements[ 8 ] },
+	{ "sample", "xxxx;", parse_sample_statement, &fxstatements[ 9 ] },
+	{ "queue", "xx;", parse_queue_statement, &fxstatements[ 10 ] },
+	{ "play", "xx;", parse_play_statement, &fxstatements[ 11 ] },
+	{ "midi", "x;", parse_midi_statement, NULL }
 };
 
 static int add_event_constants( struct fxenvironment *env, char *message ) {
@@ -1649,13 +1649,13 @@ static int add_event_constants( struct fxenvironment *env, char *message ) {
 	int user_event = SDL_USEREVENT;
 #endif
 	env->timer_event_type = user_event++;
-	event[ 0 ].name = "FX_TIMER";
+	event[ 0 ].name = "TIMER_EVENT";
 	event[ 0 ].integer_value = env->timer_event_type;
 	env->seq_event_type = user_event++;
-	event[ 1 ].name = "FX_SEQUENCER";
+	event[ 1 ].name = "SEQUENCER_EVENT";
 	event[ 1 ].integer_value = env->seq_event_type;
 	env->midi_event_type = user_event++;
-	event[ 2 ].name = "FX_MIDI";
+	event[ 2 ].name = "MIDI_EVENT";
 	event[ 2 ].integer_value = env->midi_event_type;
 	return add_constants( &event[ 0 ], &env->env, message );
 }
