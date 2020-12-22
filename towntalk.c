@@ -100,11 +100,11 @@
 		@function                Function reference.
 		:(func expr ...)         Call function reference with specified args.
 		'(expr operator ...)     Infix operator, eg '( 1 + 2 ).
-		+(int int)               Addition.
-		-(int int)               Subtraction.
-		*(int int)               Multiplication.
-		/(int int)               Division.
-		%(int int)               Modulo division.
+		+(int int ...)           Addition.
+		-(int int ...)           Subtraction.
+		*(int int ...)           Multiplication.
+		/(int int ...)           Division.
+		%(int int ...)           Modulo division.
 		<<(int int)              Arithmetic shift-left.
 		>>(int int)              Arithmetic shift-right.
 		=(int int)               Equality.
@@ -112,13 +112,13 @@
 		<e(int int)              Less than or equal.
 		>(int int)               Greater than.
 		>e(int int)              Greater than or equal.
-		&(int int)               Bitwise AND.
-		|(int int)               Bitwise OR.
-		^(int int)               Bitwise XOR.
+		&(int int ...)           Bitwise AND.
+		|(int int ...)           Bitwise OR.
+		^(int int ...)           Bitwise XOR.
 		~(int)                   Bitwise NOT.
 		!(expr)                  Evaluates to 1 if argument is null.
-		&&(expr)                 Evaluates to 1 if both arguments are non-null.
-		||(expr)                 Evaluates to 1 if either argument is non-null.
+		&&(expr expr ...)        Evaluates to 1 if all arguments are non-null.
+		||(expr expr ...)        Evaluates to 1 if any argument is non-null.
 		?(expr expr expr)        Evaluates second expr if first is non-null, else third.
 		$eq(expr expr)           Evaluates to 1 if arguments have the same value.
 		$str(str int ...)        Integer to string and string concatenation.
@@ -1884,42 +1884,43 @@ static enum result evaluate_logical_expression( struct expression *this, struct 
 	struct expression *parameter = this->parameters;
 	enum result ret = parameter->evaluate( parameter, variables, &var, exception );
 	if( ret ) {
-		parameter = parameter->next;
 		value = var.integer_value || var.string_value;
 		dispose_variable( &var );
 		if( this->index == '!' ) {
-			dispose_variable( result );
-			result->integer_value = !value;
-			result->string_value = NULL;
-		} else if( this->index == '&' ) {
-			if( value ) {
-				ret = parameter->evaluate( parameter, variables, &var, exception );
-				if( ret ) {
-					dispose_variable( result );
-					result->integer_value = var.integer_value || var.string_value;
-					result->string_value = NULL;
-					dispose_variable( &var );
-				}
-			} else {
-				dispose_variable( result );
-				result->integer_value = value;
-				result->string_value = NULL;
-			}
+			value = !value;
 		} else {
-			if( value ) {
-				dispose_variable( result );
-				result->integer_value = value;
-				result->string_value = NULL;
-			} else {
-				ret = parameter->evaluate( parameter, variables, &var, exception );
-				if( ret ) {
-					dispose_variable( result );
-					result->integer_value = var.integer_value || var.string_value;
-					result->string_value = NULL;
-					dispose_variable( &var );
+			while( parameter->next ) {
+				parameter = parameter->next;
+				if( this->index == '&' ) {
+					if( value ) {
+						ret = parameter->evaluate( parameter, variables, &var, exception );
+						if( ret ) {
+							value = var.integer_value || var.string_value;
+							dispose_variable( &var );
+						} else {
+							return ret;
+						}
+					} else {
+						break;
+					}
+				} else {
+					if( value ) {
+						break;
+					} else {
+						ret = parameter->evaluate( parameter, variables, &var, exception );
+						if( ret ) {
+							value = var.integer_value || var.string_value;
+							dispose_variable( &var );
+						} else {
+							return ret;
+						}
+					}
 				}
 			}
 		}
+		dispose_variable( result );
+		result->integer_value = value;
+		result->string_value = NULL;
 	}
 	return ret;
 }
@@ -1944,8 +1945,8 @@ static enum result evaluate_arithmetic_expression( struct expression *this, stru
 	struct variable *result, struct variable *exception ) {
 	struct variable var = { 0, NULL };
 	struct expression *parameter = this->parameters;
-	enum result ret = OKAY;
-	int lhs, rhs, value;
+	enum result ret;
+	int lhs, rhs;
 	if( parameter->evaluate == evaluate_integer_constant_expression ) {
 		lhs = parameter->index;
 	} else if( parameter->evaluate == evaluate_local ) {
@@ -1954,10 +1955,14 @@ static enum result evaluate_arithmetic_expression( struct expression *this, stru
 		lhs = parameter->global->value.integer_value;
 	} else {
 		ret = parameter->evaluate( parameter, variables, &var, exception );
-		lhs = var.integer_value;
-		dispose_variable( &var );
+		if( ret ) {
+			lhs = var.integer_value;
+			dispose_variable( &var );
+		} else {
+			return ret;
+		}
 	}
-	if( ret ) {
+	while( parameter->next ) {
 		parameter = parameter->next;
 		if( parameter->evaluate == evaluate_integer_constant_expression ) {
 			rhs = parameter->index;
@@ -1967,53 +1972,49 @@ static enum result evaluate_arithmetic_expression( struct expression *this, stru
 			rhs = parameter->global->value.integer_value;
 		} else {
 			ret = parameter->evaluate( parameter, variables, &var, exception );
-			rhs = var.integer_value;
-			dispose_variable( &var );
-		}
-		if( ret ) {
-			switch( this->index ) {
-				case '%':
-					if( rhs != 0 ) {
-						value = lhs % rhs;
-					} else {
-						value = 0;
-						ret = throw( exception, this, 0, "Modulo division by zero." );
-					}
-					break;
-				case '&': value = lhs  & rhs; break;
-				case '*': value = lhs  * rhs; break;
-				case '+': value = lhs  + rhs; break;
-				case '-': value = lhs  - rhs; break;
-				case '/':
-					if( rhs != 0 ) {
-						value = lhs / rhs;
-					} else {
-						value = 0;
-						ret = throw( exception, this, 0, "Integer division by zero." );
-					}
-					break;
-				case '<': value = lhs  < rhs; break;
-				case '>': value = lhs  > rhs; break;
-				case 'A': value = lhs << rhs; break;
-				case 'B': value = lhs >> rhs; break;
-				case 'G': value = lhs >= rhs; break;
-				case 'L': value = lhs <= rhs; break;
-				case '^': value = lhs  ^ rhs; break;
-				case '=': value = lhs == rhs; break;
-				case '|': value = lhs  | rhs; break;
-				default :
-					value = 0;
-					ret = throw( exception, this, 0, "Unhandled integer operator." );
-					break;
-			}
 			if( ret ) {
-				dispose_variable( result );
-				result->integer_value = value;
-				result->string_value = NULL;
+				rhs = var.integer_value;
+				dispose_variable( &var );
+			} else {
+				return ret;
 			}
+		}
+		switch( this->index ) {
+			case '%':
+				if( rhs != 0 ) {
+					lhs = lhs % rhs;
+				} else {
+					return throw( exception, this, 0, "Modulo division by zero." );
+				}
+				break;
+			case '&': lhs = lhs  & rhs; break;
+			case '*': lhs = lhs  * rhs; break;
+			case '+': lhs = lhs  + rhs; break;
+			case '-': lhs = lhs  - rhs; break;
+			case '/':
+				if( rhs != 0 ) {
+					lhs = lhs / rhs;
+				} else {
+					return throw( exception, this, 0, "Integer division by zero." );
+				}
+				break;
+			case '<': lhs = lhs  < rhs; break;
+			case '>': lhs = lhs  > rhs; break;
+			case 'A': lhs = lhs << rhs; break;
+			case 'B': lhs = lhs >> rhs; break;
+			case 'G': lhs = lhs >= rhs; break;
+			case 'L': lhs = lhs <= rhs; break;
+			case '^': lhs = lhs  ^ rhs; break;
+			case '=': lhs = lhs == rhs; break;
+			case '|': lhs = lhs  | rhs; break;
+			default :
+				return throw( exception, this, 0, "Unhandled integer operator." );
 		}
 	}
-	return ret;
+	dispose_variable( result );
+	result->integer_value = lhs;
+	result->string_value = NULL;
+	return OKAY;
 }
 
 static enum result evaluate_int_expression( struct expression *this, struct variable *variables,
@@ -2948,11 +2949,12 @@ static struct element* parse_infix_expression( struct element *elem, struct envi
 				if( oper ) {
 					expr->index = oper->oper;
 					expr->evaluate = oper->evaluate;
-					if( oper->num_operands > 0 ) {
+					if( oper->num_operands != 0 ) {
 						parse_expressions( child->next, env, func, 0, expr->parameters, &num_operands, message );
 						num_operands++;
 						if( message[ 0 ] == 0 ) {
-							if( num_operands == oper->num_operands ) {
+							if( num_operands == oper->num_operands
+							|| ( oper->num_operands < 0 && num_operands >= -oper->num_operands ) ) {
 								next = next->next;
 							} else {
 								sprintf( message, "Wrong number of arguments to '%.64s()' on line %d.", oper->name, child->line );
@@ -2989,7 +2991,8 @@ static struct element* parse_operator_expression( struct element *elem, struct e
 				parse_expressions( next->child, env, func, 0, &prev, &num_operands, message );
 				expr->parameters = prev.next;
 				if( message[ 0 ] == 0 ) {
-					if( num_operands == oper->num_operands || ( oper->num_operands < 0 && num_operands > 0 ) ) {
+					if( num_operands == oper->num_operands
+					|| ( oper->num_operands < 0 && num_operands >= -oper->num_operands ) ) {
 						next = next->next;
 					} else {
 						sprintf( message, "Wrong number of arguments to '%.64s()' on line %d.", oper->name, next->line );
@@ -4305,25 +4308,25 @@ static struct element* parse_struct_declaration( struct element *elem, struct en
 
 static struct operator operators[] = {
 	{ ":", ':',-1, evaluate_refcall_expression, &operators[ 1 ] },
-	{ "%", '%', 2, evaluate_arithmetic_expression, &operators[ 2 ] },
-	{ "&", '&', 2, evaluate_arithmetic_expression, &operators[ 3 ] },
-	{ "*", '*', 2, evaluate_arithmetic_expression, &operators[ 4 ] },
-	{ "+", '+', 2, evaluate_arithmetic_expression, &operators[ 5 ] },
-	{ "-", '-', 2, evaluate_arithmetic_expression, &operators[ 6 ] },
-	{ "/", '/', 2, evaluate_arithmetic_expression, &operators[ 7 ] },
+	{ "%", '%',-2, evaluate_arithmetic_expression, &operators[ 2 ] },
+	{ "&", '&',-2, evaluate_arithmetic_expression, &operators[ 3 ] },
+	{ "*", '*',-2, evaluate_arithmetic_expression, &operators[ 4 ] },
+	{ "+", '+',-2, evaluate_arithmetic_expression, &operators[ 5 ] },
+	{ "-", '-',-2, evaluate_arithmetic_expression, &operators[ 6 ] },
+	{ "/", '/',-2, evaluate_arithmetic_expression, &operators[ 7 ] },
 	{ "<", '<', 2, evaluate_arithmetic_expression, &operators[ 8 ] },
 	{ "<e",'L', 2, evaluate_arithmetic_expression, &operators[ 9 ] },
 	{ ">", '>', 2, evaluate_arithmetic_expression, &operators[ 10 ] },
 	{ ">e",'G', 2, evaluate_arithmetic_expression, &operators[ 11 ] },
 	{ "<<",'A', 2, evaluate_arithmetic_expression, &operators[ 12 ] },
 	{ ">>",'B', 2, evaluate_arithmetic_expression, &operators[ 13 ] },
-	{ "^", '^', 2, evaluate_arithmetic_expression, &operators[ 14 ] },
+	{ "^", '^',-2, evaluate_arithmetic_expression, &operators[ 14 ] },
 	{ "=", '=', 2, evaluate_arithmetic_expression, &operators[ 15 ] },
-	{ "|", '|', 2, evaluate_arithmetic_expression, &operators[ 16 ] },
+	{ "|", '|',-2, evaluate_arithmetic_expression, &operators[ 16 ] },
 	{ "~", '~', 1, evaluate_bitwise_not_expression, &operators[ 17 ] },
 	{ "!", '!', 1, evaluate_logical_expression, &operators[ 18 ] },
-	{ "&&",'&', 2, evaluate_logical_expression, &operators[ 19 ] },
-	{ "||",'|', 2, evaluate_logical_expression, &operators[ 20 ] },
+	{ "&&",'&',-2, evaluate_logical_expression, &operators[ 19 ] },
+	{ "||",'|',-2, evaluate_logical_expression, &operators[ 20 ] },
 	{ "?", '?', 3, evaluate_ternary_expression, &operators[ 21 ] },
 	{ "$eq", '$', 2, evaluate_eq_expression, &operators[ 22 ] },
 	{ "$str", '$',-1, evaluate_str_expression, &operators[ 23 ] },

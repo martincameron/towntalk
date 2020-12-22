@@ -235,6 +235,7 @@ function testarith() {
 	try { call +( 0 except( ${-} ) ); } catch err {}
 	call assert( err, ${-} );
 	call assert( =( +( +( 1 1 ) +( 1 1 ) ) 4 ), ${-} );
+	call assert( =( +( 1 1 2 1 ) 5 ), ${-} );
 	call assert( =( +( ONE TWO ) 3 ), ${-} );
 	call assert( =( -( 1 1 ) 0 ), ${-} );
 	call assert( =( *( 2 2 ) 4 ), ${-} );
@@ -287,6 +288,7 @@ function testlogic() {
 	call assert( =( &&( 0 1 ) 0 ), ${-} );
 	call assert( =( &&( 1 0 ) 0 ), ${-} );
 	call assert( =( &&( 1 1 ) 1 ), ${-} );
+	call assert( =( &&( 1 1 1 ) 1 ), ${-} );
 	call assert( =( &&( 1 "a" ) 1 ), ${-} );
 	call assert( =( &&( "a" 1 ) 1 ), ${-} );
 	call assert( =( &&( 0 except( ${-} ) ) 0 ), ${-} );
@@ -302,6 +304,7 @@ function testlogic() {
 	call assert( =( ||( 0 1 ) 1 ), ${-} );
 	call assert( =( ||( 1 0 ) 1 ), ${-} );
 	call assert( =( ||( 1 1 ) 1 ), ${-} );
+	call assert( =( ||( 0 0 1 ) 1 ), ${-} );
 	call assert( =( ||( 0 "a" ) 1 ), ${-} );
 	call assert( =( ||( "a" 0 ) 1 ), ${-} );
 	call assert( =( ||( 1 except( ${-} ) ) 1 ), ${-} );
