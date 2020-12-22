@@ -4419,7 +4419,7 @@ static int validate_decl( struct element *elem, struct environment *env, char *m
 	return 1;
 }
 
-static struct worker* new_worker( struct environment *env, char *file, char *message ) {
+static struct worker* new_worker() {
 	struct worker *work = calloc( 1, sizeof( struct worker ) );
 	if( work ) {
 		work->str.string = "worker";
@@ -4436,15 +4436,12 @@ static struct worker* new_worker( struct environment *env, char *file, char *mes
 			work = NULL;
 		}
 	}
-	if( !work ) {
-		strcpy( message, OUT_OF_MEMORY );
-	}
 	return work;
 }
 
 static struct worker* parse_worker( struct element *elem, struct environment *env, char *file, char *message ) {
 	int params, idx;
-	struct worker *work = new_worker( env, file, message );
+	struct worker *work = new_worker();
 	if( work ) {
 		work->env->entry_points = parse_function( elem, work->str.string, file, work->env, message );
 		if( work->env->entry_points && parse_function_body( work->env->entry_points, work->env, message ) ) {
@@ -4473,6 +4470,8 @@ static struct worker* parse_worker( struct element *elem, struct environment *en
 			unref_string( &work->str );
 			work = NULL;
 		}
+	} else {
+		strcpy( message, OUT_OF_MEMORY );
 	}
 	return work;
 }
