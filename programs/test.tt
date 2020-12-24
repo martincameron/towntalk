@@ -103,7 +103,7 @@ function testarray() {
 	call assert_equals( "four", [ a 4 ], ${-} );
 	call assert_equals( "4", $child( $next( [ a 4 ] ) ), ${-} );
 	call assert_equals( "TT", $sub( a, 5, 2 ), ${-} );
-	call assert_equals( "#Array#", a, ${-} );
+	call assert_equals( "[Array]", a, ${-} );
 	call assert_equals( 1, $len( $array( 1 ) ), ${-} );
 	call assert_throws( "Invalid array length.", ${ () { call $array( -1 ); } });
 	let b = $array( 2 );

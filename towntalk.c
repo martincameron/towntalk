@@ -177,6 +177,8 @@ static int validate_name( char *name, struct environment *env );
 static int validate_decl( struct element *elem, struct environment *env, char *message );
 static void parse_keywords( struct keyword *keywords, struct element *elem,
 	struct environment *env, struct function *func, struct statement *stmt, char *message );
+static void parse_keywords_indexed( struct keyword **index, struct element *elem,
+	struct environment *env, struct function *func, struct statement *stmt, char *message );
 static struct element* parse_expression( struct element *elem, struct environment *env,
 	struct function *func, struct expression *prev, char *message );
 static struct element* parse_expressions( struct element *elem, struct environment *env,
@@ -212,7 +214,7 @@ struct element* new_element( int str_len ) {
 struct array* new_array( struct environment *env, int length ) {
 	struct array *arr = calloc( 1, sizeof( struct array ) );
 	if( arr ) {
-		arr->str.string = "#Array#";
+		arr->str.string = "[Array]";
 		arr->str.reference_count = 1;
 		arr->str.length = strlen( arr->str.string );
 		arr->str.type = ARRAY;
@@ -266,6 +268,17 @@ static char* cat_string( char *left, int llen, char *right, int rlen ) {
 		str[ llen + rlen ] = 0;
 	}
 	return str;
+}
+
+/* Return a 5-bit hash-code to be used for indexing the specified string. */
+static int hash_code( char *str, int len ) {
+	char chr = str[ 0 ];
+	int idx = 1, hash = chr;
+	while( chr && idx != len ) {
+		chr = str[ idx++ ];
+		hash = hash ^ chr;
+	}
+	return hash & 0x1F;
 }
 
 /* Return the index of the last separator char encountered in str. */
@@ -697,12 +710,8 @@ static void dispose_functions( struct function *func ) {
 
 static void dispose_worker( struct worker *work ) {
 	int idx, len = 0;
-	if( work->env ) {
-		work->env->operators = NULL;
-		work->env->statements = NULL;
-		if( work->env->entry_points ) {
-			len = work->env->entry_points->num_parameters;
-		}
+	if( work->env && work->env->entry_point ) {
+		len = work->env->entry_point->num_parameters;
 	}
 	dispose_variable( &work->status );
 	dispose_variable( &work->result );
@@ -789,19 +798,19 @@ static void dispose_structure_declarations( struct structure *sct ) {
 
 /* Deallocate the specified environment and all types referenced by it. */
 void dispose_environment( struct environment *env ) {
+	int idx;
 	if( env ) {
-		dispose_keywords( env->statements );
-		dispose_operators( env->operators );
 		dispose_global_variables( env->constants );
 		dispose_global_variables( env->globals );
 		dispose_arrays( &env->arrays );
-		if( env->functions ) {
-			unref_string( &env->functions->str );
+		for( idx = 0; idx < 32; idx++ ) {
+			if( env->functions[ idx ] ) {
+				unref_string( &env->functions[ idx ]->str );
+			}
+			dispose_structure_declarations( env->structures[ idx ] );
+			dispose_keywords( env->statements[ idx ] );
+			dispose_operators( env->operators[ idx ] );
 		}
-		if( env->entry_points ) {
-			unref_string( &env->entry_points->str );
-		}
-		dispose_structure_declarations( env->structures );
 		free( env );
 	}
 }
@@ -1685,30 +1694,24 @@ static enum result evaluate_integer_constant_expression( struct expression *this
 	return OKAY;
 }
 
-static struct structure* get_structure( struct structure *structures, char *name ) {
-	size_t len;
-	char *chr = strchr( name, '.' );
-	if( chr ) {
-		len = chr - name;
-	} else {
-		len = strlen( name );
+static struct structure* get_structure_indexed( struct structure **structures, char *name ) {
+	struct structure *struc;
+	int len = 0;
+	char chr = name[ 0 ];
+	while( chr && chr != '.' ) {
+		chr = name[ ++len ];
 	}
-	while( structures && ( strlen( structures->name ) != len || strncmp( structures->name, name, len ) ) ) {
-		structures = structures->next;
+	struc = structures[ hash_code( name, len ) ];
+	while( struc && strncmp( struc->name, name, len ) ) {
+		struc = struc->next;
 	}
-	return structures;
+	return struc;
 }
 
 static struct function* get_function( struct environment *env, char *name ) {
-	struct function *func = env->functions;
+	struct function *func = env->functions[ hash_code( name, 0 ) ];
 	while( func && strcmp( func->str.string, name ) ) {
 		func = func->next;
-	}
-	if( func == NULL ) {
-		func = env->entry_points;
-		while( func && strcmp( func->str.string, name ) ) {
-			func = func->next;
-		}
 	}
 	return func;
 }
@@ -2925,7 +2928,7 @@ static enum result evaluate_source_expression( struct expression *this, struct v
 }
 
 static struct operator* get_operator( char *name, struct environment *env ) {
-	struct operator *oper = env->operators;
+	struct operator *oper = env->operators[ hash_code( name, 0 ) ];
 	while( oper && strcmp( oper->name, name ) ) {
 		oper = oper->next;
 	}
@@ -3139,7 +3142,7 @@ static struct element* parse_expression( struct element *elem, struct environmen
 						/* Function call.*/
 						next = parse_call_expression( elem, env, func, decl, expr, message );
 					} else {
-						struc = get_structure( env->structures, elem->str.string );
+						struc = get_structure_indexed( env->structures, elem->str.string );
 						if( struc ) {
 							/* Structure. */
 							next = parse_struct_expression( elem, env, struc, expr, message );
@@ -3534,7 +3537,7 @@ static struct element* parse_case_statement( struct element *elem, struct enviro
 		if( message[ 0 ] == 0 ) {
 			stmt->source = expr.next;
 			block.next = NULL;
-			parse_keywords( env->statements, next->child, env, func, &block, message );
+			parse_keywords_indexed( env->statements, next->child, env, func, &block, message );
 			stmt->if_block = block.next;
 			if( message[ 0 ] == 0 ) {
 				stmt->execute = execute_case_statement;
@@ -3552,7 +3555,7 @@ static struct element* parse_default_statement( struct element *elem, struct env
 	if( stmt ) {
 		prev->next = stmt;
 		block.next = NULL;
-		parse_keywords( env->statements, next->child, env, func, &block, message );
+		parse_keywords_indexed( env->statements, next->child, env, func, &block, message );
 		stmt->if_block = block.next;
 		if( message[ 0 ] == 0 ) {
 			stmt->execute = execute_case_statement;
@@ -3562,11 +3565,11 @@ static struct element* parse_default_statement( struct element *elem, struct env
 	return elem->next->next;
 }
 
-static int is_keyword( struct keyword *keywords, char *value ) {
-	while( keywords && strcmp( keywords->name, value ) ) {
+static struct keyword* get_keyword( char *name, struct keyword *keywords ) {
+	while( keywords && strcmp( keywords->name, name ) ) {
 		keywords = keywords->next;
 	}
-	return keywords != NULL;
+	return keywords;
 }
 
 static struct element* validate_syntax( char *syntax, struct element *elem,
@@ -3709,10 +3712,27 @@ static void parse_keywords( struct keyword *keywords, struct element *elem,
 	struct statement *stmt, char *message ) {
 	struct keyword *key;
 	while( elem && message[ 0 ] == 0 ) {
-		key = keywords;
-		while( key && strcmp( key->name, elem->str.string ) ) {
-			key = key->next;
+		key = get_keyword( elem->str.string, keywords );
+		if( key ) {
+			validate_syntax( key->syntax, elem->next, elem, env, message );
+			if( message[ 0 ] == 0 ) { 
+				elem = key->parse( elem, env, func, stmt, message );
+				while( stmt && stmt->next ) {
+					stmt = stmt->next;
+				}
+			}
+		} else {
+			sprintf( message, "Unrecognized keyword '%.64s' on line %d.", elem->str.string, elem->line );
 		}
+	}
+}
+
+static void parse_keywords_indexed( struct keyword **index, struct element *elem,
+	struct environment *env, struct function *func,
+	struct statement *stmt, char *message ) {
+	struct keyword *key;
+	while( elem && message[ 0 ] == 0 ) {
+		key = get_keyword( elem->str.string, index[ hash_code( elem->str.string, 0 ) ] );
 		if( key ) {
 			validate_syntax( key->syntax, elem->next, elem, env, message );
 			if( message[ 0 ] == 0 ) { 
@@ -3741,7 +3761,7 @@ static struct element* parse_if_statement( struct element *elem, struct environm
 			stmt->execute = execute_if_statement;
 			if( next->child ) {
 				block.next = NULL;
-				parse_keywords( env->statements, next->child, env, func, &block, message );
+				parse_keywords_indexed( env->statements, next->child, env, func, &block, message );
 				stmt->if_block = block.next;
 			}
 			if( message[ 0 ] == 0 ) {
@@ -3751,7 +3771,7 @@ static struct element* parse_if_statement( struct element *elem, struct environm
 						next = next->next;
 						if( next->child ) {
 							block.next = NULL;
-							parse_keywords( env->statements, next->child, env, func, &block, message );
+							parse_keywords_indexed( env->statements, next->child, env, func, &block, message );
 							stmt->else_block = block.next;
 						}
 						if( message[ 0 ] == 0 ) {
@@ -3780,7 +3800,7 @@ static struct element* parse_while_statement( struct element *elem, struct envir
 			stmt->source = expr.next;
 			if( next->child ) {
 				block.next = NULL;
-				parse_keywords( env->statements, next->child, env, func, &block, message );
+				parse_keywords_indexed( env->statements, next->child, env, func, &block, message );
 				stmt->if_block = block.next;
 			}
 			if( message[ 0 ] == 0 ) {
@@ -3800,7 +3820,7 @@ static struct element* parse_try_statement( struct element *elem, struct environ
 	if( stmt ) {
 		if( next->child ) {
 			block.next = NULL;
-			parse_keywords( env->statements, next->child, env, func, &block, message );
+			parse_keywords_indexed( env->statements, next->child, env, func, &block, message );
 			stmt->if_block = block.next;
 		}
 		if( message[ 0 ] == 0 ) {
@@ -3810,7 +3830,7 @@ static struct element* parse_try_statement( struct element *elem, struct environ
 				next = next->next;
 				if( next->child ) {
 					block.next = NULL;
-					parse_keywords( env->statements, next->child, env, func, &block, message );
+					parse_keywords_indexed( env->statements, next->child, env, func, &block, message );
 					stmt->else_block = block.next;
 				}
 				if( message[ 0 ] == 0 ) {
@@ -3883,7 +3903,7 @@ static int parse_function_body( struct function *func, struct environment *env, 
 	struct element *next = func->body->child;
 	if( next ) {
 		stmt.next = NULL;
-		parse_keywords( env->statements, next, env, func, &stmt, message );
+		parse_keywords_indexed( env->statements, next, env, func, &stmt, message );
 		func->statements = stmt.next;
 	}
 	return message[ 0 ] == 0;
@@ -3931,8 +3951,8 @@ static enum result evaluate_function_expression( struct expression *this, struct
 /* Begin execution of the specified worker. Returns 0 on failure. */
 int start_worker( struct worker *work ) {
 	struct expression expr = { 0 };
-	expr.line = work->env->entry_points->line;
-	expr.function = work->env->entry_points;
+	expr.line = work->env->entry_point->line;
+	expr.function = work->env->entry_point;
 	expr.parameters = work->parameters;
 	work->ret = evaluate_call_expression( &expr, NULL, &work->result, &work->exception );
 	return 1;
@@ -4014,7 +4034,7 @@ static enum result evaluate_execute_expression( struct expression *this, struct 
 				count++;
 				parameter = parameter->next;
 			}
-			if( work->env->entry_points->num_parameters == count ) {
+			if( work->env->entry_point->num_parameters == count ) {
 				await_worker( work, 1 );
 				idx = 0;
 				parameter = this->parameters->next;
@@ -4129,7 +4149,7 @@ static enum result evaluate_result_expression( struct expression *this, struct v
 			this->function->env->worker = work;
 			await_worker( work, 0 );
 			this->function->env->worker = NULL;
-			count = work->env->entry_points->num_parameters;
+			count = work->env->entry_point->num_parameters;
 			for( idx = 0; idx < count; idx++ ) {
 				if( work->args[ idx ].string_value ) {
 					/* Reassociate parameter strings if necessary. */
@@ -4167,13 +4187,15 @@ static struct element* parse_function_declaration( struct element *elem, struct 
 	struct function *decl, struct statement *prev, char *message ) {
 	struct element *next = elem->next;
 	char *name;
+	int idx;
 	if( validate_decl( next, env, message ) ) {
 		name = next->str.string;
 		next = next->next;
 		decl = parse_function( next, name, decl->file.string, env, message );
 		if( decl ) {
-			decl->next = env->functions;
-			env->functions = decl;
+			idx = hash_code( name, 0 );
+			decl->next = env->functions[ idx ];
+			env->functions[ idx ] = decl;
 			next = next->next->next;
 		}
 	}
@@ -4183,11 +4205,14 @@ static struct element* parse_function_declaration( struct element *elem, struct 
 static struct element* parse_program_declaration( struct element *elem, struct environment *env,
 	struct function *func, struct statement *prev, char *message ) {
 	struct element *next = elem->next;
+	int idx;
 	if( validate_decl( next, env, message ) ) {
 		func = new_function( next->str.string, func->file.string, message );
 		if( func ) {
-			func->next = env->entry_points;
-			env->entry_points = func;
+			idx = hash_code( next->str.string, 0 );
+			func->next = env->functions[ idx ];
+			env->functions[ idx ] = func;
+			env->entry_point = func;
 			func->line = elem->line;
 			func->body = next->next;
 			func->env = env;
@@ -4217,9 +4242,9 @@ static struct element* parse_include( struct element *elem, struct environment *
 	return next;
 }
 
-static int add_structure_field( struct environment *env, char *name, int line, char *message ) {
+static int add_structure_field( struct structure *struc, char *name,
+	struct environment *env, int line, char *message ) {
 	struct string_list *field;
-	struct structure *struc = env->structures;
 	if( validate_name( name, env ) ) {
 		if( struc->fields && get_string_list_index( struc->fields, name ) >= 0 ) {
 			sprintf( message, "Field '%.64s' already defined on line %d.", name, line );
@@ -4245,26 +4270,28 @@ static int add_structure_field( struct environment *env, char *name, int line, c
 
 static struct element* parse_struct_declaration( struct element *elem, struct environment *env,
 	struct function *func, struct statement *prev, char *message ) {
+	int idx;
 	char *name;
-	struct structure *struc;
+	struct structure *struc, *super;
 	struct string_list *field;
 	struct element *child, *next = elem->next;
 	if( validate_decl( next, env, message ) ) {
 		name = new_string( next->str.string );
 		struc = calloc( 1, sizeof( struct structure ) );
 		if( name && struc ) {
-			struc->next = env->structures;
-			env->structures = struc;
+			idx = hash_code( name, 0 );
+			struc->next = env->structures[ idx ];
+			env->structures[ idx ] = struc;
 			struc->name = name;
 			next = next->next;
 			if( next && next->str.string[ 0 ] == '(' ) {
 				child = next->child;
-				if( child && child->next == NULL ) {
-					struc = get_structure( env->structures->next, child->str.string );
-					if( struc ) {
-						field = struc->fields;
+				if( child && child->next == NULL && strcmp( child->str.string, name ) ) {
+					super = get_structure_indexed( env->structures, child->str.string );
+					if( super ) {
+						field = super->fields;
 						while( field && message[ 0 ] == 0 ) {
-							if( add_structure_field( env, field->value, child->line, message ) ) {
+							if( add_structure_field( struc, field->value, env, child->line, message ) ) {
 								field = field->next;
 							}
 						}
@@ -4280,7 +4307,7 @@ static struct element* parse_struct_declaration( struct element *elem, struct en
 				if( next && next->str.string[ 0 ] == '{' ) {
 					child = next->child;
 					while( child && message[ 0 ] == 0 ) {
-						if( add_structure_field( env, child->str.string, child->line, message ) ) {
+						if( add_structure_field( struc, child->str.string, env, child->line, message ) ) {
 							child = child->next;
 							if( child && ( child->str.string[ 0 ] == ',' || child->str.string[ 0 ] == ';' ) ) {
 								child = child->next;
@@ -4397,11 +4424,11 @@ static int validate_name( char *name, struct environment *env ) {
 	}
 	if( result ) {
 		/* Declaration keywords not permitted. */
-		result = !is_keyword( declarations, name );
+		result = ( get_keyword( name, declarations ) == NULL );
 	}
 	if( result ) {
 		/* Statement keywords not permitted. */
-		result = !is_keyword( env->statements, name );
+		result = ( get_keyword( name, env->statements[ hash_code( name, 0 ) ] ) == NULL );
 	}
 	if( result ) {
 		/* Operator name not permitted. */
@@ -4415,40 +4442,50 @@ static int validate_decl( struct element *elem, struct environment *env, char *m
 	if( get_global_variable( env->globals, name )
 	|| get_global_variable( env->constants, name )
 	|| get_function( env, name )
-	|| get_structure( env->structures, name ) ) {
+	|| get_structure_indexed( env->structures, name ) ) {
 		sprintf( message, "Name '%.64s' already defined on line %d.", elem->str.string, elem->line );
 		return 0;
 	}
 	return 1;
 }
 
-static struct worker* new_worker() {
+static struct worker* new_worker( char *message ) {
 	struct worker *work = calloc( 1, sizeof( struct worker ) );
 	if( work ) {
-		work->str.string = "worker";
+		work->str.string = "[Worker]";
 		work->str.length = strlen( work->str.string );
 		work->str.reference_count = 1;
 		work->str.type = WORKER;
 		work->env = calloc( 1, sizeof( struct environment ) );
 		if( work->env ) {
-			work->env->worker = work;
-			work->env->operators = operators;
-			work->env->statements = statements;
+			if( add_operators( operators, work->env, message )
+			&& add_statements( statements, work->env, message ) ) {
+				work->env->worker = work;
+			} else {
+				unref_string( &work->str );
+				work = NULL;
+			}
 		} else {
+			strcpy( message, OUT_OF_MEMORY );
 			unref_string( &work->str );
 			work = NULL;
 		}
+	} else {
+		strcpy( message, OUT_OF_MEMORY );
 	}
 	return work;
 }
 
 static struct worker* parse_worker( struct element *elem, struct environment *env, char *file, char *message ) {
 	int params, idx;
-	struct worker *work = new_worker();
+	struct function *func;
+	struct worker *work = new_worker( message );
 	if( work ) {
-		work->env->entry_points = parse_function( elem, work->str.string, file, work->env, message );
-		if( work->env->entry_points && parse_function_body( work->env->entry_points, work->env, message ) ) {
-			params = work->env->entry_points->num_parameters;
+		func = parse_function( elem, work->str.string, file, work->env, message );
+		if( func && parse_function_body( func, work->env, message ) ) {
+			work->env->functions[ hash_code( work->str.string, 0 ) ] = func;
+			work->env->entry_point = func;
+			params = func->num_parameters;
 			work->args = calloc( params, sizeof( struct variable ) );
 			if( work->args ) {
 				work->strings = calloc( params, sizeof( struct string ) );
@@ -4473,14 +4510,13 @@ static struct worker* parse_worker( struct element *elem, struct environment *en
 			unref_string( &work->str );
 			work = NULL;
 		}
-	} else {
-		strcpy( message, OUT_OF_MEMORY );
 	}
 	return work;
 }
 
 /* Parse the specified program text into env. Returns zero and writes message on failure. */
 int parse_tt_program( char *program, char *file_name, struct environment *env, char *message ) {
+	int idx;
 	struct element *elem;
 	struct function *empty, *func;
 	elem = parse_element( program, message );
@@ -4488,27 +4524,22 @@ int parse_tt_program( char *program, char *file_name, struct environment *env, c
 		/* Create empty function for global evaluation. */
 		empty = new_function( "", file_name, message );
 		if( empty ) {
-			empty->next = env->functions;
-			env->functions = empty;
+			idx = hash_code( empty->str.string, 0 );
+			empty->next = env->functions[ idx ];
+			env->functions[ idx ] = empty;
 			empty->env = env;
 			/* Populate execution environment. */
 			parse_keywords( declarations, elem, env, empty, NULL, message );
 			/* Parse function bodies. */
-			func = env->functions;
-			while( func && message[ 0 ] == 0 ) {
-				if( func->body ) {
-					parse_function_body( func, env, message );
-					func->body = NULL;
+			for( idx = 0; idx < 32; idx++ ) {
+				func = env->functions[ idx ];
+				while( func && message[ 0 ] == 0 ) {
+					if( func->body ) {
+						parse_function_body( func, env, message );
+						func->body = NULL;
+					}
+					func = func->next;
 				}
-				func = func->next;
-			}
-			func = env->entry_points;
-			while( func && message[ 0 ] == 0 ) {
-				if( func->body ) {
-					parse_function_body( func, env, message );
-					func->body = NULL;
-				}
-				func = func->next;
 			}
 		}
 		unref_string( &elem->str );
@@ -4578,13 +4609,15 @@ int initialize_globals( struct environment *env, struct variable *exception ) {
 
 /* Add a copy of the specified statement list to env. Returns zero and writes message on failure. */
 int add_statements( struct keyword *statements, struct environment *env, char *message ) {
+	int idx;
 	struct keyword *statement;
 	while( statements ) {
 		statement = calloc( 1, sizeof( struct keyword ) );
 		if( statement ) {
 			memcpy( statement, statements, sizeof( struct keyword ) );
-			statement->next = env->statements;
-			env->statements = statement;
+			idx = hash_code( statement->name, 0 );
+			statement->next = env->statements[ idx ];
+			env->statements[ idx ] = statement;
 		} else {
 			strcpy( message, OUT_OF_MEMORY );
 			return 0;
@@ -4596,13 +4629,15 @@ int add_statements( struct keyword *statements, struct environment *env, char *m
 
 /* Add a copy of the specified operator list to env. Returns zero and writes message on failure. */
 int add_operators( struct operator *operators, struct environment *env, char *message ) {
+	int idx;
 	struct operator *operator;
 	while( operators ) {
 		operator = calloc( 1, sizeof( struct operator ) );
 		if( operator ) {
 			memcpy( operator, operators, sizeof( struct operator ) );
-			operator->next = env->operators;
-			env->operators = operator;
+			idx = hash_code( operator->name, 0 );
+			operator->next = env->operators[ idx ];
+			env->operators[ idx ] = operator;
 		} else {
 			strcpy( message, OUT_OF_MEMORY );
 			return 0;

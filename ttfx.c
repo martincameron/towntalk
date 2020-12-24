@@ -193,7 +193,7 @@ static void ( *interrupt_handler )( int signum );
 int worker_thread( void *data ) {
 	struct expression expr = { 0 };
 	struct worker *work = ( struct worker * ) data;
-	initialize_call_expr( &expr, work->env->entry_points );
+	initialize_call_expr( &expr, work->env->entry_point );
 	expr.parameters = work->parameters;
 	work->ret = expr.evaluate( &expr, NULL, &work->result, &work->exception );
 	return 0;
@@ -1775,14 +1775,14 @@ int main( int argc, char **argv ) {
 		env->argc = argc - 1;
 		env->argv = &argv[ 1 ];
 		if( parse_ttfx_file( file_name, fxenv, message ) ) {
-			if( env->entry_points ) {
+			if( env->entry_point ) {
 				/* Initialize SDL. */
 				if( SDL_Init( SDL_INIT_AUDIO | SDL_INIT_VIDEO | SDL_INIT_TIMER ) == 0 ) {
 					/* Install signal handler. */
 					interrupt_handler = signal( SIGINT, signal_handler );
 					if( interrupt_handler != SIG_ERR ) {
 						/* Evaluate the last entry-point function. */
-						initialize_call_expr( &expr, env->entry_points );
+						initialize_call_expr( &expr, env->entry_point );
 						if( initialize_globals( env, &except ) && expr.evaluate( &expr, NULL, &result, &except ) ) {
 							exit_code = EXIT_SUCCESS;
 						} else if( except.string_value && except.string_value->string == NULL ) {
