@@ -292,36 +292,36 @@ function testternary() {
 }
 
 function testcmp() {
-	call assert_equals( 0, $cmp( 0 0 ), ${-} );
-	call assert_equals( 1, $cmp( 1 0 ), ${-} );
-	call assert_equals( -1, $cmp( 0 1 ), ${-} );
-	call assert_equals( 1, $cmp( "a" 0 ), ${-} );
-	call assert_equals( -1, $cmp( 0 "a" ), ${-} );
-	call assert_equals( 0, $cmp( "" "" ), ${-} );
-	call assert_equals( 0, $cmp( "0" "0" ), ${-} );
-	call assert_equals( 0, $cmp( STR "*" ), ${-} );
-	call assert_equals( 0, $cmp( CAT "**" ), ${-} );
-	call assert_equals( 0, $cmp( $tup( "a" 1 ) $tup( "a" 1 ) ), ${-} );
-	call assert_equals( 1, $cmp( 1 0 ), ${-} );
-	call assert_equals( 1, $cmp( "1" "0" ), ${-} );
-	call assert_equals( -1, $cmp( "0" "1" ), ${-} );
-	call assert_equals( 1, $cmp( "aa" "a" ), ${-} );
-	call assert_equals( -1 $cmp( "a" "aa" ), ${-} );
-	call assert_equals( -1, $cmp( "b" "ba" ), ${-} );
-	call assert_equals( -1, $cmp( "ba" "bb" ), ${-} );
-	call assert_equals( -1, $cmp( $tup( "a" 0 ) $tup( "b" 1 ) ), ${-} );
-	call assert_equals( -1, $cmp( $tup( "a" 1 ) $tup( "b" 1 ) ), ${-} );
+	call assert( =( $cmp( 0 0 ) 0 ), ${-} );
+	call assert( >( $cmp( 1 0 ) 0 ), ${-} );
+	call assert( <( $cmp( 0 1 ) 0 ), ${-} );
+	call assert( >( $cmp( "a" 0 ) 0 ), ${-} );
+	call assert( <( $cmp( 0 "a" ) 0 ), ${-} );
+	call assert( =( $cmp( "" "" ) 0 ), ${-} );
+	call assert( =( $cmp( "0" "0" ) 0 ), ${-} );
+	call assert( =( $cmp( STR "*" ) 0 ), ${-} );
+	call assert( =( $cmp( CAT "**" ) 0 ), ${-} );
+	call assert( =( $cmp( $tup( "a" 1 ) $tup( "a" 1 ) ) 0 ), ${-} );
+	call assert( >( $cmp( 1 0 ) 0 ), ${-} );
+	call assert( >( $cmp( "1" "0" ) 0 ), ${-} );
+	call assert( <( $cmp( "0" "1" ) 0 ), ${-} );
+	call assert( >( $cmp( "aa" "a" ) 0 ), ${-} );
+	call assert( <( $cmp( "a" "aa" ) 0 ), ${-} );
+	call assert( <( $cmp( "b" "ba" ) 0 ), ${-} );
+	call assert( <( $cmp( "ba" "bb" ) 0 ), ${-} );
+	call assert( <( $cmp( $tup( "a" 0 ) $tup( "b" 1 ) ) 0 ), ${-} );
+	call assert( <( $cmp( $tup( "a" 1 ) $tup( "b" 1 ) ) 0 ), ${-} );
 	call assert_throws( "1", ${ () { call $cmp( except( ${ 1 } ) "" ); } } );
 	call assert_throws( "1", ${ () { call $cmp( "" except( ${ 1 } ) ); } } );
 }
 
 function testcat() {
-	call assert_equals( 0, $cmp( $cat( 0 ) "0" ), ${-} );
-	call assert_equals( 0, $cmp( $cat( 0 1 ) "01" ), ${-} );
-	call assert_equals( 0, $cmp( $cat( "" 0 ) "0" ), ${-} );
-	call assert_equals( 0, $cmp( $cat( 0 "" ) "0" ), ${-} );
-	call assert_equals( 0, $cmp( $cat( 0 "1" "2" ) "012" ), ${-} );
-	call assert_equals( 0, $cmp( $cat( a ) a ), ${-} );
+	call assert_equals( "0", $cat( 0 ), ${-} );
+	call assert_equals( "01", $cat( 0 1 ), ${-} );
+	call assert_equals( "0", $cat( "" 0 ), ${-} );
+	call assert_equals( "0", $cat( 0 "" ), ${-} );
+	call assert_equals( "012", $cat( 0 "1" "2" ), ${-} );
+	call assert_equals( a, $cat( a ), ${-} );
 	call assert_throws( "1", ${ () { call $cat( except( ${ 1 } ) "" ); } } );
 	call assert_throws( "1", ${ () { call $cat( "" except( ${ 1 } ) ); } } );
 }
@@ -336,8 +336,8 @@ function testchr() {
 }
 
 function testsub() {
-	call assert_equals( 0, $cmp( $sub( "abc" 1 1 ) "b" ), ${-} );
-	call assert_equals( 0, $cmp( $sub( $array( ${ 65, 66, 67 } ) 0 3 ) "ABC" ), ${-} );
+	call assert_equals( "b", $sub( "abc" 1 1 ), ${-} );
+	call assert_equals( "ABC", $sub( $array( ${ 65, 66, 67 } ) 0 3 ), ${-} );
 	call assert_throws( "1", ${ () { call $sub( except( ${ 1 } ) 0 0 ); } } );
 	call assert_throws( "1", ${ () { call $sub( "" except( ${ 1 } ) 0 ); } } );
 	call assert_throws( "1", ${ () { call $sub( "" 0 except( ${ 1 } ) ); } } );
@@ -349,14 +349,14 @@ function testsub() {
 }
 
 function testasc() {
-	call assert_equals( 0, $cmp( $asc( 126 ) "~" ), ${-} );
+	call assert_equals( "~", $asc( 126 ), ${-} );
 	call assert_throws( "1", ${ () { call $asc( except( ${ 1 } ) ); } } );
 }
 
 function testhex() {
-	call assert_equals( 0, $cmp( $hex(  0x00000000 ) " 0x00000000" ), ${-} );
-	call assert_equals( 0, $cmp( $hex( -0x00000001 ) "-0x00000001" ), ${-} );
-	call assert_equals( 0, $cmp( $hex( -0x80000000 ) "-0x80000000" ), ${-} );
+	call assert_equals( " 0x00000000", $hex(  0x00000000 ), ${-} );
+	call assert_equals( "-0x00000001", $hex( -0x00000001 ), ${-} );
+	call assert_equals( "-0x80000000", $hex( -0x80000000 ), ${-} );
 	call assert_throws( "1", ${ () { call $hex( except( ${ 1 } ) ); } } );
 }
 
