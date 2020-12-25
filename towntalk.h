@@ -70,8 +70,10 @@ struct environment {
 	struct keyword *statements[ 32 ];
 	struct operator *operators[ 32 ];
 	struct structure *structures[ 32 ];
-	struct global_variable *constants, *constants_tail;
-	struct global_variable *globals, *globals_tail;
+	struct global_variable *globals_index[ 32 ];
+	struct string_list *globals, *globals_tail;
+	struct global_variable *constants_index[ 32 ];
+	struct string_list *constants, *constants_tail;
 	struct function *functions[ 32 ], *entry_point;
 	struct worker *worker;
 };
