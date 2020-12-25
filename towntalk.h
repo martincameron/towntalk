@@ -67,14 +67,14 @@ struct environment {
 	char **argv, interrupted;
 	struct string exit;
 	struct array arrays;
-	struct keyword *statements[ 32 ];
-	struct operator *operators[ 32 ];
-	struct structure *structures[ 32 ];
+	struct keyword *statements_index[ 32 ];
+	struct operator *operators_index[ 32 ];
+	struct structure *structures_index[ 32 ];
 	struct global_variable *globals_index[ 32 ];
 	struct string_list *globals, *globals_tail;
 	struct global_variable *constants_index[ 32 ];
 	struct string_list *constants, *constants_tail;
-	struct function *functions[ 32 ], *entry_point;
+	struct function *functions_index[ 32 ], *entry_point;
 	struct worker *worker;
 };
 
