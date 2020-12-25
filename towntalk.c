@@ -1231,6 +1231,7 @@ static enum result execute_exit_statement( struct statement *this, struct variab
 	enum result ret = this->source->evaluate( this->source, variables, &exit_code, exception );
 	if( ret ) {
 		ret = throw_exit( this->source->function->env, exception, exit_code.integer_value );
+		dispose_variable( &exit_code );
 	}
 	return ret;
 }
