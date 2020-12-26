@@ -1712,22 +1712,28 @@ static enum result evaluate_integer_constant_expression( struct expression *this
 	return OKAY;
 }
 
-static struct structure* get_structure_indexed( struct structure **structures, char *name ) {
+static struct structure* get_structure( struct structure *struc, char *name ) {
+	while( struc && strcmp( struc->name, name ) ) {
+		struc = struc->next;
+	}
+	return struc;
+}
+
+static struct structure* get_structure_indexed( struct structure **index, char *name ) {
 	struct structure *struc;
 	int len = 0;
 	char chr = name[ 0 ];
 	while( chr && chr != '.' ) {
 		chr = name[ ++len ];
 	}
-	struc = structures[ hash_code( name, len ) ];
+	struc = index[ hash_code( name, len ) ];
 	while( struc && strncmp( struc->name, name, len ) ) {
 		struc = struc->next;
 	}
 	return struc;
 }
 
-static struct function* get_function( struct environment *env, char *name ) {
-	struct function *func = env->functions_index[ hash_code( name, 0 ) ];
+static struct function* get_function( struct function *func, char *name ) {
 	while( func && strcmp( func->str.string, name ) ) {
 		func = func->next;
 	}
@@ -2957,8 +2963,7 @@ static enum result evaluate_source_expression( struct expression *this, struct v
 	return OKAY;
 }
 
-static struct operator* get_operator( char *name, struct environment *env ) {
-	struct operator *oper = env->operators_index[ hash_code( name, 0 ) ];
+static struct operator* get_operator( char *name, struct operator *oper ) {
 	while( oper && strcmp( oper->name, name ) ) {
 		oper = oper->next;
 	}
@@ -2978,7 +2983,7 @@ static struct element* parse_infix_expression( struct element *elem, struct envi
 		expr->parameters = prev.next;
 		if( message[ 0 ] == 0 ) {
 			if( child ) {
-				oper = get_operator( child->str.string, env );
+				oper = get_operator( child->str.string, env->operators_index[ hash_code( child->str.string, 0 ) ] );
 				if( oper ) {
 					expr->index = oper->oper;
 					expr->evaluate = oper->evaluate;
@@ -3014,7 +3019,7 @@ static struct element* parse_operator_expression( struct element *elem, struct e
 	struct element *next = elem->next;
 	struct expression prev;
 	int num_operands;
-	struct operator *oper = get_operator( elem->str.string, env );
+	struct operator *oper = get_operator( elem->str.string, env->operators_index[ hash_code( elem->str.string, 0 ) ] );
 	if( oper ) {
 		expr->index = oper->oper;
 		expr->evaluate = oper->evaluate;
@@ -3068,7 +3073,7 @@ static struct element* parse_call_expression( struct element *elem, struct envir
 static struct element* parse_func_ref_expression( struct element *elem, struct environment *env,
 	struct function *func, struct expression *expr, char *message ) {
 	char *name = &elem->str.string[ 1 ];
-	struct function *function = get_function( env, name );
+	struct function *function = get_function( env->functions_index[ hash_code( name, 0 ) ], name );
 	if( function ) {
 		expr->function = function;
 		expr->evaluate = evaluate_func_ref_expression;
@@ -3168,12 +3173,12 @@ static struct element* parse_expression( struct element *elem, struct environmen
 					expr->global = global;
 					expr->evaluate = evaluate_global;
 				} else {
-					decl = get_function( env, elem->str.string );
+					decl = get_function( env->functions_index[ idx ], value );
 					if( decl ) {
 						/* Function call.*/
 						next = parse_call_expression( elem, env, func, decl, expr, message );
 					} else {
-						struc = get_structure_indexed( env->structures_index, elem->str.string );
+						struc = get_structure_indexed( env->structures_index, value );
 						if( struc ) {
 							/* Structure. */
 							next = parse_struct_expression( elem, env, struc, expr, message );
@@ -4455,16 +4460,11 @@ static int validate_name( char *name, struct environment *env ) {
 		result = 0;
 	}
 	if( result ) {
-		/* Declaration keywords not permitted. */
-		result = ( get_keyword( name, declarations ) == NULL );
-	}
-	if( result ) {
-		/* Statement keywords not permitted. */
-		result = ( get_keyword( name, env->statements_index[ hash_code( name, 0 ) ] ) == NULL );
-	}
-	if( result ) {
-		/* Operator name not permitted. */
-		result = ( get_operator( name, env ) == NULL );
+		idx = hash_code( name, 0 );
+		/* Declarations, statements and operator names not permitted. */
+		result = ( get_keyword( name, declarations ) == NULL )
+			&& ( get_keyword( name, env->statements_index[ idx ] ) == NULL )
+			&& ( get_operator( name, env->operators_index[ idx ] ) == NULL );
 	}
 	return result;
 }
@@ -4474,8 +4474,8 @@ static int validate_decl( struct element *elem, struct environment *env, char *m
 	int idx = hash_code( name, 0 );
 	if( get_global_variable( env->constants_index[ idx ], name )
 	|| get_global_variable( env->globals_index[ idx ], name )
-	|| get_function( env, name )
-	|| get_structure_indexed( env->structures_index, name ) ) {
+	|| get_function( env->functions_index[ idx ], name )
+	|| get_structure( env->structures_index[ idx ], name ) ) {
 		sprintf( message, "Name '%.64s' already defined on line %d.", elem->str.string, elem->line );
 		return 0;
 	}
