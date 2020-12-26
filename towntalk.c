@@ -2951,7 +2951,9 @@ static enum result evaluate_interrupted_expression( struct expression *this, str
 	dispose_variable( result );
 	result->integer_value = env->interrupted;
 	result->string_value = NULL;
-	env->interrupted = 0;
+	if( env->worker == NULL ) {
+		env->interrupted = 0;
+	}
 	return OKAY;
 }
 
