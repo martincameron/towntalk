@@ -1982,17 +1982,14 @@ static enum result evaluate_ternary_expression( struct expression *this, struct 
 
 static enum result evaluate_arithmetic_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	struct variable var = { 0, NULL };
 	struct expression *parameter = this->parameters;
+	struct variable var;
 	enum result ret;
 	int lhs, rhs;
-	if( parameter->evaluate == evaluate_integer_constant_expression ) {
-		lhs = parameter->index;
-	} else if( parameter->evaluate == evaluate_local ) {
+	if( parameter->evaluate == evaluate_local ) {
 		lhs = variables[ parameter->index ].integer_value;
-	} else if( parameter->evaluate == evaluate_global ) {
-		lhs = parameter->global->value.integer_value;
 	} else {
+		var.string_value = NULL;
 		ret = parameter->evaluate( parameter, variables, &var, exception );
 		if( ret ) {
 			lhs = var.integer_value;
@@ -2007,9 +2004,8 @@ static enum result evaluate_arithmetic_expression( struct expression *this, stru
 			rhs = parameter->index;
 		} else if( parameter->evaluate == evaluate_local ) {
 			rhs = variables[ parameter->index ].integer_value;
-		} else if( parameter->evaluate == evaluate_global ) {
-			rhs = parameter->global->value.integer_value;
 		} else {
+			var.string_value = NULL;
 			ret = parameter->evaluate( parameter, variables, &var, exception );
 			if( ret ) {
 				rhs = var.integer_value;
