@@ -21,7 +21,7 @@
 		rect x, y, w, h, 0xrrggbb;             Draw an opaque rectangle.
 		show;                                  Update the display. May wait for the next vertical blank.
 		surface num, width, height, pixels;    Set the specified surface to specified size and RGBA pixel array.
-		blit num, x, y, cx, cy, cw, ch;        Draw the specified surface clipped to the specified region.
+		blit num, sx, sy, sw, sh, x, y;        Draw the specified region of the specified surface.
 		sleep millis;                          Wait for the specified time period.
 		timer millis;                          Generate timer events at the specified interval (0 to disable).
 		audio period;                          Enable the audio system (period in samples per tick at 24000hz).
