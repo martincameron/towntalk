@@ -819,19 +819,17 @@ void dispose_environment( struct environment *env ) {
 }
 
 static struct string_list *new_string_list( char *value ) {
-	struct string_list *str = malloc( sizeof( struct string_list )
-		+ sizeof( char ) * ( strlen( value ) + 1 ) );
+	struct string_list *str = malloc( sizeof( struct string_list ) + sizeof( char ) * strlen( value ) );
 	if( str ) {
-		str->value = ( char * ) &str[ 1 ];
-		strcpy( str->value, value );
 		str->next = NULL;
+		strcpy( &str->value, value );
 	}
 	return str;
 }
 
 static int get_string_list_index( struct string_list *list, char *value ) {
 	int idx = 0;
-	while( list && strcmp( list->value, value ) ) {
+	while( list && strcmp( &list->value, value ) ) {
 		idx++;
 		list = list->next;
 	}
@@ -1128,7 +1126,7 @@ static int add_constant( struct environment *env, struct global_variable *consta
 			env->constants = name;
 		}
 		env->constants_tail = name;
-		idx = hash_code( name->value, 0 );
+		idx = hash_code( &name->value, 0 );
 		constant->next = env->constants_index[ idx ];
 		env->constants_index[ idx ] = constant;
 	}
@@ -1145,7 +1143,7 @@ static int add_global( struct environment *env, struct global_variable *global )
 			env->globals = name;
 		}
 		env->globals_tail = name;
-		idx = hash_code( name->value, 0 );
+		idx = hash_code( &name->value, 0 );
 		global->next = env->globals_index[ idx ];
 		env->globals_index[ idx ] = global;
 	}
@@ -4326,7 +4324,7 @@ static struct element* parse_struct_declaration( struct element *elem, struct en
 					if( super ) {
 						field = super->fields;
 						while( field && message[ 0 ] == 0 ) {
-							if( add_structure_field( struc, field->value, env, child->line, message ) ) {
+							if( add_structure_field( struc, &field->value, env, child->line, message ) ) {
 								field = field->next;
 							}
 						}
@@ -4622,7 +4620,7 @@ int initialize_globals( struct environment *env, struct variable *exception ) {
 	struct global_variable *global;
 	struct string_list *name = env->constants;
 	while( name ) {
-		global = get_global_variable( env->constants_index[ hash_code( name->value, 0 ) ], name->value );
+		global = get_global_variable( env->constants_index[ hash_code( &name->value, 0 ) ], &name->value );
 		init = global->initializer;
 		if( init && init->evaluate( init, NULL, &global->value, exception ) == EXCEPTION ) {
 			return 0;
@@ -4631,7 +4629,7 @@ int initialize_globals( struct environment *env, struct variable *exception ) {
 	}
 	name = env->globals;
 	while( name ) {
-		global = get_global_variable( env->globals_index[ hash_code( name->value, 0 ) ], name->value );
+		global = get_global_variable( env->globals_index[ hash_code( &name->value, 0 ) ], &name->value );
 		init = global->initializer;
 		if( init && init->evaluate( init, NULL, &global->value, exception ) == EXCEPTION ) {
 			return 0;
