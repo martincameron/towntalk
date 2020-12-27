@@ -57,6 +57,16 @@ function setg( x ) {
 function testvoid() {
 }
 
+function fact( x ) {
+	return ?( <e( x 1 ) 1 *( x fact( -( x 1 ) ) ) );
+}
+
+function testprint() {
+	call assert_throws( "1", ${ () { print except( ${ 1 } ); } } );
+	call assert_throws( "1", ${ () { write except( ${ 1 } ); } } );
+	call assert_throws( "1", ${ () { error except( ${ 1 } ); } } );
+}
+
 function testvars( x ) {
 	var y = x, z = +( y 1 );
 	call assert_equals( x, y, ${-} );
@@ -88,7 +98,7 @@ function testarray() {
 	set [ a,0 ] = "a";
 	set [ a 1 ] = 1;
 	set [ a 2 ] = [ a 0 ];
-	dim [ a 2 ];
+	dim [ a,2 ];
 	call assert_throws( "Array index", ${ () { set [ a 2 ] = except( ${ 0 } ); } } );
 	dim [ a 1 ];
 	call assert_equals( "a", [ a 0 ], ${-} );
@@ -114,10 +124,6 @@ function testarray() {
 	set [ b 1 ] = c;
 	set [ c 0 ] = c;
 	set [ c 1 ] = b;
-}
-
-function fact( x ) {
-	return ?( <e( x 1 ) 1 *( x fact( -( x 1 ) ) ) );
 }
 
 function testswitch() {
@@ -219,7 +225,12 @@ function testtry() {
 }
 
 function testinfix() {
-	call assert( '( ONE = 1 ), ${-} );
+	call assert_equals( 3, '( ONE + ONE ONE ), ${-} );
+	call assert_throws( "Expected expression", ${ () { call '(); } } );
+	call assert_throws( "Expected operator", ${ () { call '( 1 ); } } );
+	call assert_throws( "Unhandled operator", ${ () { call '( 1 0 ); } } );
+	call assert_throws( "Wrong number of arguments", ${ () { call '( 1 $argc ); } } );
+	call assert_throws( "Wrong number of arguments", ${ () { call '( 1 + ); } } );
 }
 
 function testarith() {
@@ -391,6 +402,13 @@ function testload() {
 	call assert_throws( "Not a string", ${ () { call $load( 0 ); } } );
 }
 
+function testsave() {
+	call assert_throws( "1", ${ () { save except( ${ 1 } ), 0; } } );
+	call assert_throws( "1", ${ () { save "", except( ${ 1 } ); } } );
+	call assert_throws( "Not a string", ${ () { save 0 0; } } );
+	call assert_throws( "Not a string", ${ () { append "", 0; } } );
+}
+
 function testflen() {
 	call assert_equals( $flen( $src ), $len( $load( $src ) ), ${-} );
 	call assert_throws( "1", ${ () { call $flen( except( ${ 1 } ) ); } } );
@@ -418,6 +436,7 @@ function testparse() {
 	call assert_throws( "1", ${ () { call $parse( except( ${ 1 } ) ); } } );
 	call assert_throws( "Not a string", ${ () { call $parse( 0 ); } } );
 	call assert_throws( "Unclosed string", ${ () { call $parse( "\""); } } );
+	call assert_throws( "Unexpected closing bracket", ${ () { call $parse( "())"); } } );
 }
 
 function testunparse() {
@@ -476,6 +495,7 @@ function testunpack() {
 	call assert_equals( 2, $unpack( $pack( $array( ${ 1 2 } ) ) 1 ), ${-} );
 	call assert_throws( "1", ${ () { call $unpack( except( ${ 1 } ) 0 ); } } );
 	call assert_throws( "1", ${ () { call $unpack( "" except( ${ 1 } ) ); } } );
+	call assert_throws( "Not a string", ${ () { call $unpack( 0 0 ); } } );
 	call assert_throws( "String index", ${ () { call $unpack( "\0\0\0\0" -1 ); } } );
 	call assert_throws( "String index", ${ () { call $unpack( "\0\0\0" 0 ); } } );
 }
@@ -630,6 +650,7 @@ program test {
 	call hello();
 	call assert( =( testvoid() 0 ), ${-} );
 	call assert( =( testvars( ONE ) ONE ), ${-} );
+	call testprint();
 	call testarray();
 	call assert( =( fact( 3 ) 6 ), ${-} );
 	call testswitch();
@@ -651,6 +672,7 @@ program test {
 	call testtup();
 	call testsrc();
 	call testload();
+	call testsave();
 	call testflen();
 	call testargc();
 	call testargv();
