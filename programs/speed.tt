@@ -1,13 +1,22 @@
 
-program Speed {
-	var time, iterations, count;
-	let time = $time;
+program speed {
+	var time = $time, total = 0, iter = 1024;
+	var prog = ${ ( n ) { var a = 0; while <( a n ) { inc a; } return a; } };
+	
+	var worker1 = $worker( prog );
+	var worker2 = $worker( prog );
+	var worker3 = $worker( prog );
+	var worker4 = $worker( prog );
+	
 	while <( -( $time time ) 10 ) {
-		let count = 0;
-		while <( count 50000 ) {
-			inc count;
-		}
-		inc iterations;
+		call $execute( worker1 iter );
+		call $execute( worker2 iter );
+		call $execute( worker3 iter );
+		call $execute( worker4 iter );
+		let total = +( total $result( worker1 ) $result( worker2 ) $result( worker3 ) $result( worker4 ) );
+		let iter = <<( iter 1 );
 	}
-	print $str( /( *( 50000 iterations ) -( $time time ) ) " loops/sec." );
+	
+	let time = -( $time time );
+	print $cat( "Finished in " time " seconds. " /( total time ) " iterations per second." );
 }
