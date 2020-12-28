@@ -426,7 +426,7 @@ function testargv() {
 }
 
 function testtime() {
-	call assert_equals( 25, $len( $time ), ${-} );
+	call assert_equals( 24, $len( $time ), ${-} );
 }
 
 function testparse() {

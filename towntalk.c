@@ -2515,16 +2515,21 @@ static enum result evaluate_time_expression( struct expression *this, struct var
 	struct variable *result, struct variable *exception ) {
 	enum result ret = OKAY;
 	time_t seconds = time( NULL );
-	char *time_str = ctime( &seconds );
-	struct string *str = new_string_value( strlen( time_str ) );
-	if( str ) {
-		strcpy( str->string, time_str );
-		str->string[ str->length - 1 ] = 0;
+	struct string *str = NULL;
+	char *time_str;
+	if( this->function->env->worker == NULL ) {
+		time_str = ctime( &seconds );
+		str = new_string_value( strlen( time_str ) - 1 );
+		if( str ) {
+			memcpy( str->string, time_str, str->length );
+		} else {
+			ret = throw( exception, this, 0, OUT_OF_MEMORY );
+		}
+	}
+	if( ret ) {
 		dispose_variable( result );
 		result->integer_value = seconds;
 		result->string_value = str;
-	} else {
-		ret = throw( exception, this, 0, OUT_OF_MEMORY );
 	}
 	return ret;
 }
