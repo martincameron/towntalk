@@ -78,17 +78,15 @@ function testvars( x ) {
 	call assert_equals( x, g, ${-} );
 	call assert_equals( 1, TRUE, ${-} );
 	call assert_equals( 0, FALSE, ${-} );
+	call assert_throws( "Undeclared variable 'xxx'", ${ () { let xxx = 0; } } );
+	call assert_throws( "Expected '=' after 'let'", ${ () { let xxx; } } );
 	return g;
 }
 
 function testarray() {
 	var b, c, err, [ arr *( TWO TWO ) ];
 	call setg( 0 );	
-	call assert_throws( "1", ${ () { dim [ except( ${ 1 } ) setg( 2 ) ]; } } );
 	call assert_equals( 0, g, ${-} );
-	call assert_throws( "1", ${ () { dim [ a except( ${ 1 } ) ]; } } );
-	call assert_throws( "Not an array.", ${ () { dim[ 0 0 ]; } } );
-	call assert_throws( "Negative array size.", ${ () { dim[ a -1 ]; } } );
 	call assert_equals( 0, $len( a ), ${-} );
 	call assert_equals( 1, $len( a1 ), ${-} );
 	call assert_equals( 2, $len( a2 ), ${-} );
@@ -99,7 +97,6 @@ function testarray() {
 	set [ a 1 ] = 1;
 	set [ a 2 ] = [ a 0 ];
 	dim [ a,2 ];
-	call assert_throws( "Array index", ${ () { set [ a 2 ] = except( ${ 0 } ); } } );
 	dim [ a 1 ];
 	call assert_equals( "a", [ a 0 ], ${-} );
 	let a = $array( ${ 0, $str( "\"one" "\"" ), $tup( "\\two\\"2 ), "\063", ${ four(4) }, 84, 84 } );
@@ -115,7 +112,6 @@ function testarray() {
 	call assert_equals( "TT", $sub( a, 5, 2 ), ${-} );
 	call assert_equals( "[Array]", a, ${-} );
 	call assert_equals( 1, $len( $array( 1 ) ), ${-} );
-	call assert_throws( "Invalid array length.", ${ () { call $array( -1 ); } });
 	let b = $array( 2 );
 	let c = $array( ${ "a" 1 } );
 	call assert_equals( "a", [ c 0 ], ${-} );
@@ -124,6 +120,17 @@ function testarray() {
 	set [ b 1 ] = c;
 	set [ c 0 ] = c;
 	set [ c 1 ] = b;
+	call assert_throws( "1", ${ () { dim [ except( ${ 1 } ) setg( 2 ) ]; } } );
+	call assert_throws( "1", ${ () { dim [ a except( ${ 1 } ) ]; } } );
+	call assert_throws( "Not an array.", ${ () { dim[ 0 0 ]; } } );
+	call assert_throws( "Negative array size.", ${ () { dim[ a -1 ]; } } );
+	call assert_throws( "Invalid array length.", ${ () { call $array( -1 ); } });
+	call assert_throws( "Array index", ${ () { set [ $array( 1 ) 1 ] = except( ${ 0 } ); } } );
+	call assert_throws( "Array index", ${ () { call [ $array( 1 ) 1 ]; } } );
+	call assert_throws( "Not an array", ${ () { call [ 0 0 ]; } } );
+	call assert_throws( "Invalid index expression", ${ () { set [] = 0; } } );
+	call assert_throws( "Expected '[' after 'dim'", ${ () { dim 0 = 0; } } );
+	call assert_throws( "Unexpected 'x' after 'dim'", ${ () { dim [ 0 0 x ] = 0; } } );
 }
 
 function testswitch() {
@@ -167,6 +174,7 @@ function testif() {
 	if "" { let x = 2; }
 	call assert_equals( 2, x, ${-} );
 	call assert_throws( "1", ${ () { if except( ${ 1 } ) { call except( ${ 2 } ); } } } );
+	call assert_throws( "Expected '{'", ${ () { if 0 {} else } } );
 }
 
 function testwhile() {
@@ -220,8 +228,21 @@ function testtry() {
 	} catch e {
 	}
 	call assert_equals( 2, e, ${-} );
+	call assert_throws( "Undeclared local variable 'a'", ${ () { try {} catch a {} } } );
+	call assert_throws( "Expected 'catch'", ${ () { try {} } } );
 	try { try { return 0; } catch e {} } catch e {}
 	call assert( FALSE, ${-} );
+}
+
+function testoper() {
+	call assert_throws( "Unhandled expression", ${ () { call $$(); } } );
+	call assert_throws( "Expected '(' after '$str'", ${ () { call $str; } } );
+	call assert_throws( "Expected '(' after function", ${ () { call hello; } } );
+	call assert_throws( "Wrong number of arguments", ${ () { call $str(); } } );
+	call assert_throws( "Wrong number of arguments", ${ () { call hello( 1 ); } } );
+	call assert_throws( "Unexpected '(' after expression", ${ () { call 1(); } } );
+	call assert_throws( "Expected expression after ','", ${ () { call hello( 1, ); } } );
+	call assert_throws( "Expected expression after 'print'", ${ () { print; } } );
 }
 
 function testinfix() {
@@ -437,6 +458,7 @@ function testparse() {
 	call assert_throws( "Not a string", ${ () { call $parse( 0 ); } } );
 	call assert_throws( "Unclosed string", ${ () { call $parse( "\""); } } );
 	call assert_throws( "Unexpected closing bracket", ${ () { call $parse( "())"); } } );
+	call assert_throws( "Unclosed element", ${ () { call $parse( "(}" ); } } );
 }
 
 function testunparse() {
@@ -507,6 +529,7 @@ function teststruct() {
 	call assert_equals( 4, struc.e, ${-} );
 	call assert_equals( 6, exten.g, ${-} );
 	call assert_equals( 7, $len( $new( exten ) ), ${-} );
+	call assert_throws( "Field 'struc.xxx' not declared", ${ () { call struc.xxx; } } );
 }
 
 function testfuncref() {
@@ -516,6 +539,7 @@ function testfuncref() {
 	call assert_equals( 1, g, ${-} );
 	call assert_throws( "Not a function reference.", ${ () { call :( $tup( "a" 1 ) ); } } );
 	call assert_throws( "Incorrect number of parameters", ${ () { call :( @setg 1 2 ); } } );
+	call assert_throws( "Function 'xxx' not defined", ${ () { call @xxx; } } );
 }
 
 function testeq() {
@@ -565,6 +589,8 @@ function testinc() {
 	inc int;
 	call assert_equals( 1, int, ${-} );
 	call assert_throws( "Not an integer.", ${ () { var int = ""; inc int; } } );
+	call assert_throws( "Undeclared local variable", ${ () { inc a; } } );
+	call assert_throws( "Expected name after 'inc'", ${ () { inc; } } );
 }
 
 function testdec() {
@@ -572,6 +598,7 @@ function testdec() {
 	dec int;
 	call assert_equals( -1, int, ${-} );
 	call assert_throws( "Not an integer.", ${ () { var int = ""; dec int; } } );
+	call assert_throws( "Undeclared local variable", ${ () { dec a; } } );
 }
 
 function testelem() {
@@ -595,6 +622,7 @@ function testelem() {
 	call assert_throws( "3", ${ () { call $elem( ${-}, 0, except( ${ 3 } ) ); } } );
 	call assert_throws( "Not an element.", ${ () { call $elem( ${-}, 0, 3 ); } } );
 	call assert_throws( "Parent elements must", ${ () { call $elem( ${-}, ${ 2 }, 0 ); } } );
+	call assert_throws( "Expected '{' after '$'", ${ () { call $; } } );
 }
 
 function testvalues() {
@@ -657,6 +685,7 @@ program test {
 	call testif();
 	call testwhile();
 	call testtry();
+	call testoper();
 	call testinfix();
 	call testarith();
 	call testlogic();

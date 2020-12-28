@@ -3646,7 +3646,7 @@ static struct element* validate_syntax( char *syntax, struct element *elem,
 					validate_syntax( "xx0", elem->child, key, env, message );
 					elem = elem->next;
 				} else {
-					sprintf( message, "Expected '[' after '%.64s' on line %d.", key->str.string, line );
+					sprintf( message, "Invalid index expression after '%.64s' on line %d.", key->str.string, line );
 				}
 			} else {
 				sprintf( message, "Expected '[' after '%.64s' on line %d.", key->str.string, line );
