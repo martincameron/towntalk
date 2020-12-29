@@ -260,10 +260,10 @@ static char* cat_string( char *left, int llen, char *right, int rlen ) {
 	char *str = malloc( sizeof( char ) * ( llen + rlen + 1 ) );
 	if( str ) {
 		if( left ) {
-			memcpy( str, left, llen );
+			memcpy( str, left, sizeof( char ) * llen );
 		}
 		if( right ) {
-			memcpy( &str[ llen ], right, rlen );
+			memcpy( &str[ llen ], right, sizeof( char ) * rlen );
 		}
 		str[ llen + rlen ] = 0;
 	}
@@ -308,7 +308,7 @@ static int parse_string( char *input, int idx, char *output, int line, char *mes
 		}
 		if( chr == '"' ) {
 			if( output ) {
-				memcpy( output, &input[ offset ], idx - offset );
+				memcpy( output, &input[ offset ], sizeof( char ) * ( idx - offset ) );
 			}
 		} else {
 			sprintf( message, "Unclosed string on line %d.", line );
@@ -379,7 +379,7 @@ static struct element* copy_element( struct element *source ) {
 			if( head == NULL ) {
 				head = elem;
 			}
-			memcpy( elem->str.string, source->str.string, elem->str.length );
+			memcpy( elem->str.string, source->str.string, sizeof( char ) * elem->str.length );
 			if( source->child ) {
 				elem->child = copy_element( source->child );
 				if( elem->child ) {
@@ -418,7 +418,7 @@ static int parse_child_element( char *buffer, int idx, struct element *parent, c
 				}
 				if( elem ) {
 					elem->line = line;
-					memcpy( elem->str.string, &buffer[ offset ], length );
+					memcpy( elem->str.string, &buffer[ offset ], sizeof( char ) * length );
 					/*printf("%d %d %c :%s\n",offset,length,chr,elem->str.string);*/
 				} else {
 					strcpy( message, OUT_OF_MEMORY );
@@ -524,11 +524,11 @@ long load_file( char *file_name, char *buffer, char *message ) {
 	FILE *input_file = fopen( file_name, "rb" );
 	if( input_file != NULL ) {
 		if( fseek( input_file, 0L, SEEK_END ) == 0 ) {
-			file_length = ftell( input_file );
+			file_length = ftell( input_file ) / sizeof( char );
 			if( file_length >= 0 && buffer ) {
 				if( fseek( input_file, 0L, SEEK_SET ) == 0 ) {
-					bytes_read = fread( buffer, 1, file_length, input_file ); 
-					if( bytes_read != file_length ) {
+					bytes_read = fread( buffer, sizeof( char ), file_length, input_file ); 
+					if( bytes_read != file_length * sizeof( char ) ) {
 						file_length = -1;
 					}
 				} else {
@@ -549,7 +549,7 @@ static int save_file( char *file_name, char *buffer, int length, int append, cha
 	int count = -1;
 	FILE *output_file = fopen( file_name, append ? "ab" : "wb" );
 	if( output_file != NULL ) {
-		count = fwrite( buffer, 1, length, output_file );
+		count = fwrite( buffer, sizeof( char ), length, output_file );
 		fclose( output_file );
 	}
 	if( count < length ) {
@@ -922,7 +922,7 @@ static int write_element( struct element *elem, char *output ) {
 				length += write_element( elem->child, &output[ length ] );
 				output[ length++ ] = elem->str.string[ 1 ];
 			} else {
-				memcpy( &output[ length ], elem->str.string, elem->str.length );
+				memcpy( &output[ length ], elem->str.string, sizeof( char ) * elem->str.length );
 				length += elem->str.length;
 				output[ length++ ] = '\n';
 			}
@@ -2104,10 +2104,10 @@ static enum result evaluate_str_expression( struct expression *this, struct vari
 				new = new_string_value( str_len + len );
 				if( new ) {
 					if( str ) {
-						memcpy( new->string, str->string, str_len );
+						memcpy( new->string, str->string, sizeof( char ) * str_len );
 						free( str );
 					}
-					memcpy( &new->string[ str_len ], val, len );
+					memcpy( &new->string[ str_len ], val, sizeof( char ) * len );
 					str_len += len;
 					str = new;
 				} else {
@@ -2503,7 +2503,7 @@ static enum result evaluate_argv_expression( struct expression *this, struct var
 			val = this->function->env->argv[ idx.integer_value ];
 			str = new_string_value( strlen( val ) );
 			if( str ) {
-				memcpy( str->string, val, str->length );
+				memcpy( str->string, val, sizeof( char ) * str->length );
 				dispose_variable( result );
 				result->integer_value = 0;
 				result->string_value = str;
@@ -2528,7 +2528,7 @@ static enum result evaluate_time_expression( struct expression *this, struct var
 		time_str = ctime( &seconds );
 		str = new_string_value( strlen( time_str ) - 1 );
 		if( str ) {
-			memcpy( str->string, time_str, str->length );
+			memcpy( str->string, time_str, sizeof( char ) * str->length );
 		} else {
 			ret = throw( exception, this, 0, OUT_OF_MEMORY );
 		}
@@ -2610,7 +2610,8 @@ static enum result evaluate_elem_expression( struct expression *this, struct var
 									value = new_element( elem.string_value->length );
 									if( value ) {
 										value->line = ( ( struct element * ) elem.string_value )->line;
-										memcpy( value->str.string, elem.string_value->string, elem.string_value->length );
+										memcpy( value->str.string, elem.string_value->string,
+											sizeof( char ) * elem.string_value->length );
 									} else {
 										ret = throw( exception, this, 0, OUT_OF_MEMORY );
 									}
@@ -2934,7 +2935,7 @@ static enum result evaluate_chop_expression( struct expression *this, struct var
 			if( var.string_value && sep.string_value ) {
 				str = new_string_value( chop( var.string_value->string, sep.string_value->string ) );
 				if( str ) {
-					memcpy( str->string, var.string_value->string, str->length );
+					memcpy( str->string, var.string_value->string, sizeof( char ) * str->length );
 					dispose_variable( result );
 					result->integer_value = 0;
 					result->string_value = str;
@@ -4152,7 +4153,7 @@ static enum result evaluate_status_expression( struct expression *this, struct v
 					if( work->status.string_value ) {
 						str = new_string_value( work->status.string_value->length );
 						if( str ) {
-							memcpy( str->string, work->status.string_value->string, str->length );
+							memcpy( str->string, work->status.string_value->string, sizeof( char ) * str->length );
 						} else {
 							ret = throw( exception, this, 0, OUT_OF_MEMORY );
 						}
@@ -4274,7 +4275,7 @@ static struct element* parse_include( struct element *elem, struct environment *
 	int name_len = unquote_string( next->str.string, NULL );
 	char *path = malloc( path_len + name_len + 1 );
 	if( path ) {
-		memcpy( path, func->file.string, path_len );
+		memcpy( path, func->file.string, sizeof( char ) * path_len );
 		unquote_string( next->str.string, &path[ path_len ] );
 		path[ path_len + name_len ] = 0;
 		if( parse_tt_file( path, env, message ) ) {

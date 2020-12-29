@@ -128,6 +128,7 @@ function testarray() {
 	call assert_throws( "Array index", ${ () { set [ $array( 1 ) 1 ] = except( ${ 0 } ); } } );
 	call assert_throws( "Array index", ${ () { call [ $array( 1 ) 1 ]; } } );
 	call assert_throws( "Not an array", ${ () { call [ 0 0 ]; } } );
+	call assert_throws( "Invalid index expression", ${ () { call []; } } );
 	call assert_throws( "Invalid index expression", ${ () { set [] = 0; } } );
 	call assert_throws( "Expected '[' after 'dim'", ${ () { dim 0 = 0; } } );
 	call assert_throws( "Unexpected 'x' after 'dim'", ${ () { dim [ 0 0 x ] = 0; } } );

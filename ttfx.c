@@ -270,7 +270,7 @@ static int datfile_extract( char *datfile, int datfile_length, int bank, char *b
 		if( offset > 0 && end >= offset && end <= datfile_length ) {
 			length = end - offset;
 			if( buffer ) {
-				memcpy( buffer, &datfile[ offset ], length );
+				memcpy( buffer, &datfile[ offset ], sizeof( char ) * length );
 			}
 		}
 	}
@@ -1423,7 +1423,7 @@ static enum result evaluate_path_expression( struct expression *this, struct var
 			if( path ) {
 				str = new_string_value( strlen( path ) );
 				if( str ) {
-					memcpy( str->string, path, str->length );
+					memcpy( str->string, path, sizeof( char ) * str->length );
 					dispose_variable( result );
 					result->integer_value = 0;
 					result->string_value = str;
