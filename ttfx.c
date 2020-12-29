@@ -1139,7 +1139,7 @@ static enum result handle_event_expression( struct expression *this, SDL_Event *
 	struct fxenvironment *fxenv = ( struct fxenvironment * ) this->function->env;
 	enum result ret = OKAY;
 	if( event->type == SDL_QUIT ) {
-		ret = throw_exit( &fxenv->env, exception, 0 );
+		ret = throw_exit( &fxenv->env, exception, 0, NULL );
 	} else {
 		if( event->type == fxenv->seq_event_type ) {
 			fxenv->seq_msg = event->user.code;
@@ -1785,7 +1785,11 @@ int main( int argc, char **argv ) {
 						initialize_call_expr( &expr, env->entry_point );
 						if( initialize_globals( env, &except ) && expr.evaluate( &expr, NULL, &result, &except ) ) {
 							exit_code = EXIT_SUCCESS;
-						} else if( except.string_value && except.string_value->string == NULL ) {
+						} else if( except.string_value && except.string_value->type == EXIT ) {
+							if( except.string_value->string ) {
+								fputs( except.string_value->string, stderr );
+								fputc( '\n', stderr );
+							}
 							exit_code = except.integer_value;
 						} else {
 							fprintf( stderr, "Unhandled exception %d.\n", except.integer_value );
@@ -1811,6 +1815,7 @@ int main( int argc, char **argv ) {
 		dispose_fxenvironment( ( struct fxenvironment * ) env );
 	} else {
 		fputs( message, stderr );
+		fputc( '\n', stderr );
 	}
 	return exit_code;
 }

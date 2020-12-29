@@ -218,8 +218,8 @@ void assign_variable( struct variable *src, struct variable *dest );
 /* Assign the specified error code and message to the exception variable and return EXCEPTION. */
 enum result throw( struct variable *exception, struct expression *source, int integer, const char *string );
 
-/* Assign an uncatchable exception variable with the specified exit code and return EXCEPTION. */
-enum result throw_exit( struct environment *env, struct variable *exception, int exit_code );
+/* Assign an uncatchable exception variable with the specified exit code and message and return EXCEPTION. */
+enum result throw_exit( struct environment *env, struct variable *exception, int exit_code, const char *message );
 
 /* Write the specified bytes as a string literal to output (if not null).
    The encoded length is returned. */

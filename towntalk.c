@@ -839,32 +839,35 @@ static int get_string_list_index( struct string_list *list, char *value ) {
 	return idx;
 }
 
+/* Assign an uncatchable exception variable with the specified exit code and message and return EXCEPTION. */
+enum result throw_exit( struct environment *env, struct variable *exception, int exit_code, const char *message ) {
+	env->exit.reference_count = 2;
+	env->exit.type = EXIT;
+	env->exit.string = ( char * ) message;
+	dispose_variable( exception );
+	exception->integer_value = exit_code;
+	exception->string_value = &env->exit;
+	return EXCEPTION;
+}
+
 /* Assign the specified error code and message to the exception variable and return EXCEPTION. */
 enum result throw( struct variable *exception, struct expression *source, int integer, const char *string ) {
 	struct string *str = NULL;
+	struct function *func = source->function;
 	if( string ) {
 		str = new_string_value( strlen( string ) + 64 );
 		if( str ) {
-			if( sprintf( str->string, "%s (on line %d of '%.32s')",
-			string, source->line, source->function->file.string ) < 0 ) {
+			if( sprintf( str->string, "%s (on line %d of '%.32s')", string, source->line, func->file.string ) < 0 ) {
 				strcpy( str->string, string );
 			}
 			str->length = strlen( str->string );
+		} else {
+			return throw_exit( func->env, exception, 1, OUT_OF_MEMORY );
 		}
 	}
 	dispose_variable( exception );
 	exception->integer_value = integer;
 	exception->string_value = str;
-	return EXCEPTION;
-}
-
-/* Assign an uncatchable exception variable with the specified exit code. */
-enum result throw_exit( struct environment *env, struct variable *exception, int exit_code ) {
-	env->exit.reference_count = 2;
-	env->exit.type = EXIT;
-	dispose_variable( exception );
-	exception->integer_value = exit_code;
-	exception->string_value = &env->exit;
 	return EXCEPTION;
 }
 
@@ -1243,9 +1246,13 @@ static enum result execute_throw_statement( struct statement *this, struct varia
 static enum result execute_exit_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct variable exit_code = { 0, NULL };
+	char *message = NULL;
 	enum result ret = this->source->evaluate( this->source, variables, &exit_code, exception );
 	if( ret ) {
-		ret = throw_exit( this->source->function->env, exception, exit_code.integer_value );
+		if( this->source->function->env->worker ) {
+			message = "Worker exited.";
+		}
+		ret = throw_exit( this->source->function->env, exception, exit_code.integer_value, message );
 		dispose_variable( &exit_code );
 	}
 	return ret;
@@ -1349,7 +1356,7 @@ static enum result execute_while_statement( struct statement *this, struct varia
 			}
 			if( env->interrupted ) {
 				if( env->worker ) {
-					return throw_exit( this->source->function->env, exception, 0 );
+					return throw_exit( this->source->function->env, exception, 0, NULL );
 				} else {
 					return throw( exception, this->source, 0, "Interrupted.");
 				}
@@ -4160,7 +4167,7 @@ static enum result evaluate_status_expression( struct expression *this, struct v
 					ret = throw( exception, this, 0, "Unable to lock worker." );
 				}
 			} else if( work->exception.string_value && work->exception.string_value->type > ELEMENT ) {
-				ret = throw( exception, this, work->exception.integer_value, "Worker exited." );
+				ret = throw( exception, this, work->exception.integer_value, work->exception.string_value->string );
 			} else {
 				assign_variable( &work->exception, exception );
 				ret = EXCEPTION;
@@ -4208,7 +4215,7 @@ static enum result evaluate_result_expression( struct expression *this, struct v
 					assign_variable( &work->result, result );
 				}
 			} else if( work->exception.string_value && work->exception.string_value->type > ELEMENT ) {
-				ret = throw( exception, this, work->exception.integer_value, "Worker exited." );
+				ret = throw( exception, this, work->exception.integer_value, work->exception.string_value->string );
 			} else {
 				assign_variable( &work->exception, exception );
 				ret = EXCEPTION;

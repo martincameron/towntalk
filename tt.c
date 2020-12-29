@@ -42,7 +42,11 @@ int main( int argc, char **argv ) {
 						initialize_call_expr( &expr, env->entry_point );
 						if( initialize_globals( env, &except ) && expr.evaluate( &expr, NULL, &result, &except ) ) {
 							exit_code = EXIT_SUCCESS;
-						} else if( except.string_value && except.string_value->string == NULL ) {
+						} else if( except.string_value && except.string_value->type == EXIT ) {
+							if( except.string_value->string ) {
+								fputs( except.string_value->string, stderr );
+								fputc( '\n', stderr );
+							}
 							exit_code = except.integer_value;
 						} else {
 							fprintf( stderr, "Unhandled exception %d.\n", except.integer_value );
@@ -64,7 +68,8 @@ int main( int argc, char **argv ) {
 		}
 		dispose_environment( env );
 	} else {
-		fputs( "Out of memory.\n", stderr );
+		fputs( OUT_OF_MEMORY, stderr );
+		fputc( '\n', stderr );
 	}
 	return exit_code;
 }
