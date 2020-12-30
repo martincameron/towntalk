@@ -618,9 +618,9 @@ static int compare_variables( struct variable *var1, struct variable *var2 ) {
 			str1 = var1->string_value;
 			str2 = var2->string_value;
 			if( str1->length > str2->length ) {
-				result = memcmp( str1->string, str2->string, str2->length );
+				result = memcmp( str1->string, str2->string, sizeof( char ) * str2->length );
 			} else {
-				result = memcmp( str1->string, str2->string, str1->length );
+				result = memcmp( str1->string, str2->string, sizeof( char ) * str1->length );
 			}
 			if( result == 0 ) {
 				result = str1->length - str2->length;
@@ -1433,7 +1433,7 @@ static enum result execute_array_assignment( struct statement *this, struct vari
 static int parse_constant_list( struct element *elem, struct global_variable *prev, char *message ) {
 	int count = 0;
 	while( elem && message[ 0 ] == 0 ) {
-		prev->next = new_global_variable( "#Const#", message );
+		prev->next = new_global_variable( NULL, message );
 		if( prev->next ) {
 			count++;
 			prev = prev->next;
@@ -1820,7 +1820,7 @@ static int add_local_variable( struct element *elem, struct environment *env,
 			}
 		} else {
 			dispose_string_list( param );
-			sprintf( message, "Local variable '%.8s' already defined on line %d.", name, elem->line );
+			sprintf( message, "Local variable '%.64s' already defined on line %d.", name, elem->line );
 		}
 	} else {
 		strcpy( message, OUT_OF_MEMORY );

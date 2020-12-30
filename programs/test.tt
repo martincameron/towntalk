@@ -128,10 +128,22 @@ function testarray() {
 	call assert_throws( "Array index", ${ () { set [ $array( 1 ) 1 ] = except( ${ 0 } ); } } );
 	call assert_throws( "Array index", ${ () { call [ $array( 1 ) 1 ]; } } );
 	call assert_throws( "Not an array", ${ () { call [ 0 0 ]; } } );
+	call assert_throws( "Not an array", ${ () { set [ 0 0 ] = 0; } } );
 	call assert_throws( "Invalid index expression", ${ () { call []; } } );
 	call assert_throws( "Invalid index expression", ${ () { set [] = 0; } } );
 	call assert_throws( "Expected '[' after 'dim'", ${ () { dim 0 = 0; } } );
 	call assert_throws( "Unexpected 'x' after 'dim'", ${ () { dim [ 0 0 x ] = 0; } } );
+	call assert_throws( "Expected '{' after '$'", ${ () { call $array( ${ $ } ); } } );
+	call assert_throws( "Expected '(' after '$str'", ${ () { call $array( ${ $str } ); } } );
+	call assert_throws( "Invalid string literal", ${ () { call $array( ${ $str() } ); } } );
+	call assert_throws( "Invalid string literal", ${ () { call $array( ${ $str( "" a ) } ); } } );
+	call assert_throws( "Expected '(' after '$tup'", ${ () { call $array( ${ $tup } ); } } );
+	call assert_throws( "Invalid tuple string", ${ () { call $array( ${ $tup() } ); } } );
+	call assert_throws( "Invalid tuple constant", ${ () { call $array( ${ $tup( "", ) } ); } } );
+	call assert_throws( "Invalid tuple integer", ${ () { call $array( ${ $tup( "", a ) } ); } } );
+	call assert_throws( "Invalid integer constant", ${ () { call $array( ${ a } ); } } );
+	call assert_throws( "Local variable 'x' already", ${ ( x ) { var [ x 0 ]; } } );
+	call assert_throws( "Local variable 'x' already", ${ ( x ) { var x = $array( 0 ); } } );
 }
 
 function testswitch() {
@@ -214,6 +226,7 @@ function testwhile() {
 	call assert_equals( 1, bbb, ${-} );
 	call assert_throws( "1", ${ () { while except( ${ 1 } ) { call assert( FALSE, ${-} ); } } } );
 	call assert_throws( "1", ${ () { while TRUE { call except( ${ 1 } ); } } } );
+	call assert_throws( "Unhandled 'break'", ${ () { break; } } );
 }
 
 function testtry() {
@@ -221,6 +234,7 @@ function testtry() {
 	try {} catch e { call assert( FALSE, ${-} ); }
 	try {
 		try {
+			call 0;
 			throw 1;
 		} catch e {
 			call assert_equals( 1, e, ${-} );
@@ -452,7 +466,7 @@ function testtime() {
 }
 
 function testparse() {
-	var elem = $parse( "rem { Test }" );
+	var elem = $parse( "#test\12 rem { Test }" );
 	call assert_equals( "rem", elem, ${-} );
 	call assert_equals( "Test", $child( $next( elem ) ), ${-} );
 	call assert_throws( "1", ${ () { call $parse( except( ${ 1 } ) ); } } );
@@ -648,6 +662,7 @@ function testfunction() {
 	call assert_throws( "Expected '(' after '$function'", ${ () { call $function( ${ x } ); } } );
 	call assert_throws( "Invalid name '1'", ${ () { call $function( ${ ( 1 ) {} } ); } } );
 	call assert_throws( "Parameter 'x' already", ${ () { call $function( ${ ( x x ) {} } ); } } );
+	call assert_throws( "Local variable 'x' already", ${ () { call $function( ${ ( x ) { var x; } } ); } } );
 	call assert_throws( "Unrecognized keyword 'x'", ${ () { call $function( ${ () { x } } ); } } );
 }
 
@@ -669,7 +684,7 @@ function testworker() {
 	call assert_throws( "Values of this type", ${ () { call $result( $execute( $worker( ${ () { return $array( 0 ); } } ) ) ); } } );
 	call assert_throws( "Operation", ${ () { call $result( $execute( $worker( ${ () { call $worker( 0 ); } } ) ) ); } } );
 	call assert_throws( "Not a worker", ${ () { call $status( 0 ); } } );
-	call assert_throws( "Worker exited", ${ () { var err, worker = $execute( $worker( ${ () { exit 0; } } ) );
+	call assert_throws( "Worker exited", ${ () { var err, worker = $execute( $worker( ${ () { var e; try { exit 0; } catch e {} } } ) );
 		try { call $result( worker ); } catch err { call $status( worker ); } } } );
 	call assert_throws( "x", ${ () { var err, worker = $execute( $worker( ${ () { throw "x"; } } ) );
 		try { call $result( worker ); } catch err { call $status( worker ); } } } );
