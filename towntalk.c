@@ -2802,7 +2802,7 @@ static enum result evaluate_hex_expression( struct expression *this, struct vari
 		str = new_string_value( sizeof( int ) * 2 + 4 );
 		if( str ) {
 			if( val.integer_value < 0 ) {
-				len = sprintf( str->string, "-0x%08x", ( ~val.integer_value ) + 1 );
+				len = sprintf( str->string, "-0x%08x", -val.integer_value );
 			} else {
 				len = sprintf( str->string, " 0x%08x", val.integer_value );
 			}
