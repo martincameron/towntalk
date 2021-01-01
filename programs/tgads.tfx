@@ -6,7 +6,7 @@ array tg_x, tg_y, tg_w, tg_h, tg_min;
 array tg_anchor, tg_mode, tg_link, tg_action;
 array tg_a, tg_b, tg_c;
 
-global tg_selx, tg_sely, tg_focus, tg_time, tg_draw_background;
+global tg_update, tg_selx, tg_sely, tg_focus, tg_time, tg_draw_background;
 global fs_win, fs_dir, fs_slider, fs_list, fs_file, fs_cancel, fs_okay, fs_path;
 global req_win, req_but1, req_but2;
 
@@ -465,6 +465,13 @@ function tg_draw( n ) {
 	}
 }
 
+function tg_redraw() {
+	if tg_update {
+		call tg_draw( 0 );
+		let tg_update = FALSE;
+	}
+}
+
 function tg_listbox_scroll( listbox, slider ) {
 	# Adjust slider to listbox size (if changed).
 	set [ tg_b slider ] = /( -( [ tg_h listbox ] 12 ) 16 );
@@ -540,7 +547,7 @@ function tg_wintofront( n ) {
 			}
 			inc idx;
 		}
-		call tg_draw( [ tg_zorder end ] );
+		let tg_update = TRUE;
 	}
 	return n;
 }
@@ -609,7 +616,7 @@ function tg_scan( event ) {
 						set [ tg_y n ] = -( +( [ tg_y n ] y ) tg_sely );
 						let tg_selx = x;
 						let tg_sely = y;
-						call tg_draw( 0 );
+						let tg_update = TRUE;
 					}
 					case 2 {
 						if =( tg_find( $xmouse, $ymouse, 0 ) n ) {
@@ -617,7 +624,7 @@ function tg_scan( event ) {
 						} else {
 							set [ tg_b n ] = 0;
 						}
-						call tg_draw( n );
+						let tg_update = TRUE;
 					}
 					case 3 {
 						let s = tg_slider_size( n, [ tg_h n ] );
@@ -639,11 +646,7 @@ function tg_scan( event ) {
 							}
 							let tg_sely = +( tg_sely -( tg_slider_offset( n, [ tg_h n ] ) o ) );
 							let selected = n;
-							if >( [ tg_link n ] 0 ) {
-								call tg_draw( [ tg_link n ] );
-							} else {
-								call tg_draw( n );
-							}
+							let tg_update = TRUE;
 						}
 					}
 					case 5 {
@@ -657,7 +660,7 @@ function tg_scan( event ) {
 						let tg_selx = +( tg_getx( n ) o );
 						let tg_sely = +( tg_gety( n ) p );
 						let selected = w;
-						call tg_draw( 0 );
+						let tg_update = TRUE;
 					}
 					case 7 {
 						let s = tg_slider_size( n, [ tg_w n ] );
@@ -679,7 +682,7 @@ function tg_scan( event ) {
 							}
 							let tg_selx = +( tg_selx -( tg_slider_offset( n, [ tg_w n ] ) o ) );
 							let selected = n;
-							call tg_draw( n );
+							let tg_update = TRUE;
 						}
 					}
 				}
@@ -694,14 +697,14 @@ function tg_scan( event ) {
 				if tg_focus {
 					let t = tg_focus;
 					let tg_focus = 0;
-					call tg_draw( t );
+					let tg_update = TRUE;
 				}
 				let n = tg_find( tg_selx, tg_sely, 0 );
 				let w = tg_wintofront( n );
 				switch [ tg_type n ] {
 					case 2 {
 						set [ tg_b n ] = 1;
-						call tg_draw( n );
+						let tg_update = TRUE;
 					}
 					case 3 {
 						let s = tg_slider_size( n, [ tg_h n ] );
@@ -715,11 +718,7 @@ function tg_scan( event ) {
 							}
 							set [ tg_a n ] = t;
 							let selected = n;
-							if >( [ tg_link n ] 0 ) {
-								call tg_draw( [ tg_link n ] );
-							} else {
-								call tg_draw( n );
-							}
+							let tg_update = TRUE;
 						}
 						if >( tg_sely +( y s ) ) {
 							let t = +( [ tg_a n ] [ tg_b n ] );
@@ -728,11 +727,7 @@ function tg_scan( event ) {
 							}
 							set [ tg_a n ] = t;
 							let selected = n;
-							if >( [ tg_link n ] 0 ) {
-								call tg_draw( [ tg_link n ] );
-							} else {
-								call tg_draw( n );
-							}
+							let tg_update = TRUE;
 						}
 					}
 					case 4 {
@@ -754,7 +749,7 @@ function tg_scan( event ) {
 							let p = $len( t );
 						}
 						set [ tg_b n ] = p;
-						call tg_draw( n );
+						let tg_update = TRUE;
 					}
 					case 6 {
 						let s = +( [ tg_b n ] /( -( tg_sely +( tg_gety( n ) 6 ) ) 16 ) );
@@ -768,7 +763,7 @@ function tg_scan( event ) {
 							}
 							let tg_time = $millis;
 						}
-						call tg_draw( n );
+						let tg_update = TRUE;
 					}
 					case 7 {
 						let s = tg_slider_size( n, [ tg_w n ] );
@@ -782,7 +777,7 @@ function tg_scan( event ) {
 							}
 							set [ tg_a n ] = t;
 							let selected = n;
-							call tg_draw( n );
+							let tg_update = TRUE;
 						}
 						if >( tg_selx +( x s ) ) {
 							let t = +( [ tg_a n ] [ tg_b n ] );
@@ -791,7 +786,7 @@ function tg_scan( event ) {
 							}
 							set [ tg_a n ] = t;
 							let selected = n;
-							call tg_draw( n );
+							let tg_update = TRUE;
 						}
 					}
 				}
@@ -807,7 +802,7 @@ function tg_scan( event ) {
 				switch [ tg_type n ] {
 					case 2 {
 						set [ tg_b n ] = 0;
-						call tg_draw( n );
+						let tg_update = TRUE;
 						if =( tg_find( $xmouse, $ymouse, 0 ) n ) {
 							let selected = n;
 						}
@@ -822,7 +817,7 @@ function tg_scan( event ) {
 			if &&( =( [ tg_type n ] 6 ) >( [ tg_link n ] 0 ) ) {
 				let w = tg_wintofront( n );
 				set [ tg_a [ tg_link n ] ] = -( [ tg_a [ tg_link n ] ] $mousewheel );
-				call tg_draw( n );
+				let tg_update = TRUE;
 			}
 		}
 		case KEY_PRESSED_EVENT {
@@ -851,7 +846,7 @@ function tg_scan( event ) {
 					}
 					case KEY_RETURN {
 						let tg_focus = 0;
-						call tg_draw( n );
+						let tg_update = TRUE;
 						let n = [ tg_action n ];
 					}
 					case KEY_LEFT {
@@ -917,7 +912,7 @@ function tg_scan( event ) {
 					}
 				}
 				let selected = n;
-				call tg_draw( n );
+				let tg_update = TRUE;
 			}
 		}
 	}
@@ -1043,7 +1038,7 @@ function tg_file_selector( title ) {
 	call tg_set_action( fs_list, fs_okay );
 	call tg_set_action( fs_file, fs_okay );
 	call tg_wintofront( fs_win );
-	call tg_draw( 0 );
+	let tg_update = TRUE;
 }
 
 function fs_dispose() {
@@ -1055,13 +1050,13 @@ function fs_dispose() {
 	let fs_file = 0;
 	let fs_cancel = 0;
 	let fs_okay = 0;
-	call tg_draw( 0 );
+	let tg_update = TRUE;
 }
 
 function fs_file_selected() {
 	if >e( [ tg_c fs_list ] 0 ) {
 		set [ tg_c fs_list ] = -1;
-		call tg_draw( fs_list );
+		let tg_update = TRUE;
 	}
 }
 
@@ -1069,7 +1064,7 @@ function fs_dir_selected() {
 	call fs_file_selected();
 	if $len( [ tg_a fs_file ] ) {
 		set [ tg_a fs_file ] = "";
-		call tg_draw( fs_file );
+		let tg_update = TRUE;
 	}
 }
 
@@ -1081,7 +1076,7 @@ function fs_list_selected() {
 	} else {
 		set [ tg_a fs_file ] = "";
 	}
-	call tg_draw( fs_file );
+	let tg_update = TRUE;
 }
 
 function fs_okay_selected() {
@@ -1110,7 +1105,7 @@ function fs_okay_selected() {
 			set [ tg_a fs_file ] = $sub( err, 0, -( $len( err ) 2 ) );
 			set[ tg_a fs_dir ] = fs_path;
 		}
-		call tg_draw( fs_win );
+		let tg_update = TRUE;
 	} else {
 		let path = $str( [ tg_a fs_dir ] sep [ tg_a fs_file ] );
 		call fs_dispose();
@@ -1178,7 +1173,7 @@ function tg_request( title, message, left_button, right_button ) {
 		let req_but2 = 0;
 	}
 	call tg_wintofront( req_win );
-	call tg_draw( 0 );
+	let tg_update = TRUE;
 }
 
 function req_dispose() {
@@ -1186,7 +1181,7 @@ function req_dispose() {
 	let req_win = 0;
 	let req_but1 = 0;
 	let req_but2 = 0;
-	call tg_draw( 0 );
+	let tg_update = TRUE;
 }
 
 program tgads {
@@ -1244,7 +1239,6 @@ program tgads {
 					let file = fs_okay_selected();
 					if file {
 						set[ tg_a 5 ] = file;
-						call tg_draw( 5 );
 					}
 				}
 				case req_but1 {
@@ -1256,5 +1250,6 @@ program tgads {
 			}
 			let event = $pollevent;
 		}
+		call tg_redraw();
 	}
 }

@@ -191,13 +191,13 @@ program raster {
 					}
 					case 5 {
 						call fill_array( foreground, -1 );
-						call tg_draw( 0 );
+						let tg_update = TRUE;
 					}
 					case 6 {
 						call fore_to_back();
 						call dither( background, foreground );
 						set [ tg_a 21 ] = 0;
-						call tg_draw( 0 );
+						let tg_update = TRUE;
 					}
 					case 7 {
 						call tg_request( "About", ${ "Copper-designer for AMOS & TTFX!" "(c)1994-2019 mumart@gmail.com" }, "  Okay!  ", " Wicked! " );
@@ -209,35 +209,35 @@ program raster {
 					case 11 {
 						let c1 = +( +( *( [ tg_a 11 ] 65536 ) *( [ tg_a 12 ] 256 ) ) [ tg_a 13 ] );
 						set [ tg_c 10 ] = c1;
-						call tg_draw( 1 );
+						let tg_update = TRUE;
 					}
 					case 12 {
 						let c1 = +( +( *( [ tg_a 11 ] 65536 ) *( [ tg_a 12 ] 256 ) ) [ tg_a 13 ] );
 						set [ tg_c 10 ] = c1;
-						call tg_draw( 1 );
+						let tg_update = TRUE;
 					}
 					case 13 {
 						let c1 = +( +( *( [ tg_a 11 ] 65536 ) *( [ tg_a 12 ] 256 ) ) [ tg_a 13 ] );
 						set [ tg_c 10 ] = c1;
-						call tg_draw( 1 );
+						let tg_update = TRUE;
 					}
 					case 16 {
 						let c2 = +( +( *( [ tg_a 16 ] 65536 ) *( [ tg_a 17 ] 256 ) ) [ tg_a 18 ] );
 						set [ tg_c 15 ] = c2;
-						call tg_draw( 1 );
+						let tg_update = TRUE;
 					}
 					case 17 {
 						let c2 = +( +( *( [ tg_a 16 ] 65536 ) *( [ tg_a 17 ] 256 ) ) [ tg_a 18 ] );
 						set [ tg_c 15 ] = c2;
-						call tg_draw( 1 );
+						let tg_update = TRUE;
 					}
 					case 18 {
 						let c2 = +( +( *( [ tg_a 16 ] 65536 ) *( [ tg_a 17 ] 256 ) ) [ tg_a 18 ] );
 						set [ tg_c 15 ] = c2;
-						call tg_draw( 1 );
+						let tg_update = TRUE;
 					}
 					case 21 {
-						call tg_draw( 0 );
+						let tg_update = TRUE;
 					}
 					case req_but1 {
 						call req_dispose();
@@ -270,7 +270,7 @@ program raster {
 								if file {
 									call parse_rws( $load( file ), background );
 									call fill_array( foreground, -1 );
-									call tg_draw( 0 );
+									let tg_update = TRUE;
 								}
 							}
 						} catch err {
@@ -293,7 +293,7 @@ program raster {
 							} else {
 								call gradient( c2, c1, foreground, /( y 2 ), /( -( tg_sely y ) 2 ) );
 							}
-							call tg_draw(0);
+							let tg_update = TRUE;
 						}
 					} else {
 						let paint = FALSE;
@@ -302,5 +302,6 @@ program raster {
 			}
 			let event = $pollevent;
 		}
+		call tg_redraw();
 	}
 }
