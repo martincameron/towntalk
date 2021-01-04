@@ -15,8 +15,8 @@ enum reference_type {
 
 /* String list. */
 struct string_list {
+	char *value;
 	struct string_list *next;
-	char value;
 };
 
 /* Reference-counted string. */
