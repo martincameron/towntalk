@@ -6,14 +6,14 @@
 
 #include "towntalk.h"
 
-static struct environment *env;
+static struct environment env;
 
 static void interrupt_handler( int signum ) {
 	signal( signum, interrupt_handler );
-	env->interrupted = 1;
-	if( env->worker ) {
+	env.interrupted = 1;
+	if( env.worker ) {
 		/* Terminate current worker. */
-		env->worker->env->interrupted = 1;
+		env.worker->env.interrupted = 1;
 	}
 }
 
@@ -29,47 +29,39 @@ int main( int argc, char **argv ) {
 	}
 	file_name = argv[ 1 ];
 	/* Parse program file. */
-	env = calloc( 1, sizeof( struct environment ) );
-	if( env ) {
-		env->argc = argc - 1;
-		env->argv = &argv[ 1 ];
-		if( initialize_environment( env, message ) ) {
-			if( parse_tt_file( file_name, env, message ) ) {
-				if( env->entry_point ) {
-					/* Install signal handler. */
-					if( signal( SIGINT, interrupt_handler ) != SIG_ERR ) {
-						/* Evaluate the last entry-point function. */
-						initialize_call_expr( &expr, env->entry_point );
-						if( initialize_globals( env, &except ) && expr.evaluate( &expr, NULL, &result, &except ) ) {
-							exit_code = EXIT_SUCCESS;
-						} else if( except.string_value && except.string_value->type == EXIT ) {
-							if( except.string_value->string ) {
-								fputs( except.string_value->string, stderr );
-								fputc( '\n', stderr );
-							}
-							exit_code = except.integer_value;
-						} else {
-							fprintf( stderr, "Unhandled exception %d.\n", except.integer_value );
-							if( except.string_value && except.string_value->string ) {
-								fprintf( stderr, "%s\n", except.string_value->string );
-							}
-						}
-						dispose_variable( &result );
-						dispose_variable( &except );
-					} else {
-						fprintf( stderr, "Unable to install signal handler: %s\n", strerror( errno ) );
+	if( initialize_environment( &env, message ) && parse_tt_file( file_name, &env, message ) ) {
+		env.argc = argc - 1;
+		env.argv = &argv[ 1 ];
+		if( env.entry_point ) {
+			/* Install signal handler. */
+			if( signal( SIGINT, interrupt_handler ) != SIG_ERR ) {
+				/* Evaluate the last entry-point function. */
+				initialize_call_expr( &expr, env.entry_point );
+				if( initialize_globals( &env, &except ) && expr.evaluate( &expr, NULL, &result, &except ) ) {
+					exit_code = EXIT_SUCCESS;
+				} else if( except.string_value && except.string_value->type == EXIT ) {
+					if( except.string_value->string ) {
+						fputs( except.string_value->string, stderr );
+						fputc( '\n', stderr );
 					}
+					exit_code = except.integer_value;
 				} else {
-					fprintf( stderr, "No programs found.\n" );
+					fprintf( stderr, "Unhandled exception %d.\n", except.integer_value );
+					if( except.string_value && except.string_value->string ) {
+						fprintf( stderr, "%s\n", except.string_value->string );
+					}
 				}
+				dispose_variable( &result );
+				dispose_variable( &except );
 			} else {
-				fprintf( stderr, "%s\n", message );
+				fprintf( stderr, "Unable to install signal handler: %s\n", strerror( errno ) );
 			}
+		} else {
+			fprintf( stderr, "No programs found.\n" );
 		}
-		dispose_environment( env );
 	} else {
-		fputs( OUT_OF_MEMORY, stderr );
-		fputc( '\n', stderr );
+		fprintf( stderr, "%s\n", message );
 	}
+	dispose_environment( &env );
 	return exit_code;
 }

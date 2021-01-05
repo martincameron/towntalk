@@ -719,13 +719,13 @@ static void dispose_functions( struct function *func ) {
 
 static void dispose_worker( struct worker *work ) {
 	int idx, len = 0;
-	if( work->env && work->env->entry_point ) {
-		len = work->env->entry_point->num_parameters;
+	if( work->env.entry_point ) {
+		len = work->env.entry_point->num_parameters;
 	}
 	dispose_variable( &work->status );
 	dispose_variable( &work->result );
 	dispose_variable( &work->exception );
-	dispose_environment( work->env );
+	dispose_environment( &work->env );
 	for( idx = 0; idx < len; idx++ ) {
 		dispose_variable( &work->args[ idx ] );
 	}
@@ -808,23 +808,20 @@ static void dispose_structure_declarations( struct structure *sct ) {
 /* Deallocate the specified environment and all types referenced by it. */
 void dispose_environment( struct environment *env ) {
 	int idx;
-	if( env ) {
-		for( idx = 0; idx < 32; idx++ ) {
-			dispose_global_variables( env->constants_index[ idx ] );
-			dispose_global_variables( env->globals_index[ idx ] );
+	for( idx = 0; idx < 32; idx++ ) {
+		dispose_global_variables( env->constants_index[ idx ] );
+		dispose_global_variables( env->globals_index[ idx ] );
+	}
+	dispose_string_list( env->constants );
+	dispose_string_list( env->globals );
+	dispose_arrays( &env->arrays );
+	for( idx = 0; idx < 32; idx++ ) {
+		if( env->functions_index[ idx ] ) {
+			unref_string( &env->functions_index[ idx ]->str );
 		}
-		dispose_string_list( env->constants );
-		dispose_string_list( env->globals );
-		dispose_arrays( &env->arrays );
-		for( idx = 0; idx < 32; idx++ ) {
-			if( env->functions_index[ idx ] ) {
-				unref_string( &env->functions_index[ idx ]->str );
-			}
-			dispose_structure_declarations( env->structures_index[ idx ] );
-			dispose_keywords( env->statements_index[ idx ] );
-			dispose_operators( env->operators_index[ idx ] );
-		}
-		free( env );
+		dispose_structure_declarations( env->structures_index[ idx ] );
+		dispose_keywords( env->statements_index[ idx ] );
+		dispose_operators( env->operators_index[ idx ] );
 	}
 }
 
@@ -4008,8 +4005,8 @@ static enum result evaluate_function_expression( struct expression *this, struct
 /* Begin execution of the specified worker. Returns 0 on failure. */
 int start_worker( struct worker *work ) {
 	struct expression expr = { 0 };
-	expr.line = work->env->entry_point->line;
-	expr.function = work->env->entry_point;
+	expr.line = work->env.entry_point->line;
+	expr.function = work->env.entry_point;
 	expr.parameters = work->parameters;
 	work->ret = evaluate_call_expression( &expr, NULL, &work->result, &work->exception );
 	return 1;
@@ -4091,7 +4088,7 @@ static enum result evaluate_execute_expression( struct expression *this, struct 
 				count++;
 				parameter = parameter->next;
 			}
-			if( work->env->entry_point->num_parameters == count ) {
+			if( work->env.entry_point->num_parameters == count ) {
 				await_worker( work, 1 );
 				idx = 0;
 				parameter = this->parameters->next;
@@ -4118,7 +4115,7 @@ static enum result evaluate_execute_expression( struct expression *this, struct 
 					work->ret = OKAY;
 					dispose_variable( &work->status );
 					work->status.integer_value = 0;
-					work->env->interrupted = this->function->env->interrupted;
+					work->env.interrupted = this->function->env->interrupted;
 					this->function->env->worker = work;
 					if( start_worker( work ) ) {
 						assign_variable( &var, result );
@@ -4204,7 +4201,7 @@ static enum result evaluate_result_expression( struct expression *this, struct v
 			this->function->env->worker = work;
 			await_worker( work, 0 );
 			this->function->env->worker = NULL;
-			count = work->env->entry_point->num_parameters;
+			count = work->env.entry_point->num_parameters;
 			for( idx = 0; idx < count; idx++ ) {
 				if( work->args[ idx ].string_value ) {
 					/* Reassociate parameter strings if necessary. */
@@ -4507,17 +4504,10 @@ static struct worker* new_worker( char *message ) {
 		work->str.length = strlen( work->str.string );
 		work->str.reference_count = 1;
 		work->str.type = WORKER;
-		work->env = calloc( 1, sizeof( struct environment ) );
-		if( work->env ) {
-			if( add_operators( operators, work->env, message )
-			&& add_statements( statements, work->env, message ) ) {
-				work->env->worker = work;
-			} else {
-				unref_string( &work->str );
-				work = NULL;
-			}
+		if( add_operators( operators, &work->env, message )
+		&& add_statements( statements, &work->env, message ) ) {
+			work->env.worker = work;
 		} else {
-			strcpy( message, OUT_OF_MEMORY );
 			unref_string( &work->str );
 			work = NULL;
 		}
@@ -4532,10 +4522,10 @@ static struct worker* parse_worker( struct element *elem, struct environment *en
 	struct function *func;
 	struct worker *work = new_worker( message );
 	if( work ) {
-		func = parse_function( elem, work->str.string, file, work->env, message );
-		if( func && parse_function_body( func, work->env, message ) ) {
-			work->env->functions_index[ hash_code( work->str.string, 0 ) ] = func;
-			work->env->entry_point = func;
+		func = parse_function( elem, work->str.string, file, &work->env, message );
+		if( func && parse_function_body( func, &work->env, message ) ) {
+			work->env.functions_index[ hash_code( work->str.string, 0 ) ] = func;
+			work->env.entry_point = func;
 			params = func->num_parameters;
 			work->args = calloc( params, sizeof( struct variable ) );
 			if( work->args ) {
@@ -4704,6 +4694,7 @@ int add_operators( struct operator *operators, struct environment *env, char *me
 /* Initialize env with the the standard statements, operators and constants.
    Returns zero and writes message on failure. */
 int initialize_environment( struct environment *env, char *message ) {
+	memset( env, 0, sizeof( struct environment ) );
 	return add_statements( statements, env, message )
 		&& add_operators( operators, env, message )
 		&& add_constants( constants, env, message );

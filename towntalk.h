@@ -81,7 +81,7 @@ struct environment {
 /* Reference-counted worker function. */
 struct worker {
 	struct string str;
-	struct environment *env;
+	struct environment env;
 	struct variable *args, status, result, exception;
 	struct string *strings;
 	struct global_variable *globals;
