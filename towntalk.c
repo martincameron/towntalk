@@ -2514,7 +2514,7 @@ static enum result evaluate_argv_expression( struct expression *this, struct var
 			str = new_string_value( strlen( val ) );
 			if( str ) {
 				memcpy( str->string, val, sizeof( char ) * str->length );
-				dispose_variable( result );
+				dispose_temporary( result );
 				result->integer_value = 0;
 				result->string_value = str;
 			} else {
