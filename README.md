@@ -8,7 +8,28 @@ a limited form of multi-threading.
 
 Not to be taken too seriously, but lightweight, portable and easy to extend.
 
-Here's how you might add an upper-case expression to an embedded program:
+Here's an example of a program with an upper-case function:
+
+```
+function upcase( str ) {
+	var idx = 0, len = $len( str ), arr = $array( len );
+	while <( idx len ) {
+		var chr = $chr( str idx );
+		if >( chr 95 ) {
+			let chr = -( chr 32 );
+		}
+		let [ arr idx ] = chr;
+		inc idx;
+	}
+	return $sub( arr, 0, len );
+}
+
+program hello {
+	print upcase( "Hello, World!" );
+}
+```
+
+Here's how you might add a native upper-case expression to an embedded program:
 
 ```C
 #include "stdio.h"
@@ -53,7 +74,7 @@ int main( int argc, char **argv ) {
 	struct variable result = { 0 }, except = { 0 };
 	struct expression expr = { 0 };
 	if( initialize_environment( &env, message ) && add_operators( &upcase, &env, message )
-		&& parse_tt_program( "program prg { print $upcase( \"Hello, World!\" ); } ", "prg", &env, message ) ) {
+		&& parse_tt_program( "program hello { print $upcase( \"Hello, World!\" ); } ", "hello", &env, message ) ) {
 		initialize_call_expr( &expr, env.entry_point );
 		if( initialize_globals( &env, &except ) && expr.evaluate( &expr, NULL, &result, &except ) ) {
 			exit_code = EXIT_SUCCESS;
