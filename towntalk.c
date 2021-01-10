@@ -1358,23 +1358,26 @@ static enum result execute_while_statement( struct statement *this, struct varia
 	enum result ret;
 	while( this->source->evaluate( this->source, variables, &condition, exception ) ) {
 		if( condition.integer_value || condition.string_value ) {
-			dispose_variable( &condition );
 			stmt = this->if_block;
 			while( stmt ) {
 				ret = stmt->execute( stmt, variables, result, exception );
 				if( ret == OKAY ) {
 					stmt = stmt->next;
 				} else if( ret == RETURN ) {
+					dispose_temporary( &condition );
 					return RETURN;
 				} else if( ret == BREAK ) {
+					dispose_temporary( &condition );
 					return OKAY;
 				} else if( ret == CONTINUE ) {
 					break;
 				} else if( ret == EXCEPTION ) {
+					dispose_temporary( &condition );
 					return EXCEPTION;
 				}
 			}
 			if( env->interrupted ) {
+				dispose_temporary( &condition );
 				if( env->worker ) {
 					return throw_exit( this->source->function->env, exception, 0, NULL );
 				} else {
@@ -1386,6 +1389,7 @@ static enum result execute_while_statement( struct statement *this, struct varia
 			return OKAY;
 		}
 	}
+	dispose_temporary( &condition );
 	return EXCEPTION;
 }
 
