@@ -282,6 +282,8 @@ function testarith() {
 	call assert_equals( -4, >>( -8 1 ), ${-} );
 	call assert_equals( 1, =( 1 1 ), ${-} );
 	call assert_equals( 0, =( 1 0 ), ${-} );
+	call assert_equals( 0, <>( 1 1 ), ${-} );
+	call assert_equals( 1, <>( 1 0 ), ${-} );
 	call assert_equals( 1, <( 0 1 ), ${-} );
 	call assert_equals( 0, <( 1 1 ), ${-} );
 	call assert_equals( 1, <e( 0 1 ), ${-} );
