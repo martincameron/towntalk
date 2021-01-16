@@ -22,9 +22,9 @@ struct string_list {
 /* Reference-counted string. */
 struct string {
 	size_t reference_count;
-	enum reference_type type;
 	char *string;
 	int length;
+	char type;
 };
 
 /* Reference-counted parse-tree element. */

@@ -3973,7 +3973,7 @@ static enum result evaluate_function_expression( struct expression *this, struct
 	struct expression *parameter = this->parameters;
 	struct variable var = { 0, NULL };
 	struct function *func;
-	struct element *elem, key = { { 1, ELEMENT, "$function", 9 } };
+	struct element *elem, key = { { 1, "$function", 9, ELEMENT } };
 	char message[ 128 ] = "";
 	enum result ret = parameter->evaluate( parameter, variables, &var, exception );
 	if( ret ) {
@@ -4036,7 +4036,7 @@ void await_worker( struct worker *work, int cancel ) {
 static enum result evaluate_worker_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct expression *parameter = this->parameters;
-	struct element *elem, key = { { 1, ELEMENT, "$worker", 9 } };
+	struct element *elem, key = { { 1, "$worker", 9, ELEMENT } };
 	struct variable var = { 0, NULL };
 	char message[ 128 ] = "";
 	struct worker *work;
