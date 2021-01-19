@@ -12,7 +12,7 @@
 #include "towntalk.h"
 
 /*
-	Towntalk (c)2020 Martin Cameron.
+	Towntalk (c)2021 Martin Cameron.
 
 	A program file consists of a list of declarations.
 	When a '#' character is encountered, the rest of the line is ignored.
@@ -520,7 +520,8 @@ static struct element* parse_element( char *buffer, char *message ) {
 /* Load the specified file into buffer (if not null) and returns the file length.
    Returns -1 and writes message on failure. */
 long load_file( char *file_name, char *buffer, char *message ) {
-	long file_length = -1, bytes_read;
+	size_t bytes_read;
+	long file_length = -1;
 	FILE *input_file = fopen( file_name, "rb" );
 	if( input_file != NULL ) {
 		if( fseek( input_file, 0L, SEEK_END ) == 0 ) {
@@ -1215,7 +1216,7 @@ static enum result execute_print_statement( struct statement *this, struct varia
 	struct variable *result, struct variable *exception ) {
 	struct variable value = { 0, NULL };
 	if( this->source->evaluate( this->source, variables, &value, exception ) ) {
-		if( value.string_value && value.string_value->string ) {
+		if( value.string_value ) {
 			puts( value.string_value->string );
 		} else {
 			printf( "%d\n", value.integer_value );
@@ -1230,7 +1231,7 @@ static enum result execute_error_statement( struct statement *this, struct varia
 	struct variable *result, struct variable *exception ) {
 	struct variable value = { 0, NULL };
 	if( this->source->evaluate( this->source, variables, &value, exception ) ) {
-		if( value.string_value && value.string_value->string ) {
+		if( value.string_value ) {
 			fputs( value.string_value->string, stderr );
 			fputc( '\n', stderr );
 		} else {
@@ -1246,7 +1247,7 @@ static enum result execute_write_statement( struct statement *this, struct varia
 	struct variable *result, struct variable *exception ) {
 	struct variable value = { 0, NULL };
 	if( this->source->evaluate( this->source, variables, &value, exception ) ) {
-		if( value.string_value && value.string_value->string ) {
+		if( value.string_value ) {
 			fwrite( value.string_value->string, 1, value.string_value->length, stdout );
 		} else {
 			printf( "%d", value.integer_value );
@@ -1430,7 +1431,6 @@ static enum result execute_dim_statement( struct statement *this, struct variabl
 
 static enum result execute_array_assignment( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	struct array *arr;
 	struct variable var = { 0, NULL }, idx = { 0, NULL };
 	enum result ret = this->destination->evaluate( this->destination, variables, &var, exception );
 	if( ret ) {
@@ -1441,10 +1441,9 @@ static enum result execute_array_assignment( struct statement *this, struct vari
 				ret = this->index->evaluate( this->index, variables, &idx, exception );
 			}
 			if( ret ) {
-				arr = ( struct array * ) var.string_value;
-				if( idx.integer_value >= 0 && idx.integer_value < arr->length ) {
+				if( ( unsigned int ) idx.integer_value < ( unsigned int ) ( ( struct array * ) var.string_value )->length ) {
 					ret = this->source->evaluate( this->source, variables,
-						&arr->array[ idx.integer_value ], exception );
+						&( ( struct array * ) var.string_value )->array[ idx.integer_value ], exception );
 				} else {
 					ret = throw( exception, this->index, idx.integer_value, "Array index out of bounds." );
 				}
@@ -1699,7 +1698,6 @@ static enum result evaluate_array_expression( struct expression *this, struct va
 
 static enum result evaluate_index_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	struct array *arr;
 	struct expression *parameter = this->parameters;
 	struct variable var = { 0, NULL }, idx = { 0, NULL };
 	enum result ret = parameter->evaluate( parameter, variables, &var, exception );
@@ -1712,9 +1710,8 @@ static enum result evaluate_index_expression( struct expression *this, struct va
 				ret = parameter->evaluate( parameter, variables, &idx, exception );
 			}
 			if( ret ) {
-				arr = ( struct array * ) var.string_value;
-				if( idx.integer_value >= 0 && idx.integer_value < arr->length ) {
-					assign_variable( &arr->array[ idx.integer_value ], result );
+				if( ( unsigned int ) idx.integer_value < ( unsigned int ) ( ( struct array * ) var.string_value )->length ) {
+					assign_variable( &( ( struct array * ) var.string_value )->array[ idx.integer_value ], result );
 				} else {
 					ret = throw( exception, this, idx.integer_value, "Array index out of bounds." );
 				}
@@ -2080,7 +2077,7 @@ static enum result evaluate_int_expression( struct expression *this, struct vari
 	struct variable str = { 0, NULL };
 	enum result ret = this->parameters->evaluate( this->parameters, variables, &str, exception );
 	if( ret ) {
-		if( str.string_value && str.string_value->string ) {
+		if( str.string_value ) {
 			val = ( int ) strtol( str.string_value->string, &end, 0 );
 			if( end[ 0 ] == 0 && str.string_value->string != end ) {
 				dispose_variable( result );
@@ -2107,7 +2104,7 @@ static enum result evaluate_str_expression( struct expression *this, struct vari
 	while( parameter && ret ) {
 		ret = parameter->evaluate( parameter, variables, &var, exception );
 		if( ret ) {
-			if( var.string_value && var.string_value->string ) {
+			if( var.string_value ) {
 				len = var.string_value->length;
 				val = var.string_value->string;
 			} else {
@@ -2211,7 +2208,7 @@ static enum result evaluate_load_expression( struct expression *this, struct var
 	struct variable file = { 0, NULL };
 	enum result ret = this->parameters->evaluate( this->parameters, variables, &file, exception );
 	if( ret ) {
-		if( file.string_value && file.string_value->string ) {
+		if( file.string_value ) {
 			len = load_file( file.string_value->string, NULL, message );
 			if( len >= 0 ) {
 				if( len < MAX_INTEGER ) {
@@ -2250,7 +2247,7 @@ static enum result evaluate_flen_expression( struct expression *this, struct var
 	struct variable file = { 0, NULL };
 	enum result ret = this->parameters->evaluate( this->parameters, variables, &file, exception );
 	if( ret ) {
-		if( file.string_value && file.string_value->string ) {
+		if( file.string_value ) {
 			len = load_file( file.string_value->string, NULL, message );
 			if( len >= 0 ) {
 				if( len < MAX_INTEGER ) {
@@ -2301,8 +2298,8 @@ static enum result evaluate_chr_expression( struct expression *this, struct vari
 			ret = parameter->evaluate( parameter, variables, &idx, exception );
 		}
 		if( ret ) {
-			if( str.string_value && str.string_value->string ) {
-				if( idx.integer_value >= 0 && idx.integer_value < str.string_value->length ) {
+			if( str.string_value ) {
+				if( ( unsigned int ) idx.integer_value < ( unsigned int ) str.string_value->length ) {
 					dispose_variable( result );
 					result->integer_value = ( signed char ) str.string_value->string[ idx.integer_value ];
 				} else {
@@ -2333,7 +2330,7 @@ static enum result evaluate_sub_expression( struct expression *this, struct vari
 			parameter = parameter->next;
 			ret = parameter->evaluate( parameter, variables, &len, exception );
 			if( ret ) {
-				if( var.string_value && var.string_value->string ) {
+				if( var.string_value ) {
 					if( var.string_value->type == ARRAY ) {
 						length = ( ( struct array * ) var.string_value )->length;
 					} else {
@@ -3973,7 +3970,7 @@ static enum result evaluate_function_expression( struct expression *this, struct
 	struct expression *parameter = this->parameters;
 	struct variable var = { 0, NULL };
 	struct function *func;
-	struct element *elem, key = { { 1, "$function", 9, ELEMENT } };
+	struct element *elem, key = { { 1, "$function", 9, ELEMENT }, NULL, NULL, 0 };
 	char message[ 128 ] = "";
 	enum result ret = parameter->evaluate( parameter, variables, &var, exception );
 	if( ret ) {
@@ -4036,7 +4033,7 @@ void await_worker( struct worker *work, int cancel ) {
 static enum result evaluate_worker_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct expression *parameter = this->parameters;
-	struct element *elem, key = { { 1, "$worker", 9, ELEMENT } };
+	struct element *elem, key = { { 1, "$worker", 9, ELEMENT }, NULL, NULL, 0 };
 	struct variable var = { 0, NULL };
 	char message[ 128 ] = "";
 	struct worker *work;

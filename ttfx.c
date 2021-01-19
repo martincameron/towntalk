@@ -14,7 +14,7 @@
 #include "towntalk.h"
 
 /*
-	SDL graphics and sound extension for Towntalk (c)2020 Martin Cameron.
+	SDL graphics and sound extension for Towntalk (c)2021 Martin Cameron.
 	
 	Statements:
 		display w, h, "caption";               Open a display window.
@@ -176,7 +176,7 @@ struct fxenvironment {
 	int win_event, key_held, wheel;
 	struct fxsample samples[ NUM_SAMPLES ];
 	struct fxchannel channels[ NUM_CHANNELS ];
-	int timer_event_type, seq_event_type, midi_event_type;
+	unsigned int timer_event_type, seq_event_type, midi_event_type;
 	int tick, tick_len, audio_idx, audio_end, stream_idx, seq_msg, midi_msg;
 	int audio[ ( MAX_TICK_LEN + 33 ) * 4 ], stream[ MAX_TICK_LEN * 2 ], ramp_buf[ 64 ];
 #if defined( ALSA_MIDI )
@@ -1357,7 +1357,7 @@ static enum result evaluate_dir_expression( struct expression *this, struct vari
 	struct expression *parameter = this->parameters;
 	enum result ret = parameter->evaluate( parameter, variables, &var, exception );
 	if( ret ) {
-		if( var.string_value && var.string_value->string ) {
+		if( var.string_value ) {
 			errno = 0;
 			path = realpath( var.string_value->string, NULL );
 			if( path ) {
@@ -1514,7 +1514,7 @@ static enum result evaluate_stream_expression( struct expression *this, struct v
 			parameter = parameter->next;
 			ret = parameter->evaluate( parameter, variables, &count, exception );
 			if( ret ) {
-				if( arr.string_value && arr.string_value->string && arr.string_value->type == ARRAY ) {
+				if( arr.string_value && arr.string_value->type == ARRAY ) {
 					values = ( ( struct array * ) arr.string_value )->array;
 					length = ( ( ( struct array * ) arr.string_value )->length ) >> 1;
 					if( offset.integer_value >= 0 && count.integer_value >= 0
