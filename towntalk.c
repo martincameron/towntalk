@@ -4461,10 +4461,10 @@ static struct keyword declarations[] = {
 };
 
 static int validate_name( char *name, struct environment *env ) {
-	int chr, idx = 0, result = 1;
-	chr = name[ idx++ ];
+	int chr = name[ 0 ], idx = 1, result = 1;
 	if( ( chr >= 'A' && chr <= 'Z') || ( chr >= 'a' && chr <= 'z' ) ) {
 		/* First character must be alphabetical.*/
+		chr = name[ idx++ ];
 		while( chr ) {
 			if( chr == '_' || ( chr >= '0' && chr <= '9' )
 			|| ( chr >= 'A' && chr <= 'Z' ) || ( chr >= 'a' && chr <= 'z' ) ) {
