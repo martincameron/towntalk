@@ -1380,7 +1380,7 @@ static enum result execute_while_statement( struct statement *this, struct varia
 			if( env->interrupted ) {
 				dispose_temporary( &condition );
 				if( env->worker ) {
-					return throw_exit( this->source->function->env, exception, 0, NULL );
+					return throw_exit( this->source->function->env, exception, 0, "Interrupted." );
 				} else {
 					return throw( exception, this->source, 0, "Interrupted.");
 				}
