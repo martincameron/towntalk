@@ -19,9 +19,9 @@ function assert_throws( expected, elem ) {
 }
 
 function testlet() {
-	call assert_throws( "Expected destination after 'let'", ${ () { asm { let } } } );
+	call assert_throws( "Invalid destination after 'let'", ${ () { asm { let } } } );
 	call assert_throws( "Expected '=' after destination", ${ () { asm { let a } } } );
-	call assert_throws( "Expected source after '='", ${ () { asm { let a = } } } );
+	call assert_throws( "Invalid source after '='", ${ () { asm { let a = } } } );
 }
 
 function testletv_i() {
@@ -244,13 +244,12 @@ program asmtest {
 	call testchr();
 
 	var time = $time, idx, count;
-	
 	asm {
 		let count = 10000000;
-		loop:
+		loop_0:
 			let idx = +( idx 1 );
-			jump <( idx count ) loop;
-		}
-
+			jump <( idx count ) loop_0;
+	}
+	call assert_equals( count, idx, ${-} );
 	print -( $time time );
 }

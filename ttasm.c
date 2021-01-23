@@ -203,13 +203,16 @@ static int get_local_variable( struct function *func, struct element *elem, char
 	return idx;
 }
 
+static int alphachar( char chr, char *include ) {
+	return ( chr >= 'A' && chr <= 'Z') || ( chr >= 'a' && chr <= 'z' ) || strchr( include, chr );
+}
+
 static int validate_label( char *name, int len ) {
 	int chr = name[ 0 ], idx = 1, result = 1;
-	if( ( chr >= 'A' && chr <= 'Z') || ( chr >= 'a' && chr <= 'z' ) ) {
+	if( alphachar( chr, "" ) ) {
 		chr = name[ idx++ ];
 		while( chr && idx <= len ) {
-			if( chr == '_' || ( chr >= '0' && chr <= '9' )
-			|| ( chr >= 'A' && chr <= 'Z' ) || ( chr >= 'a' && chr <= 'z' ) ) {
+			if( alphachar( chr, "_0123456789" ) ) {
 				chr = name[ idx++ ];
 			} else {
 				result = chr = 0;
@@ -333,17 +336,17 @@ static struct element* parse_jump( struct element *elem, struct function *func, 
 }
 
 static struct element* validate_let( struct element *elem, char *message ) {
-	if( elem->next ) {
+	if( elem->next && alphachar( elem->next->str.string[ 0 ], "[" ) ) {
 		elem = elem->next;
 		if( elem->next && strcmp( "=", elem->next->str.string ) == 0 ) {
 			elem = elem->next;
-			if( elem->next ) {
+			if( elem->next && elem->next->str.string[ 0 ] != ';' ) {
 				elem = elem->next;
 				if( elem->next && strcmp( "()", elem->next->str.string ) == 0 ) {
 					elem = elem->next;
 				}
 			} else {
-				sprintf( message, "Expected source after '=' on line %d.", elem->line );
+				sprintf( message, "Invalid source after '=' on line %d.", elem->line );
 				elem = NULL;
 			}
 		} else {
@@ -351,7 +354,7 @@ static struct element* validate_let( struct element *elem, char *message ) {
 			elem = NULL;
 		}
 	} else {
-		sprintf( message, "Expected destination after 'let' on line %d.", elem->line );
+		sprintf( message, "Invalid destination after 'let' on line %d.", elem->line );
 		elem = NULL;
 	}
 	return elem;
