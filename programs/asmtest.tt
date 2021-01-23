@@ -230,6 +230,21 @@ function testchr() {
 	call assert_throws( "Not a string or index", ${ () { var a = ""; asm { let a = $chr( a a ); } } } );
 }
 
+function testunpack() {
+	var a, str = $pack( -1 );
+	# letv_unp_i
+	asm { let a = $unpack( str 0 ); }
+	call assert_equals( -1, a, ${-} );
+	# letv_unp_v
+	let a = 0;
+	asm { let a = $unpack( str a ); }
+	call assert_equals( -1, a, ${-} );
+	# letv_unp_i
+	call assert_throws( "Not a string or index", ${ () { var a; asm { let a = $unpack( a 0 ); } } } );
+	# letv_unp_v
+	call assert_throws( "Not a string or index", ${ () { var a = ""; asm { let a = $unpack( a a ); } } } );
+}
+
 program asmtest {
 	call assert_throws( "Empty asm statement", ${ () { asm {} } } );
 	call assert_throws( "Unrecognized opcode 'x'", ${ () { asm { x; } } } );
@@ -242,6 +257,7 @@ program asmtest {
 	call testhalt();
 	call testjump();
 	call testchr();
+	call testunpack();
 
 	var time = $time, idx, count;
 	asm {

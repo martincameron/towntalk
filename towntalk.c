@@ -2873,8 +2873,9 @@ static enum result evaluate_pack_expression( struct expression *this, struct var
 
 /* Unpack a 32-bit big-endian integer from str at the specified index. */
 int unpack( char *str, int idx ) {
-	return ( ( str[ idx * 4 ] & 0xFF ) << 24 ) | ( ( str[ idx * 4 + 1 ] & 0xFF ) << 16 )
-		| ( (  str[ idx * 4 + 2 ] & 0xFF ) <<  8 ) | ( str[ idx * 4 + 3 ] & 0xFF );
+	idx = idx << 2;
+	return ( ( signed char ) str[ idx ] << 24 ) | ( ( unsigned char ) str[ idx + 1 ] << 16 )
+		| ( ( unsigned char ) str[ idx + 2 ] << 8 ) | ( unsigned char ) str[ idx + 3 ];
 }
 
 static enum result evaluate_unpack_expression( struct expression *this, struct variable *variables,

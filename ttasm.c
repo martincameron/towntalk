@@ -24,7 +24,7 @@
 		}
 	}
 	
-	Opcodes (get/set/unpack are not currently implemented)
+	Opcodes (get/set are not currently implemented):
 
 	opcode      x y z imm : mnemonic
 	--------------------------------
@@ -115,7 +115,9 @@ enum opcodes {
 	LETV_XOR_VI,
 	LETV_XOR_VV,
 	LETV_CHR_VI,
-	LETV_CHR_VV
+	LETV_CHR_VV,
+	LETV_UNP_VI,
+	LETV_UNP_VV
 };
 
 struct asm_operator {
@@ -144,6 +146,7 @@ static struct asm_operator let_vi_operators[] = {
 	{ "|", LETV_OR_VI },
 	{ "^", LETV_XOR_VI },
 	{ "$chr", LETV_CHR_VI },
+	{ "$unpack", LETV_UNP_VI },
 	{ NULL }
 };
 
@@ -159,6 +162,7 @@ static struct asm_operator let_vv_operators[] = {
 	{ "|", LETV_OR_VV },
 	{ "^", LETV_XOR_VV },
 	{ "$chr", LETV_CHR_VV },
+	{ "$unpack", LETV_UNP_VV },
 	{ NULL }
 };
 
@@ -962,6 +966,24 @@ static enum result execute_asm_statement( struct statement *this, struct variabl
 					variables[ ins->x ].integer_value = ( signed char ) variables[ ins->y ].string_value->string[ variables[ ins->z ].integer_value ];
 				} else {
 					return throw( exception, this->source, variables[ ins->z ].integer_value, "Not a string or index out of bounds." );
+				}
+				ins++;
+				break;
+			case LETV_UNP_VI:
+				/* letv_unp_vi x y 0 imm : let x = $unpack( y imm ); */
+				if( ( unsigned int ) ins->imm < string_bounds[ ins->y ] >> 2 ) {
+					variables[ ins->x ].integer_value = unpack( variables[ ins->y ].string_value->string, ins->imm );
+				} else {
+					return throw( exception, this->source, ins->imm, "Not a string or index out of bounds." );
+				}
+				ins++;
+				break;
+			case LETV_UNP_VV:
+				/* letv_unp_vv x y z   0 : let x = $unpack( y z ); */
+				if( ( unsigned int ) variables[ ins->z ].integer_value < string_bounds[ ins->y ] >> 2 ) {
+					variables[ ins->x ].integer_value = unpack( variables[ ins->y ].string_value->string, variables[ ins->z ].integer_value );
+				} else {
+					return throw( exception, this->source, ins->imm, "Not a string or index out of bounds." );
 				}
 				ins++;
 				break;
