@@ -14,7 +14,7 @@
 
 	Example:
 
-	function test {
+	program test {
 		var idx, count = 1000000, arr = $array(count);
 		asm {
 			loop:
