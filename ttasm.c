@@ -9,8 +9,7 @@
 /*
 	Experimental bytecode assembler/interpreter for fast integer arithmetic.
 	
-	The 'let' and 'jump' opcodes do not access or modify associated references
-	for performance reasons.
+	The 'let' opcodes do not assign associated references for performance reasons.
 
 	Example:
 
