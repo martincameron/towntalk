@@ -1,0 +1,23 @@
+
+program asmspeed {
+	var time = $time, total = 0, shift = 10;
+	var prog = ${ ( n ) { var a = 0; asm { loop: let a = +( a 1 ); jump <( a n ) loop; } return a; } };
+
+	var worker1 = $worker( prog );
+	var worker2 = $worker( prog );
+	var worker3 = $worker( prog );
+	var worker4 = $worker( prog );
+	
+	while &&( <( -( $time time ) 10 ) <( shift 29 ) ) {
+		var count = <<( 1 shift );
+		call $execute( worker1 count );
+		call $execute( worker2 count );
+		call $execute( worker3 count );
+		call $execute( worker4 count );
+		let total = +( total $result( worker1 ) $result( worker2 ) $result( worker3 ) $result( worker4 ) );
+		inc shift;
+	}
+	
+	let time = -( $time time );
+	print $cat( "Finished in " time " seconds. At least " /( total ?( time time 1 ) ) " iterations per second." );
+}

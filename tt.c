@@ -6,6 +6,10 @@
 
 #include "towntalk.h"
 
+#if defined( ASM_STATEMENT )
+#include "ttasm.h"
+#endif
+
 static struct environment env;
 
 static void interrupt_handler( int signum ) {
@@ -29,7 +33,11 @@ int main( int argc, char **argv ) {
 	}
 	file_name = argv[ 1 ];
 	/* Parse program file. */
-	if( initialize_environment( &env, message ) && parse_tt_file( file_name, &env, message ) ) {
+	if( initialize_environment( &env, message )
+#if defined( ASM_STATEMENT )
+	&& add_statements( &asm_keyword, &env, message )
+#endif
+	&& parse_tt_file( file_name, &env, message ) ) {
 		env.argc = argc - 1;
 		env.argv = &argv[ 1 ];
 		if( env.entry_point ) {

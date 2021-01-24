@@ -13,6 +13,10 @@
 
 #include "towntalk.h"
 
+#if defined( ASM_STATEMENT )
+#include "ttasm.h"
+#endif
+
 /*
 	SDL graphics and sound extension for Towntalk (c)2021 Martin Cameron.
 	
@@ -197,6 +201,16 @@ int worker_thread( void *data ) {
 	expr.parameters = work->parameters;
 	work->ret = expr.evaluate( &expr, NULL, &work->result, &work->exception );
 	return 0;
+}
+
+/* Add thread-safe custom statements and operators to the specified worker.
+   Returns 0 and assigns message on failure. */
+int initialize_worker( struct worker *work, char *message ) {
+#if defined( ASM_STATEMENT )
+	return add_statements( &asm_keyword, &work->env, message );
+#else
+	return 1;
+#endif
 }
 
 /* Begin execution of the specified worker. Returns 0 on failure. */
@@ -1708,6 +1722,9 @@ static int initialize_fxenvironment( struct fxenvironment *fxenv, char *message 
 	&& add_constants( fxconstants, &fxenv->env, message )
 	&& add_event_constants( fxenv, message )
 	&& add_statements( fxstatements, &fxenv->env, message )
+#if defined( ASM_STATEMENT )
+	&& add_statements( &asm_keyword, &fxenv->env, message )
+#endif
 	&& add_operators( fxoperators, &fxenv->env, message ) ) {
 		return 1;
 	} else {

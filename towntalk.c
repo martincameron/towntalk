@@ -4005,6 +4005,12 @@ static enum result evaluate_function_expression( struct expression *this, struct
 }
 
 #if !defined( MULTI_THREAD )
+/* Add thread-safe custom statements and operators to the specified worker.
+   Returns 0 and assigns message on failure. */
+int initialize_worker( struct worker *work, char *message ) {
+	return 1;
+}
+
 /* Begin execution of the specified worker. Returns 0 on failure. */
 int start_worker( struct worker *work ) {
 	struct expression expr = { 0 };
@@ -4509,7 +4515,7 @@ static struct worker* new_worker( char *message ) {
 		work->str.reference_count = 1;
 		work->str.type = WORKER;
 		if( add_operators( operators, &work->env, message )
-		&& add_statements( statements, &work->env, message ) ) {
+		&& add_statements( statements, &work->env, message ) && initialize_worker( work, message ) ) {
 			work->env.worker = work;
 		} else {
 			unref_string( &work->str );

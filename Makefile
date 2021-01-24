@@ -8,11 +8,11 @@ all: tt
 clean:
 	rm -f tt ttfx ttfx-midi ttfx-sdl1 xm2tmf
 
-tt: tt.c towntalk.c towntalk.h
-	$(CC) $(CFLAGS) $(ANSI_C) tt.c towntalk.c -o tt
+tt: tt.c towntalk.c towntalk.h ttasm.c ttasm.h
+	$(CC) $(CFLAGS) $(ANSI_C) -DASM_STATEMENT tt.c towntalk.c ttasm.c -o tt
 
-ttfx: ttfx.c towntalk.c towntalk.h
-	$(CC) $(CFLAGS) -DMULTI_THREAD ttfx.c towntalk.c -o ttfx `sdl2-config --cflags --libs`
+ttfx: ttfx.c towntalk.c towntalk.h ttasm.c ttasm.h
+	$(CC) $(CFLAGS) -DMULTI_THREAD -DASM_STATEMENT ttfx.c towntalk.c ttasm.c -o ttfx `sdl2-config --cflags --libs`
 
 ttfx-midi: ttfx.c towntalk.c towntalk.h
 	$(CC) $(CFLAGS) -DALSA_MIDI ttfx.c towntalk.c -o ttfx-midi `sdl2-config --cflags --libs` -lasound

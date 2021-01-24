@@ -232,6 +232,10 @@ long load_file( char *file_name, char *buffer, char *message );
 /* Unpack a 32-bit big-endian integer from str at the specified index. */
 int unpack( char *str, int idx );
 
+/* Add thread-safe custom statements and operators to the specified worker.
+   Returns 0 and assigns message on failure. */
+int initialize_worker( struct worker *work, char *message );
+
 /* Begin execution of the specified worker. Returns 0 on failure. */
 int start_worker( struct worker *work );
 

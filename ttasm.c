@@ -8,8 +8,7 @@
 
 /*
 	Experimental bytecode assembler/interpreter for fast integer arithmetic.
-	
-	The 'let' opcodes do not assign associated references for performance reasons.
+	Associated references are not assigned for performance reasons.
 
 	Example:
 
@@ -23,7 +22,7 @@
 		}
 	}
 	
-	Opcodes (get/set are not currently implemented):
+	Opcodes:
 
 	opcode      x y z imm : mnemonic
 	--------------------------------
@@ -35,14 +34,6 @@
 	jump_ne     0 y z off : jump <>( y z ) label;
 	jump_ge     0 y z off : jump >e( y z ) label;
 	jump_gt     0 y z off : jump >( y z ) label;
-	
-	getv_i      x 0 0 imm : get x = imm;
-	getv_v      x y 0   0 : get x = y;
-	getv_ai     x y 0 imm : get x = [ y imm ];
-	getv_av     x y z   0 : get x = [ y z ];
-	setav_i     x y 0 imm : set [ x y ] = imm;
-	setai_v     x 0 z imm : set [ x imm ] = z;
-	setav_v     x y z   0 : set [ x y ] = z;
 	
 	letv_i      x 0 0 imm : let x = imm;
 	letv_v      x y 0   0 : let x = y;
@@ -992,7 +983,7 @@ static enum result execute_asm_statement( struct statement *this, struct variabl
 	}
 }
 
-static struct element* parse_asm_statement( struct element *elem, struct environment *env,
+struct element* parse_asm_statement( struct element *elem, struct environment *env,
 	struct function *func, struct statement *prev, char *message ) {
 	struct element *next = elem->next;
 	struct label labels = { 0 };
@@ -1024,65 +1015,3 @@ static struct element* parse_asm_statement( struct element *elem, struct environ
 	return next;
 }
 
-static struct keyword asmkeyword[] = {
-	{ "asm", "{", parse_asm_statement, NULL }
-};
-
-static struct environment env;
-
-static void interrupt_handler( int signum ) {
-	signal( signum, interrupt_handler );
-	env.interrupted = 1;
-	if( env.worker ) {
-		/* Terminate current worker. */
-		env.worker->env.interrupted = 1;
-	}
-}
-
-int main( int argc, char **argv ) {
-	int exit_code = EXIT_FAILURE;
-	char *file_name, message[ 256 ] = "";
-	struct variable result = { 0 }, except = { 0 };
-	struct expression expr = { 0 };
-	/* Handle command-line.*/
-	if( argc < 2 ) {
-		fprintf( stderr, "Usage: %s program.tt [args]\n", argv[ 0 ] );
-		return EXIT_FAILURE;
-	}
-	file_name = argv[ 1 ];
-	if( initialize_environment( &env, message ) && add_statements( &asmkeyword[ 0 ], &env, message )
-		&& parse_tt_file( file_name, &env, message ) ) {
-		env.argc = argc - 1;
-		env.argv = &argv[ 1 ];
-		if( env.entry_point ) {
-			/* Install signal handler. */
-			if( signal( SIGINT, interrupt_handler ) != SIG_ERR ) {
-				initialize_call_expr( &expr, env.entry_point );
-				if( initialize_globals( &env, &except ) && expr.evaluate( &expr, NULL, &result, &except ) ) {
-					exit_code = EXIT_SUCCESS;
-				} else if( except.string_value && except.string_value->type == EXIT ) {
-					if( except.string_value->string ) {
-						fputs( except.string_value->string, stderr );
-						fputc( '\n', stderr );
-					}
-					exit_code = except.integer_value;
-				} else {
-					fprintf( stderr, "Unhandled exception %d.\n", except.integer_value );
-					if( except.string_value && except.string_value->string ) {
-						fprintf( stderr, "%s\n", except.string_value->string );
-					}
-				}
-				dispose_variable( &result );
-				dispose_variable( &except );
-			} else {
-				fprintf( stderr, "Unable to install signal handler: %s\n", strerror( errno ) );
-			}
-		} else {
-			fprintf( stderr, "No programs found.\n" );
-		}
-	} else {
-		fprintf( stderr, "%s\n", message );
-	}
-	dispose_environment( &env );
-	return exit_code;
-}
