@@ -419,7 +419,7 @@ static struct element* parse_leta( struct element *elem, struct function *func, 
 			next = NULL;
 		}
 	} else {
-		sprintf( message, "Invalid index expression on line %d.", next->str.string, next->line );
+		sprintf( message, "Invalid index expression on line %d.", next->line );
 		next = NULL;
 	}
 	return next;
@@ -467,7 +467,7 @@ static struct element* parse_letv_a( struct element *elem, struct function *func
 				next = NULL;
 			}
 		} else {
-			sprintf( message, "Invalid index expression on line %d.", next->str.string, next->line );
+			sprintf( message, "Invalid index expression on line %d.", next->line );
 			next = NULL;
 		}
 	} else {
