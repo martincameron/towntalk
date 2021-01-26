@@ -10,7 +10,7 @@ enum result {
 
 /* Reference type. */
 enum reference_type {
-	STRING, ELEMENT, ARRAY, FUNCTION, WORKER, EXIT
+	STRING, ELEMENT, ARRAY, BUFFER, FUNCTION, WORKER, EXIT
 };
 
 /* String list. */
@@ -83,7 +83,7 @@ struct worker {
 	struct string str;
 	struct environment env;
 	struct variable *args, status, result, exception;
-	struct string *strings;
+	struct array *strings;
 	struct global_variable *globals;
 	struct expression *parameters;
 	void *thread, *mutex;

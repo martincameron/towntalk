@@ -684,7 +684,7 @@ static enum result execute_asm_statement( struct statement *this, struct variabl
 		str = variables[ idx ].string_value;
 		if( str ) {
 			string_bounds[ idx ] = str->length;
-			if( str->type == ARRAY ) {
+			if( str->type == ARRAY || str->type == BUFFER ) {
 				array_bounds[ idx ] = ( ( struct array * ) str )->length;
 			} else {
 				array_bounds[ idx ] = 0;

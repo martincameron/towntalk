@@ -158,6 +158,7 @@
 		$execute(worker arg ...) Begin execution of the specified worker and return it.
 		$status(worker/str)      Receive or set worker status value during execution.
 		$result(worker)          Wait for the return value of a worker function.
+		$buffer(len)             Create a numerical array that may passed to workers.
 */
 
 /* The maximum integer value. */
@@ -770,6 +771,10 @@ void unref_string( struct string *str ) {
 			if( arr->next ) {
 				arr->next->prev = arr->prev;
 			}
+			free( arr->array );
+			free( arr );
+		} else if( str->type == BUFFER ) {
+			arr = ( struct array * ) str;
 			free( arr->array );
 			free( arr );
 		} else if( str->type == FUNCTION ) {
@@ -1431,19 +1436,28 @@ static enum result execute_dim_statement( struct statement *this, struct variabl
 
 static enum result execute_array_assignment( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	struct variable var = { 0, NULL }, idx = { 0, NULL };
-	enum result ret = this->destination->evaluate( this->destination, variables, &var, exception );
+	struct variable arr = { 0, NULL }, idx = { 0, NULL }, var;
+	enum result ret = this->destination->evaluate( this->destination, variables, &arr, exception );
 	if( ret ) {
-		if( var.string_value && var.string_value->type == ARRAY ) {
+		if( arr.string_value && ( arr.string_value->type == ARRAY || arr.string_value->type == BUFFER ) ) {
 			if( this->index->evaluate == evaluate_local ) {
 				idx.integer_value = variables[ this->index->index ].integer_value;
 			} else {
 				ret = this->index->evaluate( this->index, variables, &idx, exception );
 			}
 			if( ret ) {
-				if( ( unsigned int ) idx.integer_value < ( unsigned int ) ( ( struct array * ) var.string_value )->length ) {
-					ret = this->source->evaluate( this->source, variables,
-						&( ( struct array * ) var.string_value )->array[ idx.integer_value ], exception );
+				if( ( unsigned int ) idx.integer_value < ( unsigned int ) ( ( struct array * ) arr.string_value )->length ) {
+					if( arr.string_value->type == ARRAY ) {
+						ret = this->source->evaluate( this->source, variables,
+							&( ( struct array * ) arr.string_value )->array[ idx.integer_value ], exception );
+					} else {
+						var.string_value = NULL;
+						ret = this->source->evaluate( this->source, variables, &var, exception );
+						if( ret ) {
+							( ( struct array * ) arr.string_value )->array[ idx.integer_value ].integer_value = var.integer_value;
+							dispose_temporary( &var );
+						}
+					}
 				} else {
 					ret = throw( exception, this->index, idx.integer_value, "Array index out of bounds." );
 				}
@@ -1452,7 +1466,7 @@ static enum result execute_array_assignment( struct statement *this, struct vari
 		} else {
 			ret = throw( exception, this->destination, 0, "Not an array." );
 		}
-		dispose_temporary( &var );
+		dispose_temporary( &arr );
 	}
 	return ret;
 }
@@ -1696,13 +1710,45 @@ static enum result evaluate_array_expression( struct expression *this, struct va
 	return ret;
 }
 
+static enum result evaluate_buffer_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	struct variable var = { 0, NULL }, *values;
+	struct array *arr;
+	enum result ret = this->parameters->evaluate( this->parameters, variables, &var, exception );
+	if( ret ) {
+		if( var.integer_value >= 0 ) {
+			arr = calloc( 1, sizeof( struct array ) );
+			values = calloc( var.integer_value + 1, sizeof( struct variable ) );
+			if( arr && values ) {
+				arr->str.string = "[Buffer]";
+				arr->str.reference_count = 1;
+				arr->str.length = strlen( arr->str.string );
+				arr->str.type = BUFFER;
+				arr->array = values;
+				arr->length = var.integer_value;
+				dispose_temporary( result );
+				result->integer_value = 0;
+				result->string_value = &arr->str;
+			} else {
+				free( arr );
+				free( values );
+				ret = throw( exception, this, 0, OUT_OF_MEMORY );
+			}
+		} else {
+			ret = throw( exception, this, var.integer_value, "Invalid buffer length." );
+		}
+		dispose_temporary( &var );
+	}
+	return ret;
+}
+
 static enum result evaluate_index_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct expression *parameter = this->parameters;
 	struct variable var = { 0, NULL }, idx = { 0, NULL };
 	enum result ret = parameter->evaluate( parameter, variables, &var, exception );
 	if( ret ) {
-		if( var.string_value && var.string_value->type == ARRAY ) {
+		if( var.string_value && ( var.string_value->type == ARRAY || var.string_value->type == BUFFER ) ) {
 			parameter = parameter->next;
 			if( parameter->evaluate == evaluate_local ) {
 				idx.integer_value = variables[ parameter->index ].integer_value;
@@ -2169,7 +2215,7 @@ static enum result evaluate_len_expression( struct expression *this, struct vari
 	if( ret ) {
 		if( len.string_value ) {
 			dispose_variable( result );
-			if( len.string_value->type == ARRAY ) {
+			if( len.string_value->type == ARRAY || len.string_value->type == BUFFER ) {
 				result->integer_value = ( ( struct array * ) len.string_value )->length;
 			} else {
 				result->integer_value = len.string_value->length;
@@ -2331,7 +2377,7 @@ static enum result evaluate_sub_expression( struct expression *this, struct vari
 			ret = parameter->evaluate( parameter, variables, &len, exception );
 			if( ret ) {
 				if( var.string_value ) {
-					if( var.string_value->type == ARRAY ) {
+					if( var.string_value->type == ARRAY || var.string_value->type == BUFFER ) {
 						length = ( ( struct array * ) var.string_value )->length;
 					} else {
 						length = var.string_value->length;
@@ -2341,7 +2387,7 @@ static enum result evaluate_sub_expression( struct expression *this, struct vari
 					&& idx.integer_value + len.integer_value <= length ) {
 						str = new_string_value( len.integer_value );
 						if( str ) {
-							if( var.string_value->type == ARRAY ) {
+							if( var.string_value->type == ARRAY || var.string_value->type == BUFFER ) {
 								data = str->string;
 								arr = ( ( struct array * ) var.string_value )->array;
 								offset = 0;
@@ -2840,7 +2886,7 @@ static enum result evaluate_pack_expression( struct expression *this, struct var
 	struct variable val = { 0, NULL }, *src;
 	enum result ret = this->parameters->evaluate( this->parameters, variables, &val, exception );
 	if( ret ) {
-		if( val.string_value && val.string_value->type == ARRAY ) {
+		if( val.string_value && ( val.string_value->type == ARRAY || val.string_value->type == BUFFER ) ) {
 			src = ( ( struct array * ) val.string_value )->array;
 			len = ( ( struct array * ) val.string_value )->length * 4;
 		} else {
@@ -4086,6 +4132,7 @@ static enum result evaluate_execute_expression( struct expression *this, struct 
 	struct expression *parameter = this->parameters;
 	struct variable var = { 0, NULL };
 	struct worker *work;
+	struct string *str;
 	int count, idx;
 	enum result ret = parameter->evaluate( parameter, variables, &var, exception );
 	if( ret ) {
@@ -4105,13 +4152,18 @@ static enum result evaluate_execute_expression( struct expression *this, struct 
 					ret = parameter->evaluate( parameter, variables, &work->args[ idx ], exception );
 					if( ret ) {
 						work->globals[ idx ].value.integer_value = work->args[ idx ].integer_value;
-						if( work->args[ idx ].string_value ) {
-							if( work->args[ idx ].string_value->type == STRING ) {
-								work->strings[ idx ].reference_count = 1;
-								work->strings[ idx ].type = STRING;
-								work->strings[ idx ].string = work->args[ idx ].string_value->string;
-								work->strings[ idx ].length = work->args[ idx ].string_value->length;
-								work->globals[ idx ].value.string_value = &work->strings[ idx ];
+						str = work->args[ idx ].string_value;
+						if( str ) {
+							if( str->type == STRING || str->type == BUFFER ) {
+								work->strings[ idx ].str.reference_count = 1;
+								work->strings[ idx ].str.type = str->type;
+								work->strings[ idx ].str.string = str->string;
+								work->strings[ idx ].str.length = str->length;
+								if( str->type == BUFFER ) {
+									work->strings[ idx ].array = ( ( struct array * ) str )->array;
+									work->strings[ idx ].length = ( ( struct array * ) str )->length;
+								}
+								work->globals[ idx ].value.string_value = &work->strings[ idx ].str;
 							} else {
 								ret = throw( exception, this, 0, "Values of this type cannot be passed to workers." );
 							}
@@ -4453,6 +4505,7 @@ static struct operator operators[] = {
 	{ "$execute", '$',-1, evaluate_execute_expression, &operators[ 56 ] },
 	{ "$status", '$', 1, evaluate_status_expression, &operators[ 57 ] },
 	{ "$result", '$', 1, evaluate_result_expression, &operators[ 58 ] },
+	{ "$buffer", '$', 1, evaluate_buffer_expression, &operators[ 59 ] },
 	{ "$src", '$', 0, evaluate_source_expression, NULL }
 };
 
@@ -4539,7 +4592,7 @@ static struct worker* parse_worker( struct element *elem, struct environment *en
 			params = func->num_parameters;
 			work->args = calloc( params, sizeof( struct variable ) );
 			if( work->args ) {
-				work->strings = calloc( params, sizeof( struct string ) );
+				work->strings = calloc( params, sizeof( struct array ) );
 			}
 			if( work->strings ) {
 				work->globals = calloc( params, sizeof( struct global_variable ) );
