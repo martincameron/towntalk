@@ -85,6 +85,8 @@
 		dec a;                   Decrement local variable.
 		save str, "file";        Save bytes from string to file.
 		append str, "file";      Append bytes to the end of file.
+		lock worker {statements} Obtain specified worker lock and execute statements.
+		locked {statements}      Obtain current worker lock and execute statements.
 
 	Expressions:
 		-123                     Decimal integer literal.
@@ -184,16 +186,6 @@ static struct element* parse_expression( struct element *elem, struct environmen
 	struct function *func, struct expression *prev, char *message );
 static struct element* parse_expressions( struct element *elem, struct environment *env,
 	struct function *func, char terminator, struct expression *prev, int *num_exprs, char *message );
-static struct element* parse_if_statement( struct element *elem, struct environment *env,
-	struct function *func, struct statement *prev, char *message );
-static struct element* parse_while_statement( struct element *elem, struct environment *env,
-	struct function *func, struct statement *prev, char *message );
-static struct element* parse_try_statement( struct element *elem, struct environment *env,
-	struct function *func, struct statement *prev, char *message );
-static struct element* parse_case_statement( struct element *elem, struct environment *env,
-	struct function *func, struct statement *prev, char *message );
-static struct element* parse_default_statement( struct element *elem, struct environment *env,
-	struct function *func, struct statement *prev, char *message );
 static struct worker* parse_worker( struct element *elem, struct environment *env,
 	char *file, char *message );
 
@@ -1352,6 +1344,38 @@ static enum result execute_if_statement( struct statement *this, struct variable
 				break;
 			}
 		}
+	}
+	return ret;
+}
+
+static enum result execute_lock_statement( struct statement *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	struct statement *stmt = this->if_block;
+	struct variable var = { 0, NULL };
+	struct worker *work;
+	enum result ret = this->source->evaluate( this->source, variables, &var, exception );
+	if( ret ) {
+		if( var.string_value && var.string_value->type == WORKER ) {
+			work = ( struct worker * ) var.string_value;
+		} else {
+			work = this->source->function->env->worker;
+		}
+		if( lock_worker( work ) ) {
+			while( stmt ) {
+				ret = stmt->execute( stmt, variables, result, exception );
+				if( ret == OKAY ) {
+					stmt = stmt->next;
+				} else {
+					break;
+				}
+			}
+			if( unlock_worker( work ) == 0 ) {
+				throw( exception, this->source, 0, "Unable to unlock worker.");
+			}
+		} else {
+			throw( exception, this->source, 0, "Unable to lock worker.");
+		}
+		dispose_temporary( &var );
 	}
 	return ret;
 }
@@ -3553,6 +3577,45 @@ static struct element* parse_dim_statement( struct element *elem, struct environ
 	return next;
 }
 
+static struct element* parse_case_statement( struct element *elem, struct environment *env,
+	struct function *func, struct statement *prev, char *message ) {
+	struct expression expr;
+	struct element *next = elem->next;
+	struct statement block, *stmt = new_statement( message );
+	if( stmt ) {
+		prev->next = stmt;
+		next = parse_expressions( next, env, func, '{', &expr, NULL, message );
+		if( message[ 0 ] == 0 ) {
+			stmt->source = expr.next;
+			block.next = NULL;
+			parse_keywords_indexed( env->statements_index, next->child, env, func, &block, message );
+			stmt->if_block = block.next;
+			if( message[ 0 ] == 0 ) {
+				stmt->execute = execute_case_statement;
+				next = next->next;
+			}
+		}
+	}
+	return next;
+}
+
+static struct element* parse_default_statement( struct element *elem, struct environment *env,
+	struct function *func, struct statement *prev, char *message ) {
+	struct element *next = elem->next;
+	struct statement block, *stmt = new_statement( message );
+	if( stmt ) {
+		prev->next = stmt;
+		block.next = NULL;
+		parse_keywords_indexed( env->statements_index, next->child, env, func, &block, message );
+		stmt->if_block = block.next;
+		if( message[ 0 ] == 0 ) {
+			stmt->execute = execute_case_statement;
+			next = next->next;
+		}
+	}
+	return elem->next->next;
+}
+
 static struct keyword switch_stmts[] = {
 	{ "rem", "{", parse_comment, &switch_stmts[ 1 ] },
 	{ "case", "X{", parse_case_statement, &switch_stmts[ 2 ] },
@@ -3604,68 +3667,40 @@ static struct element* parse_switch_statement( struct element *elem, struct envi
 	return next;
 }
 
-static struct keyword statements[] = {
-	{ "rem", "{", parse_comment, &statements[ 1 ] },
-	{ "var", "V;", parse_local_declaration, &statements[ 2 ] },
-	{ "let", "d=x;", parse_assignment_statement, &statements[ 3 ] },
-	{ "print", "x;", parse_print_statement, &statements[ 4 ] },
-	{ "write", "x;", parse_write_statement, &statements[ 5 ] },
-	{ "error", "x;", parse_error_statement, &statements[ 6 ] },
-	{ "throw", "x;", parse_throw_statement, &statements[ 7 ] },
-	{ "return", "x;", parse_return_statement, &statements[ 8 ] },
-	{ "exit", "x;", parse_exit_statement, &statements[ 9 ] },
-	{ "break", ";", parse_break_statement, &statements[ 10 ] },
-	{ "continue", ";", parse_continue_statement, &statements[ 11 ] },
-	{ "if", "x{", parse_if_statement, &statements[ 12 ] },
-	{ "while", "x{", parse_while_statement, &statements[ 13 ] },
-	{ "call", "x;", parse_call_statement, &statements[ 14 ] },
-	{ "try", "{cn{", parse_try_statement, &statements[ 15 ] },
-	{ "dim", "[;", parse_dim_statement, &statements[ 16 ] },
-	{ "set", "d=x;", parse_assignment_statement, &statements[ 17 ] },
-	{ "switch", "x{", parse_switch_statement, &statements[ 18 ] },
-	{ "inc", "n;", parse_increment_statement, &statements[ 19 ] },
-	{ "dec", "n;", parse_decrement_statement, &statements[ 20 ] },
-	{ "save", "xx;", parse_save_statement, &statements[ 21 ] },
-	{ "append", "xx;", parse_append_statement, NULL }
-};
-
-static struct element* parse_case_statement( struct element *elem, struct environment *env,
+static struct element* parse_lock_statement( struct element *elem, struct environment *env,
 	struct function *func, struct statement *prev, char *message ) {
 	struct expression expr;
 	struct element *next = elem->next;
 	struct statement block, *stmt = new_statement( message );
 	if( stmt ) {
 		prev->next = stmt;
-		next = parse_expressions( next, env, func, '{', &expr, NULL, message );
+		if( next->str.string[ 0 ] == '{' ) {
+			expr.next = calloc( 1, sizeof( struct expression ) );
+			if( expr.next ) {
+				expr.next->line = elem->line;
+				expr.next->function = func;
+				expr.next->evaluate = evaluate_integer_constant_expression;
+			} else {
+				strcpy( message, OUT_OF_MEMORY );
+			}
+		} else {
+			expr.next = NULL;
+			next = parse_expression( next, env, func, &expr, message );
+		}
 		if( message[ 0 ] == 0 ) {
 			stmt->source = expr.next;
-			block.next = NULL;
-			parse_keywords_indexed( env->statements_index, next->child, env, func, &block, message );
-			stmt->if_block = block.next;
+			stmt->execute = execute_lock_statement;
+			if( next->child ) {
+				block.next = NULL;
+				parse_keywords_indexed( env->statements_index, next->child, env, func, &block, message );
+				stmt->if_block = block.next;
+			}
 			if( message[ 0 ] == 0 ) {
-				stmt->execute = execute_case_statement;
 				next = next->next;
 			}
 		}
 	}
 	return next;
-}
-
-static struct element* parse_default_statement( struct element *elem, struct environment *env,
-	struct function *func, struct statement *prev, char *message ) {
-	struct element *next = elem->next;
-	struct statement block, *stmt = new_statement( message );
-	if( stmt ) {
-		prev->next = stmt;
-		block.next = NULL;
-		parse_keywords_indexed( env->statements_index, next->child, env, func, &block, message );
-		stmt->if_block = block.next;
-		if( message[ 0 ] == 0 ) {
-			stmt->execute = execute_case_statement;
-			next = next->next;
-		}
-	}
-	return elem->next->next;
 }
 
 static struct keyword* get_keyword( char *name, struct keyword *keywords ) {
@@ -4445,6 +4480,33 @@ static struct element* parse_struct_declaration( struct element *elem, struct en
 	}
 	return next;
 }
+
+static struct keyword statements[] = {
+	{ "rem", "{", parse_comment, &statements[ 1 ] },
+	{ "var", "V;", parse_local_declaration, &statements[ 2 ] },
+	{ "let", "d=x;", parse_assignment_statement, &statements[ 3 ] },
+	{ "print", "x;", parse_print_statement, &statements[ 4 ] },
+	{ "write", "x;", parse_write_statement, &statements[ 5 ] },
+	{ "error", "x;", parse_error_statement, &statements[ 6 ] },
+	{ "throw", "x;", parse_throw_statement, &statements[ 7 ] },
+	{ "return", "x;", parse_return_statement, &statements[ 8 ] },
+	{ "exit", "x;", parse_exit_statement, &statements[ 9 ] },
+	{ "break", ";", parse_break_statement, &statements[ 10 ] },
+	{ "continue", ";", parse_continue_statement, &statements[ 11 ] },
+	{ "if", "x{", parse_if_statement, &statements[ 12 ] },
+	{ "while", "x{", parse_while_statement, &statements[ 13 ] },
+	{ "call", "x;", parse_call_statement, &statements[ 14 ] },
+	{ "try", "{cn{", parse_try_statement, &statements[ 15 ] },
+	{ "dim", "[;", parse_dim_statement, &statements[ 16 ] },
+	{ "set", "d=x;", parse_assignment_statement, &statements[ 17 ] },
+	{ "switch", "x{", parse_switch_statement, &statements[ 18 ] },
+	{ "inc", "n;", parse_increment_statement, &statements[ 19 ] },
+	{ "dec", "n;", parse_decrement_statement, &statements[ 20 ] },
+	{ "save", "xx;", parse_save_statement, &statements[ 21 ] },
+	{ "append", "xx;", parse_append_statement, &statements[ 22 ] },
+	{ "lock", "x{", parse_lock_statement, &statements[ 23 ] },
+	{ "locked", "{", parse_lock_statement, NULL }
+};
 
 static struct operator operators[] = {
 	{ ":", ':',-1, evaluate_refcall_expression, &operators[ 1 ] },

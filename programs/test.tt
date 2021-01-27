@@ -683,10 +683,12 @@ function testfunction() {
 }
 
 function testworker() {
-	var worker = $execute( $worker( ${ () { call $status( "1" ); return 1; } } ) );
-	call assert_equals( 1, $result( worker ), ${-} );
-	call assert_equals( "1", $status( worker ), ${-} );
-	call assert_equals( "1", $result( $execute( $worker( ${ ( a ) { return a; } } ), "1" ) ), ${-} );
+	var worker = $execute( $worker( ${ () { locked { call $status( "1" ); return 1; } } } ) );
+	lock worker {
+		call assert_equals( 1, $result( worker ), ${-} );
+		call assert_equals( "1", $status( worker ), ${-} );
+		call assert_equals( "1", $result( $execute( $worker( ${ ( a ) { return a; } } ), "1" ) ), ${-} );
+	}
 	call assert_throws( "1", ${ () { call $result( $execute( $worker( ${ ( a ) { throw a; } } ), "1" ) ); } } );
 	call assert_throws( "Not an element.", ${ () { call $worker( 0 ); } } );
 	call assert_throws( "Expected '(' after '$worker'", ${ () { call $worker( ${ x } ); } } );
