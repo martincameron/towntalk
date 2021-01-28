@@ -683,12 +683,10 @@ function testfunction() {
 }
 
 function testworker() {
-	var worker = $execute( $worker( ${ () { locked { call $status( "1" ); return 1; } } } ) );
+	var worker = $execute( $worker( ${ () { locked { return 1; } } } ) );
 	call assert_equals( 1, $result( worker ), ${-} );
-	call assert_equals( "1", $status( worker ), ${-} );
-	lock worker {
-		call assert_equals( "1", $result( $execute( $worker( ${ ( a ) { return a; } } ), "1" ) ), ${-} );
-	}
+	call assert_equals( 1, $result( $execute( $worker( ${ ( a ) { let [ a 0 ] = 1; return [ a 0 ]; } } ), $buffer( 1 ) ) ), ${-} );
+	call assert_throws( "Unable to lock", ${ () { call $result( $execute( $worker( ${ () { locked { locked {} } } } ) ) ); } } );
 	call assert_throws( "1", ${ () { call $result( $execute( $worker( ${ ( a ) { throw a; } } ), "1" ) ); } } );
 	call assert_throws( "Not an element.", ${ () { call $worker( 0 ); } } );
 	call assert_throws( "Expected '(' after '$worker'", ${ () { call $worker( ${ x } ); } } );
@@ -696,16 +694,13 @@ function testworker() {
 	call assert_throws( "Parameter 'x' already", ${ () { call $worker( ${ ( x x ) {} } ); } } );
 	call assert_throws( "Not a worker", ${ () { call $execute( 0 ); } } );
 	call assert_throws( "Incorrect number", ${ () { call $execute( $worker( ${ ( a ) {} } ) ); } } );
+	call assert_throws( "Worker locked", ${ () { var w = $worker( ${ () {} } ); lock w { call $execute( w ); } } } );
 	call assert_throws( "Values of this type", ${ () { call $execute( $worker( ${ ( a ) {} } ), ${ x } ); } } );
 	call assert_throws( "Not a worker", ${ () { call $result( 0 ); } } );
+	call assert_throws( "Worker locked", ${ () { var w = $worker( ${ () {} } ); lock w { call $result( w ); } } } );
 	call assert_throws( "Worker exited", ${ () { call $result( $execute( $worker( ${ () { exit 0; } } ) ) ); } } );
 	call assert_throws( "Values of this type", ${ () { call $result( $execute( $worker( ${ () { return $array( 0 ); } } ) ) ); } } );
 	call assert_throws( "Operation", ${ () { call $result( $execute( $worker( ${ () { call $worker( 0 ); } } ) ) ); } } );
-	call assert_throws( "Not a worker", ${ () { call $status( 0 ); } } );
-	call assert_throws( "Worker exited", ${ () { var err, worker = $execute( $worker( ${ () { var e; try { exit 0; } catch e {} } } ) );
-		try { call $result( worker ); } catch err { call $status( worker ); } } } );
-	call assert_throws( "x", ${ () { var err, worker = $execute( $worker( ${ () { throw "x"; } } ) );
-		try { call $result( worker ); } catch err { call $status( worker ); } } } );
 }
 
 program test {

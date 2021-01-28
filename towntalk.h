@@ -82,12 +82,13 @@ struct environment {
 struct worker {
 	struct string str;
 	struct environment env;
-	struct variable *args, status, result, exception;
+	struct variable *args, result, exception;
 	struct array *strings;
 	struct global_variable *globals;
 	struct expression *parameters;
 	void *thread, *mutex;
 	enum result ret;
+	char locked;
 };
 
 /* Struct declaration list.*/
