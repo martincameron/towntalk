@@ -364,6 +364,7 @@ static struct element* copy_element( struct element *source ) {
 	while( source ) {
 		elem = new_element( source->str.length );
 		if( elem ) {
+			elem->line = source->line;
 			if( prev ) {
 				prev->next = elem;
 			}
