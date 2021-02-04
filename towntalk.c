@@ -697,7 +697,7 @@ static void dispose_functions( struct function *func ) {
 		str = &func->str;
 		if( str->reference_count == 1 ) {
 			free( func->str.string );
-			free( func->file.string );
+			unref_string( func->file );
 			dispose_string_list( func->variable_decls );
 			dispose_statements( func->statements );
 			dispose_global_variables( func->literals );
@@ -861,7 +861,7 @@ enum result throw( struct variable *exception, struct expression *source, int in
 	if( string ) {
 		str = new_string_value( strlen( string ) + 64 );
 		if( str ) {
-			if( sprintf( str->string, "%s (on line %d of '%.32s')", string, source->line, func->file.string ) < 0 ) {
+			if( sprintf( str->string, "%s (on line %d of '%.32s')", string, source->line, func->file->string ) < 0 ) {
 				strcpy( str->string, string );
 			}
 			str->length = strlen( str->string );
@@ -1064,11 +1064,12 @@ static struct function* new_function( char *name, char *file, char *message ) {
 			func->str.length = strlen( func->str.string );
 			func->str.reference_count = 1;
 			func->str.type = FUNCTION;
-			func->file.reference_count = 1;
-			func->file.length = strlen( file );
-			func->file.string = new_string( file );
+			func->file = new_string_value( strlen( file ) );
+			if( func->file ) {
+				strcpy( func->file->string, file );
+			}
 		}
-		if( !func->file.string ) {
+		if( !func->file ) {
 			unref_string( &func->str );
 			func = NULL;
 		}
@@ -3052,7 +3053,7 @@ static enum result evaluate_interrupted_expression( struct expression *this, str
 static enum result evaluate_source_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct variable src = { 0, NULL };
-	src.string_value = &this->function->file;
+	src.string_value = this->function->file;
 	assign_variable( &src, result );
 	return OKAY;
 }
@@ -4065,7 +4066,7 @@ static enum result evaluate_function_expression( struct expression *this, struct
 			key.line = this->line;
 			validate_syntax( "({0", elem, &key, this->function->env, message );
 			if( message[ 0 ] == 0 ) {
-				func = parse_function( elem, "function", this->function->file.string, this->function->env, message );
+				func = parse_function( elem, "function", this->function->file->string, this->function->env, message );
 				if( func ) {
 					if( parse_function_body( func, this->function->env, message ) ) {
 						dispose_temporary( result );
@@ -4143,7 +4144,7 @@ static enum result evaluate_worker_expression( struct expression *this, struct v
 				key.line = this->line;
 				validate_syntax( "({0", elem, &key, this->function->env, message );
 				if( message[ 0 ] == 0 ) {
-					work = parse_worker( elem, this->function->env, this->function->file.string, message );
+					work = parse_worker( elem, this->function->env, this->function->file->string, message );
 					if( work ) {
 						dispose_temporary( result );
 						result->integer_value = 0;
@@ -4297,7 +4298,7 @@ static struct element* parse_function_declaration( struct element *elem, struct 
 	if( validate_decl( next, env, message ) ) {
 		name = next->str.string;
 		next = next->next;
-		decl = parse_function( next, name, decl->file.string, env, message );
+		decl = parse_function( next, name, decl->file->string, env, message );
 		if( decl ) {
 			idx = hash_code( name, 0 );
 			decl->next = env->functions_index[ idx ];
@@ -4313,7 +4314,7 @@ static struct element* parse_program_declaration( struct element *elem, struct e
 	struct element *next = elem->next;
 	int idx;
 	if( validate_decl( next, env, message ) ) {
-		func = new_function( next->str.string, func->file.string, message );
+		func = new_function( next->str.string, func->file->string, message );
 		if( func ) {
 			idx = hash_code( next->str.string, 0 );
 			func->next = env->functions_index[ idx ];
@@ -4331,11 +4332,11 @@ static struct element* parse_program_declaration( struct element *elem, struct e
 static struct element* parse_include( struct element *elem, struct environment *env,
 	struct function *func, struct statement *prev, char *message ) {
 	struct element *next = elem->next;
-	int path_len = chop( func->file.string, "/:\\" );
+	int path_len = chop( func->file->string, "/:\\" );
 	int name_len = unquote_string( next->str.string, NULL );
 	char *path = malloc( path_len + name_len + 1 );
 	if( path ) {
-		memcpy( path, func->file.string, sizeof( char ) * path_len );
+		memcpy( path, func->file->string, sizeof( char ) * path_len );
 		unquote_string( next->str.string, &path[ path_len ] );
 		path[ path_len + name_len ] = 0;
 		if( parse_tt_file( path, env, message ) ) {
@@ -4605,7 +4606,7 @@ static struct worker* parse_worker( struct element *elem, struct environment *en
 	struct worker *work = new_worker( message );
 	if( work ) {
 		func = parse_function( elem, work->str.string, file, &work->env, message );
-		if( func && parse_function_body( func, &work->env, message ) ) {
+		if( func ) {
 			work->env.functions_index[ hash_code( work->str.string, 0 ) ] = func;
 			work->env.entry_point = func;
 			params = func->num_parameters;
@@ -4625,6 +4626,7 @@ static struct worker* parse_worker( struct element *elem, struct environment *en
 					work->parameters[ idx ].global = &work->globals[ idx ];
 					work->parameters[ idx ].next = &work->parameters[ idx + 1 ];
 				}
+				parse_function_body( func, &work->env, message );
 			} else {
 				strcpy( message, OUT_OF_MEMORY );
 			}
