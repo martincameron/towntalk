@@ -10,7 +10,7 @@ enum result {
 
 /* Reference type. */
 enum reference_type {
-	STRING, ELEMENT, ARRAY, BUFFER, FUNCTION, WORKER, EXIT
+	STRING, ELEMENT, ARRAY, BUFFER, FUNCTION, WORKER, CUSTOM, EXIT
 };
 
 /* String list. */
@@ -89,6 +89,12 @@ struct worker {
 	void *thread, *mutex;
 	enum result ret;
 	char locked;
+};
+
+/* Reference-counted custom type. */
+struct custom_type {
+	struct string str;
+	void ( *dispose )( struct string *this );
 };
 
 /* Struct declaration list.*/

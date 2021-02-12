@@ -692,6 +692,41 @@ static void dispose_statements( struct statement *statements ) {
 	}
 }
 
+static void dispose_element( struct element *elem ) {
+	struct element *prev;
+	while( elem ) {
+		if( elem->str.reference_count == 1 ) {
+			if( elem->child ) {
+				dispose_element( elem->child );
+			}
+			prev = elem;
+			elem = elem->next;
+			free( prev );
+		} else {
+			elem->str.reference_count--;
+			elem = NULL;
+		}
+	}
+}
+
+static void dispose_array( struct array *arr ) {
+	int idx = 0, len = arr->length;
+	while( idx < len ) {
+		dispose_variable( &arr->array[ idx++ ] );
+	}
+	arr->prev->next = arr->next;
+	if( arr->next ) {
+		arr->next->prev = arr->prev;
+	}
+	free( arr->array );
+	free( arr );
+}
+
+static void dispose_buffer( struct array *buf ) {
+	free( buf->array );
+	free( buf );
+}
+
 static void dispose_functions( struct function *func ) {
 	struct string *str;
 	while( func ) {
@@ -731,48 +766,31 @@ static void dispose_worker( struct worker *work ) {
 
 /* Decrement the reference count of the specified value and deallocate if necessary. */
 void unref_string( struct string *str ) {
-	int idx, len;
-	struct array *arr;
-	struct element *elem;
 	if( str->reference_count == 1 ) {
-		if( str->type == STRING ) {
-			free( str );
-		} else if( str->type == ELEMENT ) {
-			while( str ) {
-				if( str->reference_count == 1 ) {
-					elem = ( struct element * ) str;
-					if( elem->child ) {
-						unref_string( &elem->child->str );
-					}
-					elem = elem->next;
-					free( str );
-					str = &elem->str;
-				} else {
-					str->reference_count--;
-					str = NULL;
-				}
-			}
-		} else if( str->type == ARRAY ) {
-			arr = ( struct array * ) str;
-			idx = 0, len = arr->length;
-			while( idx < len ) {
-				dispose_variable( &arr->array[ idx++ ] );
-			}
-			arr->prev->next = arr->next;
-			if( arr->next ) {
-				arr->next->prev = arr->prev;
-			}
-			free( arr->array );
-			free( arr );
-		} else if( str->type == BUFFER ) {
-			arr = ( struct array * ) str;
-			free( arr->array );
-			free( arr );
-		} else if( str->type == FUNCTION ) {
-			dispose_functions( ( struct function * ) str );
-		} else if( str->type == WORKER ) {
-			await_worker( ( struct worker * ) str, 1 );
-			dispose_worker( ( struct worker * ) str );
+		switch( str->type ) {
+			default:
+			case STRING:
+				free( str );
+				break;
+			case ELEMENT:
+				dispose_element( ( struct element * ) str );
+				break;
+			case ARRAY:
+				dispose_array( ( struct array * ) str );
+				break;
+			case BUFFER:
+				dispose_buffer( ( struct array * ) str );
+				break;
+			case FUNCTION:
+				dispose_functions( ( struct function * ) str );
+				break;
+			case WORKER:
+				await_worker( ( struct worker * ) str, 1 );
+				dispose_worker( ( struct worker * ) str );
+				break;
+			case CUSTOM:
+				( ( struct custom_type * ) str )->dispose( str );
+				break;
 		}
 	} else {
 		str->reference_count--;
