@@ -2,14 +2,18 @@
 CC=gcc
 CFLAGS=-Wextra -Og
 ANSI_C=-ansi -pedantic
+PTHREADS=-pthread
 
 all: tt
 
 clean:
-	rm -f tt ttfx ttfx-midi ttfx-sdl1 xm2tmf
+	rm -f tt ttmt ttfx ttfx-midi ttfx-sdl1 xm2tmf
 
 tt: tt.c towntalk.c towntalk.h ttasm.c ttasm.h
 	$(CC) $(CFLAGS) $(ANSI_C) -DASM_STATEMENT tt.c towntalk.c ttasm.c -o tt
+
+ttmt: tt.c towntalk.c towntalk.h ttasm.c ttasm.h
+	$(CC) $(CFLAGS) $(ANSI_C) $(PTHREADS) -DMULTI_THREAD -DASM_STATEMENT tt.c towntalk.c ttasm.c -o ttmt
 
 ttfx: ttfx.c towntalk.c towntalk.h ttasm.c ttasm.h
 	$(CC) $(CFLAGS) -DMULTI_THREAD -DASM_STATEMENT ttfx.c towntalk.c ttasm.c -o ttfx `sdl2-config --cflags --libs`
