@@ -1,23 +1,25 @@
 
 program asmspeed {
-	var time = $time, total = 0, shift = 10;
+	var time = $time, elapsed = 0, total = 0, scale = 1;
 	var prog = ${ ( n ) { var a = 0; asm { loop: let a = +( a 1 ); jump <( a n ) loop; } return a; } };
-
 	var worker1 = $worker( prog );
 	var worker2 = $worker( prog );
 	var worker3 = $worker( prog );
 	var worker4 = $worker( prog );
-	
-	while &&( <( -( $time time ) 10 ) <( shift 29 ) ) {
-		var count = <<( 1 shift );
+
+	while <( elapsed 10 ) {
+		if &&( <( elapsed 2 ) <( scale 1000000 ) ) {
+			let scale = *( scale 10 );
+			let total = /( total 10 );
+		}
+		var count = *( scale 100 );
 		call $execute( worker1 count );
 		call $execute( worker2 count );
 		call $execute( worker3 count );
 		call $execute( worker4 count );
-		let total = +( total $result( worker1 ) $result( worker2 ) $result( worker3 ) $result( worker4 ) );
-		inc shift;
+		let total = +( total /( +( $result( worker1 ) $result( worker2 ) $result( worker3 ) $result( worker4 ) ) scale ) );
+		let elapsed = -( $time time );
 	}
-	
-	let time = -( $time time );
-	print $cat( "Finished in " time " seconds. At least " /( total ?( time time 1 ) ) " iterations per second." );
+
+	print $cat( "Finished in " elapsed " seconds. At least " /( total elapsed ) " * " scale " iterations per second." );
 }
