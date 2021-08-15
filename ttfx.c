@@ -207,7 +207,7 @@ int worker_thread( void *data ) {
    Returns 0 and assigns message on failure. */
 int initialize_worker( struct worker *work, char *message ) {
 #if defined( ASM_STATEMENT )
-	return add_statements( &asm_keyword, &work->env, message );
+	return add_statements( asm_keyword, &work->env, message );
 #else
 	return 1;
 #endif
@@ -1619,40 +1619,42 @@ static struct constant fxconstants[] = {
 };
 
 static struct operator fxoperators[] = {
-	{ "$millis", '$', 0, evaluate_millis_expression, &fxoperators[ 1 ] },
-	{ "$pollevent", '$', 0, evaluate_pollevent_expression, &fxoperators[ 2 ] },
-	{ "$waitevent", '$', 0, evaluate_waitevent_expression, &fxoperators[ 3 ] },
-	{ "$xmouse", '$', 0, evaluate_xmouse_expression, &fxoperators[ 4 ] },
-	{ "$ymouse", '$', 0, evaluate_ymouse_expression, &fxoperators[ 5 ] },
-	{ "$mousekey", '$', 0, evaluate_mousekey_expression, &fxoperators[ 6 ] },
-	{ "$mousewheel", '$', 0, evaluate_mousewheel_expression, &fxoperators[ 7 ] },
-	{ "$keyboard", '$', 0, evaluate_keyboard_expression, &fxoperators[ 8 ] },
-	{ "$keyshift", '$', 0, evaluate_keyshift_expression, &fxoperators[ 9 ] },
-	{ "$seqtick", '$', 0, evaluate_seqtick_expression, &fxoperators[ 10 ] },
-	{ "$seqmsg", '$', 0, evaluate_seqmsg_expression, &fxoperators[ 11 ] },
-	{ "$dir", '$', 1, evaluate_dir_expression, &fxoperators[ 12 ] },
-	{ "$path", '$', 1, evaluate_path_expression, &fxoperators[ 13 ] },
-	{ "$midimsg", '$', 0, evaluate_midimsg_expression, &fxoperators[ 14 ] },
-	{ "$winmsg", '$', 0, evaluate_winmsg_expression, &fxoperators[ 15 ] },
-	{ "$keyheld", '$', 0, evaluate_keyheld_expression, &fxoperators[ 16 ] },
-	{ "$datfile", '$', 0, evaluate_datfile_expression, &fxoperators[ 17 ] },
-	{ "$extract", '$', 2, evaluate_extract_expression, &fxoperators[ 18 ] },
-	{ "$stream", '$', 3, evaluate_stream_expression, NULL }
+	{ "$millis", '$', 0, evaluate_millis_expression, NULL },
+	{ "$pollevent", '$', 0, evaluate_pollevent_expression, NULL },
+	{ "$waitevent", '$', 0, evaluate_waitevent_expression, NULL },
+	{ "$xmouse", '$', 0, evaluate_xmouse_expression, NULL },
+	{ "$ymouse", '$', 0, evaluate_ymouse_expression, NULL },
+	{ "$mousekey", '$', 0, evaluate_mousekey_expression, NULL },
+	{ "$mousewheel", '$', 0, evaluate_mousewheel_expression, NULL },
+	{ "$keyboard", '$', 0, evaluate_keyboard_expression, NULL },
+	{ "$keyshift", '$', 0, evaluate_keyshift_expression, NULL },
+	{ "$seqtick", '$', 0, evaluate_seqtick_expression, NULL },
+	{ "$seqmsg", '$', 0, evaluate_seqmsg_expression, NULL },
+	{ "$dir", '$', 1, evaluate_dir_expression, NULL },
+	{ "$path", '$', 1, evaluate_path_expression, NULL },
+	{ "$midimsg", '$', 0, evaluate_midimsg_expression, NULL },
+	{ "$winmsg", '$', 0, evaluate_winmsg_expression, NULL },
+	{ "$keyheld", '$', 0, evaluate_keyheld_expression, NULL },
+	{ "$datfile", '$', 0, evaluate_datfile_expression, NULL },
+	{ "$extract", '$', 2, evaluate_extract_expression, NULL },
+	{ "$stream", '$', 3, evaluate_stream_expression, NULL },
+	{ NULL }
 };
 
 static struct keyword fxstatements[] = {
-	{ "display", "xxx;", parse_display_statement, &fxstatements[ 1 ] },
-	{ "show", ";", parse_show_statement, &fxstatements[ 2 ] },
-	{ "surface", "xxxx;", parse_surface_statement, &fxstatements[ 3 ] },
-	{ "blit", "xxxxxxx;", parse_blit_statement, &fxstatements[ 4 ] },
-	{ "rect", "xxxxx;", parse_rect_statement, &fxstatements[ 5 ] },
-	{ "sleep", "x;", parse_sleep_statement, &fxstatements[ 6 ] },
-	{ "timer", "x;", parse_timer_statement, &fxstatements[ 7 ] },
-	{ "audio", "x;", parse_audio_statement, &fxstatements[ 8 ] },
-	{ "sample", "xxxx;", parse_sample_statement, &fxstatements[ 9 ] },
-	{ "queue", "xx;", parse_queue_statement, &fxstatements[ 10 ] },
-	{ "play", "xx;", parse_play_statement, &fxstatements[ 11 ] },
-	{ "midi", "x;", parse_midi_statement, NULL }
+	{ "display", "xxx;", parse_display_statement, NULL },
+	{ "show", ";", parse_show_statement, NULL },
+	{ "surface", "xxxx;", parse_surface_statement, NULL },
+	{ "blit", "xxxxxxx;", parse_blit_statement, NULL },
+	{ "rect", "xxxxx;", parse_rect_statement, NULL },
+	{ "sleep", "x;", parse_sleep_statement, NULL },
+	{ "timer", "x;", parse_timer_statement, NULL },
+	{ "audio", "x;", parse_audio_statement, NULL },
+	{ "sample", "xxxx;", parse_sample_statement, NULL },
+	{ "queue", "xx;", parse_queue_statement, NULL },
+	{ "play", "xx;", parse_play_statement, NULL },
+	{ "midi", "x;", parse_midi_statement, NULL },
+	{ NULL }
 };
 
 static int add_event_constants( struct fxenvironment *env, char *message ) {
@@ -1723,7 +1725,7 @@ static int initialize_fxenvironment( struct fxenvironment *fxenv, char *message 
 	&& add_event_constants( fxenv, message )
 	&& add_statements( fxstatements, &fxenv->env, message )
 #if defined( ASM_STATEMENT )
-	&& add_statements( &asm_keyword, &fxenv->env, message )
+	&& add_statements( asm_keyword, &fxenv->env, message )
 #endif
 	&& add_operators( fxoperators, &fxenv->env, message ) ) {
 		return 1;

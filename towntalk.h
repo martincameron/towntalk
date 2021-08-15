@@ -168,13 +168,16 @@ extern const char *OUT_OF_MEMORY;
    Returns zero and writes message on failure. */
 int initialize_environment( struct environment *env, char *message );
 
-/* Add a copy of the specified statement list to env. Returns zero and writes message on failure. */
+/* Add a copy of the specified null-terminated statement array to env.
+   Returns zero and writes message on failure. */
 int add_statements( struct keyword *statements, struct environment *env, char *message );
 
-/* Add a copy of the specified operator list to env. Returns zero and writes message on failure. */
+/* Add a copy of the specified null-terminated operator array to env.
+   Returns zero and writes message on failure. */
 int add_operators( struct operator *operators, struct environment *env, char *message );
 
-/* Add the specified constants to env. Returns zero and writes message on failure. */
+/* Add the specified null-terminated constant array to env.
+   Returns zero and writes message on failure. */
 int add_constants( struct constant *constants, struct environment *env, char *message );
 
 /* Parse the specified program file into env.

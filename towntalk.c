@@ -4460,92 +4460,94 @@ static struct element* parse_struct_declaration( struct element *elem, struct en
 }
 
 static struct keyword statements[] = {
-	{ "rem", "{", parse_comment, &statements[ 1 ] },
-	{ "var", "V;", parse_local_declaration, &statements[ 2 ] },
-	{ "let", "d=x;", parse_assignment_statement, &statements[ 3 ] },
-	{ "print", "x;", parse_print_statement, &statements[ 4 ] },
-	{ "write", "x;", parse_write_statement, &statements[ 5 ] },
-	{ "error", "x;", parse_error_statement, &statements[ 6 ] },
-	{ "throw", "x;", parse_throw_statement, &statements[ 7 ] },
-	{ "return", "x;", parse_return_statement, &statements[ 8 ] },
-	{ "exit", "x;", parse_exit_statement, &statements[ 9 ] },
-	{ "break", ";", parse_break_statement, &statements[ 10 ] },
-	{ "continue", ";", parse_continue_statement, &statements[ 11 ] },
-	{ "if", "x{", parse_if_statement, &statements[ 12 ] },
-	{ "while", "x{", parse_while_statement, &statements[ 13 ] },
-	{ "call", "x;", parse_call_statement, &statements[ 14 ] },
-	{ "try", "{cn{", parse_try_statement, &statements[ 15 ] },
-	{ "dim", "[;", parse_dim_statement, &statements[ 16 ] },
-	{ "set", "d=x;", parse_assignment_statement, &statements[ 17 ] },
-	{ "switch", "x{", parse_switch_statement, &statements[ 18 ] },
-	{ "inc", "n;", parse_increment_statement, &statements[ 19 ] },
-	{ "dec", "n;", parse_decrement_statement, &statements[ 20 ] },
-	{ "save", "xx;", parse_save_statement, &statements[ 21 ] },
-	{ "append", "xx;", parse_append_statement, &statements[ 22 ] },
-	{ "lock", "x{", parse_lock_statement, &statements[ 23 ] },
-	{ "locked", "{", parse_lock_statement, NULL }
+	{ "rem", "{", parse_comment, NULL },
+	{ "var", "V;", parse_local_declaration, NULL },
+	{ "let", "d=x;", parse_assignment_statement, NULL },
+	{ "print", "x;", parse_print_statement, NULL },
+	{ "write", "x;", parse_write_statement, NULL },
+	{ "error", "x;", parse_error_statement, NULL },
+	{ "throw", "x;", parse_throw_statement, NULL },
+	{ "return", "x;", parse_return_statement, NULL },
+	{ "exit", "x;", parse_exit_statement, NULL },
+	{ "break", ";", parse_break_statement, NULL },
+	{ "continue", ";", parse_continue_statement, NULL },
+	{ "if", "x{", parse_if_statement, NULL },
+	{ "while", "x{", parse_while_statement, NULL },
+	{ "call", "x;", parse_call_statement, NULL },
+	{ "try", "{cn{", parse_try_statement, NULL },
+	{ "dim", "[;", parse_dim_statement, NULL },
+	{ "set", "d=x;", parse_assignment_statement, NULL },
+	{ "switch", "x{", parse_switch_statement, NULL },
+	{ "inc", "n;", parse_increment_statement, NULL },
+	{ "dec", "n;", parse_decrement_statement, NULL },
+	{ "save", "xx;", parse_save_statement, NULL },
+	{ "append", "xx;", parse_append_statement, NULL },
+	{ "lock", "x{", parse_lock_statement, NULL },
+	{ "locked", "{", parse_lock_statement, NULL },
+	{ NULL }
 };
 
 static struct operator operators[] = {
-	{ ":", ':',-1, evaluate_refcall_expression, &operators[ 1 ] },
-	{ "%", '%',-2, evaluate_arithmetic_expression, &operators[ 2 ] },
-	{ "&", '&',-2, evaluate_arithmetic_expression, &operators[ 3 ] },
-	{ "*", '*',-2, evaluate_arithmetic_expression, &operators[ 4 ] },
-	{ "+", '+',-2, evaluate_arithmetic_expression, &operators[ 5 ] },
-	{ "-", '-',-2, evaluate_arithmetic_expression, &operators[ 6 ] },
-	{ "/", '/',-2, evaluate_arithmetic_expression, &operators[ 7 ] },
-	{ "<", '<', 2, evaluate_arithmetic_expression, &operators[ 8 ] },
-	{ "<e",'L', 2, evaluate_arithmetic_expression, &operators[ 9 ] },
-	{ ">", '>', 2, evaluate_arithmetic_expression, &operators[ 10 ] },
-	{ ">e",'G', 2, evaluate_arithmetic_expression, &operators[ 11 ] },
-	{ "<<",'A', 2, evaluate_arithmetic_expression, &operators[ 12 ] },
-	{ ">>",'B', 2, evaluate_arithmetic_expression, &operators[ 13 ] },
-	{ "^", '^',-2, evaluate_arithmetic_expression, &operators[ 14 ] },
-	{ "=", '=', 2, evaluate_arithmetic_expression, &operators[ 15 ] },
-	{ "<>",'!', 2, evaluate_arithmetic_expression, &operators[ 16 ] },
-	{ "|", '|',-2, evaluate_arithmetic_expression, &operators[ 17 ] },
-	{ "~", '~', 1, evaluate_bitwise_not_expression, &operators[ 18 ] },
-	{ "!", '!', 1, evaluate_logical_expression, &operators[ 19 ] },
-	{ "&&",'&',-2, evaluate_logical_expression, &operators[ 20 ] },
-	{ "||",'|',-2, evaluate_logical_expression, &operators[ 21 ] },
-	{ "?", '?', 3, evaluate_ternary_expression, &operators[ 22 ] },
-	{ "$eq", '$', 2, evaluate_eq_expression, &operators[ 23 ] },
-	{ "$str", '$',-1, evaluate_str_expression, &operators[ 24 ] },
-	{ "$cmp", '$', 2, evaluate_cmp_expression, &operators[ 25 ] },
-	{ "$cat", '$',-1, evaluate_str_expression, &operators[ 26 ] },
-	{ "$chr", '$', 2, evaluate_chr_expression, &operators[ 27 ] },
-	{ "$sub", '$', 3, evaluate_sub_expression, &operators[ 28 ] },
-	{ "$asc", '$', 1, evaluate_asc_expression, &operators[ 29 ] },
-	{ "$hex", '$', 1, evaluate_hex_expression, &operators[ 30 ] },
-	{ "$int", '$', 1, evaluate_int_expression, &operators[ 31 ] },
-	{ "$len", '$', 1, evaluate_len_expression, &operators[ 32 ] },
-	{ "$tup", '$', 2, evaluate_tup_expression, &operators[ 33 ] },
-	{ "$array", '$', 1, evaluate_array_expression, &operators[ 34 ] },
-	{ "$new", '$', 1, evaluate_array_expression, &operators[ 35 ] },
-	{ "$load", '$', 1, evaluate_load_expression, &operators[ 36 ] },
-	{ "$flen", '$', 1, evaluate_flen_expression, &operators[ 37 ] },
-	{ "$chop", '$', 2, evaluate_chop_expression, &operators[ 38 ] },
-	{ "$argc", '$', 0, evaluate_argc_expression, &operators[ 39 ] },
-	{ "$argv", '$', 1, evaluate_argv_expression, &operators[ 40 ] },
-	{ "$time", '$', 0, evaluate_time_expression, &operators[ 41 ] },
-	{ "$parse", '$', 1, evaluate_parse_expression, &operators[ 42 ] },
-	{ "$unparse", '$', 1, evaluate_unparse_expression, &operators[ 43 ] },
-	{ "$next", '$', 1, evaluate_next_expression, &operators[ 44 ] },
-	{ "$child", '$', 1, evaluate_child_expression, &operators[ 45 ] },
-	{ "$line", '$', 1, evaluate_line_expression, &operators[ 46 ] },
-	{ "$elem", '$', 3, evaluate_elem_expression, &operators[ 47 ] },
-	{ "$values", '$', 1, evaluate_values_expression, &operators[ 48 ] },
-	{ "$pack", '$', 1, evaluate_pack_expression, &operators[ 49 ] },
-	{ "$unpack", '$', 2, evaluate_unpack_expression, &operators[ 50 ] },
-	{ "$quote", '$', 1, evaluate_quote_expression, &operators[ 51 ] },
-	{ "$unquote", '$', 1, evaluate_unquote_expression, &operators[ 52 ] },
-	{ "$interrupted", '$', 0, evaluate_interrupted_expression, &operators[ 53 ] },
-	{ "$function", '$', 1, evaluate_function_expression, &operators[ 54 ] },
-	{ "$worker", '$', 1, evaluate_worker_expression, &operators[ 55 ] },
-	{ "$execute", '$',-1, evaluate_execute_expression, &operators[ 56 ] },
-	{ "$result", '$', 1, evaluate_result_expression, &operators[ 57 ] },
-	{ "$buffer", '$', 1, evaluate_buffer_expression, &operators[ 58 ] },
-	{ "$src", '$', 0, evaluate_source_expression, NULL }
+	{ ":", ':',-1, evaluate_refcall_expression, NULL },
+	{ "%", '%',-2, evaluate_arithmetic_expression, NULL },
+	{ "&", '&',-2, evaluate_arithmetic_expression, NULL },
+	{ "*", '*',-2, evaluate_arithmetic_expression, NULL },
+	{ "+", '+',-2, evaluate_arithmetic_expression, NULL },
+	{ "-", '-',-2, evaluate_arithmetic_expression, NULL },
+	{ "/", '/',-2, evaluate_arithmetic_expression, NULL },
+	{ "<", '<', 2, evaluate_arithmetic_expression, NULL },
+	{ "<e",'L', 2, evaluate_arithmetic_expression, NULL },
+	{ ">", '>', 2, evaluate_arithmetic_expression, NULL },
+	{ ">e",'G', 2, evaluate_arithmetic_expression, NULL },
+	{ "<<",'A', 2, evaluate_arithmetic_expression, NULL },
+	{ ">>",'B', 2, evaluate_arithmetic_expression, NULL },
+	{ "^", '^',-2, evaluate_arithmetic_expression, NULL },
+	{ "=", '=', 2, evaluate_arithmetic_expression, NULL },
+	{ "<>",'!', 2, evaluate_arithmetic_expression, NULL },
+	{ "|", '|',-2, evaluate_arithmetic_expression, NULL },
+	{ "~", '~', 1, evaluate_bitwise_not_expression, NULL },
+	{ "!", '!', 1, evaluate_logical_expression, NULL },
+	{ "&&",'&',-2, evaluate_logical_expression, NULL },
+	{ "||",'|',-2, evaluate_logical_expression, NULL },
+	{ "?", '?', 3, evaluate_ternary_expression, NULL },
+	{ "$eq", '$', 2, evaluate_eq_expression, NULL },
+	{ "$str", '$',-1, evaluate_str_expression, NULL },
+	{ "$cmp", '$', 2, evaluate_cmp_expression, NULL },
+	{ "$cat", '$',-1, evaluate_str_expression, NULL },
+	{ "$chr", '$', 2, evaluate_chr_expression, NULL },
+	{ "$sub", '$', 3, evaluate_sub_expression, NULL },
+	{ "$asc", '$', 1, evaluate_asc_expression, NULL },
+	{ "$hex", '$', 1, evaluate_hex_expression, NULL },
+	{ "$int", '$', 1, evaluate_int_expression, NULL },
+	{ "$len", '$', 1, evaluate_len_expression, NULL },
+	{ "$tup", '$', 2, evaluate_tup_expression, NULL },
+	{ "$array", '$', 1, evaluate_array_expression, NULL },
+	{ "$new", '$', 1, evaluate_array_expression, NULL },
+	{ "$load", '$', 1, evaluate_load_expression, NULL },
+	{ "$flen", '$', 1, evaluate_flen_expression, NULL },
+	{ "$chop", '$', 2, evaluate_chop_expression, NULL },
+	{ "$argc", '$', 0, evaluate_argc_expression, NULL },
+	{ "$argv", '$', 1, evaluate_argv_expression, NULL },
+	{ "$time", '$', 0, evaluate_time_expression, NULL },
+	{ "$parse", '$', 1, evaluate_parse_expression, NULL },
+	{ "$unparse", '$', 1, evaluate_unparse_expression, NULL },
+	{ "$next", '$', 1, evaluate_next_expression, NULL },
+	{ "$child", '$', 1, evaluate_child_expression, NULL },
+	{ "$line", '$', 1, evaluate_line_expression, NULL },
+	{ "$elem", '$', 3, evaluate_elem_expression, NULL },
+	{ "$values", '$', 1, evaluate_values_expression, NULL },
+	{ "$pack", '$', 1, evaluate_pack_expression, NULL },
+	{ "$unpack", '$', 2, evaluate_unpack_expression, NULL },
+	{ "$quote", '$', 1, evaluate_quote_expression, NULL },
+	{ "$unquote", '$', 1, evaluate_unquote_expression, NULL },
+	{ "$interrupted", '$', 0, evaluate_interrupted_expression, NULL },
+	{ "$function", '$', 1, evaluate_function_expression, NULL },
+	{ "$worker", '$', 1, evaluate_worker_expression, NULL },
+	{ "$execute", '$',-1, evaluate_execute_expression, NULL },
+	{ "$result", '$', 1, evaluate_result_expression, NULL },
+	{ "$buffer", '$', 1, evaluate_buffer_expression, NULL },
+	{ "$src", '$', 0, evaluate_source_expression, NULL },
+	{ NULL }
 };
 
 static struct keyword declarations[] = {
@@ -4754,11 +4756,12 @@ int initialize_globals( struct environment *env, struct variable *exception ) {
 	return 1;
 }
 
-/* Add a copy of the specified statement list to env. Returns zero and writes message on failure. */
+/* Add a copy of the specified null-terminated statement array to env.
+   Returns zero and writes message on failure. */
 int add_statements( struct keyword *statements, struct environment *env, char *message ) {
 	int idx;
 	struct keyword *statement;
-	while( statements ) {
+	while( statements->name ) {
 		statement = calloc( 1, sizeof( struct keyword ) );
 		if( statement ) {
 			memcpy( statement, statements, sizeof( struct keyword ) );
@@ -4769,16 +4772,17 @@ int add_statements( struct keyword *statements, struct environment *env, char *m
 			strcpy( message, OUT_OF_MEMORY );
 			return 0;
 		}
-		statements = statements->next;
+		statements++;
 	}
 	return 1;
 }
 
-/* Add a copy of the specified operator list to env. Returns zero and writes message on failure. */
+/* Add a copy of the specified null-terminated operator array to env.
+   Returns zero and writes message on failure. */
 int add_operators( struct operator *operators, struct environment *env, char *message ) {
 	int idx;
 	struct operator *operator;
-	while( operators ) {
+	while( operators->name ) {
 		operator = calloc( 1, sizeof( struct operator ) );
 		if( operator ) {
 			memcpy( operator, operators, sizeof( struct operator ) );
@@ -4789,7 +4793,7 @@ int add_operators( struct operator *operators, struct environment *env, char *me
 			strcpy( message, OUT_OF_MEMORY );
 			return 0;
 		}
-		operators = operators->next;
+		operators++;
 	}
 	return 1;
 }

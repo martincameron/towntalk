@@ -39,7 +39,7 @@ void* worker_thread( void *data ) {
    Returns 0 and assigns message on failure. */
 int initialize_worker( struct worker *work, char *message ) {
 #if defined( ASM_STATEMENT )
-	return add_statements( &asm_keyword, &work->env, message );
+	return add_statements( asm_keyword, &work->env, message );
 #else
 	return 1;
 #endif
@@ -108,7 +108,7 @@ int main( int argc, char **argv ) {
 	/* Parse program file. */
 	if( initialize_environment( &env, message )
 #if defined( ASM_STATEMENT )
-	&& add_statements( &asm_keyword, &env, message )
+	&& add_statements( asm_keyword, &env, message )
 #endif
 	&& parse_tt_file( file_name, &env, message ) ) {
 		env.argc = argc - 1;
