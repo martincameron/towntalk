@@ -23,6 +23,7 @@
 	Non-null values may evaluate to zero in integer expressions.
 	Strings are immutable and can be used as byte arrays.
 	String literals may include the escape sequences "\"", "\\", and octal "\nnn".
+	Dollar-expressions have an alternate form with an initial capital, eg. 'Time'.
 	Elements are immutable trees of strings with next and child references.
 	A valid program file may be parsed into an element tree.
 	Elements are separated by whitespace, commas, ';' or '='.
@@ -4777,18 +4778,50 @@ int add_statements( struct keyword *statements, struct environment *env, char *m
 	return 1;
 }
 
+/* Allocate a new operator, optionally initialized with the specified parameters. */
+static struct operator* new_operator( char *name, struct operator *src ) {
+	struct operator *oper;
+	size_t size = sizeof( struct operator );
+	if( name ) {
+		size += sizeof( char ) * ( strlen( name ) + 1 );
+	}
+	oper = calloc( 1, size );
+	if( oper ) {
+		if( src ) {
+			memcpy( oper, src, sizeof( struct operator ) );
+		}
+		if( name ) {
+			oper->name = ( char * ) &oper[ 1 ];
+			strcpy( oper->name, name );
+		}
+	}
+	return oper;
+}
+
 /* Add a copy of the specified null-terminated operator array to env.
    Returns zero and writes message on failure. */
 int add_operators( struct operator *operators, struct environment *env, char *message ) {
 	int idx;
-	struct operator *operator;
+	struct operator *oper;
 	while( operators->name ) {
-		operator = calloc( 1, sizeof( struct operator ) );
-		if( operator ) {
-			memcpy( operator, operators, sizeof( struct operator ) );
-			idx = hash_code( operator->name, 0 );
-			operator->next = env->operators_index[ idx ];
-			env->operators_index[ idx ] = operator;
+		oper = new_operator( NULL, operators );
+		if( oper ) {
+			idx = hash_code( oper->name, 0 );
+			oper->next = env->operators_index[ idx ];
+			env->operators_index[ idx ] = oper;
+			if( oper->name[ 0 ] == '$' && oper->name[ 1 ] > 96 ) {
+				/* Add synonym. */
+				oper = new_operator( &oper->name[ 1 ], oper );
+				if( oper ) {
+					oper->name[ 0 ] -= 32;
+					idx = hash_code( oper->name, 0 );
+					oper->next = env->operators_index[ idx ];
+					env->operators_index[ idx ] = oper;
+				} else {
+					strcpy( message, OUT_OF_MEMORY );
+					return 0;
+				}
+			}
 		} else {
 			strcpy( message, OUT_OF_MEMORY );
 			return 0;
