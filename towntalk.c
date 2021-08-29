@@ -102,6 +102,7 @@
 		struct.member            Index of named struct member.
 		@function                Function reference.
 		:(func expr ...)         Call function reference with specified args.
+		:struct.memb( this ... ) Call member function of specified array.
 		'(expr operator ...)     Infix operator, eg '( 1 + 2 ).
 		+(int int ...)           Addition.
 		-(int int ...)           Subtraction.
@@ -1710,6 +1711,40 @@ static enum result evaluate_refcall_expression( struct expression *this, struct 
 	return ret;
 }
 
+static enum result evaluate_thiscall_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	struct array *arr;
+	struct global_variable func = { 0 }, obj = { 0 };
+	struct expression func_expr = { 0 }, obj_expr = { 0 }, refcall_expr = { 0 };
+	struct expression *parameter = this->parameters;
+	enum result ret = parameter->evaluate( parameter, variables, &obj.value, exception );
+	if( ret ) {
+		if( obj.value.string_value && obj.value.string_value->type == ARRAY ) {
+			arr = ( struct array * ) obj.value.string_value;
+			if( this->index < arr->length ) {
+				assign_variable( &arr->array[ this->index ], &func.value );
+				func_expr.global = &func;
+				func_expr.evaluate = evaluate_global;
+				func_expr.next = &obj_expr;
+				obj_expr.global = &obj;
+				obj_expr.evaluate = evaluate_global;
+				obj_expr.next = parameter->next;
+				refcall_expr.line = this->line;
+				refcall_expr.function = this->function;
+				refcall_expr.parameters = &func_expr;
+				ret = evaluate_refcall_expression( &refcall_expr, variables, result, exception );
+				dispose_temporary( &func.value );
+			} else {
+				ret = throw( exception, this, this->index, "Array index out of bounds." );
+			}
+		} else {
+			ret = throw( exception, this, obj.value.integer_value, "Not an array." );
+		}
+		dispose_temporary( &obj.value );
+	}
+	return ret;
+}
+
 static enum result evaluate_array_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	int idx, len;
@@ -3233,6 +3268,41 @@ static struct element* parse_struct_expression( struct element *elem, struct env
 	return elem->next;
 }
 
+static struct element* parse_thiscall_expression( struct element *elem, struct environment *env,
+	struct function *func, struct expression *expr, char *message ) {
+	int idx;
+	struct expression prev;
+	struct element *next = elem->next;
+	struct structure *struc = get_structure_indexed( env->structures_index, &elem->str.string[ 1 ] );
+	char *field = strchr( elem->str.string, '.' );
+	if( struc && field ) {
+		idx = get_string_list_index( struc->fields, &field[ 1 ] );
+		if( idx >= 0 ) {
+			expr->index = idx;
+			if( next && next->str.string[ 0 ] == '(' ) {
+				prev.next = NULL;
+				parse_expressions( next->child, env, func, 0, &prev, NULL, message );
+				if( message[ 0 ] == 0 ) {
+					if( prev.next ) {
+						expr->parameters = prev.next;
+						expr->evaluate = evaluate_thiscall_expression;
+						next = next->next;
+					} else {
+						sprintf( message, "Expected expression after '(' on line %d.", next->line );
+					}
+				}
+			} else {
+				sprintf( message, "Expected '(' after '%.64s' on line %d.", elem->str.string, elem->line );
+			}
+		} else {
+			sprintf( message, "Field '%.64s' not declared on line %d.", &elem->str.string[ 1 ], elem->line );
+		}
+	} else {
+		sprintf( message, "Undeclared or invalid structure field '%.64s' on line %d.", elem->str.string, elem->line );
+	}
+	return next;
+}
+
 static struct element* parse_expression( struct element *elem, struct environment *env,
 	struct function *func, struct expression *prev, char *message ) {
 	struct element *next = elem->next;
@@ -3271,6 +3341,9 @@ static struct element* parse_expression( struct element *elem, struct environmen
 		} else if( value[ 0 ] == '@' ) {
 			/* Function reference operator. */
 			next = parse_func_ref_expression( elem, env, func, expr, message );
+		} else if( value[ 0 ] == ':' && value[ 1 ] != 0 ) {
+			/* Member function call. */
+			next = parse_thiscall_expression( elem, env, func, expr, message );
 		} else {
 			local = get_string_list_index( func->variable_decls, value );
 			if( local >= 0 ) {
