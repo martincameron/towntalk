@@ -556,7 +556,7 @@ function testunpack() {
 
 function teststruct() {
 	var obj = $new( exten );
-	let [ obj exten.g ] = 1;
+	let exten.g( obj ) = 1;
 	call assert_equals( 5, struc, ${-} );
 	call assert_equals( 7, exten, ${-} );
 	call assert_equals( 0, struc.a, ${-} );
@@ -568,6 +568,10 @@ function teststruct() {
 	call assert_throws( "Wrong number", ${ () { call struc.a( 0 0 ); } } );
 	call assert_throws( "Not an array", ${ () { call struc.a( 0 ); } } );
 	call assert_throws( "Array index", ${ () { call exten.g( $new( struc ) ); } } );
+	call assert_throws( "Undeclared", ${ () { set struc( 0 ) = 0; } } );
+	call assert_throws( "Field 'struc.xxx' not declared", ${ () { set struc.xxx( 0 ) = 0; } } );
+	call assert_throws( "Not an array", ${ () { set struc.a( 0 ) = 0; } } );
+	call assert_throws( "Array index", ${ () { set exten.g( $new( struc ) ) = 0; } } );
 }
 
 function testfuncref() {

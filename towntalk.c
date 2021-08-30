@@ -51,7 +51,7 @@
 		include "file.tt";       Include declarations from specified file.
 		const name = value;      Integer, string or tuple constant.
 		global a, b, c = expr;   Global variables.
-		array a, b, [ c expr ];  Global arrays.
+		array a, b, [c expr];    Global arrays.
 		struct s { a,b,c };      Layout for formatting arrays.
 		struct t(s) { d,e,f };   Struct with members included from s.
 		function f(param){stmts} Function declaration.
@@ -62,6 +62,7 @@
 		var a, b, c = expr;      Local variables.
 		let a = expr;            Assign expression to local or global variable.
 		let [arr idx] = expr;    Assign expression to array at index.
+		let struct.m(this) = x;  Assign expression to array at member index.
 		print expr;              Write integer or string to standard output.
 		write expr;              Same as print, but do not add a newline.
 		error expr;              Same as print, but write to standard error.
@@ -80,8 +81,8 @@
 		try {statements}         Execute statements unless exception thrown.
 		   catch a {statements}  Assign exception to local var and execute.
 		call expr;               Evaluate expression and discard result.
-		dim [ arr len ];         Resize specified array.
-		set [ arr idx ] = expr;  Variable/Array assignment (same as let).
+		dim [arr len];           Resize specified array.
+		set [arr idx] = expr;    Variable/Array assignment (same as let).
 		inc a;                   Increment local variable.
 		dec a;                   Decrement local variable.
 		save str, "file";        Save bytes from string to file.
@@ -96,14 +97,14 @@
 		"String"                 String literal.
 		${0,"1",$tup("2",3)}     Element literal.
 		name                     Value of named local or global variable.
-		function(expr, expr)     Call function with specified args.
+		function(expr ...)       Call function with specified args.
 		[arr idx]                Array element.
 		struct                   Length of structure.
 		struct.member            Index of named struct member.
-		struct.member( this )    Value of named field of specified array.
+		struct.member(this)      Value of named field of specified array.
 		@function                Function reference.
 		:(func expr ...)         Call function reference with specified args.
-		:struct.memb( this ... ) Call member function of specified array.
+		:struct.memb(this ...)   Call member function of specified array.
 		'(expr operator ...)     Infix operator, eg '( 1 + 2 ).
 		+(int int ...)           Addition.
 		-(int int ...)           Subtraction.
@@ -1518,6 +1519,27 @@ static enum result execute_array_assignment( struct statement *this, struct vari
 			ret = throw( exception, this->destination, 0, "Not an array." );
 		}
 		dispose_temporary( &arr );
+	}
+	return ret;
+}
+
+static enum result execute_struct_assignment( struct statement *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	struct array *arr;
+	struct variable obj = { 0, NULL };
+	enum result ret = this->destination->evaluate( this->destination, variables, &obj, exception );
+	if( ret ) {
+		if( obj.string_value && obj.string_value->type == ARRAY ) {
+			arr = ( struct array * ) obj.string_value;
+			if( this->local < arr->length ) {
+				ret = this->source->evaluate( this->source, variables, &arr->array[ this->local ], exception );
+			} else {
+				ret = throw( exception, this->destination, this->local, "Array index out of bounds." );
+			}
+		} else {
+			ret = throw( exception, this->destination, obj.integer_value, "Not an array." );
+		}
+		dispose_temporary( &obj );
 	}
 	return ret;
 }
@@ -3547,13 +3569,15 @@ static struct element* parse_append_statement( struct element *elem, struct envi
 static struct element* parse_assignment_statement( struct element *elem, struct environment *env,
 	struct function *func, struct statement *prev, char *message ) {
 	int local;
+	char *field;
 	struct expression expr;
+	struct structure *struc;
 	struct global_variable *global = NULL;
 	struct element *next = elem->next, *child = next->child;
 	struct statement *stmt = new_statement( message );
 	if( stmt ) {
 		prev->next = stmt;
-		if( child ) {
+		if( next->str.string[ 0 ] == '[' ) {
 			expr.next = NULL;
 			child = parse_expression( child, env, func, &expr, message );
 			if( expr.next ) {
@@ -3573,6 +3597,32 @@ static struct element* parse_assignment_statement( struct element *elem, struct 
 					}
 				}
 				stmt->execute = execute_array_assignment;
+			}
+		} else if( next->next->str.string[ 0 ] == '(' ) {
+			struc = get_structure_indexed( env->structures_index, next->str.string );
+			field = strchr( next->str.string, '.' );
+			if( struc && field ) {
+				local = get_string_list_index( struc->fields, &field[ 1 ] );
+				if( local >= 0 ) {
+					stmt->local = local;
+					next = next->next;
+					expr.next = NULL;
+					parse_expression( next->child, env, func, &expr, message );
+					if( expr.next ) {
+						stmt->destination = expr.next;
+						expr.next = NULL;
+						next = parse_expression( next->next->next, env, func, &expr, message );
+						if( expr.next ) {
+							stmt->source = expr.next;
+							next = next->next;
+						}
+					}
+					stmt->execute = execute_struct_assignment;
+				} else {
+					sprintf( message, "Field '%.64s' not declared on line %d.", next->str.string, next->line );
+				}
+			} else {
+				sprintf( message, "Undeclared or invalid structure field '%.64s' on line %d.", next->str.string, next->line );
 			}
 		} else {
 			local = get_string_list_index( func->variable_decls, next->str.string );
@@ -3970,13 +4020,6 @@ static struct element* validate_syntax( char *syntax, struct element *elem,
 					elem = elem->next;
 				}
 				elem = validate_syntax( "v", elem, key, env, message );
-			}
-		} else if( chr == 'd' ) {
-			/* Assignment destination. */
-			if( elem && elem->str.string[ 0 ] == '[' ) {
-				elem = validate_syntax( "[", elem, key, env, message );
-			} else {
-				elem = validate_syntax( "n", elem, key, env, message );
 			}
 		} else {
 			/* Internal error. */
@@ -4580,7 +4623,7 @@ static struct element* parse_struct_declaration( struct element *elem, struct en
 static struct keyword statements[] = {
 	{ "rem", "{", parse_comment, NULL },
 	{ "var", "V;", parse_local_declaration, NULL },
-	{ "let", "d=x;", parse_assignment_statement, NULL },
+	{ "let", "x=x;", parse_assignment_statement, NULL },
 	{ "print", "x;", parse_print_statement, NULL },
 	{ "write", "x;", parse_write_statement, NULL },
 	{ "error", "x;", parse_error_statement, NULL },
@@ -4594,7 +4637,7 @@ static struct keyword statements[] = {
 	{ "call", "x;", parse_call_statement, NULL },
 	{ "try", "{cn{", parse_try_statement, NULL },
 	{ "dim", "[;", parse_dim_statement, NULL },
-	{ "set", "d=x;", parse_assignment_statement, NULL },
+	{ "set", "x=x;", parse_assignment_statement, NULL },
 	{ "switch", "x{", parse_switch_statement, NULL },
 	{ "inc", "n;", parse_increment_statement, NULL },
 	{ "dec", "n;", parse_decrement_statement, NULL },
