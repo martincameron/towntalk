@@ -100,6 +100,7 @@
 		[arr idx]                Array element.
 		struct                   Length of structure.
 		struct.member            Index of named struct member.
+		struct.member( this )    Value of named field of specified array.
 		@function                Function reference.
 		:(func expr ...)         Call function reference with specified args.
 		:struct.memb( this ... ) Call member function of specified array.
@@ -1745,6 +1746,28 @@ static enum result evaluate_thiscall_expression( struct expression *this, struct
 	return ret;
 }
 
+static enum result evaluate_struct_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	struct array *arr;
+	struct variable obj = { 0, NULL };
+	struct expression *parameter = this->parameters;
+	enum result ret = parameter->evaluate( parameter, variables, &obj, exception );
+	if( ret ) {
+		if( obj.string_value && obj.string_value->type == ARRAY ) {
+			arr = ( struct array * ) obj.string_value;
+			if( this->index < arr->length ) {
+				assign_variable( &arr->array[ this->index ], result );
+			} else {
+				ret = throw( exception, this, this->index, "Array index out of bounds." );
+			}
+		} else {
+			ret = throw( exception, this, obj.integer_value, "Not an array." );
+		}
+		dispose_temporary( &obj );
+	}
+	return ret;
+}
+
 static enum result evaluate_array_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	int idx, len;
@@ -3251,21 +3274,38 @@ static struct element* parse_index_expression( struct element *elem, struct envi
 }
 
 static struct element* parse_struct_expression( struct element *elem, struct environment *env,
-	struct structure *struc, struct expression *expr, char *message ) {
-	int idx;
+	struct function *func, struct structure *struc, struct expression *expr, char *message ) {
+	int idx, count;
+	struct expression prev;
+	struct element *next = elem->next;
 	char *field = strchr( elem->str.string, '.' );
 	if( field ) {
 		idx = get_string_list_index( struc->fields, &field[ 1 ] );
 		if( idx >= 0 ) {
 			expr->index = idx;
+			if( next && next->str.string[ 0 ] == '(' ) {
+				prev.next = NULL;
+				parse_expressions( next->child, env, func, 0, &prev, &count, message );
+				expr->parameters = prev.next;
+				if( message[ 0 ] == 0 ) {
+					if( count == 1 ) {
+						expr->evaluate = evaluate_struct_expression;
+						next = next->next;
+					} else {
+						sprintf( message, "Wrong number of arguments to struct expression on line %d.", next->line );
+					}
+				}
+			} else {
+				expr->evaluate = evaluate_integer_constant_expression;
+			}
 		} else {
 			sprintf( message, "Field '%.64s' not declared on line %d.", elem->str.string, elem->line );
 		}
 	} else {
 		expr->index = struc->length;
+		expr->evaluate = evaluate_integer_constant_expression;
 	}
-	expr->evaluate = evaluate_integer_constant_expression;
-	return elem->next;
+	return next;
 }
 
 static struct element* parse_thiscall_expression( struct element *elem, struct environment *env,
@@ -3369,7 +3409,7 @@ static struct element* parse_expression( struct element *elem, struct environmen
 						struc = get_structure_indexed( env->structures_index, value );
 						if( struc ) {
 							/* Structure. */
-							next = parse_struct_expression( elem, env, struc, expr, message );
+							next = parse_struct_expression( elem, env, func, struc, expr, message );
 						} else {
 							/* Prefix Operator. */
 							next = parse_operator_expression( elem, env, func, expr, message );
@@ -3757,8 +3797,12 @@ static struct element* parse_switch_statement( struct element *elem, struct envi
 						def->next = NULL;
 					}
 				}
-				next = next->next;
-				stmt->execute = execute_switch_statement;
+				if( stmt->else_block == NULL || stmt->else_block->next == NULL ) {
+					next = next->next;
+					stmt->execute = execute_switch_statement;
+				} else {
+					sprintf( message, "Duplicate default block in switch statement on line %d.", elem->line );
+				}
 			}
 		}
 	}

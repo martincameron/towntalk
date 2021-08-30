@@ -189,6 +189,7 @@ function testswitch() {
 	call assert_throws( "1", ${ () { switch except( ${ 1 } ) {} } } );
 	call assert_throws( "1", ${ () { switch 0 { case except( ${ 1 } ) { call except( ${ 2 } ); } } } } );
 	call assert_throws( "1", ${ () { switch 0 { case 0 { call except( ${ 1 } ); } } } } );
+	call assert_throws( "Duplicate", ${ () { switch 0 { default {} default {} } } } );
 }
 
 function testif() {
@@ -554,13 +555,19 @@ function testunpack() {
 }
 
 function teststruct() {
+	var obj = $new( exten );
+	let [ obj exten.g ] = 1;
 	call assert_equals( 5, struc, ${-} );
 	call assert_equals( 7, exten, ${-} );
 	call assert_equals( 0, struc.a, ${-} );
 	call assert_equals( 4, struc.e, ${-} );
 	call assert_equals( 6, exten.g, ${-} );
 	call assert_equals( 7, $len( $new( exten ) ), ${-} );
+	call assert_equals( 1, exten.g( obj ), ${-} );
 	call assert_throws( "Field 'struc.xxx' not declared", ${ () { call struc.xxx; } } );
+	call assert_throws( "Wrong number", ${ () { call struc.a( 0 0 ); } } );
+	call assert_throws( "Not an array", ${ () { call struc.a( 0 ); } } );
+	call assert_throws( "Array index", ${ () { call exten.g( $new( struc ) ); } } );
 }
 
 function testfuncref() {
