@@ -3332,7 +3332,7 @@ static struct element* parse_struct_expression( struct element *elem, struct env
 
 static struct element* parse_thiscall_expression( struct element *elem, struct environment *env,
 	struct function *func, struct expression *expr, char *message ) {
-	int idx;
+	int idx, count;
 	struct expression prev;
 	struct element *next = elem->next;
 	struct structure *struc = get_structure_indexed( env->structures_index, &elem->str.string[ 1 ] );
@@ -3343,10 +3343,10 @@ static struct element* parse_thiscall_expression( struct element *elem, struct e
 			expr->index = idx;
 			if( next && next->str.string[ 0 ] == '(' ) {
 				prev.next = NULL;
-				parse_expressions( next->child, env, func, 0, &prev, NULL, message );
+				parse_expressions( next->child, env, func, 0, &prev, &count, message );
+				expr->parameters = prev.next;
 				if( message[ 0 ] == 0 ) {
-					if( prev.next ) {
-						expr->parameters = prev.next;
+					if( count > 0 ) {
 						expr->evaluate = evaluate_thiscall_expression;
 						next = next->next;
 					} else {
@@ -3568,8 +3568,8 @@ static struct element* parse_append_statement( struct element *elem, struct envi
 
 static struct element* parse_assignment_statement( struct element *elem, struct environment *env,
 	struct function *func, struct statement *prev, char *message ) {
-	int local;
 	char *field;
+	int local, count;
 	struct expression expr;
 	struct structure *struc;
 	struct global_variable *global = NULL;
@@ -3593,10 +3593,10 @@ static struct element* parse_assignment_statement( struct element *elem, struct 
 					next = parse_expression( next->next->next, env, func, &expr, message );
 					if( expr.next ) {
 						stmt->source = expr.next;
+						stmt->execute = execute_array_assignment;
 						next = next->next;
 					}
 				}
-				stmt->execute = execute_array_assignment;
 			}
 		} else if( next->next->str.string[ 0 ] == '(' ) {
 			struc = get_structure_indexed( env->structures_index, next->str.string );
@@ -3607,17 +3607,21 @@ static struct element* parse_assignment_statement( struct element *elem, struct 
 					stmt->local = local;
 					next = next->next;
 					expr.next = NULL;
-					parse_expression( next->child, env, func, &expr, message );
-					if( expr.next ) {
-						stmt->destination = expr.next;
-						expr.next = NULL;
-						next = parse_expression( next->next->next, env, func, &expr, message );
-						if( expr.next ) {
-							stmt->source = expr.next;
-							next = next->next;
+					parse_expressions( next->child, env, func, 0, &expr, &count, message );
+					stmt->destination = expr.next;
+					if( message[ 0 ] == 0 ) {
+						if( count == 1 ) {
+							expr.next = NULL;
+							next = parse_expression( next->next->next, env, func, &expr, message );
+							if( expr.next ) {
+								stmt->source = expr.next;
+								stmt->execute = execute_struct_assignment;
+								next = next->next;
+							}
+						} else {
+							sprintf( message, "Invalid structure assignment on line %d.", next->line );
 						}
 					}
-					stmt->execute = execute_struct_assignment;
 				} else {
 					sprintf( message, "Field '%.64s' not declared on line %d.", next->str.string, next->line );
 				}
@@ -3773,8 +3777,8 @@ static struct element* parse_case_statement( struct element *elem, struct enviro
 	if( stmt ) {
 		prev->next = stmt;
 		next = parse_expressions( next, env, func, '{', &expr, NULL, message );
+		stmt->source = expr.next;
 		if( message[ 0 ] == 0 ) {
-			stmt->source = expr.next;
 			block.next = NULL;
 			parse_keywords_indexed( env->statements_index, next->child, env, func, &block, message );
 			stmt->if_block = block.next;

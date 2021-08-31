@@ -570,6 +570,7 @@ function teststruct() {
 	call assert_throws( "Array index", ${ () { call exten.g( $new( struc ) ); } } );
 	call assert_throws( "Undeclared", ${ () { set struc( 0 ) = 0; } } );
 	call assert_throws( "Field 'struc.xxx' not declared", ${ () { set struc.xxx( 0 ) = 0; } } );
+	call assert_throws( "Invalid", ${ () { set struc.a() = 0; } } );
 	call assert_throws( "Not an array", ${ () { set struc.a( 0 ) = 0; } } );
 	call assert_throws( "Array index", ${ () { set exten.g( $new( struc ) ) = 0; } } );
 }
