@@ -19,6 +19,31 @@ function dpcm_encoding_table( quant ) {
 	return table;
 }
 
+# Return a 4096-entry array mapping the previous output and next code to the decoded value.
+function dpcm_decoding_table( quant ) {
+	var prev = -128, code, next, table = $array( *( 256 16 ) );
+	while <( prev 128 ) {
+		let code = 0;
+		while <( code 16 ) {
+			if &( code 0x8 ) {
+				let next = -( prev $unpack( quant &( code 0x7 ) ) );
+				if <( next -128 ) {
+					let next = -128;
+				}
+			} else {
+				let next = +( prev $unpack( quant &( code 0x7 ) ) );
+				if >( next 127 ) {
+					let next = 127;
+				}
+			}
+			let [ table |( <<( +( prev 128 ) 4 ) code ) ] = next;
+			inc code;
+		}
+		inc prev;
+	}
+	return table;
+}
+
 # Encode the specified byte-string using the specified quantization table.
 function dpcm_encode( input, quant ) {
 	var table = dpcm_encoding_table( quant );
@@ -34,9 +59,15 @@ function dpcm_encode( input, quant ) {
 				let code = [ table -( 0 dmp ) ];
 				let amp = -( amp $unpack( quant code ) );
 				let code = |( code 0x8 );
+				if <( amp -128 ) {
+					let amp = -128;
+				}
 			} else {
 				let code = [ table dmp ];
 				let amp = +( amp $unpack( quant code ) );
+				if >( amp 127 ) {
+					let amp = 127;
+				}
 			}
 			set [ output out_idx ] = |( [ output out_idx ] <<( code bits ) );
 		}
@@ -47,6 +78,7 @@ function dpcm_encode( input, quant ) {
 
 # Decode the specified byte-string using the specified quantization table.
 function dpcm_decode( input, quant ) {
+	var table = dpcm_decoding_table( quant );
 	var output = $array( *( $len( input ) 2 ) );
 	var in_idx, bits, code, amp, out_idx;
 	while <( in_idx $len( input ) ) {
@@ -54,11 +86,7 @@ function dpcm_decode( input, quant ) {
 		while bits {
 			let bits = -( bits 4 );
 			let code = &( >>( $chr( input in_idx ) bits ) 0xF );
-			if &( code 0x8 ) {
-				let amp = -( amp $unpack( quant &( code 0x7 ) ) );
-			} else {
-				let amp = +( amp $unpack( quant &( code 0x7 ) ) );
-			}
+			let amp = [ table |( <<( +( amp 128 ) 4 ) code ) ];
 			set [ output out_idx ] = amp;
 			inc out_idx;
 		}
