@@ -1,0 +1,94 @@
+
+rem {
+	Write the specified characters into the specified array at offset.
+	Returns the new offset. Output may be null.
+}
+function write_str( str, output, offset ) {
+	var idx, end = +( offset $len( str ) );
+	if output {
+		while <( offset end ) {
+			set [ output offset ] = $chr( str idx );
+			inc offset;
+			inc idx;
+		}
+	}
+	return end;
+}
+
+rem {
+	Return a string containing the specified number of tabs.
+}
+function indent_str( level ) {
+	var idx, arr = $array( level );
+	while <( idx level ) {
+		set [ arr idx ] = 9;
+		inc idx;
+	}
+	return $sub( arr, 0, level );
+}
+
+rem {
+	Format the specified element into the specified array assuming towntalk syntax.
+	Returns the new offset. Output may be null.
+}
+function format_elem( elem, output, offset, level ) {
+	while elem {
+		switch elem {
+			case "()", "[]" {
+				let offset = write_str( $sub( elem 0 1 ), output, offset );
+				let offset = write_str( " ", output, offset );
+				let offset = format_elem( $child( elem ), output, offset, level );
+				let offset = write_str( $sub( elem 1 1 ), output, offset );
+				switch $next( elem ) {
+					case ",", ";" {
+					}
+					default {
+						let offset = write_str( " ", output, offset );
+					}
+				}
+			}
+			case "{}" {
+				let offset = write_str( "{\12", output, offset );
+				let offset = write_str( indent_str( +( level 1 ) ), output, offset );
+				let offset = format_elem( $child( elem ), output, offset, +( level 1 ) );
+				let offset = write_str( "\12", output, offset );
+				let offset = write_str( indent_str( level ), output, offset );
+				let offset = write_str( "}", output, offset );
+				if $next( elem ) {
+					let offset = write_str( "\12", output, offset );
+					let offset = write_str( indent_str( level ), output, offset );
+				}
+			}
+			case ";" {
+				let offset = write_str( ";", output, offset );
+				if $next( elem ) {
+					let offset = write_str( "\12", output, offset );
+					let offset = write_str( indent_str( level ), output, offset );
+				}
+			}
+			default {
+				let offset = write_str( elem, output, offset );
+				switch $next( elem ) {
+					case "()", ",", ";" {
+					}
+					default {
+						let offset = write_str( " ", output, offset );
+					}
+				}
+			}
+		}
+		let elem = $next( elem );
+	}
+	return offset;
+}
+
+program prettyprint {
+	if >( $argc 1 ) {
+		var elem = $parse( $load( $argv( 1 ) ) );
+		var output = $array( format_elem( elem, 0, 0, 0 ) );
+		call format_elem( elem, output, 0, 0 );
+		print $sub( output, 0, $len( output ) );
+	} else {
+		error "Usage: prettyprint.tt input.txt";
+	}
+}
