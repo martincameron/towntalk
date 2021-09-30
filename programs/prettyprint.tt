@@ -30,6 +30,7 @@ rem {
 	Returns the new offset. Output may be null.
 }
 function format_elem( elem, output, offset, level ) {
+	var count;
 	while elem {
 		switch elem {
 			case "()", "[]" {
@@ -55,6 +56,15 @@ function format_elem( elem, output, offset, level ) {
 				if $next( elem ) {
 					let offset = write_str( "\12", output, offset );
 					let offset = write_str( indent_str( level ), output, offset );
+				}
+			}
+			case "," {
+				let offset = write_str( ", ", output, offset );
+				inc count;
+				if >( count 7 ) {
+					let offset = write_str( "\12", output, offset );
+					let offset = write_str( indent_str( level ), output, offset );
+					let count = 0;
 				}
 			}
 			case ";" {
