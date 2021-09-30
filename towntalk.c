@@ -2129,7 +2129,7 @@ static enum result evaluate_logical_expression( struct expression *this, struct 
 						ret = parameter->evaluate( parameter, variables, &var, exception );
 						if( ret ) {
 							value = var.integer_value || var.string_value;
-							dispose_temporary( &var );
+							dispose_variable( &var );
 						} else {
 							return ret;
 						}
