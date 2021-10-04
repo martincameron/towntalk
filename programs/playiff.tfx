@@ -1,0 +1,160 @@
+
+const FREQ = $pack( $array( ${
+	16744, 16865, 16988, 17111, 17235, 17360, 17485, 17612,
+	17740, 17868, 17998, 18128, 18260, 18392, 18525, 18659,
+	18795, 18931, 19068, 19206, 19345, 19485, 19627, 19769,
+	19912, 20056, 20202, 20348, 20496, 20644, 20794, 20944,
+	21096, 21249, 21403, 21558, 21714, 21872, 22030, 22190,
+	22351, 22513, 22676, 22840, 23006, 23172, 23340, 23509,
+	23680, 23851, 24024, 24198, 24374, 24550, 24728, 24907,
+	25088, 25270, 25453, 25637, 25823, 26010, 26198, 26388,
+	26580, 26772, 26966, 27162, 27358, 27557, 27756, 27957,
+	28160, 28364, 28570, 28777, 28985, 29195, 29407, 29620,
+	29834, 30051, 30268, 30488, 30709, 30931, 31155, 31381,
+	31609, 31838, 32068, 32301, 32535, 32770, 33008, 33247 } ) );
+
+rem { Find the approximate key that corresponds to the specified sampling rate. }
+function rate_to_key( rate ) {
+	var oct = 5, key;
+	while <( rate 16744 ) {
+		let oct = -( oct 1 );
+		let rate = <<( rate 1 );
+	}
+	while >( rate 33247 ) {
+		let oct = +( oct 1 );
+		let rate = >>( rate 1 );
+	}
+	while <( $unpack( FREQ key ) rate ) {
+		inc key;
+	}
+	return +( *( oct 96 ) key );
+}
+
+rem { Return the sampling rate that corresponds to the specified key. }
+function key_to_rate( key ) {
+	return >>( <<( $unpack( FREQ %( key 96 ) ) 4 ) -( 9 /( key 96 ) ) );
+}
+
+rem { Upsample by a factor of 2 with antialiasing. }
+function upsample( sam ) {
+	var len = $len( sam );
+	var out = $array( *( len 2 ) );
+	var in_idx, out_idx, amp;
+	while <( in_idx len ) {
+		let [ out out_idx ] = amp;
+		inc out_idx;
+		let [ out out_idx ] = >>( +( amp $chr( sam in_idx ) ) 1 );
+		inc out_idx;
+		let amp = $chr( sam in_idx );
+		inc in_idx;
+	}
+	return $sub( out, 0, $len( out ) );
+}
+
+rem { Faster "assembly" version of upsample function. }
+function upsample_fast( sam ) {
+	var len = $len( sam );
+	var out = $array( *( len 2 ) );
+	var in_idx, out_idx, amp, acc;
+	asm {
+		loop:
+			let [ out out_idx ] = amp;
+			let out_idx = +( out_idx 1 );
+			let acc = $chr( sam in_idx );
+			let acc = +( amp acc );
+			let acc = >>( acc 1 );
+			let [ out out_idx ] = acc;
+			let out_idx = +( out_idx 1 );
+			let amp = $chr( sam in_idx );
+			let in_idx = +( in_idx 1 );
+		jump <( in_idx len ) loop;
+	}
+	return $sub( out, 0, $len( out ) );
+}
+
+rem { Read the IFF-8SVX VHDR data into the specified array and return the offset of the BODY chunk. }
+function iff_get_header( iff, header ) {
+	var idx;
+	if $cmp( "VHDR" $sub( iff 12 4 ) ) {
+		throw "IFF-8SVX header not found.";
+	}
+	set [ header 0 ] = $unpack( iff 5 );
+	set [ header 1 ] = $unpack( iff 6 );
+	set [ header 2 ] = $unpack( iff 7 );
+	set [ header 3 ] = |( <<( &( $chr( iff 32 ) 0xFF ) 8 ) &( $chr( iff 33 ) 0xFF ) );
+	set [ header 4 ] = $chr( iff 34 );
+	set [ header 5 ] = $chr( iff 35 );
+	set [ header 6 ] = $unpack( iff 9 );
+	return 40;
+}
+
+rem { Return the sampling rate of an IFF-8SVX waveform. }
+function iff_get_sampling_rate( iff ) {
+	var header = $array( 7 );
+	call iff_get_header( iff, header );
+	return [ header 3 ];
+}
+
+rem { Return the sample data of an IFF-8SVX waveform. }
+function iff_get_sample_data( iff ) {
+	var header = $array( 7 );
+	var offset = iff_get_header( iff, header );
+	if [ header 5 ] {
+		throw "Compressed IFF not supported.";
+	}
+	while $cmp( "BODY" $sub( iff offset 4 ) ) {
+		let offset = +( offset $unpack( iff +( >>( offset 2 ) 1 ) ) 8 );
+	}
+	let offset = +( offset 4 );
+	return $sub( iff +( offset 4 ) $unpack( iff >>( offset 2 ) ) );
+}
+
+rem { Split and upload sample and generate playback sequence. }
+function sequence( sam, rate, period ) {
+	var sam_idx = 1, seq_idx, off, len, seq = $array( 256 );
+	var key = rate_to_key( rate );
+	let rate = key_to_rate( key );
+	var cmd = |( 0x10000000 <<( key 16 ) );
+	rem { Set channel 0 volume. }
+	let [ seq seq_idx ] = 0x8000;
+	inc seq_idx;
+	while <( off $len( sam ) ) {
+		var seconds = 10;
+		let len = *( rate seconds );
+		if >( len -( $len( sam ) off ) ) {
+			let len = -( $len( sam ) off );
+			let seconds = +( /( len rate ) 1 );
+		}
+		sample sam_idx, $sub( sam, off, len ), len, 0;
+		let [ seq seq_idx ] = |( cmd <<( sam_idx 8 ) );
+		inc seq_idx;
+		let [ seq seq_idx ] = |( 0xF000 /( *( 24000 seconds ) period ) );
+		inc seq_idx;
+		inc sam_idx;
+		let off = +( off len );
+	}
+	rem { Stop event. }
+	let [ seq seq_idx ] = 0x08000000;
+	inc seq_idx;
+	return $pack( seq );
+}
+
+program player {
+	audio 480;
+	var iff = $load( $argv( 1 ) );
+	var rate = iff_get_sampling_rate( iff );
+	print $cat( "Sampling rate: " rate "hz." );
+	var pcm = iff_get_sample_data( iff );
+	while <( rate 24000 ) {
+		let pcm = upsample( pcm );
+		let rate = *( rate 2 );
+	}
+	play 0, sequence( pcm, rate, 480 );
+	while TRUE {
+		switch $waitevent {
+			case SEQUENCER_EVENT {
+				break;
+			}
+		}
+	}
+}
