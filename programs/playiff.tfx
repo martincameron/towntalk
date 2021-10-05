@@ -1,4 +1,8 @@
 
+struct iff_8svx_vhdr {
+	attack, sustain, samples, rate, octaves, compression, volume, name
+};
+
 const FREQ = $pack( $array( ${
 	16744, 16865, 16988, 17111, 17235, 17360, 17485, 17612,
 	17740, 17868, 17998, 18128, 18260, 18392, 18525, 18659,
@@ -72,38 +76,35 @@ function upsample_fast( sam ) {
 	return $sub( out, 0, $len( out ) );
 }
 
-rem { Read the IFF-8SVX VHDR data into the specified array and return the offset of the BODY chunk. }
+rem { Read the IFF-8SVX VHDR data and NAME chunk into the specified array and return the offset of the BODY chunk. }
 function iff_get_header( iff, header ) {
 	var idx;
 	if $cmp( "VHDR" $sub( iff 12 4 ) ) {
 		throw "IFF-8SVX header not found.";
 	}
-	set [ header 0 ] = $unpack( iff 5 );
-	set [ header 1 ] = $unpack( iff 6 );
-	set [ header 2 ] = $unpack( iff 7 );
-	set [ header 3 ] = |( <<( &( $chr( iff 32 ) 0xFF ) 8 ) &( $chr( iff 33 ) 0xFF ) );
-	set [ header 4 ] = $chr( iff 34 );
-	set [ header 5 ] = $chr( iff 35 );
-	set [ header 6 ] = $unpack( iff 9 );
-	return 40;
-}
-
-rem { Return the sampling rate of an IFF-8SVX waveform. }
-function iff_get_sampling_rate( iff ) {
-	var header = $array( 7 );
-	call iff_get_header( iff, header );
-	return [ header 3 ];
+	set iff_8svx_vhdr.attack( header ) = $unpack( iff 5 );
+	set iff_8svx_vhdr.sustain( header ) = $unpack( iff 6 );
+	set iff_8svx_vhdr.samples( header ) = $unpack( iff 7 );
+	set iff_8svx_vhdr.rate( header ) = |( <<( &( $chr( iff 32 ) 0xFF ) 8 ) &( $chr( iff 33 ) 0xFF ) );
+	set iff_8svx_vhdr.octaves( header ) = $chr( iff 34 );
+	set iff_8svx_vhdr.compression( header ) = $chr( iff 35 );
+	set iff_8svx_vhdr.volume( header ) = $unpack( iff 9 );
+	var offset = 40;
+	while $cmp( "BODY" $sub( iff offset 4 ) ) {
+		if $eq( "NAME" $sub( iff offset 4 ) ) {
+			set iff_8svx_vhdr.name( header ) = $sub( iff +( offset 8 ) $unpack( iff +( >>( offset 2 ) 1 ) ) );
+		}
+		let offset = +( offset $unpack( iff +( >>( offset 2 ) 1 ) ) 8 );
+	}
+	return offset;
 }
 
 rem { Return the sample data of an IFF-8SVX waveform. }
 function iff_get_sample_data( iff ) {
-	var header = $array( 7 );
+	var header = $new( iff_8svx_vhdr );
 	var offset = iff_get_header( iff, header );
-	if [ header 5 ] {
+	if iff_8svx_vhdr.compression( header ) {
 		throw "Compressed IFF not supported.";
-	}
-	while $cmp( "BODY" $sub( iff offset 4 ) ) {
-		let offset = +( offset $unpack( iff +( >>( offset 2 ) 1 ) ) 8 );
 	}
 	let offset = +( offset 4 );
 	return $sub( iff +( offset 4 ) $unpack( iff >>( offset 2 ) ) );
@@ -142,7 +143,10 @@ function sequence( sam, rate, period ) {
 program player {
 	audio 480;
 	var iff = $load( $argv( 1 ) );
-	var rate = iff_get_sampling_rate( iff );
+	var vhdr = $new( iff_8svx_vhdr );
+	call iff_get_header( iff, vhdr );
+	var rate = iff_8svx_vhdr.rate( vhdr );
+	print $cat( "Name: " iff_8svx_vhdr.name( vhdr ) );
 	print $cat( "Sampling rate: " rate "hz." );
 	var pcm = iff_get_sample_data( iff );
 	while <( rate 24000 ) {
