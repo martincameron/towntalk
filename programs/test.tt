@@ -419,9 +419,8 @@ function testasc() {
 }
 
 function testhex() {
-	call assert_equals( " 0x00000000", $hex(  0x00000000 ), ${-} );
-	call assert_equals( "-0x00000001", $hex( -0x00000001 ), ${-} );
-	call assert_equals( "-0x80000000", $hex( -0x80000000 ), ${-} );
+	call assert_equals( "0x00000000", $hex( 0x00000000 ), ${-} );
+	call assert_equals( "0xFFFFFF00", $hex( -256 ), ${-} );
 	call assert_throws( "1", ${ () { call $hex( except( ${ 1 } ) ); } } );
 }
 
@@ -429,6 +428,8 @@ function testint() {
 	call assert_equals( 1, $int( "1" ), ${-} );
 	call assert_equals( 10, $int( "0xA" ), ${-} );
 	call assert_equals( 8, $int( "010" ), ${-} );
+	call assert_equals( -256, $int( "0xFFFFFF00" ), ${-} );
+	call assert_equals( 256, $int( "-0xFFFFFF00" ), ${-} );
 	call assert_throws( "1", ${ () { call $int( except( ${ 1 } ) ); } } );
 	call assert_throws( "Not a string", ${ () { call $int( 1 ); } } );
 	call assert_throws( "Unable to convert", ${ () { call $int( "a" ); } } );

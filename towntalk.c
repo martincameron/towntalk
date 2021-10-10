@@ -1048,11 +1048,12 @@ static struct element* parse_constant( struct element *elem, struct variable *co
 						child = child->next;
 					}
 					if( child && child->next == NULL ) {
-						integer_value = ( int ) strtol( child->str.string, &end, 0 );
-						if( end[ 0 ] == 0 ) {
-							next = next->next;
-						} else {
+						errno = 0;
+						integer_value = ( int ) strtoul( child->str.string, &end, 0 );
+						if( end[ 0 ] || errno ) {
 							sprintf( message, "Invalid tuple integer on line %d.", next->line );
+						} else {
+							next = next->next;
 						}
 					} else {
 						sprintf( message, "Invalid tuple constant on line %d.", next->line );
@@ -1068,8 +1069,9 @@ static struct element* parse_constant( struct element *elem, struct variable *co
 		}
 	} else {
 		/* Integer constant. */
-		integer_value = ( int ) strtol( elem->str.string, &end, 0 );
-		if( end[ 0 ] != 0 ) {
+		errno = 0;
+		integer_value = ( int ) strtoul( elem->str.string, &end, 0 );
+		if( end[ 0 ] || errno ) {
 			sprintf( message, "Invalid integer constant '%.64s' at line %d.", elem->str.string, elem->line );
 		}
 	}
@@ -2253,12 +2255,13 @@ static enum result evaluate_int_expression( struct expression *this, struct vari
 	enum result ret = this->parameters->evaluate( this->parameters, variables, &str, exception );
 	if( ret ) {
 		if( str.string_value ) {
-			val = ( int ) strtol( str.string_value->string, &end, 0 );
-			if( end[ 0 ] == 0 && str.string_value->string != end ) {
+			errno = 0;
+			val = ( int ) strtoul( str.string_value->string, &end, 0 );
+			if( end[ 0 ] || errno ) {
+				ret = throw( exception, this, 0, "Unable to convert string to integer." );
+			} else {
 				dispose_variable( result );
 				result->integer_value = val;
-			} else {
-				ret = throw( exception, this, 0, "Unable to convert string to integer." );
 			}
 		} else {
 			ret = throw( exception, this, 0, "Not a string." );
@@ -2983,13 +2986,9 @@ static enum result evaluate_hex_expression( struct expression *this, struct vari
 	struct variable val = { 0, NULL };
 	enum result ret = this->parameters->evaluate( this->parameters, variables, &val, exception );
 	if( ret ) {
-		str = new_string_value( sizeof( int ) * 2 + 4 );
+		str = new_string_value( sizeof( int ) * 2 + 2 );
 		if( str ) {
-			if( val.integer_value < 0 ) {
-				len = sprintf( str->string, "-0x%08x", -val.integer_value );
-			} else {
-				len = sprintf( str->string, " 0x%08x", val.integer_value );
-			}
+			len = sprintf( str->string, "0x%08X", val.integer_value );
 			if( len > 0 ) {
 				str->length = len;
 				dispose_temporary( result );
