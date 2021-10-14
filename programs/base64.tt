@@ -1,0 +1,35 @@
+
+const BASE64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+function base64_encode( input ) {
+	var in_idx, out_idx, bits, buf;
+	var output = $array( *( +( /( $len( input ) 3 ) ?( %( $len( input ) 3 ) 1 0 ) ) 4 ) );
+	while <( in_idx $len( input ) ) {
+		if <( bits 6 ) {
+			let buf = |( <<( buf 8 ) &( $chr( input in_idx ) 0xFF ) );
+			let bits = +( bits 8 );
+			inc in_idx;
+		}
+		let bits = -( bits 6 );
+		let [ output out_idx ] = $chr( BASE64_ALPHABET &( >>( buf bits ) 0x3F ) );
+		inc out_idx;
+	}
+	while %( bits 6 ) {
+		let buf = <<( buf 1 );
+		inc bits;
+	}
+	while bits {
+		let bits = -( bits 6 );
+		let [ output out_idx ] = $chr( BASE64_ALPHABET &( >>( buf bits ) 0x3F ) );
+		inc out_idx;
+	}
+	while <( out_idx $len( output ) ) {
+		let [ output out_idx ] = 0x3D;
+		inc out_idx;
+	}
+	return $sub( output 0 $len( output ) );
+}
+
+program base64 {
+	print base64_encode( $load( $argv( 1 ) ) );
+}
