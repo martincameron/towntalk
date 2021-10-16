@@ -30,6 +30,32 @@ function base64_encode( input ) {
 	return $sub( output 0 $len( output ) );
 }
 
+rem { Decode to output array if not null and return output length. }
+function base64_decode( input, output ) {
+	var buf, bits, in_idx, out_idx, lookup = $array( 128 );
+	while <( in_idx $len( BASE64_ALPHABET ) ) {
+		set [ lookup $chr( BASE64_ALPHABET in_idx ) ] = +( in_idx 1 );
+		inc in_idx;
+	}
+	let in_idx = 0;
+	while <( in_idx $len( input ) ) {
+		var char = [ lookup $chr( input in_idx ) ];
+		if char {
+			let buf = |( <<( buf 6 ) -( char 1 ) );
+			let bits = +( bits 6 );
+			if >( bits 7 ) {
+				let bits = -( bits 8 );
+				if output {
+					set [ output out_idx ] = >>( buf bits );
+				}
+				inc out_idx;
+			}
+		}
+		inc in_idx;
+	}
+	return out_idx;
+}
+
 program base64 {
 	print base64_encode( $load( $argv( 1 ) ) );
 }
