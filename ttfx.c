@@ -45,6 +45,7 @@
 		$keyboard                              The key associated with the latest keyboard event.
 		$keyshift                              The currently pressed modifier keys (least significant 2 bits are shift keys).
 		$seqtick                               Return an integer incremented every sequencer period.
+		$seqmix(output)                        Copy 16-bit stereo sample pairs for the current tick and return the count (max 8192).
 		$seqmsg                                The channel and parameter of the latest sequencer event (0xccpppppp).
 		$dir("path")                           An element tree of the names and sizes of all files in the specified dir.
 		$path("file")                          The full path of the specified file.
@@ -1293,6 +1294,40 @@ static enum result evaluate_seqtick_expression( struct expression *this, struct 
 	return OKAY;
 }
 
+/* Copy 16-bit stereo sample pairs for the current tick and return the count. */
+static enum result evaluate_seqmix_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	int length, idx, end;
+	struct expression *parameter = this->parameters;
+	struct variable arr = { 0, NULL }, var = { 0, NULL }, *values;
+	struct fxenvironment *fxenv = ( struct fxenvironment * ) this->function->env;
+	enum result ret = parameter->evaluate( parameter, variables, &arr, exception );
+	if( ret ) {
+		if( arr.string_value && arr.string_value->type == ARRAY ) {
+			values = ( ( struct array * ) arr.string_value )->array;
+			length = ( ( struct array * ) arr.string_value )->length;
+			SDL_LockAudio();
+			idx = 0;
+			end = fxenv->audio_end << 1;
+			if( end > length ) {
+				end = length;
+			}
+			while( idx < end ) {
+				var.integer_value = fxenv->audio[ idx ];
+				assign_variable( &var, &values[ idx++ ] );
+			}
+			SDL_UnlockAudio();
+			dispose_variable( result );
+			result->integer_value = fxenv->audio_end;
+			result->string_value = NULL;
+		} else {
+			ret = throw( exception, this, 0, "Not an array." );
+		}
+		dispose_variable( &arr );
+	}
+	return ret;
+}
+
 /*
 	Returns an integer of the form 0xccpppppp containing the
 	channel and parameter of the most recently handled sequencer event.
@@ -1629,6 +1664,7 @@ static struct operator fxoperators[] = {
 	{ "$keyboard", '$', 0, evaluate_keyboard_expression, NULL },
 	{ "$keyshift", '$', 0, evaluate_keyshift_expression, NULL },
 	{ "$seqtick", '$', 0, evaluate_seqtick_expression, NULL },
+	{ "$seqmix", '$', 1, evaluate_seqmix_expression, NULL },
 	{ "$seqmsg", '$', 0, evaluate_seqmsg_expression, NULL },
 	{ "$dir", '$', 1, evaluate_dir_expression, NULL },
 	{ "$path", '$', 1, evaluate_path_expression, NULL },
