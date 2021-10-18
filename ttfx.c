@@ -114,7 +114,7 @@
 		0xppcc set panning (0x81-0xBF) on channel c.
 		0xCxxx set sequence gain (default 0x40).
 		0xDxxx set sequence transpose (default 0x800).
-		0xEttt set tempo in samples per tick (at 24000hz).
+		0xEttt set period (tempo) in samples per tick (at 24000hz).
 		0xFwww wait w ticks.
 		
 	Datfiles:
@@ -134,6 +134,7 @@
 #define NUM_SURFACES 256
 #define MIN_TICK_LEN 512
 #define MAX_TICK_LEN 8192
+#define DEFAULT_PERIOD 480
 #define MAX_SAMPLE_LEN 524200
 #define SAMPLE_RATE 48000
 
@@ -513,18 +514,20 @@ static void audio_callback( void *userdata, Uint8 *stream, int len ) {
 		if( fxenv->audio_idx + count > fxenv->audio_end ) {
 			count = fxenv->audio_end - fxenv->audio_idx;
 		}
-		out_idx = offset << 1;
-		out_end = ( offset + count ) << 1;
-		aud_idx = fxenv->audio_idx << 1;
-		while( out_idx < out_end ) {
-			ampl = fxaudio[ aud_idx++ ];
-			if( ampl > 32767 ) {
-				ampl = 32767;
+		if( output ) {
+			out_idx = offset << 1;
+			out_end = ( offset + count ) << 1;
+			aud_idx = fxenv->audio_idx << 1;
+			while( out_idx < out_end ) {
+				ampl = fxaudio[ aud_idx++ ];
+				if( ampl > 32767 ) {
+					ampl = 32767;
+				}
+				if( ampl < -32768 ) {
+					ampl = -32768;
+				}
+				output[ out_idx++ ] = ampl;
 			}
-			if( ampl < -32768 ) {
-				ampl = -32768;
-			}
-			output[ out_idx++ ] = ampl;
 		}
 		offset += count;
 		fxenv->audio_idx += count;
@@ -922,7 +925,7 @@ static enum result execute_audio_statement( struct statement *this, struct varia
 	int ticklen;
 	enum result ret = this->source->evaluate( this->source, variables, &param, exception );
 	if( ret ) {
-		/* audio ticklen; (Samples per tick at 24khz, 480 = 50hz) */
+		/* audio period; (Samples per tick at 24khz, 480 = 50hz) */
 		if( param.integer_value > 0 ) {
 			ticklen = param.integer_value * SAMPLE_RATE / 24000;
 			if( ticklen >= MIN_TICK_LEN && ticklen <= MAX_TICK_LEN ) {
@@ -947,6 +950,10 @@ static enum result execute_audio_statement( struct statement *this, struct varia
 			}
 		} else {
 			SDL_CloseAudio();
+			fxenv->tick = fxenv->tick_len = fxenv->audio_idx = fxenv->audio_end = fxenv->stream_idx = 0;
+			memset( fxenv->audio, 0, sizeof( fxenv->audio ) );
+			memset( fxenv->stream, 0, sizeof( fxenv->stream ) );
+			memset( fxenv->ramp_buf, 0, sizeof( fxenv->ramp_buf ) );
 		}
 		dispose_variable( &param );
 	}
@@ -1307,6 +1314,12 @@ static enum result evaluate_seqmix_expression( struct expression *this, struct v
 			values = ( ( struct array * ) arr.string_value )->array;
 			length = ( ( struct array * ) arr.string_value )->length;
 			SDL_LockAudio();
+			if( SDL_GetAudioStatus() == SDL_AUDIO_STOPPED ) {
+				if( fxenv->tick_len < MIN_TICK_LEN ) {
+					fxenv->tick_len = DEFAULT_PERIOD * SAMPLE_RATE / 24000;
+				}
+				audio_callback( fxenv, NULL, ( fxenv->tick_len - fxenv->audio_idx ) << 2 );
+			}
 			idx = 0;
 			end = fxenv->audio_end << 1;
 			if( end > length ) {
@@ -1316,10 +1329,10 @@ static enum result evaluate_seqmix_expression( struct expression *this, struct v
 				var.integer_value = fxenv->audio[ idx ];
 				assign_variable( &var, &values[ idx++ ] );
 			}
-			SDL_UnlockAudio();
 			dispose_variable( result );
 			result->integer_value = fxenv->audio_end;
 			result->string_value = NULL;
+			SDL_UnlockAudio();
 		} else {
 			ret = throw( exception, this, 0, "Not an array." );
 		}
