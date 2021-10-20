@@ -1,0 +1,140 @@
+
+rem { Trim trailing control-characters from the specified string. }
+function trim( str ) {
+	var offset, end;
+	let end = -( $len( str ) 1 );
+	while &&( >e( end 0 ) <( $chr( str, end ) 33 ) ) {
+		let end = -( end 1 );
+	}
+	return $sub( str, offset, +( end 1 ) );
+}
+
+rem { Load the samples from the specified TMF song file into the audio system and return the sequence. }
+function load_song( tmf, names ) {
+	var offset, sequence, length, idx, loopidx, looplen;
+	if $cmp( $sub( tmf, 0, 4 ) "TMF0" ) {
+		throw "Not a TMF file.";
+	}
+	if names {
+		set [ names 0 ] = trim( $sub( tmf 8 32 ) );
+	}
+	let offset = *( 32 64 );
+	let sequence = $sub( tmf, offset, $unpack( tmf, 1 ) );
+	let offset = +( offset $len( sequence ) );
+	let idx = 1;
+	while <( idx 64 ) {
+		let loopidx = $unpack( tmf, *( idx 8 ) );
+		let looplen = $unpack( tmf, +( *( idx 8 ) 1 ) );
+		if names {
+			set [ names idx ] = trim( $sub( tmf +( *( idx 32 ) 8 ) 24 ) );
+		}
+		let length = +( loopidx looplen );
+		if length {
+			sample idx, $sub( tmf offset length ), loopidx, looplen;
+			let offset = +( offset length );
+		}
+		inc idx;
+	}
+	return sequence;
+}
+
+rem { Return the total period of the sequence. }
+function scan_sequence( seq ) {
+	var idx, len, total, period = 480;
+	while <( idx $len( seq ) ) {
+		var cmd = $chr( seq idx );
+		switch &( cmd 0xF0 ) {
+			case 0x00 {
+				let idx = +( idx ?( =( cmd 0x08 ) 4 2 ) );
+			}
+			case 0x10, 0x20, 0x30 {
+				let idx = +( idx 4 );
+			}
+			case 0xE0 {
+				let period = |( <<( &( cmd 0xF ) 8 ) &( $chr( seq +( idx 1 ) ) 0xFF ) );
+				let idx = +( idx 2 );
+			}
+			case 0xF0 {
+				let total = +( total *( period |( <<( &( cmd 0xF ) 8 ) &( $chr( seq +( idx 1 ) ) 0xFF ) ) ) );
+				let idx = +( idx 2 );
+			}
+			default {
+				let idx = +( idx 2 );
+			}
+		}
+	}
+	return total;
+}
+
+rem { Extract audio from the sequencer into output array. }
+function mix_sequence( seq, output ) {
+	var offset, mixbuf = $array( 16384 );
+	audio 0;
+	play 0, seq;
+	while <( offset $len( output ) ) {
+		var idx = 0;
+		var len = $seqmix( mixbuf );
+		var max = -( $len( output ) offset );
+		if >( len max ) {
+			let len = max;
+		}
+		let len = *( len 2 );
+		while <( idx len ) {
+			var amp = [ mixbuf idx ];
+			inc idx;
+			let amp = |( <<( amp 16 ) &( [ mixbuf idx ] 0xFFFF ) );
+			inc idx;
+			set [ output offset ] = amp;
+			inc offset;
+		}
+	}
+	return output;
+}
+
+rem { Byte-swap 16-bit stereo audio data. }
+function swab( arr ) {
+	var idx, len = $len( arr );
+	while <( idx len ) {
+		var a = [ arr idx ];
+		set [ arr idx ] = |( <<( &( a 0xFF00FF ) 8 ) &( >>( a 8 ) 0xFF00FF ) );
+		inc idx;
+	}
+	return arr;
+}
+
+rem { Pack the specified integer into a little-endian string. }
+function packle( x ) {
+	let x = |( <<( x 16 ) &( >>( x 16 ) 0xFFFF ) );
+	return $pack( |( <<( &( x 0xFF00FF ) 8 ) &( >>( x 8 ) 0xFF00FF ) ) );
+}
+
+rem { Return a 16-bit stereo WAV header for the specified number of samples. }
+function wavheader( rate, samples ) {
+	return $str(
+		"RIFF", packle('('( samples * 4 ) + 36 ) ),
+		"WAVEfmt ", packle( 16 ), packle( 0x00020001 ),
+		packle( rate ), packle('( rate * 4 ) ), packle( 0x00100004 ),
+		"data", packle('( samples * 4 ) )
+	);
+}
+
+program tmf2wav {
+	var sequence, idx, name, event, names = $array( 64 );
+	if >( $argc 1 ) {
+		let sequence = load_song( $load( $argv( 1 ) ), names );
+		print $cat( "Song name: " [ names 0 ] );
+		print $cat( "Sequence length: " $len( sequence ) " bytes.");
+		let idx = 1;
+		while <( idx 64 ) {
+			let name = [ names idx ];
+			if >( $len( name ) 0 ) {
+				print $cat( "Instrument " idx ": " name );
+			}
+			inc idx;
+		}
+		var samples = swab( mix_sequence( sequence, $array( *( scan_sequence( sequence ) 2 ) ) ) );
+		save $cat( wavheader( 48000, $len( samples ) ) $pack( samples ) ) "tmfout.wav";
+	} else {
+		error $cat( "Usage ttfx " $argv( 0 ) " song.tmf" );
+	}
+}
