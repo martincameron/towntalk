@@ -44,11 +44,8 @@ function scan_sequence( seq ) {
 	while <( idx $len( seq ) ) {
 		var cmd = $chr( seq idx );
 		switch &( cmd 0xF0 ) {
-			case 0x00 {
-				let idx = +( idx ?( =( cmd 0x08 ) 4 2 ) );
-			}
-			case 0x10, 0x20, 0x30 {
-				let idx = +( idx 4 );
+			case 0x00, 0x10, 0x20, 0x30 {
+				let idx = +( idx ?( cmd 4 2 ) );
 			}
 			case 0xE0 {
 				let period = |( <<( &( cmd 0xF ) 8 ) &( $chr( seq +( idx 1 ) ) 0xFF ) );
