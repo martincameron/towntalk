@@ -646,8 +646,8 @@ static enum result execute_display_statement( struct statement *this, struct var
 static enum result execute_surface_statement( struct statement *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	enum result ret;
-	int surf, width, height, len, idx = 0;
-	struct variable params[ 4 ], *values;
+	int surf, width, height, len, idx = 0, *values;
+	struct variable params[ 4 ];
 	struct array *arr;
 	Uint32 *pixels;
 #if SDL_MAJOR_VERSION > 1
@@ -677,7 +677,7 @@ static enum result execute_surface_statement( struct statement *this, struct var
 					if( params[ 3 ].string_value ) {
 						if( params[ 3 ].string_value->type == ARRAY ) {
 							arr = ( struct array * ) params[ 3 ].string_value;
-							values = arr->array;
+							values = arr->integer_values;
 							pixels = malloc( arr->length * sizeof( Uint32 ) );
 							if( pixels ) {
 								idx = 0;
@@ -685,7 +685,7 @@ static enum result execute_surface_statement( struct statement *this, struct var
 								if( len >= width * height ) {
 									len = width * height;
 									while( idx < len ) {
-										pixels[ idx ] = values[ idx ].integer_value;
+										pixels[ idx ] = values[ idx ];
 										idx++;
 									}
 									if( SDL_UpdateTexture( texture, NULL, pixels, width * sizeof( Uint32 ) ) ) {
@@ -721,7 +721,7 @@ static enum result execute_surface_statement( struct statement *this, struct var
 					if( params[ 3 ].string_value ) {
 						if( params[ 3 ].string_value->type == ARRAY ) {
 							arr = ( struct array * ) params[ 3 ].string_value;
-							values = arr->array;
+							values = arr->integer_values;
 							if( SDL_LockSurface( surface ) == 0 ) {
 								idx = 0;
 								len = arr->length;
@@ -729,7 +729,7 @@ static enum result execute_surface_statement( struct statement *this, struct var
 									len = width * height;
 									pixels = ( Uint32 * ) surface->pixels;
 									while( idx < len ) {
-										pixels[ idx ] = values[ idx ].integer_value;
+										pixels[ idx ] = values[ idx ];
 										idx++;
 									}
 								} else {
@@ -1306,12 +1306,11 @@ static enum result evaluate_seqmix_expression( struct expression *this, struct v
 	struct variable *result, struct variable *exception ) {
 	int length, idx, end;
 	struct expression *parameter = this->parameters;
-	struct variable arr = { 0, NULL }, var = { 0, NULL }, *values;
+	struct variable arr = { 0, NULL }, var = { 0, NULL };
 	struct fxenvironment *fxenv = ( struct fxenvironment * ) this->function->env;
 	enum result ret = parameter->evaluate( parameter, variables, &arr, exception );
 	if( ret ) {
 		if( arr.string_value && arr.string_value->type == ARRAY ) {
-			values = ( ( struct array * ) arr.string_value )->array;
 			length = ( ( struct array * ) arr.string_value )->length;
 			SDL_LockAudio();
 			if( SDL_GetAudioStatus() == SDL_AUDIO_STOPPED ) {
@@ -1327,7 +1326,7 @@ static enum result evaluate_seqmix_expression( struct expression *this, struct v
 			}
 			while( idx < end ) {
 				var.integer_value = fxenv->audio[ idx ];
-				assign_variable( &var, &values[ idx++ ] );
+				assign_array_variable( &var, ( struct array * ) arr.string_value, idx++ );
 			}
 			dispose_variable( result );
 			result->integer_value = fxenv->audio_end;
@@ -1564,9 +1563,9 @@ static enum result evaluate_extract_expression( struct expression *this, struct 
 static enum result evaluate_stream_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	/* count = $stream( array offset count ) */
-	int length, samples, idx, end, off;
+	int length, samples, idx, end, off, *values;
 	struct expression *parameter = this->parameters;
-	struct variable arr = { 0, NULL }, offset = { 0, NULL }, count = { 0, NULL }, *values;
+	struct variable arr = { 0, NULL }, offset = { 0, NULL }, count = { 0, NULL };
 	struct fxenvironment *fxenv = ( struct fxenvironment * ) this->function->env;
 	enum result ret = parameter->evaluate( parameter, variables, &arr, exception );
 	if( ret ) {
@@ -1577,7 +1576,7 @@ static enum result evaluate_stream_expression( struct expression *this, struct v
 			ret = parameter->evaluate( parameter, variables, &count, exception );
 			if( ret ) {
 				if( arr.string_value && arr.string_value->type == ARRAY ) {
-					values = ( ( struct array * ) arr.string_value )->array;
+					values = ( ( struct array * ) arr.string_value )->integer_values;
 					length = ( ( ( struct array * ) arr.string_value )->length ) >> 1;
 					if( offset.integer_value >= 0 && count.integer_value >= 0
 					&& MAX_INTEGER - count.integer_value >= offset.integer_value
@@ -1591,7 +1590,7 @@ static enum result evaluate_stream_expression( struct expression *this, struct v
 						end = idx + ( samples << 1 );
 						off = offset.integer_value << 1;
 						while( idx < end ) {
-							fxenv->stream[ idx++ ] = values[ off++ ].integer_value;
+							fxenv->stream[ idx++ ] = values[ off++ ];
 						}
 						fxenv->stream_idx += samples;
 						SDL_UnlockAudio();

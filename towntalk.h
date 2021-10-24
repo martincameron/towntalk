@@ -10,7 +10,7 @@ enum result {
 
 /* Reference type. */
 enum reference_type {
-	STRING, ELEMENT, ARRAY, BUFFER, FUNCTION, WORKER, CUSTOM, EXIT
+	STRING, ELEMENT, ARRAY, FUNCTION, WORKER, CUSTOM, EXIT
 };
 
 /* String list. */
@@ -37,7 +37,8 @@ struct element {
 /* Reference-counted array. */
 struct array {
 	struct string str;
-	struct variable *array;
+	int *integer_values;
+	struct string **string_values;
 	struct array *prev, *next;
 	int length;
 };
@@ -216,14 +217,17 @@ struct string* new_string_value( int length );
 /* Allocate and return a new element with the specified string length. */
 struct element* new_element( int str_len );
 
-/* Allocate and return a new array of the specified number of elements and reference count of 1. */
-struct array* new_array( struct environment *env, int length );
+/* Allocate and return a new array or buffer of the specified length and reference count of 1. */
+struct array* new_array( struct environment *env, int length, int buffer );
 
 /* Decrement the reference count of the specified value and deallocate if necessary. */
 void unref_string( struct string *str );
 
 /* Assign src variable to dest, managing reference counts. */
 void assign_variable( struct variable *src, struct variable *dest );
+
+/* Assign src variable to dest array at the specified index, managing reference counts. */
+void assign_array_variable( struct variable *src, struct array *arr, int idx );
 
 /* Assign the specified error code and message to the exception variable and return EXCEPTION. */
 enum result throw( struct variable *exception, struct expression *source, int integer, const char *string );

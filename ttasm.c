@@ -684,7 +684,7 @@ static enum result execute_asm_statement( struct statement *this, struct variabl
 		str = variables[ idx ].string_value;
 		if( str ) {
 			string_bounds[ idx ] = str->length;
-			if( str->type == ARRAY || str->type == BUFFER ) {
+			if( str->type == ARRAY ) {
 				array_bounds[ idx ] = ( ( struct array * ) str )->length;
 			} else {
 				array_bounds[ idx ] = 0;
@@ -783,7 +783,7 @@ static enum result execute_asm_statement( struct statement *this, struct variabl
 			case LETV_AI:
 				/* letv_ai     x y 0 imm : let x = [ y imm ]; */
 				if( ( unsigned int ) ins->imm < array_bounds[ ins->y ] ) {
-					variables[ ins->x ].integer_value = ( ( struct array * ) variables[ ins->y ].string_value )->array[ ins->imm ].integer_value;
+					variables[ ins->x ].integer_value = ( ( struct array * ) variables[ ins->y ].string_value )->integer_values[ ins->imm ];
 				} else {
 					return throw( exception, this->source, ins->imm, "Not an array or index out of bounds." );
 				}
@@ -792,7 +792,7 @@ static enum result execute_asm_statement( struct statement *this, struct variabl
 			case LETV_AV:
 				/* letv_av     x y z   0 : let x = [ y z ]; */
 				if( ( unsigned int ) variables[ ins->z ].integer_value < array_bounds[ ins->y ] ) {
-					variables[ ins->x ].integer_value = ( ( struct array * ) variables[ ins->y ].string_value )->array[ variables[ ins->z ].integer_value ].integer_value;
+					variables[ ins->x ].integer_value = ( ( struct array * ) variables[ ins->y ].string_value )->integer_values[ variables[ ins->z ].integer_value ];
 				} else {
 					return throw( exception, this->source, variables[ ins->z ].integer_value, "Not an array or index out of bounds." );
 				}
@@ -801,7 +801,7 @@ static enum result execute_asm_statement( struct statement *this, struct variabl
 			case LETAV_I:
 				/* letav_i     x y 0 imm : let [ x y ] = imm; */
 				if( ( unsigned int ) variables[ ins->y ].integer_value < array_bounds[ ins->x ] ) {
-					( ( struct array * ) variables[ ins->x ].string_value )->array[ variables[ ins->y ].integer_value ].integer_value = ins->imm;
+					( ( struct array * ) variables[ ins->x ].string_value )->integer_values[ variables[ ins->y ].integer_value ] = ins->imm;
 				} else {
 					return throw( exception, this->source, variables[ ins->y ].integer_value, "Not an array or index out of bounds." );
 				}
@@ -810,7 +810,7 @@ static enum result execute_asm_statement( struct statement *this, struct variabl
 			case LETAI_V:
 				/* letai_v     x 0 z imm : let [ x imm ] = z; */
 				if( ( unsigned int ) ins->imm < array_bounds[ ins->x ] ) {
-					( ( struct array * ) variables[ ins->x ].string_value )->array[ ins->imm ].integer_value = variables[ ins->z ].integer_value;
+					( ( struct array * ) variables[ ins->x ].string_value )->integer_values[ ins->imm ] = variables[ ins->z ].integer_value;
 				} else {
 					return throw( exception, this->source, ins->imm, "Not an array or index out of bounds." );
 				}
@@ -819,7 +819,7 @@ static enum result execute_asm_statement( struct statement *this, struct variabl
 			case LETAV_V:
 				/* letav_v     x y z   0 : let [ x y ] = z; */
 				if( ( unsigned int ) variables[ ins->y ].integer_value < array_bounds[ ins->x ] ) {
-					( ( struct array * ) variables[ ins->x ].string_value )->array[ variables[ ins->y ].integer_value ].integer_value = variables[ ins->z ].integer_value;
+					( ( struct array * ) variables[ ins->x ].string_value )->integer_values[ variables[ ins->y ].integer_value ] = variables[ ins->z ].integer_value;
 				} else {
 					return throw( exception, this->source, variables[ ins->y ].integer_value, "Not an array or index out of bounds." );
 				}

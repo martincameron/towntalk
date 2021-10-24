@@ -129,7 +129,7 @@ program tmf2wav {
 			}
 			inc idx;
 		}
-		var samples = swab( mix_sequence( sequence, $array( *( scan_sequence( sequence ) 2 ) ) ) );
+		var samples = swab( mix_sequence( sequence, $buffer( *( scan_sequence( sequence ) 2 ) ) ) );
 		save $cat( wavheader( 48000, $len( samples ) ) $pack( samples ) ) "tmfout.wav";
 	} else {
 		error $cat( "Usage ttfx " $argv( 0 ) " song.tmf" );
