@@ -125,11 +125,11 @@ program raster {
 	call fill_array( foreground, -1 );
 
 	dim [ background 240 ];
-	call parse_rws( $load( $str( $chop( $src, "/:\\" ) "rws/demo5.rws" ) ), background );
+	call parse_rws( $load( $str( $sub( $src 0 +( $endidx( $src, "/:\\" ) 1 ) ) "rws/demo5.rws" ) ), background );
 
 	display 640, 480, "Raster Master 2.0";
 	
-	call tg_charset( $load( $str( $chop( $src, "/:\\" ) "topaz8.txt" ) ) );
+	call tg_charset( $load( $str( $sub( $src 0 +( $endidx( $src, "/:\\" ) 1 ) ) "topaz8.txt" ) ) );
 	call tg_init( 32, 640, 480 );
 	
 	let tg_draw_background = @draw_background;

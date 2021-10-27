@@ -606,20 +606,18 @@ function testsrc() {
 	call assert_equals( "test.tt", $sub( $src, -( $len( $src ) 7 ), 7 ), ${-} );
 }
 
-function testchop() {
-	call assert_equals( "", $chop( "", "" ), ${-} );
-	call assert_equals( "", $chop( "file", "" ), ${-} );
-	call assert_equals( "", $chop( "file", "/" ), ${-} );
-	call assert_equals( "dir/", $chop( "dir/file", "/" ), ${-} );
-	call assert_equals( "c:", $chop( "c:file", "/:" ), ${-} );
-	call assert_equals( "dir\\", $chop( "dir\\file", "/:\\" ), ${-} );
-	call assert_equals( "c:\\dir\\", $chop( "c:\\dir\\file", "/:\\" ), ${-} );
-	call assert_throws( "1", ${ () { call setg( 0 ); call $chop( except( ${ 1 } ), setg( 2 ) ); } } );
+function teststridx() {
+	call assert_equals( -1, $stridx( "", "" ), ${-} );
+	call assert_equals( -1, $stridx( "file", "" ), ${-} );
+	call assert_equals( -1, $stridx( "file", "/" ), ${-} );
+	call assert_equals( 1, $stridx( "c:\\file", "/:\\" ), ${-} );
+	call assert_equals( 2, $endidx( "c:\\file", "/:\\" ), ${-} );
+	call assert_throws( "1", ${ () { call setg( 0 ); call $stridx( except( ${ 1 } ), setg( 2 ) ); } } );
 	call assert_equals( 0, g, ${-} );
-	call assert_throws( "2", ${ () { call $chop( setg( 1 ), except( ${ 2 } ) ); } } );
+	call assert_throws( "2", ${ () { call $stridx( setg( 1 ), except( ${ 2 } ) ); } } );
 	call assert_equals( 1, g, ${-} );
-	call assert_throws( "Not a string.", ${ () { call $chop( 0, "" ); } } );
-	call assert_throws( "Not a string.", ${ () { call $chop( "", 0 ); } } );
+	call assert_throws( "Not a string.", ${ () { call $stridx( 0, "" ); } } );
+	call assert_throws( "Not a string.", ${ () { call $stridx( "", 0 ); } } );
 }
 
 function testinterrupted() {
@@ -777,7 +775,7 @@ program test {
 	call teststruct();
 	call testfuncref();
 	call testeq();
-	call testchop();
+	call teststridx();
 	call testinterrupted();
 	call testinc();
 	call testdec();

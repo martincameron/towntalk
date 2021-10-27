@@ -1080,9 +1080,8 @@ function fs_list_selected() {
 }
 
 function fs_okay_selected() {
-	var sep, path, err;
-	let sep = $chop( fs_path, "/:\\" );
-	let sep = $sub( sep, -( $len( sep ) 1 ), 1 );
+	var sep, path, err, idx;
+	let sep = $sub( fs_path, $endidx( fs_path, "/:\\" ), 1 );
 	if =( $len( [ tg_a fs_file ] ) 0 ) {
 		try {
 			if <( [ tg_c fs_list ] 0 ) {
@@ -1101,8 +1100,12 @@ function fs_okay_selected() {
 			set [ tg_a fs_dir ] = path;
 			let fs_path = path;
 		} catch err {
-			let err = $chop( $str( err ) "(" );
-			set [ tg_a fs_file ] = $sub( err, 0, -( $len( err ) 2 ) );
+			let err = $str( err );
+			let idx = $endidx( err "(" );
+			if >e( idx 0 ) {
+				let err = $sub( err, 0, idx );
+			}
+			set [ tg_a fs_file ] = err;
 			set[ tg_a fs_dir ] = fs_path;
 		}
 		let tg_update = TRUE;
@@ -1190,7 +1193,7 @@ program tgads {
 	
 	display 640, 480, "tgads";
 	
-	call tg_charset( $load( $str( $chop( $src, "/:\\" ) "topaz8.txt" ) ) );
+	call tg_charset( $load( $str( $sub( $src 0 +( $endidx( $src, "/:\\" ) 1 ) ) "topaz8.txt" ) ) );
 	call tg_init( 16, 640, 480 );
 	
 	call tg_window( 1, 16, 16, 320, 160, "Gadget Test" );

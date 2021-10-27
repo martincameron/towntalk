@@ -286,13 +286,13 @@ static int hash_code( char *str, int len ) {
 	return hash & 0x1F;
 }
 
-/* Return the index of the last separator char encountered in str. */
-static int chop( char *str, const char *separators ) {
-	int idx = 0, offset = 0;
+/* Return the index of the first or last member of chars encountered in str. */
+static int stridx( char *str, const char *chars, int last ) {
+	int idx = 0, offset = -1;
 	char chr = str[ idx++ ];
-	while( chr ) {
-		if( strchr( separators, chr ) ) {
-			offset = idx;
+	while( chr && ( offset < 0 || last ) ) {
+		if( strchr( chars, chr ) ) {
+			offset = idx - 1;
 		}
 		chr = str[ idx++ ];
 	}
@@ -3136,26 +3136,19 @@ static enum result evaluate_eq_expression( struct expression *this, struct varia
 	return ret;
 }
 
-static enum result evaluate_chop_expression( struct expression *this, struct variable *variables,
+static enum result evaluate_stridx_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct expression *parameter = this->parameters;
 	struct variable var = { 0, NULL }, sep = { 0, NULL };
-	struct string *str;
+	int idx;
 	enum result ret = parameter->evaluate( parameter, variables, &var, exception );
 	if( ret ) {
 		parameter = parameter->next;
 		ret = parameter->evaluate( parameter, variables, &sep, exception );
 		if( ret ) {
 			if( var.string_value && sep.string_value ) {
-				str = new_string_value( chop( var.string_value->string, sep.string_value->string ) );
-				if( str ) {
-					memcpy( str->string, var.string_value->string, sizeof( char ) * str->length );
-					dispose_temporary( result );
-					result->integer_value = 0;
-					result->string_value = str;
-				} else {
-					ret = throw( exception, this, 0, OUT_OF_MEMORY );
-				}
+				dispose_variable( result );
+				result->integer_value = stridx( var.string_value->string, sep.string_value->string, this->index );
 			} else {
 				ret = throw( exception, this, 0, "Not a string." );
 			}
@@ -4543,7 +4536,7 @@ static struct element* parse_program_declaration( struct element *elem, struct e
 static struct element* parse_include( struct element *elem, struct environment *env,
 	struct function *func, struct statement *prev, char *message ) {
 	struct element *next = elem->next;
-	int path_len = chop( func->file->string, "/:\\" );
+	int path_len = stridx( func->file->string, "/:\\", 1 ) + 1;
 	int name_len = unquote_string( next->str.string, NULL );
 	char *path = malloc( path_len + name_len + 1 );
 	if( path ) {
@@ -4717,7 +4710,8 @@ static struct operator operators[] = {
 	{ "$new", '$', 1, evaluate_array_expression, NULL },
 	{ "$load", '$', 1, evaluate_load_expression, NULL },
 	{ "$flen", '$', 1, evaluate_flen_expression, NULL },
-	{ "$chop", '$', 2, evaluate_chop_expression, NULL },
+	{ "$stridx", 0, 2, evaluate_stridx_expression, NULL },
+	{ "$endidx", 1, 2, evaluate_stridx_expression, NULL },
 	{ "$argc", '$', 0, evaluate_argc_expression, NULL },
 	{ "$argv", '$', 1, evaluate_argv_expression, NULL },
 	{ "$time", '$', 0, evaluate_time_expression, NULL },
