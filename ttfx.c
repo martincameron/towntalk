@@ -47,6 +47,7 @@
 		$seqtick                               Return an integer incremented every sequencer period.
 		$seqmix(output)                        Copy 16-bit stereo sample pairs for the current tick and return the count (max 8192).
 		$seqmsg                                The channel and parameter of the latest sequencer event (0xccpppppp).
+		$seqrate(key)                          The sampling rate corresponding to the specified sequencer key.
 		$dir("path")                           An element tree of the names and sizes of all files in the specified dir.
 		$path("file")                          The full path of the specified file.
 		$midimsg                               The message associated with the latest MIDI event.
@@ -313,6 +314,10 @@ static void downsample( int *buf, int count ) {
 	}
 }
 
+static int key_to_freq( int key ) {
+	return ( FREQ_TABLE[ key % 96 ] << 4 ) >> ( 9 - key / 96 );
+}
+
 static void mix_channel( struct fxchannel *channel, int *output, int count ) {
 	int idx, end, loop, llen, lend, sidx, sfra, lamp, ramp, step, sam;
 	signed char *data;
@@ -434,7 +439,7 @@ static void process_sequence( struct fxenvironment *fxenv, int channel_idx ) {
 						key = ( cmd >> 16 ) & 0xFFF;
 						key = key + fxenv->channels[ channel_idx ].transpose;
 						if( key > 0 && key < 957 ) {
-							cmdchan->frequency = ( FREQ_TABLE[ key % 96 ] << 4 ) >> ( 9 - key / 96 );
+							cmdchan->frequency = key_to_freq( key );
 						}
 						ins = ( cmd >> 8 ) & 0xFF;
 						if( ins > 0 && ins < 0xC0 ) {
@@ -1340,6 +1345,19 @@ static enum result evaluate_seqmix_expression( struct expression *this, struct v
 	return ret;
 }
 
+static enum result evaluate_seqrate_expression( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	struct variable var = { 0, NULL };
+	enum result ret = this->parameters->evaluate( this->parameters, variables, &var, exception );
+	if( ret ) {
+		dispose_variable( result );
+		result->integer_value = key_to_freq( var.integer_value );
+		result->string_value = NULL;
+		dispose_variable( &var );
+	}
+	return OKAY;
+}
+
 /*
 	Returns an integer of the form 0xccpppppp containing the
 	channel and parameter of the most recently handled sequencer event.
@@ -1678,6 +1696,7 @@ static struct operator fxoperators[] = {
 	{ "$seqtick", '$', 0, evaluate_seqtick_expression, NULL },
 	{ "$seqmix", '$', 1, evaluate_seqmix_expression, NULL },
 	{ "$seqmsg", '$', 0, evaluate_seqmsg_expression, NULL },
+	{ "$seqrate", '$', 1, evaluate_seqrate_expression, NULL },
 	{ "$dir", '$', 1, evaluate_dir_expression, NULL },
 	{ "$path", '$', 1, evaluate_path_expression, NULL },
 	{ "$midimsg", '$', 0, evaluate_midimsg_expression, NULL },
