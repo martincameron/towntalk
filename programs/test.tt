@@ -607,17 +607,22 @@ function testsrc() {
 }
 
 function teststridx() {
-	call assert_equals( -1, $stridx( "", "" ), ${-} );
-	call assert_equals( -1, $stridx( "file", "" ), ${-} );
-	call assert_equals( -1, $stridx( "file", "/" ), ${-} );
-	call assert_equals( 1, $stridx( "c:\\file", "/:\\" ), ${-} );
+	call assert_equals( -1, $stridx( "file", "", 0 ), ${-} );
+	call assert_equals( -1, $stridx( "file", "/", 0 ), ${-} );
+	call assert_equals( 1, $stridx( "c:\\file", "/:\\", 0 ), ${-} );
+	call assert_equals( 2, $stridx( "c:\\file\\", "/:\\", 2 ), ${-} );
+	call assert_equals( 7, $stridx( "c:\\file\\", "/:\\", 3 ), ${-} );
 	call assert_equals( 2, $endidx( "c:\\file", "/:\\" ), ${-} );
-	call assert_throws( "1", ${ () { call setg( 0 ); call $stridx( except( ${ 1 } ), setg( 2 ) ); } } );
-	call assert_equals( 0, g, ${-} );
-	call assert_throws( "2", ${ () { call $stridx( setg( 1 ), except( ${ 2 } ) ); } } );
-	call assert_equals( 1, g, ${-} );
-	call assert_throws( "Not a string.", ${ () { call $stridx( 0, "" ); } } );
-	call assert_throws( "Not a string.", ${ () { call $stridx( "", 0 ); } } );
+	call assert_throws( "1", ${ () { call setg( "0" ); call $stridx( except( ${ 1 } ), setg( "2" ), 0 ); } } );
+	call assert_equals( "0", g, ${-} );
+	call assert_throws( "2", ${ () { call $stridx( setg( "1" ), except( ${ 2 } ), 0 ); } } );
+	call assert_equals( "1", g, ${-} );
+	call assert_throws( "3", ${ () { call $stridx( setg( "1" ), setg( "2" ), except( ${ 3 } ) ); } } );
+	call assert_equals( "2", g, ${-} );
+	call assert_throws( "Not a string.", ${ () { call $stridx( 0, "", 0 ); } } );
+	call assert_throws( "Not a string.", ${ () { call $stridx( "", 0, 0 ); } } );
+	call assert_throws( "String index", ${ () { call $stridx( "", "", 0 ); } } );
+	call assert_throws( "String index", ${ () { call $stridx( "a", "a", 1 ); } } );
 }
 
 function testinterrupted() {

@@ -143,7 +143,8 @@
 		$load("abc.bin")         Load raw bytes into string.
 		$flen("file")            Get the length of a file.
 		$src                     Path of current source file.
-		$chop(str,"sepchars")    Return a substring up to the last separator.
+		$stridx(str,"chars",idx) The index of a member of chars in str from idx.
+		$endidx(str,"chars")     The index of the last member of chars in str.
 		$argc                    Number of command-line arguments.
 		$argv(idx)               Command-line argument as string.
 		$time                    Current time as seconds/date tuple.
@@ -286,10 +287,15 @@ static int hash_code( char *str, int len ) {
 	return hash & 0x1F;
 }
 
-/* Return the index of the first or last member of chars encountered in str. */
-static int stridx( char *str, const char *chars, int last ) {
-	int idx = 0, offset = -1;
-	char chr = str[ idx++ ];
+/* Return the first index of a member of chars in str, starting from idx. 
+   If idx is negative, return the last index, starting from 0. */
+static int stridx( char *str, const char *chars, int idx ) {
+	int last = 0, offset = -1, chr;
+	if( idx < 0 ) {
+		last = 1;
+		idx = 0;
+	}
+	chr = str[ idx++ ];
 	while( chr && ( offset < 0 || last ) ) {
 		if( strchr( chars, chr ) ) {
 			offset = idx - 1;
@@ -3139,22 +3145,34 @@ static enum result evaluate_eq_expression( struct expression *this, struct varia
 static enum result evaluate_stridx_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct expression *parameter = this->parameters;
-	struct variable var = { 0, NULL }, sep = { 0, NULL };
-	int idx;
-	enum result ret = parameter->evaluate( parameter, variables, &var, exception );
+	struct variable str = { 0, NULL }, sep = { 0, NULL }, idx = { 0, NULL };
+	enum result ret = parameter->evaluate( parameter, variables, &str, exception );
 	if( ret ) {
 		parameter = parameter->next;
 		ret = parameter->evaluate( parameter, variables, &sep, exception );
 		if( ret ) {
-			if( var.string_value && sep.string_value ) {
-				dispose_variable( result );
-				result->integer_value = stridx( var.string_value->string, sep.string_value->string, this->index );
+			if( str.string_value && sep.string_value ) {
+				if( parameter->next ) {
+					parameter = parameter->next;
+					ret = parameter->evaluate( parameter, variables, &idx, exception );
+				} else {
+					idx.integer_value = -1;
+				}
+				if( ret ) {
+					if( str.string_value->length > 0 && str.string_value->length > idx.integer_value ) {
+						dispose_variable( result );
+						result->integer_value = stridx( str.string_value->string, sep.string_value->string, idx.integer_value );
+					} else {
+						ret = throw( exception, this, idx.integer_value, "String index out of bounds." );
+					}
+					dispose_temporary( &idx );
+				}
 			} else {
 				ret = throw( exception, this, 0, "Not a string." );
 			}
 			dispose_temporary( &sep );
 		}
-		dispose_temporary( &var );
+		dispose_temporary( &str );
 	}
 	return ret;
 }
@@ -4710,8 +4728,8 @@ static struct operator operators[] = {
 	{ "$new", '$', 1, evaluate_array_expression, NULL },
 	{ "$load", '$', 1, evaluate_load_expression, NULL },
 	{ "$flen", '$', 1, evaluate_flen_expression, NULL },
-	{ "$stridx", 0, 2, evaluate_stridx_expression, NULL },
-	{ "$endidx", 1, 2, evaluate_stridx_expression, NULL },
+	{ "$stridx", '$', 3, evaluate_stridx_expression, NULL },
+	{ "$endidx", '$', 2, evaluate_stridx_expression, NULL },
 	{ "$argc", '$', 0, evaluate_argc_expression, NULL },
 	{ "$argv", '$', 1, evaluate_argv_expression, NULL },
 	{ "$time", '$', 0, evaluate_time_expression, NULL },
