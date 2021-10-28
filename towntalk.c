@@ -4554,7 +4554,7 @@ static struct element* parse_program_declaration( struct element *elem, struct e
 static struct element* parse_include( struct element *elem, struct environment *env,
 	struct function *func, struct statement *prev, char *message ) {
 	struct element *next = elem->next;
-	int path_len = stridx( func->file->string, "/:\\", 1 ) + 1;
+	int path_len = stridx( func->file->string, "/:\\", -1 ) + 1;
 	int name_len = unquote_string( next->str.string, NULL );
 	char *path = malloc( path_len + name_len + 1 );
 	if( path ) {
