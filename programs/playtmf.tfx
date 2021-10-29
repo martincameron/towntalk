@@ -1,16 +1,5 @@
 
-array strings;
-
-function unpack( buf, idx ) {
-	var value, end;
-	let end = +( idx 4 );
-	while <( idx end ) {
-		let value = +( *( value 256 ) &( $chr( buf idx ) 0xFF ) );
-		inc idx;
-	}
-	return value;
-}
-
+rem { Trim trailing control-characters from the specified string. }
 function trim( str ) {
 	var offset, end;
 	let end = -( $len( str ) 1 );
@@ -20,22 +9,22 @@ function trim( str ) {
 	return $sub( str, offset, +( end 1 ) );
 }
 
+rem { Load the samples from the specified TMF song file into the audio system and return the sequence. }
 function load_song( tmf, names ) {
 	var offset, sequence, length, idx, loopidx, looplen;
 	if $cmp( $sub( tmf, 0, 4 ) "TMF0" ) {
 		throw "Not a TMF file.";
 	}
 	if names {
-		dim [ names 64 ];
 		set [ names 0 ] = trim( $sub( tmf 8 32 ) );
 	}
 	let offset = *( 32 64 );
-	let sequence = $sub( tmf, offset, unpack( tmf, 4 ) );
+	let sequence = $sub( tmf, offset, $unpack( tmf, 1 ) );
 	let offset = +( offset $len( sequence ) );
 	let idx = 1;
 	while <( idx 64 ) {
-		let loopidx = unpack( tmf, *( idx 32 ) );
-		let looplen = unpack( tmf, +( *( idx 32 ) 4 ) );
+		let loopidx = $unpack( tmf, *( idx 8 ) );
+		let looplen = $unpack( tmf, +( *( idx 8 ) 1 ) );
 		if names {
 			set [ names idx ] = trim( $sub( tmf +( *( idx 32 ) 8 ) 24 ) );
 		}
@@ -49,29 +38,91 @@ function load_song( tmf, names ) {
 	return sequence;
 }
 
+function gradient( c1, c2, len ) {
+	var r1, r2, g1, g2, b1, b2, r, g, b, idx, out = $array( len );
+	let r1 = &( >>( c1 16 ) 0xFF );
+	let r2 = &( >>( c2 16 ) 0xFF );
+	let g1 = &( >>( c1 8 ) 0xFF );
+	let g2 = &( >>( c2 8 ) 0xFF );
+	let b1 = &( c1 0xFF );
+	let b2 = &( c2 0xFF );
+	while <( idx len ) {
+		let r = +( r1 /( *( -( r2 r1 ) idx ) len ) );
+		let g = +( g1 /( *( -( g2 g1 ) idx ) len ) );
+		let b = +( b1 /( *( -( b2 b1 ) idx ) len ) );
+		set [ out idx ] = +( *( r 65536 ) +( *( g 256 ) b ) );
+		inc idx;
+	}
+	return out;
+}
+
+function oscilloscope( width, bg, lg, rg, cg, wave, off ) {
+	var idx, y;
+	while <( idx $len( bg ) ) {
+		let off = %( off $len( wave ) );
+		var lamp = >>( [ wave off ] 5 );
+		let lamp = ?( <( lamp 0 ) -( 0 lamp ) lamp );
+		inc off;
+		var ramp = >>( [ wave off ] 5 );
+		let ramp = ?( <( ramp 0 ) -( 0 ramp ) ramp );
+		inc off;
+		rect 0, y, width, 2, [ bg idx ];
+		if >( lamp ramp ) {
+			rect /( -( width lamp ) 2 ), y, lamp, 2, [ lg idx ];
+			rect /( -( width ramp ) 2 ), y, ramp, 2, [ cg idx ];
+		} else {
+			rect /( -( width ramp ) 2 ), y, ramp, 2, [ rg idx ];
+			rect /( -( width lamp ) 2 ), y, lamp, 2, [ cg idx ];
+		}
+		inc y;
+		inc y;
+		inc idx;
+	}
+}
+
 program playtmf {
-	var sequence, idx, name, event;
+	var width = 640, height = 480;
 	if >( $argc 1 ) {
-		let sequence = load_song( $load( $argv( 1 ) ), strings );
-		print $cat( "Song name: " [ strings 0 ] );
+		var names = $array( 64 );
+		var sequence = load_song( $load( $argv( 1 ) ), names );
+		print $cat( "Song name: " [ names 0 ] );
 		print $cat( "Sequence length: " $len( sequence ) " bytes.");
-		let idx = 1;
+		var idx = 1;
 		while <( idx 64 ) {
-			let name = [ strings idx ];
+			var name = [ names idx ];
 			if >( $len( name ) 0 ) {
 				print $cat( "Instrument " idx ": " name );
 			}
 			inc idx;
 		}
+		var gh = /( height 2 );
+		var bg = gradient( 0x800000, 0x80, gh );
+		var lg = gradient( 0xFFFF00, 0xFF00FF, gh );
+		var rg = gradient( 0xFF00FF, 0x00FFFF, gh );
+		var cg = gradient( 0xFFFFFF, 0xFFFFFF, gh );
+		var wave = $array( 1024 );
+		display width, height, "PlayTMF";
 		audio 480;
-		play 0, sequence;
-		queue 0, $str( sequence $pack( 0x8000000 ) );
+		play 0, $cat( sequence $pack( 0x8000000 ) );
 		while TRUE {
-			let event = $waitevent;
-			if =( event SEQUENCER_EVENT ) {
-				exit 0;
-			} else {
-				print $hex( event );
+			call $seqmix( wave );
+			call oscilloscope( 640, bg, lg, rg, cg, wave, &( $millis 0x3FE ) );
+			# Show might block until the next frame.
+			show;
+			# Wait to limit frame rate.
+			sleep 10;
+			# Handle all events.
+			var event = $pollevent;
+			while event {
+				switch event {
+					case SEQUENCER_EVENT {
+						exit 0;
+					}
+					default {
+						#print $hex( event );
+					}
+				}
+				let event = $pollevent;
 			}
 		}
 	} else {
