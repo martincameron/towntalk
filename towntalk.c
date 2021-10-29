@@ -23,6 +23,7 @@
 	Non-null values may evaluate to zero in integer expressions.
 	Strings are immutable and can be used as byte arrays.
 	String literals may include the escape sequences "\"", "\\", and octal "\nnn".
+	Buffers are arrays that cannot hold references but use much less memory.
 	Dollar-expressions have an alternate form with an initial capital, eg. 'Time'.
 	Elements are immutable trees of strings with next and child references.
 	A valid program file may be parsed into an element tree.
@@ -164,7 +165,7 @@
 		$worker(${(){stmts}})    Compile a worker function from an element.
 		$execute(worker arg ...) Begin execution of the specified worker and return it.
 		$result(worker)          Wait for the return value of a worker function.
-		$buffer(len)             Create a numerical array that may passed to workers.
+		$buffer(len)             Create a numerical array that may be passed to workers.
 */
 
 /* The maximum integer value. */
