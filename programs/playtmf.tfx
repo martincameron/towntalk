@@ -59,7 +59,6 @@ function gradient( c1, c2, len ) {
 function oscilloscope( width, bg, lg, rg, cg, wave, off ) {
 	var idx, y;
 	while <( idx $len( bg ) ) {
-		let off = %( off $len( wave ) );
 		var lamp = >>( [ wave off ] 5 );
 		let lamp = ?( <( lamp 0 ) -( 0 lamp ) lamp );
 		inc off;
@@ -100,13 +99,26 @@ program playtmf {
 		var lg = gradient( 0xFFFF00, 0xFF00FF, gh );
 		var rg = gradient( 0xFF00FF, 0x00FFFF, gh );
 		var cg = gradient( 0xFFFFFF, 0xFFFFFF, gh );
-		var wave = $array( 1024 );
+		var wave = $array( 16384 );
 		display width, height, "PlayTMF";
 		audio 480;
 		play 0, $cat( sequence $pack( 0x8000000 ) );
+		var tick, off, len, time;
 		while TRUE {
-			call $seqmix( wave );
-			call oscilloscope( 640, bg, lg, rg, cg, wave, &( $millis 0x3FE ) );
+			if <>( tick $seqtick ) {
+				let len = <<( $seqmix( wave ) 1 );
+				let tick = $seqtick;
+				let off = 0;
+			} else {
+				let off = +( off *( -( $millis time ) 96 ) );
+				if >( +( off height ) len ) {
+					let off = -( len height );
+				}
+			}
+			let time = $millis;
+			if len {
+				call oscilloscope( 640, bg, lg, rg, cg, wave, off );
+			}
 			# Show might block until the next frame.
 			show;
 			# Wait to limit frame rate.
