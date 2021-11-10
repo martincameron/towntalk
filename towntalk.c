@@ -53,8 +53,8 @@
 		const name = value;      Integer, string or tuple constant.
 		global a, b, c = expr;   Global variables.
 		array a, b, [c expr];    Global arrays.
-		struct s { a,b,c };      Layout for formatting arrays.
-		struct t(s) { d,e,f };   Struct with members included from s.
+		struct s { a,b,c }       Layout for formatting arrays.
+		struct t(s) { d,e,f }    Struct with members included from s.
 		function f(param){stmts} Function declaration.
 		program name{statements} Entry point function (no arguments).
 
@@ -4647,8 +4647,6 @@ static struct element* parse_struct_declaration( struct element *elem, struct en
 					next = next->next;
 					if( next && next->str.string[ 0 ] == ';' ) {
 						next = next->next;
-					} else {
-						sprintf( message, "Expected ';' after 'struct' on line %d.", elem->line );
 					}
 				} else {
 					sprintf( message, "Expected '{' after 'struct' on line %d.", elem->line );
