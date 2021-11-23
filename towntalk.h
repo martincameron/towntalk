@@ -50,7 +50,7 @@ struct function {
 	struct string *file;
 	struct element *body;
 	struct environment *env;
-	struct string_list *variable_decls, *variable_decls_tail;
+	struct local_variable *variable_decls, *variable_decls_tail;
 	struct statement *statements, *statements_tail;
 	struct global_variable *literals;
 	struct function *next;
@@ -103,13 +103,22 @@ struct structure {
 	char *name;
 	int length;
 	struct string_list *fields, *fields_tail;
-	struct structure *next;
+	struct structure *super, *next;
+};
+
+/* Local variables. */
+struct local_variable {
+	int index;
+	char *name;
+	struct structure *type;
+	struct local_variable *next;
 };
 
 /* Global variables. */
 struct global_variable {
 	char *name;
 	struct variable value;
+	struct structure *type;
 	struct expression *initializer;
 	struct global_variable *next;
 };

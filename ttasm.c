@@ -185,12 +185,12 @@ static struct asm_operator* get_asm_operator( struct asm_operator *operators, ch
 static int get_local_variable( struct function *func, struct element *elem, char *message ) {
 	int idx = 0;
 	char *name = elem->str.string;
-	struct string_list *list = func->variable_decls;
-	while( list && strcmp( list->value, name ) ) {
+	struct local_variable *local = func->variable_decls;
+	while( local && strcmp( local->name, name ) ) {
 		idx++;
-		list = list->next;
+		local = local->next;
 	}
-	if( list == NULL || idx > 127 ) {
+	if( local == NULL || idx > 127 ) {
 		sprintf( message, "Invalid local variable '%.64s' on line %d.", name, elem->line );
 		idx = -1;
 	}

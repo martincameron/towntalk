@@ -41,7 +41,7 @@
 		program main {
 			var a;
 			let a = 0;
-			while <(a 10) {
+			while <( a 10 ) {
 				print a;
 				let a = add( a 1 );
 			}
@@ -51,19 +51,22 @@
 		rem {}                   Comment (all brackets inside must be balanced).
 		include "file.tt";       Include declarations from specified file.
 		const name = value;      Integer, string or tuple constant.
-		global a, b, c = expr;   Global variables.
-		array a, b, [c expr];    Global arrays.
+		global a, b = expr;      Global variables.
+		global ( struct ) a;     Global variable with associated struct.
+		array [ a expr ];        Global variable initialized with array of specified length.
 		struct s { a,b,c }       Layout for formatting arrays.
-		struct t(s) { d,e,f }    Struct with members included from s.
+		struct t( s ) { d,e,f }  Struct with fields inherited from s.
 		function f(param){stmts} Function declaration.
 		program name{statements} Entry point function (no arguments).
 
 	Statements:
 		rem {}                   Comment.
 		var a, b, c = expr;      Local variables.
-		let a = expr;            Assign expression to local or global variable.
-		let [arr idx] = expr;    Assign expression to array at index.
-		let struct.m(this) = x;  Assign expression to array at member index.
+		var ( struct ) a;        Local variable with associated struct.
+		let var = expr;          Assign expression to local or global variable.
+		let [ arr idx ] = expr;  Assign expression to array at specified index.
+		let struc.f(arr) = expr; Assign expression to array at named field of specified struct.
+		let var.field = expr;    Assign expr to array variable at named field of associated struct.
 		print expr;              Write integer or string to standard output.
 		write expr;              Same as print, but do not add a newline.
 		error expr;              Same as print, but write to standard error.
@@ -82,8 +85,8 @@
 		try {statements}         Execute statements unless exception thrown.
 		   catch a {statements}  Assign exception to local var and execute.
 		call expr;               Evaluate expression and discard result.
-		dim [arr len];           Resize specified array.
-		set [arr idx] = expr;    Variable/Array assignment (same as let).
+		dim [ arr len ];         Resize specified array.
+		set [ arr idx ] = expr;  Variable/Array assignment (same as let).
 		inc a;                   Increment local variable.
 		dec a;                   Decrement local variable.
 		save str, "file";        Save bytes from string to file.
@@ -97,12 +100,13 @@
 		0888                     Octal integer literal.
 		"String"                 String literal.
 		${0,"1",$tup("2",3)}     Element literal.
-		name                     Value of named local or global variable.
+		variable                 Value of named local or global variable.
 		function(expr ...)       Call function with specified args.
 		[arr idx]                Array element.
 		struct                   Length of structure.
-		struct.member            Index of named struct member.
-		struct.member(this)      Value of named field of specified array.
+		struct.field             Index of named struct field.
+		struct.field(array)      Value of named field of specified array.
+		variable.field           Value of associated struct field of specified array variable.
 		@function                Function reference.
 		:(func expr ...)         Call function reference with specified args.
 		:struct.memb(this ...)   Call member function of specified array.
@@ -278,19 +282,19 @@ static char* cat_string( char *left, int llen, char *right, int rlen ) {
 }
 
 /* Return a 5-bit hash-code to be used for indexing the specified string. */
-static int hash_code( char *str, int len ) {
+static int hash_code( char *str, char terminator ) {
 	char chr = str[ 0 ];
-	int idx = 1, hash = chr;
-	while( chr && idx != len ) {
-		chr = str[ idx++ ];
+	int idx = 1, hash = 0;
+	while( chr && chr != terminator ) {
 		hash = hash ^ chr;
+		chr = str[ idx++ ];
 	}
 	return hash & 0x1F;
 }
 
 /* Return the first index of a member of chars in str, starting from idx. 
    If idx is negative, return the last index, starting from 0. */
-static int stridx( char *str, const char *chars, int idx ) {
+static int str_idx( char *str, const char *chars, int idx ) {
 	int last = 0, offset = -1, chr;
 	if( idx < 0 ) {
 		last = 1;
@@ -304,6 +308,16 @@ static int stridx( char *str, const char *chars, int idx ) {
 		chr = str[ idx++ ];
 	}
 	return offset;
+}
+
+/* Return the length of str up to the terminator. */
+static size_t field_length( char *str, char terminator ) {
+	size_t len = 0;
+	char chr = str[ 0 ];
+	while( chr && chr != terminator ) {
+		chr = str[ ++len ];
+	}
+	return len;
 }
 
 static int parse_string( char *input, int idx, char *output, int line, char *message ) {
@@ -708,11 +722,19 @@ static void dispose_expressions( struct expression *expr ) {
 	}
 }
 
+static void dispose_local_variables( struct local_variable *local ) {
+	struct local_variable *next;
+	while( local ) {
+		next = local->next;
+		free( local );
+		local = next;
+	}
+}
+
 static void dispose_global_variables( struct global_variable *global ) {
 	struct global_variable *next;
 	while( global ) {
 		next = global->next;
-		free( global->name );
 		dispose_variable( &global->value );
 		dispose_expressions( global->initializer );
 		free( global );
@@ -778,7 +800,7 @@ static void dispose_functions( struct function *func ) {
 		if( str->reference_count == 1 ) {
 			free( func->str.string );
 			unref_string( func->file );
-			dispose_string_list( func->variable_decls );
+			dispose_local_variables( func->variable_decls );
 			dispose_statements( func->statements );
 			dispose_global_variables( func->literals );
 			func = func->next;
@@ -1142,35 +1164,40 @@ static struct function* new_function( char *name, char *file, char *message ) {
 	return func;
 }
 
-static struct global_variable* new_global_variable( char *name, char *message ) {
-	struct global_variable *global = calloc( 1, sizeof( struct global_variable ) );
-	if( global && name ) {
-		/*printf("Global '%s'\n", name);*/
-		global->name = new_string( name );
-		if( global->name == NULL ) {
-			free( global );
-			global = NULL;
-		}
+static struct local_variable* new_local_variable( int index, char *name, struct structure *type ) {
+	struct local_variable *local = malloc( sizeof( struct local_variable ) + sizeof( char ) * ( strlen( name ) + 1 ) );
+	if( local ) {
+		local->index = index;
+		local->name = ( char * ) &local[ 1 ];
+		strcpy( local->name, name );
+		local->type = type;
+		local->next = NULL;
 	}
-	if( global == NULL ) {
-		strcpy( message, OUT_OF_MEMORY );
+	return local;
+}
+
+static struct global_variable* new_global_variable( char *name, struct structure *type, struct expression *initializer ) {
+	struct global_variable *global = calloc( 1, sizeof( struct global_variable ) + sizeof( char ) * ( strlen( name ) + 1 ) );
+	if( global ) {
+		global->name = ( char * ) &global[ 1 ];
+		strcpy( global->name, name );
+		global->type = type;
+		global->initializer = initializer;
+		global->next = NULL;
 	}
 	return global;
 }
 
 static struct global_variable* new_array_variable( struct environment *env,
-	char *name, char *message ) {
+	char *name, struct structure *type, struct expression *initializer ) {
 	struct array *arr;
-	struct global_variable *global = calloc( 1, sizeof( struct global_variable ) );
+	struct global_variable *global = new_global_variable( name, type, initializer );
 	if( global ) {
-		/*printf("Array '%s'\n", name);*/
-		global->name = new_string( name );
 		arr = new_array( env, 0, 0 );
-		if( global->name && arr ) {
+		if( arr ) {
 			global->value.string_value = &arr->str;
 		} else {
 			dispose_global_variables( global );
-			strcpy( message, OUT_OF_MEMORY );
 			global = NULL;
 		}
 	}
@@ -1223,25 +1250,21 @@ static int add_global( struct environment *env, struct global_variable *global )
 /* Add the specified constants to env. Returns zero and writes message on failure. */
 int add_constants( struct constant *constants, struct environment *env, char *message ) {
 	struct global_variable *global;
-	int idx = 0;
-	struct constant *con = &constants[ idx++ ];
-	while( con->name && message[ 0 ] == 0 ) {
-		global = new_global_variable( con->name, message );
-		if( global ) {
-			if( add_constant( env, global ) ) {
-				global->value.integer_value = con->integer_value;
-				if( con->string_value ) {
-					global->value.string_value = new_string_literal( con->string_value );
-					if( global->value.string_value == NULL ) {
-						strcpy( message, OUT_OF_MEMORY );
-					}
+	while( constants->name && message[ 0 ] == 0 ) {
+		global = new_global_variable( constants->name, NULL, NULL );
+		if( global && add_constant( env, global ) ) {
+			global->value.integer_value = constants->integer_value;
+			if( constants->string_value ) {
+				global->value.string_value = new_string_literal( constants->string_value );
+				if( global->value.string_value == NULL ) {
+					strcpy( message, OUT_OF_MEMORY );
 				}
-			} else {
-				dispose_global_variables( global );
-				strcpy( message, OUT_OF_MEMORY );
 			}
+		} else {
+			dispose_global_variables( global );
+			strcpy( message, OUT_OF_MEMORY );
 		}
-		con = &constants[ idx++ ];
+		constants++;
 	}
 	return message[ 0 ] == 0;
 }
@@ -1600,7 +1623,7 @@ static enum result execute_struct_assignment( struct statement *this, struct var
 static int parse_constant_list( struct element *elem, struct global_variable *prev, char *message ) {
 	int count = 0;
 	while( elem && message[ 0 ] == 0 ) {
-		prev->next = new_global_variable( NULL, message );
+		prev->next = new_global_variable( "", NULL, NULL );
 		if( prev->next ) {
 			count++;
 			prev = prev->next;
@@ -1608,6 +1631,8 @@ static int parse_constant_list( struct element *elem, struct global_variable *pr
 			if( elem && elem->str.string[ 0 ] == ',' ) {
 				elem = elem->next;
 			}
+		} else {
+			strcpy( message, OUT_OF_MEMORY );
 		}
 	}
 	return count;
@@ -1942,25 +1967,15 @@ static enum result evaluate_integer_constant_expression( struct expression *this
 	return OKAY;
 }
 
-static struct structure* get_structure( struct structure *struc, char *name ) {
-	while( struc && strcmp( struc->name, name ) ) {
+static struct structure* get_structure( struct structure *struc, char *name, size_t len ) {
+	while( struc && ( strncmp( struc->name, name, len ) || strlen( struc->name ) != len ) ) {
 		struc = struc->next;
 	}
 	return struc;
 }
 
 static struct structure* get_structure_indexed( struct structure **index, char *name ) {
-	struct structure *struc;
-	int len = 0;
-	char chr = name[ 0 ];
-	while( chr && chr != '.' ) {
-		chr = name[ ++len ];
-	}
-	struc = index[ hash_code( name, len ) ];
-	while( struc && strncmp( struc->name, name, len ) ) {
-		struc = struc->next;
-	}
-	return struc;
+	return get_structure( index[ hash_code( name, '.' ) ], name, field_length( name, '.' ) );
 }
 
 static struct function* get_function( struct function *func, char *name ) {
@@ -1970,63 +1985,71 @@ static struct function* get_function( struct function *func, char *name ) {
 	return func;
 }
 
-static struct global_variable* get_global_variable( struct global_variable *globals, char *name ) {
-	while( globals && strcmp( globals->name, name ) ) {
-		globals = globals->next;
+static struct function* get_function_indexed( struct function **index, char *name ) {
+	return get_function( index[ hash_code( name, 0 ) ], name );
+}
+
+static struct local_variable* get_local_variable( struct local_variable *locals, char *name ) {
+	size_t len = field_length( name, '.' );
+	while( locals && ( strncmp( locals->name, name, len ) || strlen( locals->name ) != len ) ) {
+		locals = locals->next;
 	}
-	return globals;
+	return locals;
+}
+
+static struct global_variable* get_global( struct global_variable *global, char *name, size_t len ) {
+	while( global && ( strncmp( global->name, name, len ) || strlen( global->name ) != len ) ) {
+		global = global->next;
+	}
+	return global;
+}
+
+static struct global_variable* get_global_indexed( struct global_variable **index, char *name ) {
+	return get_global( index[ hash_code( name, '.' ) ], name, field_length( name, '.' ) );
 }
 
 static int add_global_constant( struct element *elem, struct environment *env,
-	struct function *func, struct expression *initializer, struct statement *prev, char *message ) {
-	struct global_variable *global = new_global_variable( elem->str.string, message );
-	if( global ) {
-		if( add_constant( env, global ) ) {
-			global->initializer = initializer;
-		} else {
-			dispose_global_variables( global );
-			strcpy( message, OUT_OF_MEMORY );
-		}
+	struct function *func, struct structure *type, struct expression *initializer,
+	struct statement *prev, char *message ) {
+	struct global_variable *global = new_global_variable( elem->str.string, type, initializer );
+	if( global == NULL || !add_constant( env, global ) ) {
+		dispose_global_variables( global );
+		strcpy( message, OUT_OF_MEMORY );
 	}
 	return message[ 0 ] == 0;
 }
 
 static int add_global_variable( struct element *elem, struct environment *env,
-	struct function *func, struct expression *initializer, struct statement *prev, char *message ) {
-	struct global_variable *global = new_global_variable( elem->str.string, message );
-	if( global ) {
-		if( add_global( env, global ) ) {
-			global->initializer = initializer;
-		} else {
-			dispose_global_variables( global );
-			strcpy( message, OUT_OF_MEMORY );
-		}
+	struct function *func, struct structure *type, struct expression *initializer,
+	struct statement *prev, char *message ) {
+	struct global_variable *global = new_global_variable( elem->str.string, type, initializer );
+	if( global == NULL || !add_global( env, global ) ) {
+		dispose_global_variables( global );
+		strcpy( message, OUT_OF_MEMORY );
 	}
 	return message[ 0 ] == 0;
 }
 
 static int add_array_variable( struct element *elem, struct environment *env,
-	struct function *func, struct expression *initializer, struct statement *prev, char *message ) {
-	struct global_variable *array = new_array_variable( env, elem->str.string, message );
-	if( array ) {
-		if( add_global( env, array ) ) {
-			array->initializer = initializer;
-		} else {
-			dispose_global_variables( array );
-			strcpy( message, OUT_OF_MEMORY );
-		}
+	struct function *func, struct structure *type, struct expression *initializer,
+	struct statement *prev, char *message ) {
+	struct global_variable *array = new_array_variable( env, elem->str.string, type, initializer );
+	if( array == NULL || !add_global( env, array ) ) {
+		dispose_global_variables( array );
+		strcpy( message, OUT_OF_MEMORY );
 	}
 	return message[ 0 ] == 0;
 }
 
 static int add_local_variable( struct element *elem, struct environment *env,
-	struct function *func, struct expression *initializer, struct statement *prev, char *message ) {
+	struct function *func, struct structure *type, struct expression *initializer,
+	struct statement *prev, char *message ) {
 	struct statement *stmt;
 	char *name = elem->str.string;
-	struct string_list *param = new_string_list( name );
+	struct local_variable *param = new_local_variable( func->num_variables, name, type );
 	if( param ) {
 		/*printf("Local variable '%s'\n", name);*/
-		if( get_string_list_index( func->variable_decls, name ) < 0 ) {
+		if( get_local_variable( func->variable_decls, name ) == NULL ) {
 			func->num_variables = func->num_variables + 1;
 			if( func->variable_decls ) {
 				func->variable_decls_tail->next = param;
@@ -2044,7 +2067,7 @@ static int add_local_variable( struct element *elem, struct environment *env,
 				}
 			}
 		} else {
-			dispose_string_list( param );
+			dispose_local_variables( param );
 			sprintf( message, "Local variable '%.64s' already defined on line %d.", name, elem->line );
 		}
 	} else {
@@ -2056,53 +2079,64 @@ static int add_local_variable( struct element *elem, struct environment *env,
 static struct element* parse_variable_declaration( struct element *elem,
 	struct environment *env, struct function *func, struct statement *prev,
 	int (*add)( struct element *elem, struct environment *env, struct function *func,
-		struct expression *initializer, struct statement *prev, char *message ),
+		struct structure *type, struct expression *initializer, struct statement *prev, char *message ),
 	char *message ) {
+	struct structure *type = NULL;
 	struct expression expr = { 0 }, *array_expr;
 	struct element *next;
 	while( elem && elem->str.string[ 0 ] != ';' && message[ 0 ] == 0 ) {
 		if( prev && prev->next ) {
 			prev = prev->next;
 		}
-		if( elem->str.string[ 0 ] == '[' && validate_decl( elem->child, env, message ) ) {
-			parse_expression( elem->child->next, env, func, &expr, message );
-			if( message[ 0 ] == 0 ) {
-				array_expr = calloc( 1, sizeof( struct expression ) );
-				if( array_expr ) {
-					array_expr->line = elem->line;
-					array_expr->function = func;
-					array_expr->parameters = expr.next;
-					array_expr->evaluate = evaluate_array_expression;
-					if( add( elem->child, env, func, array_expr, prev, message ) ) {
-						elem = elem->next;
+		if( elem->str.string[ 0 ] == '(' ) {
+			type = get_structure_indexed( env->structures_index, elem->child->str.string );
+			if( type != NULL ) {
+				elem = elem->next;
+			} else {
+				sprintf( message, "Structure '%.64s' not declared on line %d.", elem->child->str.string, elem->child->line );
+			}
+		}
+		if( message[ 0 ] == 0 ) {
+			if( elem->str.string[ 0 ] == '[' && validate_decl( elem->child, env, message ) ) {
+				parse_expression( elem->child->next, env, func, &expr, message );
+				if( message[ 0 ] == 0 ) {
+					array_expr = calloc( 1, sizeof( struct expression ) );
+					if( array_expr ) {
+						array_expr->line = elem->line;
+						array_expr->function = func;
+						array_expr->parameters = expr.next;
+						array_expr->evaluate = evaluate_array_expression;
+						if( add( elem->child, env, func, type, array_expr, prev, message ) ) {
+							elem = elem->next;
+						} else {
+							dispose_expressions( array_expr );
+						}
 					} else {
-						dispose_expressions( array_expr );
+						strcpy( message, OUT_OF_MEMORY );
+					}
+				}
+			} else if( validate_decl( elem, env, message ) ) {
+				if( elem->next->str.string[ 0 ] == '=' ) {
+					next = parse_expression( elem->next->next, env, func, &expr, message );
+					if( message[ 0 ] == 0 ) {
+						if( add( elem, env, func, type, expr.next, prev, message ) ) {
+							elem = next;
+						} else {
+							dispose_expressions( expr.next );
+						}
 					}
 				} else {
-					strcpy( message, OUT_OF_MEMORY );
-				}
-			}
-		} else if( validate_decl( elem, env, message ) ) {
-			if( elem->next->str.string[ 0 ] == '=' ) {
-				next = parse_expression( elem->next->next, env, func, &expr, message );
-				if( message[ 0 ] == 0 ) {
-					if( add( elem, env, func, expr.next, prev, message ) ) {
-						elem = next;
-					} else {
-						dispose_expressions( expr.next );
+					if( add( elem, env, func, type, NULL, prev, message ) ) {
+						elem = elem->next;
 					}
-				}
-			} else {
-				if( add( elem, env, func, NULL, prev, message ) ) {
-					elem = elem->next;
 				}
 			}
 		}
-		if( elem && elem->str.string[ 0 ] == ',' ) {
+		if( elem && elem->str.string[ 0 ] == ',' && message[ 0 ] == 0 ) {
 			elem = elem->next;
 		}
 	}
-	if( elem && elem->str.string[ 0 ] == ';' ) {
+	if( elem && elem->str.string[ 0 ] == ';' && message[ 0 ] == 0 ) {
 		elem = elem->next;
 	}
 	return elem;
@@ -3162,7 +3196,7 @@ static enum result evaluate_stridx_expression( struct expression *this, struct v
 				if( ret ) {
 					if( str.string_value->length > 0 && str.string_value->length > idx.integer_value ) {
 						dispose_variable( result );
-						result->integer_value = stridx( str.string_value->string, sep.string_value->string, idx.integer_value );
+						result->integer_value = str_idx( str.string_value->string, sep.string_value->string, idx.integer_value );
 					} else {
 						ret = throw( exception, this, idx.integer_value, "String index out of bounds." );
 					}
@@ -3307,7 +3341,7 @@ static struct element* parse_call_expression( struct element *elem, struct envir
 static struct element* parse_func_ref_expression( struct element *elem, struct environment *env,
 	struct function *func, struct expression *expr, char *message ) {
 	char *name = &elem->str.string[ 1 ];
-	struct function *function = get_function( env->functions_index[ hash_code( name, 0 ) ], name );
+	struct function *function = get_function_indexed( env->functions_index, name );
 	if( function ) {
 		expr->function = function;
 		expr->evaluate = evaluate_func_ref_expression;
@@ -3404,15 +3438,77 @@ static struct element* parse_thiscall_expression( struct element *elem, struct e
 	return next;
 }
 
+static struct element* parse_local_expression( struct element *elem, struct environment *env,
+	struct function *func, struct local_variable *local, struct expression *expr, char *message ) {
+	int idx, count;
+	struct expression prev;
+	struct element *next = elem->next;
+	struct structure *struc = local->type;
+	char *field = strchr( elem->str.string, '.' );
+	if( struc && field ) {
+		idx = get_string_list_index( struc->fields, &field[ 1 ] );
+		if( idx >= 0 ) {
+			expr->parameters = calloc( 1, sizeof( struct expression ) );
+			if( expr->parameters ) {
+				expr->parameters->index = local->index;
+				expr->parameters->evaluate = evaluate_local;
+				expr->index = idx;
+				expr->evaluate = evaluate_struct_expression;
+			} else {
+				strcpy( message, OUT_OF_MEMORY );
+			}
+		} else {
+			sprintf( message, "Field not declared in expression '%.64s' on line %d.", elem->str.string, elem->line );
+		}
+	} else if( field ) {
+		sprintf( message, "Expression '%.64s' has no associated structure on line %d.", elem->str.string, elem->line );
+	} else {
+		expr->index = local->index;
+		expr->evaluate = evaluate_local;
+	}
+	return next;
+}
+
+static struct element* parse_global_expression( struct element *elem, struct environment *env,
+	struct function *func, struct global_variable *global, struct expression *expr, char *message ) {
+	int idx, count;
+	struct expression prev;
+	struct element *next = elem->next;
+	struct structure *struc = global->type;
+	char *field = strchr( elem->str.string, '.' );
+	if( struc && field ) {
+		idx = get_string_list_index( struc->fields, &field[ 1 ] );
+		if( idx >= 0 ) {
+			expr->parameters = calloc( 1, sizeof( struct expression ) );
+			if( expr->parameters ) {
+				expr->parameters->global = global;
+				expr->parameters->evaluate = evaluate_global;
+				expr->index = idx;
+				expr->evaluate = evaluate_struct_expression;
+			} else {
+				strcpy( message, OUT_OF_MEMORY );
+			}
+		} else {
+			sprintf( message, "Field not declared in expression '%.64s' on line %d.", elem->str.string, elem->line );
+		}
+	} else if( field ) {
+		sprintf( message, "Expression '%.64s' has no associated structure on line %d.", elem->str.string, elem->line );
+	} else {
+		expr->global = global;
+		expr->evaluate = evaluate_global;
+	}
+	return next;
+}
+
 static struct element* parse_expression( struct element *elem, struct environment *env,
 	struct function *func, struct expression *prev, char *message ) {
 	struct element *next = elem->next;
 	struct global_variable *literal, *global;
 	char *value = elem->str.string;
-	int local, idx;
-	struct variable var;
+	struct local_variable *local;
 	struct structure *struc;
 	struct function *decl;
+	struct variable var;
 	struct expression *expr = calloc( 1, sizeof( struct expression ) );
 	if( expr ) {
 		expr->line = elem->line;
@@ -3425,13 +3521,15 @@ static struct element* parse_expression( struct element *elem, struct environmen
 			expr->evaluate = evaluate_integer_constant_expression;
 		} else if( value[ 0 ] == '"' || ( value[ 0 ] == '$' && value[ 1 ] == 0 ) ) {
 			/* String or element literal. */
-			literal = new_global_variable( NULL, message );
+			literal = new_global_variable( "", NULL, NULL );
 			if( literal ) {
 				literal->next = func->literals;
 				func->literals = literal;
 				expr->global = literal;
 				expr->evaluate = evaluate_global;
 				next = parse_constant( elem, &literal->value, message );
+			} else {
+				strcpy( message, OUT_OF_MEMORY );
 			}
 		} else if( value[ 0 ] == '\'' ) {
 			/* Infix operator.*/
@@ -3446,23 +3544,20 @@ static struct element* parse_expression( struct element *elem, struct environmen
 			/* Member function call. */
 			next = parse_thiscall_expression( elem, env, func, expr, message );
 		} else {
-			local = get_string_list_index( func->variable_decls, value );
-			if( local >= 0 ) {
+			local = get_local_variable( func->variable_decls, value );
+			if( local ) {
 				/* Local variable reference.*/
-				expr->index = local;
-				expr->evaluate = evaluate_local;
+				next = parse_local_expression( elem, env, func, local, expr, message );
 			} else {
-				idx = hash_code( value, 0 );
-				global = get_global_variable( env->constants_index[ idx ], value );
+				global = get_global_indexed( env->constants_index, value );
 				if( global == NULL ) {
-					global = get_global_variable( env->globals_index[ idx ], value );
+					global = get_global_indexed( env->globals_index, value );
 				}
 				if( global ) {
 					/* Global variable reference.*/
-					expr->global = global;
-					expr->evaluate = evaluate_global;
+					next = parse_global_expression( elem, env, func, global, expr, message );
 				} else {
-					decl = get_function( env->functions_index[ idx ], value );
+					decl = get_function_indexed( env->functions_index, value );
 					if( decl ) {
 						/* Function call.*/
 						next = parse_call_expression( elem, env, func, decl, expr, message );
@@ -3520,16 +3615,16 @@ static struct element* parse_expressions( struct element *elem, struct environme
 
 static struct element* parse_increment_statement( struct element *elem, struct environment *env,
 	struct function *func, struct statement *prev, char *message ) {
-	int local;
+	struct local_variable *local;
 	struct element *next = elem->next;
 	struct statement *stmt = new_statement( message );
 	if( stmt ) {
 		prev->next = stmt;
-		local = get_string_list_index( func->variable_decls, next->str.string );
-		if( local >= 0 ) {
+		local = get_local_variable( func->variable_decls, next->str.string );
+		if( local ) {
 			stmt->source = calloc( 1, sizeof( struct expression ) );
 			if( stmt->source ) {
-				stmt->local = local;
+				stmt->local = local->index;
 				stmt->source->line = next->line;
 				stmt->source->function = func;
 				stmt->execute = execute_increment_statement;
@@ -3546,16 +3641,16 @@ static struct element* parse_increment_statement( struct element *elem, struct e
 
 static struct element* parse_decrement_statement( struct element *elem, struct environment *env,
 	struct function *func, struct statement *prev, char *message ) {
-	int local;
+	struct local_variable *local;
 	struct element *next = elem->next;
 	struct statement *stmt = new_statement( message );
 	if( stmt ) {
 		prev->next = stmt;
-		local = get_string_list_index( func->variable_decls, next->str.string );
-		if( local >= 0 ) {
+		local = get_local_variable( func->variable_decls, next->str.string );
+		if( local ) {
 			stmt->source = calloc( 1, sizeof( struct expression ) );
 			if( stmt->source ) {
-				stmt->local = local;
+				stmt->local = local->index;
 				stmt->source->line = next->line;
 				stmt->source->function = func;
 				stmt->execute = execute_decrement_statement;
@@ -3605,88 +3700,181 @@ static struct element* parse_append_statement( struct element *elem, struct envi
 	return next;
 }
 
-static struct element* parse_assignment_statement( struct element *elem, struct environment *env,
+static struct element* parse_array_assignment( struct element *elem, struct environment *env,
 	struct function *func, struct statement *prev, char *message ) {
-	char *field;
-	int local, count;
 	struct expression expr;
-	struct structure *struc;
-	struct global_variable *global = NULL;
 	struct element *next = elem->next, *child = next->child;
 	struct statement *stmt = new_statement( message );
 	if( stmt ) {
 		prev->next = stmt;
-		if( next->str.string[ 0 ] == '[' ) {
+		expr.next = NULL;
+		child = parse_expression( child, env, func, &expr, message );
+		if( expr.next ) {
+			stmt->destination = expr.next;
+			if( child->str.string[ 0 ] == ',' ) {
+				child = child->next;
+			}
 			expr.next = NULL;
 			child = parse_expression( child, env, func, &expr, message );
 			if( expr.next ) {
-				stmt->destination = expr.next;
-				if( child->str.string[ 0 ] == ',' ) {
-					child = child->next;
-				}
-				expr.next = NULL;
-				child = parse_expression( child, env, func, &expr, message );
-				if( expr.next ) {
-					stmt->index = expr.next;
-					expr.next = NULL;
-					next = parse_expression( next->next->next, env, func, &expr, message );
-					if( expr.next ) {
-						stmt->source = expr.next;
-						stmt->execute = execute_array_assignment;
-						next = next->next;
-					}
-				}
-			}
-		} else if( next->next->str.string[ 0 ] == '(' ) {
-			struc = get_structure_indexed( env->structures_index, next->str.string );
-			field = strchr( next->str.string, '.' );
-			if( struc && field ) {
-				local = get_string_list_index( struc->fields, &field[ 1 ] );
-				if( local >= 0 ) {
-					stmt->local = local;
-					next = next->next;
-					expr.next = NULL;
-					parse_expressions( next->child, env, func, 0, &expr, &count, message );
-					stmt->destination = expr.next;
-					if( message[ 0 ] == 0 ) {
-						if( count == 1 ) {
-							expr.next = NULL;
-							next = parse_expression( next->next->next, env, func, &expr, message );
-							if( expr.next ) {
-								stmt->source = expr.next;
-								stmt->execute = execute_struct_assignment;
-								next = next->next;
-							}
-						} else {
-							sprintf( message, "Invalid structure assignment on line %d.", next->line );
-						}
-					}
-				} else {
-					sprintf( message, "Field '%.64s' not declared on line %d.", next->str.string, next->line );
-				}
-			} else {
-				sprintf( message, "Undeclared or invalid structure field '%.64s' on line %d.", next->str.string, next->line );
-			}
-		} else {
-			local = get_string_list_index( func->variable_decls, next->str.string );
-			if( local < 0 ) {
-				global = get_global_variable(
-					env->globals_index[ hash_code( next->str.string, 0 ) ], next->str.string );
-			}
-			if( local >= 0 || global ) {
+				stmt->index = expr.next;
 				expr.next = NULL;
 				next = parse_expression( next->next->next, env, func, &expr, message );
 				if( expr.next ) {
 					stmt->source = expr.next;
-					if( global ) {
-						stmt->global = &global->value;
-						stmt->execute = execute_global_assignment;
-					} else {
-						stmt->local = local;
-						stmt->execute = execute_local_assignment;
-					}
+					stmt->execute = execute_array_assignment;
 					next = next->next;
 				}
+			}
+		}
+	}
+	return next;
+}
+
+static struct element* parse_struct_assignment( struct element *elem, struct environment *env,
+	struct function *func, struct statement *prev, char *message ) {
+	char *field;
+	int idx, count;
+	struct expression expr;
+	struct structure *struc;
+	struct element *next = elem->next, *child = next->child;
+	struct statement *stmt = new_statement( message );
+	if( stmt ) {
+		prev->next = stmt;
+		struc = get_structure_indexed( env->structures_index, next->str.string );
+		field = strchr( next->str.string, '.' );
+		if( struc && field ) {
+			idx = get_string_list_index( struc->fields, &field[ 1 ] );
+			if( idx >= 0 ) {
+				stmt->local = idx;
+				next = next->next;
+				expr.next = NULL;
+				parse_expressions( next->child, env, func, 0, &expr, &count, message );
+				stmt->destination = expr.next;
+				if( message[ 0 ] == 0 ) {
+					if( count == 1 ) {
+						expr.next = NULL;
+						next = parse_expression( next->next->next, env, func, &expr, message );
+						if( expr.next ) {
+							stmt->source = expr.next;
+							stmt->execute = execute_struct_assignment;
+							next = next->next;
+						}
+					} else {
+						sprintf( message, "Invalid structure assignment on line %d.", next->line );
+					}
+				}
+			} else {
+				sprintf( message, "Field '%.64s' not declared on line %d.", next->str.string, next->line );
+			}
+		} else {
+			sprintf( message, "Undeclared or invalid structure field '%.64s' on line %d.", next->str.string, next->line );
+		}
+	}
+	return next;
+}
+
+static struct element* parse_local_assignment( struct element *elem, struct environment *env,
+	struct function *func, struct local_variable *local, struct statement *prev, char *message ) {
+	int idx;
+	struct expression expr;
+	struct element *next = elem->next;
+	struct structure *struc = local->type;
+	char *field = strchr( next->str.string, '.' );
+	struct statement *stmt = new_statement( message );
+	if( stmt ) {
+		prev->next = stmt;
+		expr.next = NULL;
+		next = parse_expression( next->next->next, env, func, &expr, message );
+		if( expr.next ) {
+			stmt->source = expr.next;
+			if( struc && field ) {
+				idx = get_string_list_index( struc->fields, &field[ 1 ] );
+				if( idx >= 0 ) {
+					stmt->local = idx;
+					stmt->destination = calloc( 1, sizeof( struct expression ) );
+					if( stmt->destination ) {
+						stmt->destination->index = local->index;
+						stmt->destination->evaluate = evaluate_local;
+						stmt->execute = execute_struct_assignment;
+						next = next->next;
+					} else {
+						strcpy( message, OUT_OF_MEMORY );
+					}
+				} else {
+					sprintf( message, "Field '%.64s' not declared on line %d.", &field[ 1 ], elem->line );
+				}
+			} else if( field ) {
+				sprintf( message, "Variable '%.64s' has no associated structure on line %d.", local->name, elem->line );
+			} else {
+				stmt->local = local->index;
+				stmt->execute = execute_local_assignment;
+				next = next->next;
+			}
+		}
+	}
+	return next;
+}
+
+static struct element* parse_global_assignment( struct element *elem, struct environment *env,
+	struct function *func, struct global_variable *global, struct statement *prev, char *message ) {
+	int idx;
+	struct expression expr;
+	struct element *next = elem->next;
+	struct structure *struc = global->type;
+	char *field = strchr( next->str.string, '.' );
+	struct statement *stmt = new_statement( message );
+	if( stmt ) {
+		prev->next = stmt;
+		expr.next = NULL;
+		next = parse_expression( next->next->next, env, func, &expr, message );
+		if( expr.next ) {
+			stmt->source = expr.next;
+			if( struc && field ) {
+				idx = get_string_list_index( struc->fields, &field[ 1 ] );
+				if( idx >= 0 ) {
+					stmt->local = idx;
+					stmt->destination = calloc( 1, sizeof( struct expression ) );
+					if( stmt->destination ) {
+						stmt->destination->global = global;
+						stmt->destination->evaluate = evaluate_global;
+						stmt->execute = execute_struct_assignment;
+						next = next->next;
+					} else {
+						strcpy( message, OUT_OF_MEMORY );
+					}
+				} else {
+					sprintf( message, "Field '%.64s' not declared on line %d.", &field[ 1 ], elem->line );
+				}
+			} else if( field ) {
+				sprintf( message, "Variable '%.64s' has no associated structure on line %d.", global->name, elem->line );
+			} else {
+				stmt->global = &global->value;
+				stmt->execute = execute_global_assignment;
+				next = next->next;
+			}
+		}
+	}
+	return next;
+}
+
+static struct element* parse_assignment_statement( struct element *elem, struct environment *env,
+	struct function *func, struct statement *prev, char *message ) {
+	struct local_variable *local;
+	struct global_variable *global;
+	struct element *next = elem->next, *child = next->child;
+	if( next->str.string[ 0 ] == '[' ) {
+		return parse_array_assignment( elem, env, func, prev, message );
+	} else if( next->next->str.string[ 0 ] == '(' ) {
+		return parse_struct_assignment( elem, env, func, prev, message );
+	} else {
+		local = get_local_variable( func->variable_decls, next->str.string );
+		if( local ) {
+			return parse_local_assignment( elem, env, func, local, prev, message );
+		} else {
+			global = get_global_indexed( env->globals_index, next->str.string );
+			if( global ) {
+				return parse_global_assignment( elem, env, func, global, prev, message );
 			} else {
 				sprintf( message, "Undeclared variable '%.64s' on line %d.", next->str.string, next->line );
 			}
@@ -3965,10 +4153,10 @@ static struct element* validate_syntax( char *syntax, struct element *elem,
 				elem = elem->next;
 			}
 		} else if( chr == '(' ) {
-			/* Bracketed name list. */
+			/* Bracketed function parameter list. */
 			if( elem && elem->str.string[ 0 ] == '(' ) {
 				if( elem->child ) {
-					validate_syntax( "N0", elem->child, elem, env, message );
+					validate_syntax( "P0", elem->child, elem, env, message );
 				}
 				elem = elem->next;
 			} else {
@@ -4002,14 +4190,24 @@ static struct element* validate_syntax( char *syntax, struct element *elem,
 			} else {
 				elem = elem->next;
 			}
-		} else if( chr == 'N' ) {
-			/* Name list, terminated by ';' or NULL. */
-			elem = validate_syntax( "n", elem, key, env, message );
-			while( message[ 0 ] == 0 && elem && elem->str.string[ 0 ] != ';' ) {
+		} else if( chr == 'p' ) {
+			/* Function parameter. */
+			if( elem && elem->str.string[ 0 ] == '(' ) {
+				validate_syntax( "n0", elem->child, elem, env, message );
+				if( message[ 0 ] == 0 ) {
+					elem = validate_syntax( "n", elem->next, elem->child, env, message );
+				}
+			} else {
+				elem = validate_syntax( "n", elem, key, env, message );
+			}
+		} else if( chr == 'P' ) {
+			/* Function parameter list. */
+			elem = validate_syntax( "p", elem, key, env, message );
+			while( message[ 0 ] == 0 && elem ) {
 				if( elem->str.string[ 0 ] == ',' ) {
 					elem = elem->next;
 				}
-				elem = validate_syntax( "n", elem, key, env, message );
+				elem = validate_syntax( "p", elem, key, env, message );
 			}
 		} else if( chr == 'x' ) {
 			/* Expression. */
@@ -4044,15 +4242,23 @@ static struct element* validate_syntax( char *syntax, struct element *elem,
 			}
 		} else if( chr == 'v' ) {
 			/* Variable declaration. */
-			if( elem && elem->str.string[ 0 ] == '[' ) {
-				validate_syntax( "nx", elem->child, elem, env, message );
+			if( elem && elem->str.string[ 0 ] == '(' ) {
+				validate_syntax( "n0", elem->child, elem, env, message );
 				if( message[ 0 ] == 0 ) {
 					elem = elem->next;
 				}
-			} else {
-				elem = validate_syntax( "n", elem, key, env, message );
-				if( message[ 0 ] == 0 && elem && elem->str.string[ 0 ] == '=' ) {
-					elem = validate_syntax( "x", elem->next, key, env, message );
+			}
+			if( message[ 0 ] == 0 ) {
+				if( elem && elem->str.string[ 0 ] == '[' ) {
+					validate_syntax( "nx0", elem->child, elem, env, message );
+					if( message[ 0 ] == 0 ) {
+						elem = elem->next;
+					}
+				} else {
+					elem = validate_syntax( "n", elem, key, env, message );
+					if( message[ 0 ] == 0 && elem && elem->str.string[ 0 ] == '=' ) {
+						elem = validate_syntax( "x", elem->next, key, env, message );
+					}
 				}
 			}
 		} else if( chr == 'V' ) {
@@ -4180,6 +4386,7 @@ static struct element* parse_while_statement( struct element *elem, struct envir
 
 static struct element* parse_try_statement( struct element *elem, struct environment *env,
 	struct function *func, struct statement *prev, char *message ) {
+	struct local_variable *local;
 	struct statement block, *stmt;
 	struct element *next = elem->next;
 	stmt = new_statement( message );
@@ -4191,8 +4398,9 @@ static struct element* parse_try_statement( struct element *elem, struct environ
 		}
 		if( message[ 0 ] == 0 ) {
 			next = next->next->next;
-			stmt->local = get_string_list_index( func->variable_decls, next->str.string );
-			if( stmt->local >= 0 ) {
+			local = get_local_variable( func->variable_decls, next->str.string );
+			if( local ) {
+				stmt->local = local->index;
 				next = next->next;
 				if( next->child ) {
 					block.next = NULL;
@@ -4212,15 +4420,25 @@ static struct element* parse_try_statement( struct element *elem, struct environ
 	return next;
 }
 
-static int add_function_parameter( struct function *func, struct element *elem,
+static struct element* add_function_parameter( struct function *func, struct element *elem,
 	struct environment *env, char *message ) {
-	char *name = elem->str.string;
-	struct string_list *param;
-	if( validate_decl( elem, env, message ) ) {
-		param = new_string_list( name );
+	char *name;
+	struct structure *type = NULL;
+	struct local_variable *param;
+	if( elem->str.string[ 0 ] == '(' ) {
+		type = get_structure_indexed( env->structures_index, elem->child->str.string );
+		if( type != NULL ) {
+			elem = elem->next;
+		} else {
+			sprintf( message, "Structure '%.64s' not declared on line %d.", elem->child->str.string, elem->child->line );
+		}
+	}
+	if( message[ 0 ] == 0 && validate_decl( elem, env, message ) ) {
+		name = elem->str.string;
+		param = new_local_variable( func->num_variables, name, type );
 		if( param ) {
 			/*printf("Function parameter '%s'\n", name);*/
-			if( get_string_list_index( func->variable_decls, name ) < 0 ) {
+			if( get_local_variable( func->variable_decls, name ) == NULL ) {
 				func->num_parameters = func->num_variables = func->num_parameters + 1;
 				if( func->variable_decls ) {
 					func->variable_decls_tail->next = param;
@@ -4228,15 +4446,16 @@ static int add_function_parameter( struct function *func, struct element *elem,
 					func->variable_decls = param;
 				}
 				func->variable_decls_tail = param;
+				elem = elem->next;
 			} else {
-				dispose_string_list( param );
+				dispose_local_variables( param );
 				sprintf( message, "Parameter '%.64s' already defined on line %d.", name, elem->line );
 			}
 		} else {
 			strcpy( message, OUT_OF_MEMORY );
 		}
 	}
-	return message[ 0 ] == 0;
+	return elem;
 }
 
 static struct function* parse_function( struct element *elem, char *name, char *file,
@@ -4249,11 +4468,9 @@ static struct function* parse_function( struct element *elem, char *name, char *
 		func->env = env;
 		child = elem->child;
 		while( child && message[ 0 ] == 0 ) {
-			if( add_function_parameter( func, child, env, message ) ) {
+			child = add_function_parameter( func, child, env, message );
+			if( child && child->str.string[ 0 ] == ',' && message[ 0 ] == 0 ) {
 				child = child->next;
-				if( child && child->str.string[ 0 ] == ',' ) {
-					child = child->next;
-				}
 			}
 		}
 		if( message[ 0 ] ) {
@@ -4555,7 +4772,7 @@ static struct element* parse_program_declaration( struct element *elem, struct e
 static struct element* parse_include( struct element *elem, struct environment *env,
 	struct function *func, struct statement *prev, char *message ) {
 	struct element *next = elem->next;
-	int path_len = stridx( func->file->string, "/:\\", -1 ) + 1;
+	int path_len = str_idx( func->file->string, "/:\\", -1 ) + 1;
 	int name_len = unquote_string( next->str.string, NULL );
 	char *path = malloc( path_len + name_len + 1 );
 	if( path ) {
@@ -4602,7 +4819,7 @@ static struct element* parse_struct_declaration( struct element *elem, struct en
 	struct function *func, struct statement *prev, char *message ) {
 	int idx;
 	char *name;
-	struct structure *struc, *super;
+	struct structure *struc;
 	struct string_list *field;
 	struct element *child, *next = elem->next;
 	if( validate_decl( next, env, message ) ) {
@@ -4617,9 +4834,9 @@ static struct element* parse_struct_declaration( struct element *elem, struct en
 			if( next && next->str.string[ 0 ] == '(' ) {
 				child = next->child;
 				if( child && child->next == NULL && strcmp( child->str.string, name ) ) {
-					super = get_structure_indexed( env->structures_index, child->str.string );
-					if( super ) {
-						field = super->fields;
+					struc->super = get_structure_indexed( env->structures_index, child->str.string );
+					if( struc->super ) {
+						field = struc->super->fields;
 						while( field && message[ 0 ] == 0 ) {
 							if( add_structure_field( struc, field->value, env, child->line, message ) ) {
 								field = field->next;
@@ -4793,11 +5010,12 @@ static int validate_name( char *name, struct environment *env ) {
 
 static int validate_decl( struct element *elem, struct environment *env, char *message ) {
 	char *name = elem->str.string;
-	int idx = hash_code( name, 0 );
-	if( get_global_variable( env->constants_index[ idx ], name )
-	|| get_global_variable( env->globals_index[ idx ], name )
-	|| get_function( env->functions_index[ idx ], name )
-	|| get_structure( env->structures_index[ idx ], name ) ) {
+	int hash = hash_code( name, '.' ); 
+	size_t len = field_length( name, '.' );
+	if( get_global( env->constants_index[ hash ], name, len )
+	|| get_global( env->globals_index[ hash ], name, len )
+	|| get_function( env->functions_index[ hash ], name )
+	|| get_structure( env->structures_index[ hash ], name, len ) ) {
 		sprintf( message, "Name '%.64s' already defined on line %d.", elem->str.string, elem->line );
 		return 0;
 	}
@@ -4940,7 +5158,7 @@ int initialize_globals( struct environment *env, struct variable *exception ) {
 	struct global_variable *global;
 	struct string_list *name = env->constants;
 	while( name ) {
-		global = get_global_variable( env->constants_index[ hash_code( name->value, 0 ) ], name->value );
+		global = get_global_indexed( env->constants_index, name->value );
 		init = global->initializer;
 		if( init && init->evaluate( init, NULL, &global->value, exception ) == EXCEPTION ) {
 			return 0;
@@ -4949,7 +5167,7 @@ int initialize_globals( struct environment *env, struct variable *exception ) {
 	}
 	name = env->globals;
 	while( name ) {
-		global = get_global_variable( env->globals_index[ hash_code( name->value, 0 ) ], name->value );
+		global = get_global_indexed( env->globals_index, name->value );
 		init = global->initializer;
 		if( init && init->evaluate( init, NULL, &global->value, exception ) == EXCEPTION ) {
 			return 0;
