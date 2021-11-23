@@ -110,6 +110,7 @@
 		@function                Function reference.
 		:(func expr ...)         Call function reference with specified args.
 		:struct.memb(this ...)   Call member function of specified array.
+		:variable.member(...)    Call member function of associated struct of specified array.
 		'(expr operator ...)     Infix operator, eg '( 1 + 2 ).
 		+(int int ...)           Addition.
 		-(int int ...)           Subtraction.
@@ -3406,10 +3407,19 @@ static struct element* parse_struct_expression( struct element *elem, struct env
 static struct element* parse_thiscall_expression( struct element *elem, struct environment *env,
 	struct function *func, struct expression *expr, char *message ) {
 	int idx, count;
-	struct expression prev;
+	struct structure *struc;
+	struct expression prev, *this;
 	struct element *next = elem->next;
-	struct structure *struc = get_structure_indexed( env->structures_index, &elem->str.string[ 1 ] );
 	char *field = strchr( elem->str.string, '.' );
+	struct local_variable *local = get_local_variable( func->variable_decls, &elem->str.string[ 1 ] );
+	struct global_variable *global = get_global_indexed( env->globals_index, &elem->str.string[ 1 ] );
+	if( local ) {
+		struc = local->type;
+	} else if( global ) {
+		struc = global->type;
+	} else {
+		struc = get_structure_indexed( env->structures_index, &elem->str.string[ 1 ] );
+	}
 	if( struc && field ) {
 		idx = get_string_list_index( struc->fields, &field[ 1 ] );
 		if( idx >= 0 ) {
@@ -3418,6 +3428,23 @@ static struct element* parse_thiscall_expression( struct element *elem, struct e
 				prev.next = NULL;
 				parse_expressions( next->child, env, func, 0, &prev, &count, message );
 				expr->parameters = prev.next;
+				if( local || global ) {
+					this = calloc( 1, sizeof( struct expression ) );
+					if( this ) {
+						if( local ) {
+							this->index = local->index;
+							this->evaluate = evaluate_local;
+						} else {
+							this->global = global;
+							this->evaluate = evaluate_global;
+						}
+						this->next = expr->parameters;
+						expr->parameters = this;
+						count++;
+					} else {
+						strcpy( message, OUT_OF_MEMORY );
+					}
+				}
 				if( message[ 0 ] == 0 ) {
 					if( count > 0 ) {
 						expr->evaluate = evaluate_thiscall_expression;
@@ -3794,7 +3821,9 @@ static struct element* parse_local_assignment( struct element *elem, struct envi
 					stmt->local = idx;
 					stmt->destination = calloc( 1, sizeof( struct expression ) );
 					if( stmt->destination ) {
+						stmt->destination->line = next->line;
 						stmt->destination->index = local->index;
+						stmt->destination->function = func;
 						stmt->destination->evaluate = evaluate_local;
 						stmt->execute = execute_struct_assignment;
 						next = next->next;
@@ -3836,7 +3865,9 @@ static struct element* parse_global_assignment( struct element *elem, struct env
 					stmt->local = idx;
 					stmt->destination = calloc( 1, sizeof( struct expression ) );
 					if( stmt->destination ) {
+						stmt->destination->line = next->line;
 						stmt->destination->global = global;
+						stmt->destination->function = func;
 						stmt->destination->evaluate = evaluate_global;
 						stmt->execute = execute_struct_assignment;
 						next = next->next;
