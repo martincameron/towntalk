@@ -1194,7 +1194,7 @@ static struct global_variable* new_array_variable( struct environment *env,
 	struct array *arr;
 	struct global_variable *global = new_global_variable( name, type, initializer );
 	if( global ) {
-		arr = new_array( env, 0, 0 );
+		arr = new_array( env, type ? type->length : 0 , 0 );
 		if( arr ) {
 			global->value.string_value = &arr->str;
 		} else {

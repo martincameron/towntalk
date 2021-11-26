@@ -16,7 +16,7 @@ struct exten( struc ) {
 };
 
 global g, g1 = 1, g2 = +( g1 1 );
-array a, a1 = $array( 1 ), [ a2 g2 ] [ a3 ${ 1, 2, 3 } ], ( exten ) ext = $new( exten );
+array a, a1 = $array( 1 ), [ a2 g2 ] [ a3 ${ 1, 2, 3 } ], ( exten ) ext;
 
 include "hello.tt";
 
@@ -92,6 +92,7 @@ function testarray() {
 	call assert_equals( 1, $len( a1 ), ${-} );
 	call assert_equals( 2, $len( a2 ), ${-} );
 	call assert_equals( 3, $len( a3 ), ${-} );
+	call assert_equals( exten, $len( ext ), ${-} );
 	call assert_equals( 4, $len( arr ), ${-} );
 	dim [ a 3 ];
 	set [ a,idx ] = "a";
