@@ -101,6 +101,8 @@
 		"String"                 String literal.
 		${0,"1",$tup("2",3)}     Element literal.
 		variable                 Value of named local or global variable.
+		local++                  Value of named local variable prior to increment.
+		local--                  Value of named local variable prior to decrement.
 		function(expr ...)       Call function with specified args.
 		[arr idx]                Array element.
 		struct                   Length of structure.
@@ -311,11 +313,11 @@ static int str_idx( char *str, const char *chars, int idx ) {
 	return offset;
 }
 
-/* Return the length of str up to the terminator. */
-static size_t field_length( char *str, char terminator ) {
+/* Return the length of str up to one the terminators. */
+static size_t field_length( char *str, char *terminators ) {
 	size_t len = 0;
 	char chr = str[ 0 ];
-	while( chr && chr != terminator ) {
+	while( chr && strchr( terminators, chr ) == NULL ) {
 		chr = str[ ++len ];
 	}
 	return len;
@@ -1276,6 +1278,20 @@ static enum result evaluate_local( struct expression *this, struct variable *var
 	return OKAY;
 }
 
+static enum result evaluate_local_post_inc( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	assign_variable( &variables[ this->index ], result );
+	variables[ this->index ].integer_value++;
+	return OKAY;
+}
+
+static enum result evaluate_local_post_dec( struct expression *this, struct variable *variables,
+	struct variable *result, struct variable *exception ) {
+	assign_variable( &variables[ this->index ], result );
+	variables[ this->index ].integer_value--;
+	return OKAY;
+}
+
 static enum result evaluate_global( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	assign_variable( &this->global->value, result );
@@ -1976,7 +1992,7 @@ static struct structure* get_structure( struct structure *struc, char *name, siz
 }
 
 static struct structure* get_structure_indexed( struct structure **index, char *name ) {
-	return get_structure( index[ hash_code( name, '.' ) ], name, field_length( name, '.' ) );
+	return get_structure( index[ hash_code( name, '.' ) ], name, field_length( name, "." ) );
 }
 
 static struct function* get_function( struct function *func, char *name ) {
@@ -1991,7 +2007,7 @@ static struct function* get_function_indexed( struct function **index, char *nam
 }
 
 static struct local_variable* get_local_variable( struct local_variable *locals, char *name ) {
-	size_t len = field_length( name, '.' );
+	size_t len = field_length( name, ".+-" );
 	while( locals && ( strncmp( locals->name, name, len ) || strlen( locals->name ) != len ) ) {
 		locals = locals->next;
 	}
@@ -2006,7 +2022,7 @@ static struct global_variable* get_global( struct global_variable *global, char 
 }
 
 static struct global_variable* get_global_indexed( struct global_variable **index, char *name ) {
-	return get_global( index[ hash_code( name, '.' ) ], name, field_length( name, '.' ) );
+	return get_global( index[ hash_code( name, '.' ) ], name, field_length( name, "." ) );
 }
 
 static int add_global_constant( struct element *elem, struct environment *env,
@@ -3467,7 +3483,7 @@ static struct element* parse_thiscall_expression( struct element *elem, struct e
 
 static struct element* parse_local_expression( struct element *elem, struct environment *env,
 	struct function *func, struct local_variable *local, struct expression *expr, char *message ) {
-	int idx, count;
+	int idx, len;
 	struct expression prev;
 	struct element *next = elem->next;
 	struct structure *struc = local->type;
@@ -3491,7 +3507,16 @@ static struct element* parse_local_expression( struct element *elem, struct envi
 		sprintf( message, "Expression '%.64s' has no associated structure on line %d.", elem->str.string, elem->line );
 	} else {
 		expr->index = local->index;
-		expr->evaluate = evaluate_local;
+		field = &elem->str.string[ field_length( elem->str.string, "+-" ) ];
+		if( !strcmp( field, "++" ) ) {
+			expr->evaluate = evaluate_local_post_inc;
+		} else if( !strcmp( field, "--" ) ) {
+			expr->evaluate = evaluate_local_post_dec;
+		} else if( field[ 0 ] == 0 ) {
+			expr->evaluate = evaluate_local;
+		} else {
+			sprintf( message, "Invalid local variable expression '%.64s' on line %d.", elem->str.string, elem->line );
+		}
 	}
 	return next;
 }
@@ -5042,7 +5067,7 @@ static int validate_name( char *name, struct environment *env ) {
 static int validate_decl( struct element *elem, struct environment *env, char *message ) {
 	char *name = elem->str.string;
 	int hash = hash_code( name, '.' ); 
-	size_t len = field_length( name, '.' );
+	size_t len = field_length( name, "." );
 	if( get_global( env->constants_index[ hash ], name, len )
 	|| get_global( env->globals_index[ hash ], name, len )
 	|| get_function( env->functions_index[ hash ], name )

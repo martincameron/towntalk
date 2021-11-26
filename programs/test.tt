@@ -71,6 +71,10 @@ function testvars( x ) {
 	var y = x, z = +( y 1 );
 	call assert_equals( x, y, ${-} );
 	call assert_equals( +( x 1 ), z, ${-} );
+	call assert_equals( z, z++, ${-} );
+	call assert_equals( +( x 2 ), z, ${-} );
+	call assert_equals( z, z--, ${-} );
+	call assert_equals( +( x 1 ), z, ${-} );
 	call assert_equals( 0, g, ${-} );
 	call assert_equals( 1, g1, ${-} );
 	call assert_equals( 2, g2, ${-} );
@@ -81,6 +85,7 @@ function testvars( x ) {
 	call assert_throws( "Name 'a' already defined", ${ () { var a; } } );
 	call assert_throws( "Undeclared variable 'xxx'", ${ () { let xxx = 0; } } );
 	call assert_throws( "Expected '=' after 'let'", ${ () { let xxx; } } );
+	call assert_throws( "Invalid local variable expression", ${ (x) { call x+; } } );
 	return g;
 }
 
