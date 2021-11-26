@@ -753,8 +753,8 @@ function testthiscall() {
 	call assert_equals( 3, ext.f, ${-} );
 	call assert_throws( "Not an array", ${ () { call :exten.g( 0 ); } } );
 	call assert_throws( "Array index", ${ () { call :exten.g( $array( 0 ) ); } } );
-	call assert_throws( "Undeclared or invalid", ${ () { call :x(); } } );
-	call assert_throws( "Undeclared or invalid", ${ () { call :exten(); } } );
+	call assert_throws( "Undeclared", ${ () { call :x(); } } );
+	call assert_throws( "Undeclared", ${ () { call :exten(); } } );
 	call assert_throws( "Field 'exten.x' not declared", ${ () { call :exten.x(); } } );
 	call assert_throws( "Expected '('", ${ () { call :exten.g; } } );
 	call assert_throws( "Expected expression", ${ () { call :exten.g(); } } );

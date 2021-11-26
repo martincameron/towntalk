@@ -2006,8 +2006,8 @@ static struct function* get_function_indexed( struct function **index, char *nam
 	return get_function( index[ hash_code( name, 0 ) ], name );
 }
 
-static struct local_variable* get_local_variable( struct local_variable *locals, char *name ) {
-	size_t len = field_length( name, ".+-" );
+static struct local_variable* get_local_variable( struct local_variable *locals, char *name, char *terminators ) {
+	size_t len = field_length( name, terminators );
 	while( locals && ( strncmp( locals->name, name, len ) || strlen( locals->name ) != len ) ) {
 		locals = locals->next;
 	}
@@ -2066,7 +2066,7 @@ static int add_local_variable( struct element *elem, struct environment *env,
 	struct local_variable *param = new_local_variable( func->num_variables, name, type );
 	if( param ) {
 		/*printf("Local variable '%s'\n", name);*/
-		if( get_local_variable( func->variable_decls, name ) == NULL ) {
+		if( get_local_variable( func->variable_decls, name, "" ) == NULL ) {
 			func->num_variables = func->num_variables + 1;
 			if( func->variable_decls ) {
 				func->variable_decls_tail->next = param;
@@ -3427,7 +3427,7 @@ static struct element* parse_thiscall_expression( struct element *elem, struct e
 	struct expression prev, *this;
 	struct element *next = elem->next;
 	char *field = strchr( elem->str.string, '.' );
-	struct local_variable *local = get_local_variable( func->variable_decls, &elem->str.string[ 1 ] );
+	struct local_variable *local = get_local_variable( func->variable_decls, &elem->str.string[ 1 ], "." );
 	struct global_variable *global = get_global_indexed( env->globals_index, &elem->str.string[ 1 ] );
 	if( local ) {
 		struc = local->type;
@@ -3476,7 +3476,7 @@ static struct element* parse_thiscall_expression( struct element *elem, struct e
 			sprintf( message, "Field '%.64s' not declared on line %d.", &elem->str.string[ 1 ], elem->line );
 		}
 	} else {
-		sprintf( message, "Undeclared or invalid structure field '%.64s' on line %d.", elem->str.string, elem->line );
+		sprintf( message, "Undeclared variable, structure or field '%.64s' on line %d.", elem->str.string, elem->line );
 	}
 	return next;
 }
@@ -3487,8 +3487,8 @@ static struct element* parse_local_expression( struct element *elem, struct envi
 	struct expression prev;
 	struct element *next = elem->next;
 	struct structure *struc = local->type;
-	char *field = strchr( elem->str.string, '.' );
-	if( struc && field ) {
+	char *field = &elem->str.string[ strlen( local->name ) ];
+	if( struc && field[ 0 ] == '.' ) {
 		idx = get_string_list_index( struc->fields, &field[ 1 ] );
 		if( idx >= 0 ) {
 			expr->parameters = calloc( 1, sizeof( struct expression ) );
@@ -3503,11 +3503,10 @@ static struct element* parse_local_expression( struct element *elem, struct envi
 		} else {
 			sprintf( message, "Field not declared in expression '%.64s' on line %d.", elem->str.string, elem->line );
 		}
-	} else if( field ) {
+	} else if( field[ 0 ] == '.' ) {
 		sprintf( message, "Expression '%.64s' has no associated structure on line %d.", elem->str.string, elem->line );
 	} else {
 		expr->index = local->index;
-		field = &elem->str.string[ field_length( elem->str.string, "+-" ) ];
 		if( !strcmp( field, "++" ) ) {
 			expr->evaluate = evaluate_local_post_inc;
 		} else if( !strcmp( field, "--" ) ) {
@@ -3596,7 +3595,7 @@ static struct element* parse_expression( struct element *elem, struct environmen
 			/* Member function call. */
 			next = parse_thiscall_expression( elem, env, func, expr, message );
 		} else {
-			local = get_local_variable( func->variable_decls, value );
+			local = get_local_variable( func->variable_decls, value, ".+-" );
 			if( local ) {
 				/* Local variable reference.*/
 				next = parse_local_expression( elem, env, func, local, expr, message );
@@ -3672,7 +3671,7 @@ static struct element* parse_increment_statement( struct element *elem, struct e
 	struct statement *stmt = new_statement( message );
 	if( stmt ) {
 		prev->next = stmt;
-		local = get_local_variable( func->variable_decls, next->str.string );
+		local = get_local_variable( func->variable_decls, next->str.string, "" );
 		if( local ) {
 			stmt->source = calloc( 1, sizeof( struct expression ) );
 			if( stmt->source ) {
@@ -3698,7 +3697,7 @@ static struct element* parse_decrement_statement( struct element *elem, struct e
 	struct statement *stmt = new_statement( message );
 	if( stmt ) {
 		prev->next = stmt;
-		local = get_local_variable( func->variable_decls, next->str.string );
+		local = get_local_variable( func->variable_decls, next->str.string, "" );
 		if( local ) {
 			stmt->source = calloc( 1, sizeof( struct expression ) );
 			if( stmt->source ) {
@@ -3820,7 +3819,7 @@ static struct element* parse_struct_assignment( struct element *elem, struct env
 				sprintf( message, "Field '%.64s' not declared on line %d.", next->str.string, next->line );
 			}
 		} else {
-			sprintf( message, "Undeclared or invalid structure field '%.64s' on line %d.", next->str.string, next->line );
+			sprintf( message, "Undeclared structure or field '%.64s' on line %d.", next->str.string, next->line );
 		}
 	}
 	return next;
@@ -3924,7 +3923,7 @@ static struct element* parse_assignment_statement( struct element *elem, struct 
 	} else if( next->next->str.string[ 0 ] == '(' ) {
 		return parse_struct_assignment( elem, env, func, prev, message );
 	} else {
-		local = get_local_variable( func->variable_decls, next->str.string );
+		local = get_local_variable( func->variable_decls, next->str.string, "." );
 		if( local ) {
 			return parse_local_assignment( elem, env, func, local, prev, message );
 		} else {
@@ -4454,7 +4453,7 @@ static struct element* parse_try_statement( struct element *elem, struct environ
 		}
 		if( message[ 0 ] == 0 ) {
 			next = next->next->next;
-			local = get_local_variable( func->variable_decls, next->str.string );
+			local = get_local_variable( func->variable_decls, next->str.string, "" );
 			if( local ) {
 				stmt->local = local->index;
 				next = next->next;
@@ -4494,7 +4493,7 @@ static struct element* add_function_parameter( struct function *func, struct ele
 		param = new_local_variable( func->num_variables, name, type );
 		if( param ) {
 			/*printf("Function parameter '%s'\n", name);*/
-			if( get_local_variable( func->variable_decls, name ) == NULL ) {
+			if( get_local_variable( func->variable_decls, name, "" ) == NULL ) {
 				func->num_parameters = func->num_variables = func->num_parameters + 1;
 				if( func->variable_decls ) {
 					func->variable_decls_tail->next = param;
