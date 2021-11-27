@@ -235,13 +235,12 @@ function testwhile() {
 	}
 	call assert_equals( 1, :( $function( ${ () { while TRUE { return 1; } return 0; } } ) ), ${-} );
 	var off, end = 10;
-	while <( off end ) {
+	while <( off++ end ) {
 		var aaa, bbb = 0;
 		inc aaa;
 		inc bbb;
-		inc off;
 	}
-	call assert_equals( 10, off, ${-} );
+	call assert_equals( 11, off, ${-} );
 	call assert_equals( 10, aaa, ${-} );
 	call assert_equals( 1, bbb, ${-} );
 	call assert_throws( "1", ${ () { while except( ${ 1 } ) { call assert( FALSE, ${-} ); } } } );
