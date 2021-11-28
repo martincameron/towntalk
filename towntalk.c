@@ -1499,9 +1499,8 @@ static enum result execute_while_statement( struct statement *this, struct varia
 		rhs = this->source->parameters->next->index;
 	}
 	while( 1 ) {
-		if( this->local ) {
+		if( this->local == '<' ) {
 			condition.integer_value = variables[ lhs ].integer_value < variables[ rhs ].integer_value;
-			variables[ lhs ].integer_value += this->local - 1;
 		} else if( !this->source->evaluate( this->source, variables, &condition, exception ) ) {
 			break;
 		}
@@ -2278,8 +2277,6 @@ static enum result evaluate_arithmetic_expression( struct expression *this, stru
 	int lhs, rhs;
 	if( parameter->evaluate == evaluate_local ) {
 		lhs = variables[ parameter->index ].integer_value;
-	} else if( parameter->evaluate == evaluate_local_post_inc ) {
-		lhs = variables[ parameter->index ].integer_value++;
 	} else {
 		var.string_value = NULL;
 		ret = parameter->evaluate( parameter, variables, &var, exception );
@@ -4446,14 +4443,10 @@ static struct element* parse_while_statement( struct element *elem, struct envir
 			if( message[ 0 ] == 0 ) {
 				next = next->next;
 			}
-			if( stmt->source->evaluate == evaluate_arithmetic_expression && stmt->source->index == '<' ) {
-				if( stmt->source->parameters->next->evaluate == evaluate_local ) {
-					if( stmt->source->parameters->evaluate == evaluate_local )  {
-						stmt->local = 1;
-					} else if( stmt->source->parameters->evaluate == evaluate_local_post_inc ) {
-						stmt->local = 2;
-					}
-				}
+			if( stmt->source->evaluate == evaluate_arithmetic_expression
+			&& stmt->source->parameters->evaluate == evaluate_local
+			&& stmt->source->parameters->next->evaluate == evaluate_local ) {
+				stmt->local = stmt->source->index;
 			}
 			stmt->execute = execute_while_statement;
 		}
