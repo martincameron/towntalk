@@ -1584,6 +1584,8 @@ static enum result execute_array_assignment( struct statement *this, struct vari
 		if( dest.string_value && dest.string_value->type == ARRAY ) {
 			if( this->index->evaluate == evaluate_local ) {
 				idx.integer_value = variables[ this->index->index ].integer_value;
+			} else if( this->index->evaluate == evaluate_local_post_inc ) {
+				idx.integer_value = variables[ this->index->index ].integer_value++;
 			} else {
 				ret = this->index->evaluate( this->index, variables, &idx, exception );
 			}
@@ -1962,6 +1964,8 @@ static enum result evaluate_index_expression( struct expression *this, struct va
 			parameter = parameter->next;
 			if( parameter->evaluate == evaluate_local ) {
 				idx.integer_value = variables[ parameter->index ].integer_value;
+			} else if( parameter->evaluate == evaluate_local_post_inc ) {
+				idx.integer_value = variables[ parameter->index ].integer_value++;
 			} else {
 				ret = parameter->evaluate( parameter, variables, &idx, exception );
 			}
@@ -2558,15 +2562,16 @@ static enum result evaluate_cmp_expression( struct expression *this, struct vari
 
 static enum result evaluate_chr_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	struct expression *parameter = this->parameters;
+	struct expression *parameters = this->parameters;
 	struct variable str = { 0, NULL }, idx = { 0, NULL };
-	enum result ret = parameter->evaluate( parameter, variables, &str, exception );
+	enum result ret = parameters->evaluate( parameters, variables, &str, exception );
 	if( ret ) {
-		parameter = parameter->next;
-		if( parameter->evaluate == evaluate_local ) {
-			idx.integer_value = variables[ parameter->index ].integer_value;
+		if( parameters->next->evaluate == evaluate_local ) {
+			idx.integer_value = variables[ parameters->next->index ].integer_value;
+		} else if( parameters->next->evaluate == evaluate_local_post_inc ) {
+			idx.integer_value = variables[ parameters->next->index ].integer_value++;
 		} else {
-			ret = parameter->evaluate( parameter, variables, &idx, exception );
+			ret = parameters->next->evaluate( parameters->next, variables, &idx, exception );
 		}
 		if( ret ) {
 			if( str.string_value ) {

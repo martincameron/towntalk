@@ -103,7 +103,12 @@ function testarray() {
 	set [ a,idx ] = "a";
 	set [ a 1 ] = 1;
 	set [ a 2 ] = [ a idx ];
+	set [ a 2 ] = [ a idx++ ];
+	call assert_equals( 1, idx, ${-} );
 	dim [ a,2 ];
+	set [ a idx++ ] = 2;
+	call assert_equals( 2, [ a 1 ], ${-} );
+	call assert_equals( 2, idx, ${-} );
 	dim [ a 1 ];
 	call assert_equals( "a", [ a 0 ], ${-} );
 	let a = $array( ${ 0, $str( "\"one", "\"" ), $tup( "\\two\\"2 ), "\063", ${ four(4) }, 84, 84 } );
@@ -399,7 +404,8 @@ function testcat() {
 function testchr() {
 	var idx;
 	call assert_equals( 126, $chr( "~" 0 ), ${-} );
-	call assert_equals( -1, $chr( "\377" idx ), ${-} );
+	call assert_equals( -1, $chr( "\377" idx++ ), ${-} );
+	call assert_equals( 1, idx, ${-} );
 	call assert_throws( "1", ${ () { call $chr( except( ${ 1 } ) 0 ); } } );
 	call assert_throws( "1", ${ () { call $chr( "" except( ${ 1 } ) ); } } );
 	call assert_throws( "Not a string", ${ () { call $chr( 0 0 ); } } );
