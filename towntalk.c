@@ -1808,7 +1808,6 @@ static enum result evaluate_call_expression( struct expression *this, struct var
 
 static enum result evaluate_refcall_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	int count;
 	struct function *function;
 	struct expression expr = { 0 };
 	struct variable func = { 0, NULL };
@@ -1819,17 +1818,11 @@ static enum result evaluate_refcall_expression( struct expression *this, struct 
 			function = ( struct function * ) func.string_value;
 			expr.line = this->line;
 			expr.function = function;
-			parameter = parameter->next;
-			count = 0;
-			while( parameter ) {
-				count++;
-				parameter = parameter->next;
-			}
-			if( function->num_parameters == count ) {
-				expr.parameters = this->parameters->next;
+			if( function->num_parameters == this->index ) {
+				expr.parameters = parameter->next;
 				ret = evaluate_call_expression( &expr, variables, result, exception );
 			} else {
-				ret = throw( exception, this, count, "Incorrect number of parameters to function." );
+				ret = throw( exception, this, this->index, "Incorrect number of parameters to function." );
 			}
 		} else {
 			ret = throw( exception, this, func.integer_value, "Not a function reference." );
@@ -1841,34 +1834,40 @@ static enum result evaluate_refcall_expression( struct expression *this, struct 
 
 static enum result evaluate_thiscall_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
+	int idx, count;
 	struct array *arr;
-	struct variable var = { 0 };
-	struct global_variable func = { 0 }, obj = { 0 };
-	struct expression func_expr = { 0 }, obj_expr = { 0 }, refcall_expr = { 0 };
-	struct expression *parameter = this->parameters;
-	enum result ret = parameter->evaluate( parameter, variables, &obj.value, exception );
+	struct string *function = NULL;
+	struct global_variable obj = { 0 };
+	struct expression obj_expr = { 0 }, call_expr = { 0 };
+	enum result ret = this->parameters->evaluate( this->parameters, variables, &obj.value, exception );
 	if( ret ) {
 		if( obj.value.string_value && obj.value.string_value->type == ARRAY ) {
 			arr = ( struct array * ) obj.value.string_value;
-			if( this->index < arr->length ) {
-				var.integer_value = arr->integer_values[ this->index ];
+			idx = this->index >> 8;
+			count = this->index & 0xFF;
+			if( idx < arr->length ) {
 				if( arr->string_values ) {
-					var.string_value = arr->string_values[ this->index ];
+					function = arr->string_values[ idx ];
 				}
-				assign_variable( &var, &func.value );
-				func_expr.global = &func;
-				func_expr.evaluate = evaluate_global;
-				func_expr.next = &obj_expr;
-				obj_expr.global = &obj;
-				obj_expr.evaluate = evaluate_global;
-				obj_expr.next = parameter->next;
-				refcall_expr.line = this->line;
-				refcall_expr.function = this->function;
-				refcall_expr.parameters = &func_expr;
-				ret = evaluate_refcall_expression( &refcall_expr, variables, result, exception );
-				dispose_temporary( &func.value );
+				if( function && function->type == FUNCTION ) {
+					obj_expr.global = &obj;
+					obj_expr.evaluate = evaluate_global;
+					obj_expr.next = this->parameters->next;
+					call_expr.line = this->line;
+					call_expr.function = ( struct function * ) function;
+					call_expr.parameters = &obj_expr;
+					if( call_expr.function->num_parameters == count ) {
+						function->reference_count++;
+						ret = evaluate_call_expression( &call_expr, variables, result, exception );
+						function->reference_count--;
+					} else {
+						ret = throw( exception, this, count, "Incorrect number of parameters to function." );
+					}
+				} else {
+					ret = throw( exception, this, arr->integer_values[ idx ], "Not a function reference." );
+				}
 			} else {
-				ret = throw( exception, this, this->index, "Array index out of bounds." );
+				ret = throw( exception, this, idx, "Array index out of bounds." );
 			}
 		} else {
 			ret = throw( exception, this, obj.value.integer_value, "Not an array." );
@@ -3430,6 +3429,30 @@ static struct element* parse_struct_expression( struct element *elem, struct env
 	return next;
 }
 
+static struct element* parse_refcall_expression( struct element *elem, struct environment *env,
+	struct function *func, struct expression *expr, char *message ) {
+	struct element *next = elem->next;
+	struct expression prev;
+	int count;
+	if( next && next->str.string[ 0 ] == '(' ) {
+		prev.next = NULL;
+		parse_expressions( next->child, env, func, 0, &prev, &count, message );
+		expr->parameters = prev.next;
+		if( message[ 0 ] == 0 ) {
+			if( count > 0 ) {
+				expr->index = count - 1;
+				expr->evaluate = evaluate_refcall_expression;
+				next = next->next;
+			} else {
+				sprintf( message, "Expected expression after '(' on line %d.", next->line );
+			}
+		}
+	} else {
+		sprintf( message, "Expected '(' after ':' on line %d.", elem->line );
+	}
+	return next;
+}
+
 static struct element* parse_thiscall_expression( struct element *elem, struct environment *env,
 	struct function *func, struct expression *expr, char *message ) {
 	int idx, count;
@@ -3449,7 +3472,6 @@ static struct element* parse_thiscall_expression( struct element *elem, struct e
 	if( struc && field ) {
 		idx = get_string_list_index( struc->fields, &field[ 1 ] );
 		if( idx >= 0 ) {
-			expr->index = idx;
 			if( next && next->str.string[ 0 ] == '(' ) {
 				prev.next = NULL;
 				parse_expressions( next->child, env, func, 0, &prev, &count, message );
@@ -3472,7 +3494,8 @@ static struct element* parse_thiscall_expression( struct element *elem, struct e
 					}
 				}
 				if( message[ 0 ] == 0 ) {
-					if( count > 0 ) {
+					if( count > 0 && count < 256 ) {
+						expr->index = ( ( idx & 0x7FFFFF ) << 8 ) | count;
 						expr->evaluate = evaluate_thiscall_expression;
 						next = next->next;
 					} else {
@@ -3601,9 +3624,14 @@ static struct element* parse_expression( struct element *elem, struct environmen
 		} else if( value[ 0 ] == '@' ) {
 			/* Function reference operator. */
 			next = parse_func_ref_expression( elem, env, func, expr, message );
-		} else if( value[ 0 ] == ':' && value[ 1 ] != 0 ) {
-			/* Member function call. */
-			next = parse_thiscall_expression( elem, env, func, expr, message );
+		} else if( value[ 0 ] == ':' ) {
+			if( value[ 1 ] == 0 ) {
+				/* Function reference call. */
+				next = parse_refcall_expression( elem, env, func, expr, message );
+			} else {
+				/* Member function call. */
+				next = parse_thiscall_expression( elem, env, func, expr, message );
+			}
 		} else {
 			local = get_local_variable( func->variable_decls, value, ".+-" );
 			if( local ) {
@@ -4977,7 +5005,6 @@ static struct keyword statements[] = {
 };
 
 static struct operator operators[] = {
-	{ ":", ':',-1, evaluate_refcall_expression, NULL },
 	{ "%", '%',-2, evaluate_arithmetic_expression, NULL },
 	{ "&", '&',-2, evaluate_arithmetic_expression, NULL },
 	{ "*", '*',-2, evaluate_arithmetic_expression, NULL },

@@ -235,12 +235,13 @@ function testwhile() {
 	}
 	call assert_equals( 1, :( $function( ${ () { while TRUE { return 1; } return 0; } } ) ), ${-} );
 	var off, end = 10;
-	while <( off++ end ) {
+	while <( off end ) {
 		var aaa, bbb = 0;
 		inc aaa;
 		inc bbb;
+		inc off;
 	}
-	call assert_equals( 11, off, ${-} );
+	call assert_equals( 10, off, ${-} );
 	call assert_equals( 10, aaa, ${-} );
 	call assert_equals( 1, bbb, ${-} );
 	call assert_throws( "1", ${ () { while except( ${ 1 } ) { call assert( FALSE, ${-} ); } } } );
@@ -551,7 +552,8 @@ function testpack() {
 }
 
 function testunpack() {
-	call assert_equals( 1, $unpack( "\0\0\0\1" 0 ), ${-} );
+	var x;
+	call assert_equals( 1, $unpack( "\0\0\0\1" x ), ${-} );
 	call assert_equals( 0x1020304, $unpack( "\1\2\3\4" 0 ), ${-} );
 	call assert_equals( -1, $unpack( $pack( -1 ) 0 ), ${-} );
 	call assert_equals( 2, $unpack( $pack( $array( ${ 1 2 } ) ) 1 ), ${-} );
@@ -600,6 +602,8 @@ function testfuncref() {
 	call setg( 0 );
 	call :( @setg 1 );
 	call assert_equals( 1, g, ${-} );
+	call assert_throws( "Expected '(' after ':'", ${ () { call :; } } );
+	call assert_throws( "Expected expression after '('", ${ () { call :(); } } );
 	call assert_throws( "Not a function reference.", ${ () { call :( $tup( "a" 1 ) ); } } );
 	call assert_throws( "Incorrect number of parameters", ${ () { call :( @setg 1 2 ); } } );
 	call assert_throws( "Function 'xxx' not defined", ${ () { call @xxx; } } );
@@ -752,6 +756,8 @@ function testthiscall() {
 	call assert_equals( 3, ext.f, ${-} );
 	call assert_throws( "Not an array", ${ () { call :exten.g( 0 ); } } );
 	call assert_throws( "Array index", ${ () { call :exten.g( $array( 0 ) ); } } );
+	call assert_throws( "Not a function", ${ () { call :exten.g( $array( exten ) ); } } );
+	call assert_throws( "Incorrect number of parameters", ${ () { call :ext.g(); } } );
 	call assert_throws( "Undeclared", ${ () { call :x(); } } );
 	call assert_throws( "Undeclared", ${ () { call :exten(); } } );
 	call assert_throws( "Field 'exten.x' not declared", ${ () { call :exten.x(); } } );
