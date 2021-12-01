@@ -1187,30 +1187,24 @@ static enum result handle_event_expression( struct expression *this, SDL_Event *
 			fxenv->wheel = event->wheel.y;
 #endif
 		}
-		dispose_variable( result );
 		result->integer_value = event->type;
-		result->string_value = NULL;
 	}
 	return ret;
 }
 
 static enum result evaluate_winmsg_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	dispose_variable( result );
 #if SDL_MAJOR_VERSION > 1
 	result->integer_value = ( ( struct fxenvironment * ) this->function->env )->win_event;
 #else
 	result->integer_value = SDL_VIDEOEXPOSE;
 #endif
-	result->string_value = NULL;
 	return OKAY;
 }
 
 static enum result evaluate_midimsg_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	dispose_variable( result );
 	result->integer_value = ( ( struct fxenvironment * ) this->function->env )->midi_msg;
-	result->string_value = NULL;
 	return OKAY;
 }
 
@@ -1235,74 +1229,56 @@ static enum result evaluate_waitevent_expression( struct expression *this, struc
 
 static enum result evaluate_millis_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	dispose_variable( result );
 	result->integer_value = SDL_GetTicks();
-	result->string_value = NULL;
 	return OKAY;
 }
 
 static enum result evaluate_xmouse_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	dispose_variable( result );
 	SDL_GetMouseState( &result->integer_value, NULL );
-	result->string_value = NULL;
 	return OKAY;
 }
 
 static enum result evaluate_ymouse_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	dispose_variable( result );
 	SDL_GetMouseState( NULL, &result->integer_value );
-	result->string_value = NULL;
 	return OKAY;
 }
 
 static enum result evaluate_mousekey_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	dispose_variable( result );
 	result->integer_value = SDL_GetMouseState( NULL, NULL );
-	result->string_value = NULL;
 	return OKAY;
 }
 
 static enum result evaluate_mousewheel_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	dispose_variable( result );
 	result->integer_value = ( ( struct fxenvironment * ) this->function->env )->wheel;
-	result->string_value = NULL;
 	return OKAY;
 }
 
 static enum result evaluate_keyboard_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	dispose_variable( result );
 	result->integer_value = ( ( struct fxenvironment * ) this->function->env )->key;
-	result->string_value = NULL;
 	return OKAY;
 }
 
 static enum result evaluate_keyshift_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	dispose_variable( result );
 	result->integer_value = SDL_GetModState();
-	result->string_value = NULL;
 	return OKAY;
 }
 
 static enum result evaluate_keyheld_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	dispose_variable( result );
 	result->integer_value = ( ( struct fxenvironment * ) this->function->env )->key_held;
-	result->string_value = NULL;
 	return OKAY;
 }
 
 /* Returns a value incremented every sequencer tick while the audio device is running. */
 static enum result evaluate_seqtick_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	dispose_variable( result );
 	result->integer_value = ( ( struct fxenvironment * ) this->function->env )->tick;
-	result->string_value = NULL;
 	return OKAY;
 }
 
@@ -1333,9 +1309,7 @@ static enum result evaluate_seqmix_expression( struct expression *this, struct v
 				var.integer_value = fxenv->audio[ idx ];
 				assign_array_variable( &var, ( struct array * ) arr.string_value, idx++ );
 			}
-			dispose_variable( result );
 			result->integer_value = fxenv->audio_end;
-			result->string_value = NULL;
 			SDL_UnlockAudio();
 		} else {
 			ret = throw( exception, this, 0, "Not an array." );
@@ -1350,9 +1324,7 @@ static enum result evaluate_seqrate_expression( struct expression *this, struct 
 	struct variable var = { 0, NULL };
 	enum result ret = this->parameters->evaluate( this->parameters, variables, &var, exception );
 	if( ret ) {
-		dispose_variable( result );
 		result->integer_value = key_to_freq( var.integer_value );
-		result->string_value = NULL;
 		dispose_variable( &var );
 	}
 	return OKAY;
@@ -1364,9 +1336,7 @@ static enum result evaluate_seqrate_expression( struct expression *this, struct 
 */
 static enum result evaluate_seqmsg_expression( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
-	dispose_variable( result );
 	result->integer_value = ( ( struct fxenvironment * ) this->function->env )->seq_msg;
-	result->string_value = NULL;
 	return OKAY;
 }
 
@@ -1457,16 +1427,12 @@ static enum result evaluate_dir_expression( struct expression *this, struct vari
 					if( errno ) {
 						ret = throw( exception, this, errno, strerror( errno ) );
 					}
-					if( ret ) {
-						dispose_variable( result );
-						result->integer_value = 0;
-						if( head ) {
+					if( head ) {
+						if( ret ) {
 							result->string_value = &head->str;
 						} else {
-							result->string_value = NULL;
+							unref_string( &head->str );
 						}
-					} else if( head ) {
-						unref_string( &head->str );
 					}
 					closedir( dir );
 				} else {
@@ -1503,8 +1469,6 @@ static enum result evaluate_path_expression( struct expression *this, struct var
 				str = new_string_value( strlen( path ) );
 				if( str ) {
 					memcpy( str->string, path, sizeof( char ) * str->length );
-					dispose_variable( result );
-					result->integer_value = 0;
 					result->string_value = str;
 				} else {
 					ret = throw( exception, this, 0, OUT_OF_MEMORY );
@@ -1553,8 +1517,6 @@ static enum result evaluate_extract_expression( struct expression *this, struct 
 					if( str ) {
 						datfile_extract( datfile.string_value->string,
 							datfile.string_value->length, bank.integer_value, str->string );
-						dispose_variable( result );
-						result->integer_value = 0;
 						result->string_value = str;
 					} else {
 						ret = throw( exception, this, 0, OUT_OF_MEMORY );
@@ -1612,9 +1574,7 @@ static enum result evaluate_stream_expression( struct expression *this, struct v
 						}
 						fxenv->stream_idx += samples;
 						SDL_UnlockAudio();
-						dispose_variable( result );
 						result->integer_value = samples;
-						result->string_value = NULL;
 					} else {
 						ret = throw( exception, this, offset.integer_value, "Range out of bounds." );
 					}
