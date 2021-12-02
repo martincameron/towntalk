@@ -1286,10 +1286,10 @@ static enum result evaluate_local( struct expression *this, struct variable *var
 static enum result evaluate_local_post_inc( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct variable *var = &variables[ this->index ];
-	result->integer_value = var->integer_value++;
-	result->string_value = var->string_value;
-	if( result->string_value ) {
-		result->string_value->reference_count++;
+	if( var->string_value ) {
+		return throw( exception, this, 0, "Not an integer." );
+	} else {
+		result->integer_value = var->integer_value++;
 	}
 	return OKAY;
 }
@@ -1297,10 +1297,10 @@ static enum result evaluate_local_post_inc( struct expression *this, struct vari
 static enum result evaluate_local_post_dec( struct expression *this, struct variable *variables,
 	struct variable *result, struct variable *exception ) {
 	struct variable *var = &variables[ this->index ];
-	result->integer_value = var->integer_value--;
-	result->string_value = var->string_value;
-	if( result->string_value ) {
-		result->string_value->reference_count++;
+	if( var->string_value ) {
+		return throw( exception, this, 0, "Not an integer." );
+	} else {
+		result->integer_value = var->integer_value--;
 	}
 	return OKAY;
 }
@@ -1614,10 +1614,9 @@ static enum result execute_array_assignment( struct statement *this, struct vari
 		if( dest.string_value && dest.string_value->type == ARRAY ) {
 			if( this->index->evaluate == evaluate_local ) {
 				idx.integer_value = variables[ this->index->index ].integer_value;
-			} else if( this->index->evaluate == evaluate_local_post_inc ) {
-				idx.integer_value = variables[ this->index->index ].integer_value++;
 			} else {
 				ret = this->index->evaluate( this->index, variables, &idx, exception );
+				dispose_temporary( &idx );
 			}
 			if( ret ) {
 				arr = ( struct array * ) dest.string_value;
@@ -1637,7 +1636,6 @@ static enum result execute_array_assignment( struct statement *this, struct vari
 				} else {
 					ret = throw( exception, this->index, idx.integer_value, "Array index out of bounds." );
 				}
-				dispose_temporary( &idx );
 			}
 		} else {
 			ret = throw( exception, this->destination, 0, "Not an array." );
@@ -1986,10 +1984,9 @@ static enum result evaluate_index_expression( struct expression *this, struct va
 			parameter = parameter->next;
 			if( parameter->evaluate == evaluate_local ) {
 				idx.integer_value = variables[ parameter->index ].integer_value;
-			} else if( parameter->evaluate == evaluate_local_post_inc ) {
-				idx.integer_value = variables[ parameter->index ].integer_value++;
 			} else {
 				ret = parameter->evaluate( parameter, variables, &idx, exception );
+				dispose_temporary( &idx );
 			}
 			if( ret ) {
 				arr = ( struct array * ) src.string_value;
@@ -2002,7 +1999,6 @@ static enum result evaluate_index_expression( struct expression *this, struct va
 				} else {
 					ret = throw( exception, this, idx.integer_value, "Array index out of bounds." );
 				}
-				dispose_temporary( &idx );
 			}
 		} else {
 			ret = throw( exception, this, 0, "Not an array." );
@@ -2579,10 +2575,9 @@ static enum result evaluate_chr_expression( struct expression *this, struct vari
 	if( ret ) {
 		if( parameters->next->evaluate == evaluate_local ) {
 			idx.integer_value = variables[ parameters->next->index ].integer_value;
-		} else if( parameters->next->evaluate == evaluate_local_post_inc ) {
-			idx.integer_value = variables[ parameters->next->index ].integer_value++;
 		} else {
 			ret = parameters->next->evaluate( parameters->next, variables, &idx, exception );
+			dispose_temporary( &idx );
 		}
 		if( ret ) {
 			if( str.string_value ) {
@@ -2594,7 +2589,6 @@ static enum result evaluate_chr_expression( struct expression *this, struct vari
 			} else {
 				ret = throw( exception, this, 0, "Not a string." );
 			}
-			dispose_temporary( &idx );
 		}
 		dispose_temporary( &str );
 	}

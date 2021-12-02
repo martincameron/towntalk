@@ -86,6 +86,8 @@ function testvars( x ) {
 	call assert_throws( "Undeclared variable 'xxx'", ${ () { let xxx = 0; } } );
 	call assert_throws( "Expected '=' after 'let'", ${ () { let xxx; } } );
 	call assert_throws( "Invalid local variable expression", ${ (x) { call x+; } } );
+	call assert_throws( "Not an integer", ${ () { var x = "x"; call x++; } } );
+	call assert_throws( "Not an integer", ${ () { var x = "x"; call x--; } } );
 	return g;
 }
 
