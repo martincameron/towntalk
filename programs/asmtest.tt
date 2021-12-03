@@ -36,7 +36,7 @@ function testletv_v() {
 	var a = 1, b = 0;
 	asm { let b = a; }
 	call assert_equals( a, b, ${-} );
-	call assert_throws( "Invalid local variable 'x'", ${ () { asm { let x = 0; } } } );
+	call assert_throws( "Invalid local variable 'x'", ${ () { asm { let x = a; } } } );
 	call assert_throws( "Invalid local variable 'x'", ${ () { var a; asm { let a = x; } } } );
 }
 
@@ -46,10 +46,15 @@ function testletv_a() {
 	call assert_equals( 1, a, ${-} );
 	asm { let a = [ arr b ]; }
 	call assert_equals( 2, a, ${-} );
+	asm { let a = [ arr b++ ]; }
+	call assert_equals( 2, a, ${-} );
+	call assert_equals( 2, b, ${-} );
 	call assert_throws( "Not an array or index", ${ () { var a; asm { let a = [ a 0 ]; } } } );
 	call assert_throws( "Not an array or index", ${ () { var a; asm { let a = [ a a ]; } } } );
+	call assert_throws( "Not an array or index", ${ () { var a; asm { let a = [ a a++ ]; } } } );
 	call assert_throws( "Not an array or index", ${ () { var a = $array( 0 ); asm { let a = [ a -1 ]; } } } );
 	call assert_throws( "Not an array or index", ${ () { var a = $array( 0 ); asm { let a = [ a a ]; } } } );
+	call assert_throws( "Not an array or index", ${ () { var a = $array( 0 ); asm { let a = [ a a++ ]; } } } );
 	call assert_throws( "Invalid local variable 'x'", ${ () { var a; asm { let x = [ a 0 ]; } } } );
 	call assert_throws( "Invalid index expression", ${ () { var a; asm { let a = []; } } } );
 	call assert_throws( "Invalid index expression", ${ () { var a; asm { let a = [ a ]; } } } );
@@ -105,6 +110,8 @@ function testletv_opr() {
 	call assert_equals( 1, a, ${-} );
 	asm { let a = ^( a one ); }
 	call assert_equals( 0, a, ${-} );
+	# letv_opr
+	call assert_throws( "Invalid local variable 'x'", ${ () { var a; asm { let a = +( x a ); } } } );
 	# letv_opr_vi
 	call assert_throws( "Integer division by zero.", ${ () { var a; asm { let a = /( a 0 ); } } } );
 	call assert_throws( "Modulo division by zero.", ${ () { var a; asm { let a = %( a 0 ); } } } );
@@ -125,7 +132,7 @@ function testletv_opr() {
 }
 
 function testleta() {
-	var a, arr = $array( 1 );
+	var a, b, arr = $array( 1 );
 	# letav_i
 	asm { let [ arr a ] = 1; }
 	call assert_equals( 1, [ arr 0 ], ${-} );
@@ -137,6 +144,12 @@ function testleta() {
 	let a = 0;
 	asm { let [ arr a ] = a; }
 	call assert_equals( 0, [ arr 0 ], ${-} );
+	# letap_v
+	let a = 0;
+	let b = 1;
+	asm { let [ arr a++ ] = b; }
+	call assert_equals( 1, [ arr 0 ], ${-} );
+	call assert_equals( 1, a, ${-} );
 	# letav_i
 	call assert_throws( "Not an array or index", ${ () { var a; asm { let [ a a ] = 0; } } } );
 	call assert_throws( "Not an array or index", ${ () { var a = $array( 0 ); asm { let [ a a ] = 0; } } } );
@@ -146,6 +159,9 @@ function testleta() {
 	# letav_v
 	call assert_throws( "Not an array or index", ${ () { var a; asm { let [ a a ] = a; } } } );
 	call assert_throws( "Not an array or index", ${ () { var a = $array( 0 ); asm { let [ a a ] = a; } } } );
+	# letap_v
+	call assert_throws( "Not an array or index", ${ () { var a; asm { let [ a a++ ] = a; } } } );
+	call assert_throws( "Not an array or index", ${ () { var a = $array( 0 ); asm { let [ a a++ ] = a; } } } );
 	# leta
 	call assert_throws( "Invalid local variable 'x'", ${ () { asm { let [ x 0 ] = 0; } } } );
 	call assert_throws( "Invalid index expression", ${ () { asm { let [] = 0; } } } );
@@ -159,6 +175,8 @@ function testleta() {
 	call assert_throws( "Invalid immediate '0x'", ${ () { var a; asm { let [ a a ] = 0x; } } } );
 	# letav_v
 	call assert_throws( "Invalid local variable 'x'", ${ () { var a; asm { let [ a a ] = x; } } } );
+	# letap_v
+	call assert_throws( "Invalid local variable 'x'", ${ () { var a; asm { let [ a a++ ] = x; } } } );
 }
 
 function testhalt() {
@@ -216,33 +234,47 @@ function testjump() {
 }
 
 function testchr() {
-	var a, str = "a";
-	# letv_chr_i
-	asm { let a = $chr( str 0 ); }
-	call assert_equals( $chr( str, 0 ), a, ${-} );
-	# letv_chr_v
-	let a = 0;
-	asm { let a = $chr( str a ); }
-	call assert_equals( $chr( str, 0 ), a, ${-} );
-	# letv_chr_i
+	var a, b, str = "a";
+	# letv_chr_vi
+	asm { let b = $chr( str 0 ); }
+	call assert_equals( $chr( str, 0 ), b, ${-} );
+	# letv_chr_vv
+	let b = 0;
+	asm { let b = $chr( str a ); }
+	call assert_equals( $chr( str, 0 ), b, ${-} );
+	# letv_chr_vp
+	let b = 0;
+	asm { let b = $chr( str a++ ); }
+	call assert_equals( $chr( str, 0 ), b, ${-} );
+	call assert_equals( 1, a, ${-} );
+	# letv_chr_vi
 	call assert_throws( "Not a string or index", ${ () { var a; asm { let a = $chr( a 0 ); } } } );
-	# letv_chr_v
+	# letv_chr_vv
 	call assert_throws( "Not a string or index", ${ () { var a = ""; asm { let a = $chr( a a ); } } } );
+	# letv_chr_vp
+	call assert_throws( "Not a string or index", ${ () { var a = ""; asm { let a = $chr( a a++ ); } } } );
 }
 
 function testunpack() {
-	var a, str = $pack( -1 );
-	# letv_unp_i
-	asm { let a = $unpack( str 0 ); }
-	call assert_equals( -1, a, ${-} );
-	# letv_unp_v
-	let a = 0;
-	asm { let a = $unpack( str a ); }
-	call assert_equals( -1, a, ${-} );
-	# letv_unp_i
+	var a, b, str = $pack( -1 );
+	# letv_unp_vi
+	asm { let b = $unpack( str 0 ); }
+	call assert_equals( -1, b, ${-} );
+	# letv_unp_vv
+	let b = 0;
+	asm { let b = $unpack( str a ); }
+	call assert_equals( -1, b, ${-} );
+	# letv_unp_vp
+	let b = 0;
+	asm { let b = $unpack( str a++ ); }
+	call assert_equals( -1, b, ${-} );
+	call assert_equals( 1, a, ${-} );
+	# letv_unp_vi
 	call assert_throws( "Not a string or index", ${ () { var a; asm { let a = $unpack( a 0 ); } } } );
-	# letv_unp_v
+	# letv_unp_vv
 	call assert_throws( "Not a string or index", ${ () { var a = ""; asm { let a = $unpack( a a ); } } } );
+	# letv_unp_vp
+	call assert_throws( "Invalid operator", ${ () { var a = ""; asm { let a = $xxx( a a++ ); } } } );
 }
 
 program asmtest {
@@ -261,11 +293,12 @@ program asmtest {
 
 	var time = $time, idx, count;
 	asm {
-		let count = 10000000;
+		let count = 1000;
 		loop_0:
 			let idx = +( idx 1 );
 			jump <( idx count ) loop_0;
 	}
 	call assert_equals( count, idx, ${-} );
-	print -( $time time );
+	
+	print "Tests passed.";
 }

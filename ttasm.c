@@ -39,9 +39,11 @@
 	letv_v      x y 0   0 : let x = y;
 	letv_ai     x y 0 imm : let x = [ y imm ];
 	letv_av     x y z   0 : let x = [ y z ];
+	letv_ap     x y z   0 : let x = [ y z++ ];
 	letav_i     x y 0 imm : let [ x y ] = imm;
 	letai_v     x 0 z imm : let [ x imm ] = z;
 	letav_v     x y z   0 : let [ x y ] = z;
+	letap_v     x y z   0 : let [ x y++ ] = z;
 	
 	letv_add_vi x y 0 imm : let x = +( y imm );
 	letv_add_vv x y z   0 : let x = +( y z );
@@ -65,8 +67,10 @@
 	letv_xor_vv x y z   0 : let x = ^( y z );
 	letv_chr_vi x y 0 imm : let x = $chr( y imm );
 	letv_chr_vv x y z   0 : let x = $chr( y z );
+	letv_chr_vp x y z   0 : let x = $chr( y z++ );
 	letv_unp_vi x y 0 imm : let x = $unpack( y imm );
 	letv_unp_vv x y z   0 : let x = $unpack( y z );
+	letv_unp_vp x y z   0 : let x = $unpack( y z++ );
 */
 
 enum opcodes {
@@ -81,9 +85,11 @@ enum opcodes {
 	LETV_V,
 	LETV_AI,
 	LETV_AV,
+	LETV_AP,
 	LETAV_I,
 	LETAI_V,
 	LETAV_V,
+	LETAP_V,
 	LETV_ADD_VI,
 	LETV_ADD_VV,
 	LETV_SUB_VI,
@@ -106,8 +112,10 @@ enum opcodes {
 	LETV_XOR_VV,
 	LETV_CHR_VI,
 	LETV_CHR_VV,
+	LETV_CHR_VP,
 	LETV_UNP_VI,
-	LETV_UNP_VV
+	LETV_UNP_VV,
+	LETV_UNP_VP
 };
 
 struct asm_operator {
@@ -156,6 +164,12 @@ static struct asm_operator let_vv_operators[] = {
 	{ NULL }
 };
 
+static struct asm_operator let_vp_operators[] = {
+	{ "$chr", LETV_CHR_VP },
+	{ "$unpack", LETV_UNP_VP },
+	{ NULL }
+};
+
 struct instruction {
 	char opcode, x, y, z;
 	int imm;
@@ -182,16 +196,21 @@ static struct asm_operator* get_asm_operator( struct asm_operator *operators, ch
 	return operators;
 }
 
-static int get_local_variable( struct function *func, struct element *elem, char *message ) {
+static int get_local_variable( struct function *func, struct element *elem, char *suffix, char *message ) {
 	int idx = 0;
 	char *name = elem->str.string;
+	size_t len = strlen( name ) - strlen( suffix );
 	struct local_variable *local = func->variable_decls;
-	while( local && strcmp( local->name, name ) ) {
-		idx++;
-		local = local->next;
+	if( len > 0 ) {
+		while( local && ( strncmp( local->name, name, len ) || strlen( local->name ) != len ) ) {
+			idx++;
+			local = local->next;
+		}
 	}
-	if( local == NULL || idx > 127 ) {
-		sprintf( message, "Invalid local variable '%.64s' on line %d.", name, elem->line );
+	if( len <= 0 || local == NULL || idx > 127 ) {
+		if( message ) {
+			sprintf( message, "Invalid local variable '%.64s' on line %d.", name, elem->line );
+		}
 		idx = -1;
 	}
 	return idx;
@@ -302,10 +321,10 @@ static struct element* parse_jump( struct element *elem, struct function *func, 
 	if( oper ) {
 		output->opcode = oper->opcode;
 		next = next->next;
-		idx = get_local_variable( func, next->child, message );
+		idx = get_local_variable( func, next->child, "", message );
 		if( idx >= 0 ) {
 			output->y = idx;
-			idx = get_local_variable( func, next->child->next, message );
+			idx = get_local_variable( func, next->child->next, "", message );
 			if( idx >= 0 ) {
 				output->z = idx;
 				next = next->next;
@@ -357,16 +376,17 @@ static struct element* validate_let( struct element *elem, char *message ) {
 static struct element* parse_leta( struct element *elem, struct function *func, struct instruction *output, char *message ) {
 	/*
 		opcode      x y z imm : mnemonic
+		letai_v     x 0 z imm : let [ x imm ] = z;
 		letav_i     x y 0 imm : let [ x y ] = imm;
 		letav_v     x y z   0 : let [ x y ] = z;
-		letai_v     x 0 z imm : let [ x imm ] = z;
+		letap_v     x y z   0 : let [ x y++ ] = z;
 	*/
 	int idx;
 	char *str;
 	struct asm_operator *oper;
 	struct element *next = elem->next, *child = next->child;
 	if( child && child->next && child->next->next == NULL ) {
-		idx = get_local_variable( func, child, message );
+		idx = get_local_variable( func, child, "", message );
 		if( idx >= 0 ) {
 			output->x = idx;
 			str = child->next->str.string;
@@ -375,7 +395,7 @@ static struct element* parse_leta( struct element *elem, struct function *func, 
 				output->imm = ( int ) strtol( str, &str, 0 );
 				if( str[ 0 ] == 0 ) {
 					next = next->next->next;
-					idx = get_local_variable( func, next, message );
+					idx = get_local_variable( func, next, "", message );
 					if( idx >= 0 ) {
 						output->opcode = LETAI_V;
 						output->z = idx;
@@ -387,7 +407,7 @@ static struct element* parse_leta( struct element *elem, struct function *func, 
 					next = NULL;
 				}
 			} else {
-				idx = get_local_variable( func, child->next, message );
+				idx = get_local_variable( func, child->next, "", NULL );
 				if( idx >= 0 ) {
 					output->y = idx;
 					next = next->next->next;
@@ -403,7 +423,7 @@ static struct element* parse_leta( struct element *elem, struct function *func, 
 						}
 					} else {
 						/* letav_v */
-						idx = get_local_variable( func, next, message );
+						idx = get_local_variable( func, next, "", message );
 						if( idx >= 0 ) {
 							output->z = idx;
 							output->opcode = LETAV_V;
@@ -412,7 +432,21 @@ static struct element* parse_leta( struct element *elem, struct function *func, 
 						}
 					}
 				} else {
-					next = NULL;
+					/* letap_v */
+					idx = get_local_variable( func, child->next, "++", message );
+					if( idx >= 0 ) {
+						output->y = idx;
+						next = next->next->next;
+						idx = get_local_variable( func, next, "", message );
+						if( idx >= 0 ) {
+							output->z = idx;
+							output->opcode = LETAP_V;
+						} else {
+							next = NULL;
+						}
+					} else {
+						next = NULL;
+					}
 				}
 			}
 		} else {
@@ -430,17 +464,18 @@ static struct element* parse_letv_a( struct element *elem, struct function *func
 		opcode      x y z imm : mnemonic
 		letv_ai     x y 0 imm : let x = [ y imm ];
 		letv_av     x y z   0 : let x = [ y z ];
+		letv_ap     x y z   0 : let x = [ y z++ ];
 	*/
 	char *str;
 	struct asm_operator *oper;
 	struct element *child, *next = elem->next;
-	int idx = get_local_variable( func, next, message );
+	int idx = get_local_variable( func, next, "", message );
 	if( idx >= 0 ) {
 		output->x = idx;
 		next = next->next->next;
 		if( next->child && next->child->next && next->child->next->next == NULL ) {
 			child = next->child;
-			idx = get_local_variable( func, child, message );
+			idx = get_local_variable( func, child, "", message );
 			if( idx >= 0 ) {
 				output->y = idx;
 				str = child->next->str.string;
@@ -455,12 +490,19 @@ static struct element* parse_letv_a( struct element *elem, struct function *func
 					}
 				} else {
 					/* letv_av */
-					idx = get_local_variable( func, child->next, message );
+					idx = get_local_variable( func, child->next, "", NULL );
 					if( idx >= 0 ) {
 						output->opcode = LETV_AV;
 						output->z = idx;
 					} else {
-						next = NULL;
+						/* letv_ap*/
+						idx = get_local_variable( func, child->next, "++", message );
+						if( idx >= 0 ) {
+							output->opcode = LETV_AP;
+							output->z = idx;
+						} else {
+							next = NULL;
+						}
 					}
 				}
 			} else {
@@ -483,7 +525,7 @@ static struct element* parse_letv_i( struct element *elem, struct function *func
 	*/
 	char *end;
 	struct element *next = elem->next;
-	int idx = get_local_variable( func, next, message );
+	int idx = get_local_variable( func, next, "", message );
 	if( idx >= 0 ) {
 		output->x = idx;
 		next = next->next->next;
@@ -507,11 +549,11 @@ static struct element* parse_letv_v( struct element *elem, struct function *func
 	*/
 	char *end;
 	struct element *next = elem->next;
-	int idx = get_local_variable( func, next, message );
+	int idx = get_local_variable( func, next, "", message );
 	if( idx >= 0 ) {
 		output->x = idx;
 		next = next->next->next;
-		idx = get_local_variable( func, next, message );
+		idx = get_local_variable( func, next, "", message );
 		if( idx >= 0 ) {
 			output->y = idx;
 			output->opcode = LETV_V;
@@ -529,17 +571,18 @@ static struct element* parse_letv_opr( struct element *elem, struct function *fu
 		opcode      x y z imm : mnemonic
 		letv_opr_vi x y 0 imm : let x = opr( y imm );
 		letv_opr_vv x y z   0 : let x = opr( y z );
+		letv_opr_vp x y z   0 : let x = opr( y z++ );
 	*/
 	char *str;
 	struct asm_operator *oper;
 	struct element *child, *next = elem->next;
-	int idx = get_local_variable( func, next, message );
+	int idx = get_local_variable( func, next, "", message );
 	if( idx >= 0 ) {
 		output->x = idx;
 		next = next->next->next;
 		if( next->next && next->next->child && next->next->child->next && next->next->child->next->next == NULL ) {
 			child = next->next->child;
-			idx = get_local_variable( func, child, message );
+			idx = get_local_variable( func, child, "", message );
 			if( idx >= 0 ) {
 				output->y = idx;
 				str = child->next->str.string;
@@ -560,20 +603,34 @@ static struct element* parse_letv_opr( struct element *elem, struct function *fu
 						next = NULL;
 					}
 				} else {
-					/* letv_opr_vv */
-					oper = get_asm_operator( let_vv_operators, next->str.string );
-					if( oper ) {
-						output->opcode = oper->opcode;
-						idx = get_local_variable( func, child->next, message );
-						if( idx >= 0 ) {
+					idx = get_local_variable( func, child->next, "", NULL );
+					if( idx >= 0 ) {
+						/* letv_opr_vv */
+						oper = get_asm_operator( let_vv_operators, next->str.string );
+						if( oper ) {
+							output->opcode = oper->opcode;
 							output->z = idx;
 							next = next->next;
 						} else {
+							sprintf( message, "Invalid operator '%.64s' at line %d.", next->str.string, next->line );
 							next = NULL;
 						}
 					} else {
-						sprintf( message, "Invalid operator '%.64s' at line %d.", next->str.string, next->line );
-						next = NULL;
+						idx = get_local_variable( func, child->next, "++", message );
+						if( idx >= 0 ) {
+							/* letv_opr_vp */
+							oper = get_asm_operator( let_vp_operators, next->str.string );
+							if( oper ) {
+								output->opcode = oper->opcode;
+								output->z = idx;
+								next = next->next;
+							} else {
+								sprintf( message, "Invalid operator '%.64s' at line %d.", next->str.string, next->line );
+								next = NULL;
+							}
+						} else {
+							next = NULL;
+						}
 					}
 				}
 			} else {
@@ -798,6 +855,15 @@ static enum result execute_asm_statement( struct statement *this, struct variabl
 				}
 				ins++;
 				break;
+			case LETV_AP:
+				/* letv_ap     x y z   0 : let x = [ y z++ ]; */
+				if( ( unsigned int ) variables[ ins->z ].integer_value < array_bounds[ ins->y ] ) {
+					variables[ ins->x ].integer_value = ( ( struct array * ) variables[ ins->y ].string_value )->integer_values[ variables[ ins->z ].integer_value++ ];
+				} else {
+					return throw( exception, this->source, variables[ ins->z ].integer_value, "Not an array or index out of bounds." );
+				}
+				ins++;
+				break;
 			case LETAV_I:
 				/* letav_i     x y 0 imm : let [ x y ] = imm; */
 				if( ( unsigned int ) variables[ ins->y ].integer_value < array_bounds[ ins->x ] ) {
@@ -820,6 +886,15 @@ static enum result execute_asm_statement( struct statement *this, struct variabl
 				/* letav_v     x y z   0 : let [ x y ] = z; */
 				if( ( unsigned int ) variables[ ins->y ].integer_value < array_bounds[ ins->x ] ) {
 					( ( struct array * ) variables[ ins->x ].string_value )->integer_values[ variables[ ins->y ].integer_value ] = variables[ ins->z ].integer_value;
+				} else {
+					return throw( exception, this->source, variables[ ins->y ].integer_value, "Not an array or index out of bounds." );
+				}
+				ins++;
+				break;
+			case LETAP_V:
+				/* letap_v     x y z   0 : let [ x y++ ] = z; */
+				if( ( unsigned int ) variables[ ins->y ].integer_value < array_bounds[ ins->x ] ) {
+					( ( struct array * ) variables[ ins->x ].string_value )->integer_values[ variables[ ins->y ].integer_value++ ] = variables[ ins->z ].integer_value;
 				} else {
 					return throw( exception, this->source, variables[ ins->y ].integer_value, "Not an array or index out of bounds." );
 				}
@@ -959,6 +1034,15 @@ static enum result execute_asm_statement( struct statement *this, struct variabl
 				}
 				ins++;
 				break;
+			case LETV_CHR_VP:
+				/* letv_chr_vp x y z   0 : let x = $chr( y z++ ); */
+				if( ( unsigned int ) variables[ ins->z ].integer_value < string_bounds[ ins->y ] ) {
+					variables[ ins->x ].integer_value = ( signed char ) variables[ ins->y ].string_value->string[ variables[ ins->z ].integer_value++ ];
+				} else {
+					return throw( exception, this->source, variables[ ins->z ].integer_value, "Not a string or index out of bounds." );
+				}
+				ins++;
+				break;
 			case LETV_UNP_VI:
 				/* letv_unp_vi x y 0 imm : let x = $unpack( y imm ); */
 				if( ( unsigned int ) ins->imm < string_bounds[ ins->y ] >> 2 ) {
@@ -972,6 +1056,15 @@ static enum result execute_asm_statement( struct statement *this, struct variabl
 				/* letv_unp_vv x y z   0 : let x = $unpack( y z ); */
 				if( ( unsigned int ) variables[ ins->z ].integer_value < string_bounds[ ins->y ] >> 2 ) {
 					variables[ ins->x ].integer_value = unpack( variables[ ins->y ].string_value->string, variables[ ins->z ].integer_value );
+				} else {
+					return throw( exception, this->source, ins->imm, "Not a string or index out of bounds." );
+				}
+				ins++;
+				break;
+			case LETV_UNP_VP:
+				/* letv_unp_vp x y z   0 : let x = $unpack( y z++ ); */
+				if( ( unsigned int ) variables[ ins->z ].integer_value < string_bounds[ ins->y ] >> 2 ) {
+					variables[ ins->x ].integer_value = unpack( variables[ ins->y ].string_value->string, variables[ ins->z ].integer_value++ );
 				} else {
 					return throw( exception, this->source, ins->imm, "Not a string or index out of bounds." );
 				}
