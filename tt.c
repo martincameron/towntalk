@@ -27,11 +27,13 @@ static void interrupt_handler( int signum ) {
 
 #if defined( MULTI_THREAD )
 void* worker_thread( void *data ) {
+	struct variables vars = { 0 };
 	struct expression expr = { 0 };
 	struct worker *work = ( struct worker * ) data;
+	vars.exception = &work->exception;
 	initialize_call_expr( &expr, work->env.entry_point );
 	expr.parameters = work->parameters;
-	work->ret = expr.evaluate( &expr, NULL, &work->result, &work->exception );
+	work->ret = expr.evaluate( &expr, &vars, &work->result );
 	return NULL;
 }
 
@@ -99,6 +101,8 @@ int main( int argc, char **argv ) {
 	char *file_name, message[ 256 ] = "";
 	struct variable result = { 0 }, except = { 0 };
 	struct expression expr = { 0 };
+	struct variables vars = { 0 };
+	vars.exception = &except;
 	/* Handle command-line.*/
 	if( argc < 2 ) {
 		fprintf( stderr, "Usage: %s program.tt [args]\n", argv[ 0 ] );
@@ -118,7 +122,7 @@ int main( int argc, char **argv ) {
 			if( signal( SIGINT, interrupt_handler ) != SIG_ERR ) {
 				/* Evaluate the last entry-point function. */
 				initialize_call_expr( &expr, env.entry_point );
-				if( initialize_globals( &env, &except ) && expr.evaluate( &expr, NULL, &result, &except ) ) {
+				if( initialize_globals( &env, &except ) && expr.evaluate( &expr, &vars, &result ) ) {
 					exit_code = EXIT_SUCCESS;
 				} else if( except.string_value && except.string_value->type == EXIT ) {
 					if( except.string_value->string ) {

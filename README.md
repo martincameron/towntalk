@@ -73,10 +73,12 @@ int main( int argc, char **argv ) {
 	struct environment env = { 0 };
 	struct variable result = { 0 }, except = { 0 };
 	struct expression expr = { 0 };
+	struct variables vars = { 0 };
+	vars.exception = &except;
 	if( initialize_environment( &env, message ) && add_operators( &upcase, &env, message )
 		&& parse_tt_program( "program hello { print $upcase( \"Hello, World!\" ); } ", "hello", &env, message ) ) {
 		initialize_call_expr( &expr, env.entry_point );
-		if( initialize_globals( &env, &except ) && expr.evaluate( &expr, NULL, &result, &except ) ) {
+		if( initialize_globals( &env, &except ) && expr.evaluate( &expr, &vars, &result ) ) {
 			exit_code = EXIT_SUCCESS;
 		} else if( except.string_value && except.string_value->type == EXIT ) {
 			if( except.string_value->string ) {

@@ -123,14 +123,20 @@ struct global_variable {
 	struct global_variable *next;
 };
 
+/* Current local variable array and exception. */
+struct variables {
+	struct variable *locals;
+	struct variable *exception;
+};
+
 /* Expression list. */
 struct expression {
 	int line, index;
 	struct global_variable *global;
 	struct function *function;
 	struct expression *parameters, *next;
-	enum result ( *evaluate )( struct expression *this, struct variable *variables,
-		struct variable *result, struct variable *exception );
+	enum result ( *evaluate )( struct expression *this,
+		struct variables *vars, struct variable *result );
 };
 
 /* Statement list. */
@@ -139,8 +145,8 @@ struct statement {
 	struct variable *global;
 	struct expression *source, *destination, *index;
 	struct statement *if_block, *else_block, *next;
-	enum result ( *execute )( struct statement *this, struct variable *variables,
-		struct variable *result, struct variable *exception );
+	enum result ( *execute )( struct statement *this,
+		struct variables *vars, struct variable *result );
 };
 
 /* Parser keyword. */
@@ -156,8 +162,8 @@ struct keyword {
 struct operator {
 	char *name, oper;
 	int num_operands;
-	enum result ( *evaluate )( struct expression *this, struct variable *variables,
-		struct variable *result, struct variable *exception );
+	enum result ( *evaluate )( struct expression *this,
+		struct variables *vars, struct variable *result );
 	struct operator *next;
 };
 
@@ -214,8 +220,8 @@ void dispose_environment( struct environment *env );
 /* Parse a statement that expects one or more expressions after the keyword. */
 struct element* parse_expr_list_statement( struct element *elem, struct environment *env,
 	struct function *func, struct statement *prev,
-	enum result ( *execute )( struct statement *this, struct variable *variables,
-	struct variable *result, struct variable *exception ), char *message );
+	enum result ( *execute )( struct statement *this, struct variables *vars, struct variable *result ),
+	char *message );
 
 /* Allocate and return a new statement. Returns NULL and writes message on failure. */
 struct statement* new_statement( char *message );
@@ -238,11 +244,11 @@ void assign_variable( struct variable *src, struct variable *dest );
 /* Assign src variable to dest array at the specified index, managing reference counts. */
 void assign_array_variable( struct variable *src, struct array *arr, int idx );
 
-/* Assign the specified error code and message to the exception variable and return EXCEPTION. */
-enum result throw( struct variable *exception, struct expression *source, int integer, const char *string );
+/* Assign an exception with the specified error code and message to vars and return EXCEPTION. */
+enum result throw( struct variables *vars, struct expression *source, int integer, const char *string );
 
-/* Assign an uncatchable exception variable with the specified exit code and message and return EXCEPTION. */
-enum result throw_exit( struct environment *env, struct variable *exception, int exit_code, const char *message );
+/* Assign an uncatchable exception with the specified exit code and message to vars and return EXCEPTION. */
+enum result throw_exit( struct environment *env, struct variables *vars, int exit_code, const char *message );
 
 /* Write the specified bytes as a string literal to output (if not null).
    The encoded length is returned. */

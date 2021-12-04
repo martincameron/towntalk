@@ -722,23 +722,24 @@ static int parse_instructions( struct element *elem, struct function *func, stru
 	return count;
 }
 
-static enum result throw_interrupt( struct variable *exception, struct expression *source ) {
+static enum result throw_interrupt( struct variables *vars, struct expression *source ) {
 	if( source->function->env->worker ) {
-		return throw_exit( source->function->env, exception, 0, "Interrupted." );
+		return throw_exit( source->function->env, vars, 0, "Interrupted." );
 	} else {
-		return throw( exception, source, 0, "Interrupted.");
+		return throw( vars, source, 0, "Interrupted.");
 	}
 }
 
-static enum result execute_asm_statement( struct statement *this, struct variable *variables,
-	struct variable *result, struct variable *exception ) {
+static enum result execute_asm_statement( struct statement *this,
+	struct variables *vars, struct variable *result ) {
 	struct environment *env = this->source->function->env;
 	struct asm_statement *stmt = ( struct asm_statement * ) this;
 	unsigned int idx, len, string_bounds[ 128 ], array_bounds[ 128 ];
 	struct instruction *ins = stmt->instructions;
+	struct variable *locals = vars->locals;
 	struct string *str;
 	for( idx = 0, len = this->source->function->num_variables; idx < len; idx++ ) {
-		str = variables[ idx ].string_value;
+		str = locals[ idx ].string_value;
 		if( str ) {
 			string_bounds[ idx ] = str->length;
 			if( str->type == ARRAY ) {
@@ -757,9 +758,9 @@ static enum result execute_asm_statement( struct statement *this, struct variabl
 				return OKAY;
 			case JUMP_LT:
 				/* jump_lt     0 y z off : jump <( y z ) label; */
-				if( variables[ ins->y ].integer_value < variables[ ins->z ].integer_value ) {
+				if( locals[ ins->y ].integer_value < locals[ ins->z ].integer_value ) {
 					if( env->interrupted ) {
-						return throw_interrupt( exception, this->source );
+						return throw_interrupt( vars, this->source );
 					} else {
 						ins = &stmt->instructions[ ins->imm ];
 					}
@@ -769,9 +770,9 @@ static enum result execute_asm_statement( struct statement *this, struct variabl
 				break;
 			case JUMP_LE:
 				/* jump_le     0 y z off : jump <e( y z ) label; */
-				if( variables[ ins->y ].integer_value <= variables[ ins->z ].integer_value ) {
+				if( locals[ ins->y ].integer_value <= locals[ ins->z ].integer_value ) {
 					if( env->interrupted ) {
-						return throw_interrupt( exception, this->source );
+						return throw_interrupt( vars, this->source );
 					} else {
 						ins = &stmt->instructions[ ins->imm ];
 					}
@@ -781,9 +782,9 @@ static enum result execute_asm_statement( struct statement *this, struct variabl
 				break;
 			case JUMP_EQ:
 				/* jump_eq     0 y z off : jump =( y z ) label; */
-				if( variables[ ins->y ].integer_value == variables[ ins->z ].integer_value ) {
+				if( locals[ ins->y ].integer_value == locals[ ins->z ].integer_value ) {
 					if( env->interrupted ) {
-						return throw_interrupt( exception, this->source );
+						return throw_interrupt( vars, this->source );
 					} else {
 						ins = &stmt->instructions[ ins->imm ];
 					}
@@ -793,9 +794,9 @@ static enum result execute_asm_statement( struct statement *this, struct variabl
 				break;
 			case JUMP_NE:
 				/* jump_ne     0 y z off : jump <>( y z ) label; */
-				if( variables[ ins->y ].integer_value != variables[ ins->z ].integer_value ) {
+				if( locals[ ins->y ].integer_value != locals[ ins->z ].integer_value ) {
 					if( env->interrupted ) {
-						return throw_interrupt( exception, this->source );
+						return throw_interrupt( vars, this->source );
 					} else {
 						ins = &stmt->instructions[ ins->imm ];
 					}
@@ -805,9 +806,9 @@ static enum result execute_asm_statement( struct statement *this, struct variabl
 				break;
 			case JUMP_GE:
 				/* jump_ge     0 y z off : jump >e( y z ) label; */
-				if( variables[ ins->y ].integer_value >= variables[ ins->z ].integer_value ) {
+				if( locals[ ins->y ].integer_value >= locals[ ins->z ].integer_value ) {
 					if( env->interrupted ) {
-						return throw_interrupt( exception, this->source );
+						return throw_interrupt( vars, this->source );
 					} else {
 						ins = &stmt->instructions[ ins->imm ];
 					}
@@ -817,9 +818,9 @@ static enum result execute_asm_statement( struct statement *this, struct variabl
 				break;
 			case JUMP_GT:
 				/* jump_gt     0 y z off : jump >( y z ) label; */
-				if( variables[ ins->y ].integer_value > variables[ ins->z ].integer_value ) {
+				if( locals[ ins->y ].integer_value > locals[ ins->z ].integer_value ) {
 					if( env->interrupted ) {
-						return throw_interrupt( exception, this->source );
+						return throw_interrupt( vars, this->source );
 					} else {
 						ins = &stmt->instructions[ ins->imm ];
 					}
@@ -829,249 +830,249 @@ static enum result execute_asm_statement( struct statement *this, struct variabl
 				break;
 			case LETV_I:
 				/* letv_i      x 0 0 imm : let x = imm; */
-				variables[ ins->x ].integer_value = ins->imm;
+				locals[ ins->x ].integer_value = ins->imm;
 				ins++;
 				break;
 			case LETV_V:
 				/* letv_v      x y 0   0 : let x = y; */
-				variables[ ins->x ].integer_value = variables[ ins->y ].integer_value;
+				locals[ ins->x ].integer_value = locals[ ins->y ].integer_value;
 				ins++;
 				break;
 			case LETV_AI:
 				/* letv_ai     x y 0 imm : let x = [ y imm ]; */
 				if( ( unsigned int ) ins->imm < array_bounds[ ins->y ] ) {
-					variables[ ins->x ].integer_value = ( ( struct array * ) variables[ ins->y ].string_value )->integer_values[ ins->imm ];
+					locals[ ins->x ].integer_value = ( ( struct array * ) locals[ ins->y ].string_value )->integer_values[ ins->imm ];
 				} else {
-					return throw( exception, this->source, ins->imm, "Not an array or index out of bounds." );
+					return throw( vars, this->source, ins->imm, "Not an array or index out of bounds." );
 				}
 				ins++;
 				break;
 			case LETV_AV:
 				/* letv_av     x y z   0 : let x = [ y z ]; */
-				if( ( unsigned int ) variables[ ins->z ].integer_value < array_bounds[ ins->y ] ) {
-					variables[ ins->x ].integer_value = ( ( struct array * ) variables[ ins->y ].string_value )->integer_values[ variables[ ins->z ].integer_value ];
+				if( ( unsigned int ) locals[ ins->z ].integer_value < array_bounds[ ins->y ] ) {
+					locals[ ins->x ].integer_value = ( ( struct array * ) locals[ ins->y ].string_value )->integer_values[ locals[ ins->z ].integer_value ];
 				} else {
-					return throw( exception, this->source, variables[ ins->z ].integer_value, "Not an array or index out of bounds." );
+					return throw( vars, this->source, locals[ ins->z ].integer_value, "Not an array or index out of bounds." );
 				}
 				ins++;
 				break;
 			case LETV_AP:
 				/* letv_ap     x y z   0 : let x = [ y z++ ]; */
-				if( ( unsigned int ) variables[ ins->z ].integer_value < array_bounds[ ins->y ] ) {
-					variables[ ins->x ].integer_value = ( ( struct array * ) variables[ ins->y ].string_value )->integer_values[ variables[ ins->z ].integer_value++ ];
+				if( ( unsigned int ) locals[ ins->z ].integer_value < array_bounds[ ins->y ] ) {
+					locals[ ins->x ].integer_value = ( ( struct array * ) locals[ ins->y ].string_value )->integer_values[ locals[ ins->z ].integer_value++ ];
 				} else {
-					return throw( exception, this->source, variables[ ins->z ].integer_value, "Not an array or index out of bounds." );
+					return throw( vars, this->source, locals[ ins->z ].integer_value, "Not an array or index out of bounds." );
 				}
 				ins++;
 				break;
 			case LETAV_I:
 				/* letav_i     x y 0 imm : let [ x y ] = imm; */
-				if( ( unsigned int ) variables[ ins->y ].integer_value < array_bounds[ ins->x ] ) {
-					( ( struct array * ) variables[ ins->x ].string_value )->integer_values[ variables[ ins->y ].integer_value ] = ins->imm;
+				if( ( unsigned int ) locals[ ins->y ].integer_value < array_bounds[ ins->x ] ) {
+					( ( struct array * ) locals[ ins->x ].string_value )->integer_values[ locals[ ins->y ].integer_value ] = ins->imm;
 				} else {
-					return throw( exception, this->source, variables[ ins->y ].integer_value, "Not an array or index out of bounds." );
+					return throw( vars, this->source, locals[ ins->y ].integer_value, "Not an array or index out of bounds." );
 				}
 				ins++;
 				break;
 			case LETAI_V:
 				/* letai_v     x 0 z imm : let [ x imm ] = z; */
 				if( ( unsigned int ) ins->imm < array_bounds[ ins->x ] ) {
-					( ( struct array * ) variables[ ins->x ].string_value )->integer_values[ ins->imm ] = variables[ ins->z ].integer_value;
+					( ( struct array * ) locals[ ins->x ].string_value )->integer_values[ ins->imm ] = locals[ ins->z ].integer_value;
 				} else {
-					return throw( exception, this->source, ins->imm, "Not an array or index out of bounds." );
+					return throw( vars, this->source, ins->imm, "Not an array or index out of bounds." );
 				}
 				ins++;
 				break;
 			case LETAV_V:
 				/* letav_v     x y z   0 : let [ x y ] = z; */
-				if( ( unsigned int ) variables[ ins->y ].integer_value < array_bounds[ ins->x ] ) {
-					( ( struct array * ) variables[ ins->x ].string_value )->integer_values[ variables[ ins->y ].integer_value ] = variables[ ins->z ].integer_value;
+				if( ( unsigned int ) locals[ ins->y ].integer_value < array_bounds[ ins->x ] ) {
+					( ( struct array * ) locals[ ins->x ].string_value )->integer_values[ locals[ ins->y ].integer_value ] = locals[ ins->z ].integer_value;
 				} else {
-					return throw( exception, this->source, variables[ ins->y ].integer_value, "Not an array or index out of bounds." );
+					return throw( vars, this->source, locals[ ins->y ].integer_value, "Not an array or index out of bounds." );
 				}
 				ins++;
 				break;
 			case LETAP_V:
 				/* letap_v     x y z   0 : let [ x y++ ] = z; */
-				if( ( unsigned int ) variables[ ins->y ].integer_value < array_bounds[ ins->x ] ) {
-					( ( struct array * ) variables[ ins->x ].string_value )->integer_values[ variables[ ins->y ].integer_value++ ] = variables[ ins->z ].integer_value;
+				if( ( unsigned int ) locals[ ins->y ].integer_value < array_bounds[ ins->x ] ) {
+					( ( struct array * ) locals[ ins->x ].string_value )->integer_values[ locals[ ins->y ].integer_value++ ] = locals[ ins->z ].integer_value;
 				} else {
-					return throw( exception, this->source, variables[ ins->y ].integer_value, "Not an array or index out of bounds." );
+					return throw( vars, this->source, locals[ ins->y ].integer_value, "Not an array or index out of bounds." );
 				}
 				ins++;
 				break;
 			case LETV_ADD_VI:
 				/* letv_add_vi x y 0 imm : let x = +( y imm ); */
-				variables[ ins->x ].integer_value = variables[ ins->y ].integer_value + ins->imm;
+				locals[ ins->x ].integer_value = locals[ ins->y ].integer_value + ins->imm;
 				ins++;
 				break;
 			case LETV_ADD_VV:
 				/* letv_add_vv x y z   0 : let x = +( y z ); */
-				variables[ ins->x ].integer_value = variables[ ins->y ].integer_value + variables[ ins->z ].integer_value;
+				locals[ ins->x ].integer_value = locals[ ins->y ].integer_value + locals[ ins->z ].integer_value;
 				ins++;
 				break;
 			case LETV_SUB_VI:
 				/* letv_sub_vi x y 0 imm : let x = -( y imm ); */
-				variables[ ins->x ].integer_value = variables[ ins->y ].integer_value - ins->imm;
+				locals[ ins->x ].integer_value = locals[ ins->y ].integer_value - ins->imm;
 				ins++;
 				break;
 			case LETV_SUB_VV:
 				/* letv_sub_vv x y z   0 : let x = -( y z ); */
-				variables[ ins->x ].integer_value = variables[ ins->y ].integer_value - variables[ ins->z ].integer_value;
+				locals[ ins->x ].integer_value = locals[ ins->y ].integer_value - locals[ ins->z ].integer_value;
 				ins++;
 				break;
 			case LETV_MUL_VI:
 				/* letv_mul_vi x y 0 imm : let x = *( y imm ); */
-				variables[ ins->x ].integer_value = variables[ ins->y ].integer_value * ins->imm;
+				locals[ ins->x ].integer_value = locals[ ins->y ].integer_value * ins->imm;
 				ins++;
 				break;
 			case LETV_MUL_VV:
 				/* letv_mul_vv x y z   0 : let x = *( y z ); */
-				variables[ ins->x ].integer_value = variables[ ins->y ].integer_value * variables[ ins->z ].integer_value;
+				locals[ ins->x ].integer_value = locals[ ins->y ].integer_value * locals[ ins->z ].integer_value;
 				ins++;
 				break;
 			case LETV_DIV_VI:
 				/* letv_div_vi x y 0 imm : let x = /( y imm ); */
 				if( ins->imm ) {
-					variables[ ins->x ].integer_value = variables[ ins->y ].integer_value / ins->imm;
+					locals[ ins->x ].integer_value = locals[ ins->y ].integer_value / ins->imm;
 				} else {
-					return throw( exception, this->source, 0, "Integer division by zero." );
+					return throw( vars, this->source, 0, "Integer division by zero." );
 				}
 				ins++;
 				break;
 			case LETV_DIV_VV:
 				/* letv_div_vv x y z   0 : let x = /( y z ); */
-				if( variables[ ins->z ].integer_value ) {
-					variables[ ins->x ].integer_value = variables[ ins->y ].integer_value / variables[ ins->z ].integer_value;
+				if( locals[ ins->z ].integer_value ) {
+					locals[ ins->x ].integer_value = locals[ ins->y ].integer_value / locals[ ins->z ].integer_value;
 				} else {
-					return throw( exception, this->source, 0, "Integer division by zero." );
+					return throw( vars, this->source, 0, "Integer division by zero." );
 				}
 				ins++;
 				break;
 			case LETV_MOD_VI:
 				/* letv_mod_vi x y 0 imm : let x = %( y imm ); */
 				if( ins->imm ) {
-					variables[ ins->x ].integer_value = variables[ ins->y ].integer_value % ins->imm;
+					locals[ ins->x ].integer_value = locals[ ins->y ].integer_value % ins->imm;
 				} else {
-					return throw( exception, this->source, 0, "Modulo division by zero." );
+					return throw( vars, this->source, 0, "Modulo division by zero." );
 				}
 				ins++;
 				break;
 			case LETV_MOD_VV:
 				/* letv_mod_vv x y z   0 : let x = %( y z ); */
-				if( variables[ ins->z ].integer_value ) {
-					variables[ ins->x ].integer_value = variables[ ins->y ].integer_value % variables[ ins->z ].integer_value;
+				if( locals[ ins->z ].integer_value ) {
+					locals[ ins->x ].integer_value = locals[ ins->y ].integer_value % locals[ ins->z ].integer_value;
 				} else {
-					return throw( exception, this->source, 0, "Modulo division by zero." );
+					return throw( vars, this->source, 0, "Modulo division by zero." );
 				}
 				ins++;
 				break;
 			case LETV_SHL_VI:
 				/* letv_shl_vi x y 0 imm : let x = <<( y imm ); */
-				variables[ ins->x ].integer_value = variables[ ins->y ].integer_value << ins->imm;
+				locals[ ins->x ].integer_value = locals[ ins->y ].integer_value << ins->imm;
 				ins++;
 				break;
 			case LETV_SHL_VV:
 				/* letv_shl_vv x y z   0 : let x = <<( y z ); */
-				variables[ ins->x ].integer_value = variables[ ins->y ].integer_value << variables[ ins->z ].integer_value;
+				locals[ ins->x ].integer_value = locals[ ins->y ].integer_value << locals[ ins->z ].integer_value;
 				ins++;
 				break;
 			case LETV_ASR_VI:
 				/* letv_asr_vi x y 0 imm : let x = >>( y imm ); */
-				variables[ ins->x ].integer_value = variables[ ins->y ].integer_value >> ins->imm;
+				locals[ ins->x ].integer_value = locals[ ins->y ].integer_value >> ins->imm;
 				ins++;
 				break;
 			case LETV_ASR_VV:
 				/* letv_asr_vv x y z   0 : let x = >>( y z ); */
-				variables[ ins->x ].integer_value = variables[ ins->y ].integer_value >> variables[ ins->z ].integer_value;
+				locals[ ins->x ].integer_value = locals[ ins->y ].integer_value >> locals[ ins->z ].integer_value;
 				ins++;
 				break;
 			case LETV_AND_VI:
 				/* letv_and_vi x y 0 imm : let x = &( y imm ); */
-				variables[ ins->x ].integer_value = variables[ ins->y ].integer_value & ins->imm;
+				locals[ ins->x ].integer_value = locals[ ins->y ].integer_value & ins->imm;
 				ins++;
 				break;
 			case LETV_AND_VV:
 				/* letv_and_vv x y z   0 : let x = &( y z ); */
-				variables[ ins->x ].integer_value = variables[ ins->y ].integer_value & variables[ ins->z ].integer_value;
+				locals[ ins->x ].integer_value = locals[ ins->y ].integer_value & locals[ ins->z ].integer_value;
 				ins++;
 				break;
 			case LETV_OR_VI:
 				/* letv_or_vi x y 0 imm : let x = |( y imm ); */
-				variables[ ins->x ].integer_value = variables[ ins->y ].integer_value | ins->imm;
+				locals[ ins->x ].integer_value = locals[ ins->y ].integer_value | ins->imm;
 				ins++;
 				break;
 			case LETV_OR_VV:
 				/* letv_or_vv  x y z   0 : let x = |( y z ); */
-				variables[ ins->x ].integer_value = variables[ ins->y ].integer_value | variables[ ins->z ].integer_value;
+				locals[ ins->x ].integer_value = locals[ ins->y ].integer_value | locals[ ins->z ].integer_value;
 				ins++;
 				break;
 			case LETV_XOR_VI:
 				/* letv_xor_vi x y 0 imm : let x = ^( y imm ); */
-				variables[ ins->x ].integer_value = variables[ ins->y ].integer_value ^ ins->imm;
+				locals[ ins->x ].integer_value = locals[ ins->y ].integer_value ^ ins->imm;
 				ins++;
 				break;
 			case LETV_XOR_VV:
 				/* letv_xor_vv x y z   0 : let x = ^( y z ); */
-				variables[ ins->x ].integer_value = variables[ ins->y ].integer_value ^ variables[ ins->z ].integer_value;
+				locals[ ins->x ].integer_value = locals[ ins->y ].integer_value ^ locals[ ins->z ].integer_value;
 				ins++;
 				break;
 			case LETV_CHR_VI:
 				/* letv_chr_vi x y 0 imm : let x = $chr( y imm ); */
 				if( ( unsigned int ) ins->imm < string_bounds[ ins->y ] ) {
-					variables[ ins->x ].integer_value = ( signed char ) variables[ ins->y ].string_value->string[ ins->imm ];
+					locals[ ins->x ].integer_value = ( signed char ) locals[ ins->y ].string_value->string[ ins->imm ];
 				} else {
-					return throw( exception, this->source, ins->imm, "Not a string or index out of bounds." );
+					return throw( vars, this->source, ins->imm, "Not a string or index out of bounds." );
 				}
 				ins++;
 				break;
 			case LETV_CHR_VV:
 				/* letv_chr_vv x y z   0 : let x = $chr( y z ); */
-				if( ( unsigned int ) variables[ ins->z ].integer_value < string_bounds[ ins->y ] ) {
-					variables[ ins->x ].integer_value = ( signed char ) variables[ ins->y ].string_value->string[ variables[ ins->z ].integer_value ];
+				if( ( unsigned int ) locals[ ins->z ].integer_value < string_bounds[ ins->y ] ) {
+					locals[ ins->x ].integer_value = ( signed char ) locals[ ins->y ].string_value->string[ locals[ ins->z ].integer_value ];
 				} else {
-					return throw( exception, this->source, variables[ ins->z ].integer_value, "Not a string or index out of bounds." );
+					return throw( vars, this->source, locals[ ins->z ].integer_value, "Not a string or index out of bounds." );
 				}
 				ins++;
 				break;
 			case LETV_CHR_VP:
 				/* letv_chr_vp x y z   0 : let x = $chr( y z++ ); */
-				if( ( unsigned int ) variables[ ins->z ].integer_value < string_bounds[ ins->y ] ) {
-					variables[ ins->x ].integer_value = ( signed char ) variables[ ins->y ].string_value->string[ variables[ ins->z ].integer_value++ ];
+				if( ( unsigned int ) locals[ ins->z ].integer_value < string_bounds[ ins->y ] ) {
+					locals[ ins->x ].integer_value = ( signed char ) locals[ ins->y ].string_value->string[ locals[ ins->z ].integer_value++ ];
 				} else {
-					return throw( exception, this->source, variables[ ins->z ].integer_value, "Not a string or index out of bounds." );
+					return throw( vars, this->source, locals[ ins->z ].integer_value, "Not a string or index out of bounds." );
 				}
 				ins++;
 				break;
 			case LETV_UNP_VI:
 				/* letv_unp_vi x y 0 imm : let x = $unpack( y imm ); */
 				if( ( unsigned int ) ins->imm < string_bounds[ ins->y ] >> 2 ) {
-					variables[ ins->x ].integer_value = unpack( variables[ ins->y ].string_value->string, ins->imm );
+					locals[ ins->x ].integer_value = unpack( locals[ ins->y ].string_value->string, ins->imm );
 				} else {
-					return throw( exception, this->source, ins->imm, "Not a string or index out of bounds." );
+					return throw( vars, this->source, ins->imm, "Not a string or index out of bounds." );
 				}
 				ins++;
 				break;
 			case LETV_UNP_VV:
 				/* letv_unp_vv x y z   0 : let x = $unpack( y z ); */
-				if( ( unsigned int ) variables[ ins->z ].integer_value < string_bounds[ ins->y ] >> 2 ) {
-					variables[ ins->x ].integer_value = unpack( variables[ ins->y ].string_value->string, variables[ ins->z ].integer_value );
+				if( ( unsigned int ) locals[ ins->z ].integer_value < string_bounds[ ins->y ] >> 2 ) {
+					locals[ ins->x ].integer_value = unpack( locals[ ins->y ].string_value->string, locals[ ins->z ].integer_value );
 				} else {
-					return throw( exception, this->source, ins->imm, "Not a string or index out of bounds." );
+					return throw( vars, this->source, ins->imm, "Not a string or index out of bounds." );
 				}
 				ins++;
 				break;
 			case LETV_UNP_VP:
 				/* letv_unp_vp x y z   0 : let x = $unpack( y z++ ); */
-				if( ( unsigned int ) variables[ ins->z ].integer_value < string_bounds[ ins->y ] >> 2 ) {
-					variables[ ins->x ].integer_value = unpack( variables[ ins->y ].string_value->string, variables[ ins->z ].integer_value++ );
+				if( ( unsigned int ) locals[ ins->z ].integer_value < string_bounds[ ins->y ] >> 2 ) {
+					locals[ ins->x ].integer_value = unpack( locals[ ins->y ].string_value->string, locals[ ins->z ].integer_value++ );
 				} else {
-					return throw( exception, this->source, ins->imm, "Not a string or index out of bounds." );
+					return throw( vars, this->source, ins->imm, "Not a string or index out of bounds." );
 				}
 				ins++;
 				break;
 			default:
-				return throw( exception, this->source, ins->opcode, "Illegal instruction." );
+				return throw( vars, this->source, ins->opcode, "Illegal instruction." );
 		}
 	}
 }
