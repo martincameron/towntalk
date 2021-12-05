@@ -404,9 +404,11 @@ function testcat() {
 }
 
 function testchr() {
-	var idx;
+	var idx, chr = "\377";
 	call assert_equals( 126, $chr( "~" 0 ), ${-} );
-	call assert_equals( -1, $chr( "\377" idx++ ), ${-} );
+	call assert_equals( -1, $chr( chr idx ), ${-} );
+	call assert_equals( 0, idx, ${-} );
+	call assert_equals( -1, $chr( chr idx++ ), ${-} );
 	call assert_equals( 1, idx, ${-} );
 	call assert_throws( "1", ${ () { call $chr( except( ${ 1 } ) 0 ); } } );
 	call assert_throws( "1", ${ () { call $chr( "" except( ${ 1 } ) ); } } );

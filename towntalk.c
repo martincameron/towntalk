@@ -1616,29 +1616,37 @@ static enum result execute_dim_statement( struct statement *this,
 static enum result execute_array_assignment( struct statement *this,
 	struct variables *vars, struct variable *result ) {
 	struct array *arr;
-	struct variable dest = { 0, NULL }, idx = { 0, NULL }, var = { 0, NULL };
-	enum result ret = this->destination->evaluate( this->destination, vars, &dest );
+	enum result ret = OKAY;
+	struct variable dest = { 0, NULL }, idx = { 0, NULL }, src = { 0, NULL };
+	struct expression *dest_expr = this->destination, *idx_expr = this->index, *src_expr = this->source;
+	if( dest_expr->evaluate == evaluate_local ) {
+		arr = ( struct array * ) vars->locals[ dest_expr->index ].string_value;
+	} else {
+		ret = dest_expr->evaluate( dest_expr, vars, &dest );
+		arr = ( struct array * ) dest.string_value;
+	}
 	if( ret ) {
-		if( dest.string_value && dest.string_value->type == ARRAY ) {
-			if( this->index->evaluate == evaluate_local ) {
-				idx.integer_value = vars->locals[ this->index->index ].integer_value;
+		if( arr && arr->str.type == ARRAY ) {
+			if( idx_expr->evaluate == evaluate_local ) {
+				idx.integer_value = vars->locals[ idx_expr->index ].integer_value;
+			} else if( idx_expr->evaluate == evaluate_local_post_inc ) {
+				idx.integer_value = vars->locals[ idx_expr->index ].integer_value++;
 			} else {
-				ret = this->index->evaluate( this->index, vars, &idx );
+				ret = idx_expr->evaluate( idx_expr, vars, &idx );
 				dispose_temporary( &idx );
 			}
 			if( ret ) {
-				arr = ( struct array * ) dest.string_value;
 				if( ( unsigned int ) idx.integer_value < ( unsigned int ) arr->length ) {
-					ret = this->source->evaluate( this->source, vars, &var );
+					ret = src_expr->evaluate( src_expr, vars, &src );
 					if( ret ) {
-						arr->integer_values[ idx.integer_value ] = var.integer_value;
+						arr->integer_values[ idx.integer_value ] = src.integer_value;
 						if( arr->string_values ) {
 							if( arr->string_values[ idx.integer_value ] ) {
 								unref_string( arr->string_values[ idx.integer_value ] );
 							}
-							arr->string_values[ idx.integer_value ] = var.string_value;
+							arr->string_values[ idx.integer_value ] = src.string_value;
 						} else {
-							dispose_temporary( &var );
+							dispose_temporary( &src );
 						}
 					}
 				} else {
@@ -1984,21 +1992,28 @@ static enum result evaluate_array_expression( struct expression *this,
 
 static enum result evaluate_index_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
-	struct expression *parameter = this->parameters;
 	struct array *arr;
+	enum result ret = OKAY;
+	struct expression *parameter = this->parameters;
 	struct variable src = { 0, NULL }, idx = { 0, NULL };
-	enum result ret = parameter->evaluate( parameter, vars, &src );
+	if( parameter->evaluate == evaluate_local ) {
+		arr = ( struct array * ) vars->locals[ parameter->index ].string_value;
+	} else {
+		ret = parameter->evaluate( parameter, vars, &src );
+		arr = ( struct array * ) src.string_value;
+	}
 	if( ret ) {
-		if( src.string_value && src.string_value->type == ARRAY ) {
+		if( arr && arr->str.type == ARRAY ) {
 			parameter = parameter->next;
 			if( parameter->evaluate == evaluate_local ) {
 				idx.integer_value = vars->locals[ parameter->index ].integer_value;
+			} else if( parameter->evaluate == evaluate_local_post_inc ) {
+				idx.integer_value = vars->locals[ parameter->index ].integer_value++;
 			} else {
 				ret = parameter->evaluate( parameter, vars, &idx );
 				dispose_temporary( &idx );
 			}
 			if( ret ) {
-				arr = ( struct array * ) src.string_value;
 				if( ( unsigned int ) idx.integer_value < ( unsigned int ) arr->length ) {
 					result->integer_value = arr->integer_values[ idx.integer_value ];
 					if( arr->string_values && arr->string_values[ idx.integer_value ] ) {
@@ -2578,20 +2593,30 @@ static enum result evaluate_cmp_expression( struct expression *this,
 
 static enum result evaluate_chr_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
-	struct expression *parameters = this->parameters;
-	struct variable str = { 0, NULL }, idx = { 0, NULL };
-	enum result ret = parameters->evaluate( parameters, vars, &str );
+	struct string *str;
+	enum result ret = OKAY;
+	struct expression *parameter = this->parameters;
+	struct variable src = { 0, NULL }, idx = { 0, NULL };
+	if( parameter->evaluate == evaluate_local ) {
+		str = vars->locals[ parameter->index ].string_value;
+	} else {
+		ret = parameter->evaluate( parameter, vars, &src );
+		str = src.string_value;
+	}
 	if( ret ) {
-		if( parameters->next->evaluate == evaluate_local ) {
-			idx.integer_value = vars->locals[ parameters->next->index ].integer_value;
+		parameter = parameter->next;
+		if( parameter->evaluate == evaluate_local ) {
+			idx.integer_value = vars->locals[ parameter->index ].integer_value;
+		} else if( parameter->evaluate == evaluate_local_post_inc ) {
+			idx.integer_value = vars->locals[ parameter->index ].integer_value++;
 		} else {
-			ret = parameters->next->evaluate( parameters->next, vars, &idx );
+			ret = parameter->evaluate( parameter, vars, &idx );
 			dispose_temporary( &idx );
 		}
 		if( ret ) {
-			if( str.string_value ) {
-				if( ( unsigned int ) idx.integer_value < ( unsigned int ) str.string_value->length ) {
-					result->integer_value = ( signed char ) str.string_value->string[ idx.integer_value ];
+			if( str ) {
+				if( ( unsigned int ) idx.integer_value < ( unsigned int ) str->length ) {
+					result->integer_value = ( signed char ) str->string[ idx.integer_value ];
 				} else {
 					ret = throw( vars, this, idx.integer_value, "String index out of bounds." );
 				}
@@ -2599,7 +2624,7 @@ static enum result evaluate_chr_expression( struct expression *this,
 				ret = throw( vars, this, 0, "Not a string." );
 			}
 		}
-		dispose_temporary( &str );
+		dispose_temporary( &src );
 	}
 	return ret;
 }
