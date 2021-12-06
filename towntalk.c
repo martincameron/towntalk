@@ -2474,19 +2474,27 @@ static enum result evaluate_asc_expression( struct expression *this,
 
 static enum result evaluate_len_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
-	struct variable len = { 0, NULL };
-	enum result ret = this->parameters->evaluate( this->parameters, vars, &len );
+	struct expression *parameter = this->parameters;
+	struct variable var = { 0, NULL };
+	enum result ret = OKAY;
+	struct string *str;
+	if( parameter->evaluate == evaluate_local ) {
+		str = vars->locals[ parameter->index ].string_value;
+	} else {
+		ret = this->parameters->evaluate( this->parameters, vars, &var );
+		str = var.string_value;
+	}
 	if( ret ) {
-		if( len.string_value ) {
-			if( len.string_value->type == ARRAY ) {
-				result->integer_value = ( ( struct array * ) len.string_value )->length;
+		if( str ) {
+			if( str->type == ARRAY ) {
+				result->integer_value = ( ( struct array * ) str )->length;
 			} else {
-				result->integer_value = len.string_value->length;
+				result->integer_value = str->length;
 			}
 		} else {
 			ret = throw( vars, this, 0, "Not a string or array." );
 		}
-		dispose_temporary( &len );
+		dispose_temporary( &var );
 	}
 	return ret;
 }
