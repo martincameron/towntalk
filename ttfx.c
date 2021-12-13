@@ -1093,7 +1093,7 @@ static struct element* parse_display_statement( struct element *elem, struct env
 static struct element* parse_show_statement( struct element *elem, struct environment *env,
 	struct function *func, struct statement *prev, char *message ) {
 	struct element *next = elem->next;
-	struct statement *stmt = new_statement( message );
+	struct statement *stmt = calloc( 1, sizeof( struct statement ) );
 	if( stmt ) {
 		stmt->source = calloc( 1, sizeof( struct expression ) );
 		if( stmt->source ) {
@@ -1105,6 +1105,8 @@ static struct element* parse_show_statement( struct element *elem, struct enviro
 		} else {
 			strcpy( message, OUT_OF_MEMORY );
 		}
+	} else {
+		strcpy( message, OUT_OF_MEMORY );
 	}
 	return next;
 }

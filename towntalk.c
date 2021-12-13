@@ -175,6 +175,21 @@
 		$buffer(len)             Create a numerical array that may be passed to workers.
 */
 
+struct global_assignment_statement {
+	struct statement stmt;
+	struct variable *destination;
+};
+
+struct array_assignment_statement {
+	struct statement stmt;
+	struct expression *index;
+};
+
+struct block_statement {
+	struct statement stmt;
+	struct statement *if_block, *else_block;
+};
+
 /* The maximum integer value. */
 const int MAX_INTEGER = ( 1 << ( sizeof( int ) * 8 - 1 ) ) - 1u;
 
@@ -751,10 +766,11 @@ static void dispose_statements( struct statement *statements ) {
 		next = statements->next;
 		dispose_expressions( statements->source );
 		dispose_expressions( statements->destination );
-		dispose_expressions( statements->index );
-		dispose_statements( statements->if_block );
-		dispose_statements( statements->else_block );
-		free( statements );
+		if( statements->dispose ) {
+			statements->dispose( statements );
+		} else {
+			free( statements );
+		}
 		statements = next;
 	}
 }
@@ -1209,15 +1225,6 @@ static struct global_variable* new_array_variable( struct environment *env,
 	return global;
 }
 
-/* Allocate and return a new statement. Returns NULL and writes message on failure. */
-struct statement* new_statement( char *message ) {
-	struct statement *stmt = calloc( 1, sizeof( struct statement ) );
-	if( stmt == NULL ) {
-		strcpy( message, OUT_OF_MEMORY );
-	}
-	return stmt;
-}
-
 static int add_constant( struct environment *env, struct global_variable *constant ) {
 	int idx;
 	struct string_list *name = new_string_list( constant->name );
@@ -1320,7 +1327,7 @@ static enum result evaluate_global( struct expression *this,
 
 static enum result execute_global_assignment( struct statement *this,
 	struct variables *vars, struct variable *result ) {
-	struct variable var = { 0 }, *dest = this->global;
+	struct variable var = { 0 }, *dest = ( ( struct global_assignment_statement * ) this )->destination;
 	enum result ret = this->source->evaluate( this->source, vars, &var );
 	if( ret ) {
 		dispose_temporary( dest );
@@ -1431,11 +1438,17 @@ static enum result execute_continue_statement( struct statement *this,
 	return CONTINUE;
 }
 
+static void dispose_block_statement( struct statement *this ) {
+	dispose_statements( ( ( struct block_statement * ) this )->if_block );
+	dispose_statements( ( ( struct block_statement * ) this )->else_block );
+	free( this );
+}
+
 static enum result execute_try_statement( struct statement *this,
 	struct variables *vars, struct variable *result ) {
 	enum result ret = OKAY;
 	struct variables try_vars;
-	struct statement *stmt = this->if_block;
+	struct statement *stmt = ( ( struct block_statement * ) this )->if_block;
 	try_vars.locals = vars->locals;
 	try_vars.exception = &vars->locals[ this->local ];
 	while( stmt ) {
@@ -1451,7 +1464,7 @@ static enum result execute_try_statement( struct statement *this,
 			assign_variable( try_vars.exception, vars->exception );
 		} else {
 			ret = OKAY;
-			stmt = this->else_block;
+			stmt = ( ( struct block_statement * ) this )->else_block;
 			while( stmt ) {
 				ret = stmt->execute( stmt, vars, result );
 				if( ret == OKAY ) {
@@ -1468,11 +1481,11 @@ static enum result execute_try_statement( struct statement *this,
 static enum result execute_if_statement( struct statement *this,
 	struct variables *vars, struct variable *result ) {
 	struct variable condition = { 0, NULL };
-	struct statement *stmt = this->else_block;
+	struct statement *stmt = ( ( struct block_statement * ) this )->else_block;
 	enum result ret = this->source->evaluate( this->source, vars, &condition );
 	if( ret ) {
 		if( condition.integer_value || condition.string_value ) {
-			stmt = this->if_block;
+			stmt = ( ( struct block_statement * ) this )->if_block;
 		}
 		dispose_temporary( &condition );
 		while( stmt ) {
@@ -1489,7 +1502,7 @@ static enum result execute_if_statement( struct statement *this,
 
 static enum result execute_lock_statement( struct statement *this,
 	struct variables *vars, struct variable *result ) {
-	struct statement *stmt = this->if_block;
+	struct statement *stmt = ( ( struct block_statement * ) this )->if_block;
 	struct variable var = { 0, NULL };
 	struct worker *work;
 	char lock;
@@ -1543,7 +1556,7 @@ static enum result execute_while_statement( struct statement *this,
 			break;
 		}
 		if( condition.integer_value || condition.string_value ) {
-			stmt = this->if_block;
+			stmt = ( ( struct block_statement * ) this )->if_block;
 			while( stmt ) {
 				ret = stmt->execute( stmt, vars, result );
 				if( ret == OKAY ) {
@@ -1618,7 +1631,8 @@ static enum result execute_array_assignment( struct statement *this,
 	struct array *arr;
 	enum result ret = OKAY;
 	struct variable dest = { 0, NULL }, idx = { 0, NULL }, src = { 0, NULL };
-	struct expression *dest_expr = this->destination, *idx_expr = this->index, *src_expr = this->source;
+	struct expression *src_expr = this->source, *dest_expr = this->destination;
+	struct expression *idx_expr = ( ( struct array_assignment_statement * ) this )->index;
 	if( dest_expr->evaluate == evaluate_local ) {
 		arr = ( struct array * ) vars->locals[ dest_expr->index ].string_value;
 	} else {
@@ -1650,7 +1664,7 @@ static enum result execute_array_assignment( struct statement *this,
 						}
 					}
 				} else {
-					ret = throw( vars, this->index, idx.integer_value, "Array index out of bounds." );
+					ret = throw( vars, idx_expr, idx.integer_value, "Array index out of bounds." );
 				}
 			}
 		} else {
@@ -1659,6 +1673,11 @@ static enum result execute_array_assignment( struct statement *this,
 		dispose_temporary( &dest );
 	}
 	return ret;
+}
+
+static void dispose_array_assignment( struct statement *this ) {
+	dispose_expressions( ( ( struct array_assignment_statement * ) this )->index );
+	free( this );
 }
 
 static enum result execute_struct_assignment( struct statement *this,
@@ -1715,27 +1734,28 @@ static enum result execute_switch_statement( struct statement *this,
 	struct variables *vars, struct variable *result ) {
 	int matched = 0;
 	struct expression *case_expr;
-	struct statement *stmt = this->if_block;
 	struct variable switch_value = { 0, NULL }, case_value = { 0, NULL };
+	struct statement *cases = ( ( struct block_statement * ) this )->if_block;
+	struct statement *deflt = ( ( struct block_statement * ) this )->else_block;
 	enum result ret = this->source->evaluate( this->source, vars, &switch_value );
 	if( ret ) {
-		while( stmt && ret && !matched ) {
-			case_expr = stmt->source;
+		while( cases && ret && !matched ) {
+			case_expr = cases->source;
 			while( case_expr && ret && !matched ) {
 				ret = case_expr->evaluate( case_expr, vars, &case_value );
 				if( ret ) {
 					matched = compare_variables( &switch_value, &case_value ) == 0;
 					dispose_variable( &case_value );
 					if( matched ) {
-						ret = stmt->execute( stmt, vars, result );
+						ret = cases->execute( cases, vars, result );
 					}
 				}
 				case_expr = case_expr->next;
 			}
-			stmt = stmt->next;
+			cases = cases->next;
 		}
-		if( ret && !matched && this->else_block ) {
-			ret = this->else_block->execute( this->else_block, vars, result );
+		if( ret && !matched && deflt ) {
+			ret = deflt->execute( deflt, vars, result );
 		}
 		dispose_temporary( &switch_value );
 	}
@@ -1744,7 +1764,7 @@ static enum result execute_switch_statement( struct statement *this,
 
 static enum result execute_case_statement( struct statement *this,
 	struct variables *vars, struct variable *result ) {
-	struct statement *stmt = this->if_block;
+	struct statement *stmt = ( ( struct block_statement * ) this )->if_block;
 	enum result ret = OKAY;
 	while( stmt ) {
 		ret = stmt->execute( stmt, vars, result );
@@ -2129,12 +2149,14 @@ static int add_local_variable( struct element *elem, struct environment *env,
 			}
 			func->variable_decls_tail = param;
 			if( initializer ) {
-				stmt = new_statement( message );
+				stmt = calloc( 1, sizeof( struct statement ) );
 				if( stmt ) {
 					prev->next = stmt;
 					stmt->source = initializer;
 					stmt->local = func->num_variables - 1;
 					stmt->execute = execute_local_assignment;
+				} else {
+					strcpy( message, OUT_OF_MEMORY );
 				}
 			}
 		} else {
@@ -3724,7 +3746,7 @@ static struct element* parse_increment_statement( struct element *elem, struct e
 	struct function *func, struct statement *prev, char *message ) {
 	struct local_variable *local;
 	struct element *next = elem->next;
-	struct statement *stmt = new_statement( message );
+	struct statement *stmt = calloc( 1, sizeof( struct statement ) );
 	if( stmt ) {
 		prev->next = stmt;
 		local = get_local_variable( func->variable_decls, next->str.string, "" );
@@ -3742,6 +3764,8 @@ static struct element* parse_increment_statement( struct element *elem, struct e
 		} else {
 			sprintf( message, "Undeclared local variable '%.64s' on line %d.", next->str.string, next->line );
 		}
+	} else {
+		strcpy( message, OUT_OF_MEMORY );
 	}
 	return next;
 }
@@ -3750,7 +3774,7 @@ static struct element* parse_decrement_statement( struct element *elem, struct e
 	struct function *func, struct statement *prev, char *message ) {
 	struct local_variable *local;
 	struct element *next = elem->next;
-	struct statement *stmt = new_statement( message );
+	struct statement *stmt = calloc( 1, sizeof( struct statement ) );
 	if( stmt ) {
 		prev->next = stmt;
 		local = get_local_variable( func->variable_decls, next->str.string, "" );
@@ -3768,6 +3792,8 @@ static struct element* parse_decrement_statement( struct element *elem, struct e
 		} else {
 			sprintf( message, "Undeclared local variable '%.64s' on line %d.", next->str.string, next->line );
 		}
+	} else {
+		strcpy( message, OUT_OF_MEMORY );
 	}
 	return next;
 }
@@ -3776,7 +3802,7 @@ static struct element* parse_save_statement( struct element *elem, struct enviro
 	struct function *func, struct statement *prev, char *message ) {
 	struct expression expr;
 	struct element *next = elem->next;
-	struct statement *stmt = new_statement( message );
+	struct statement *stmt = calloc( 1, sizeof( struct statement ) );
 	if( stmt ) {
 		prev->next = stmt;
 		expr.next = NULL;
@@ -3794,6 +3820,8 @@ static struct element* parse_save_statement( struct element *elem, struct enviro
 				next = next->next;
 			}
 		}
+	} else {
+		strcpy( message, OUT_OF_MEMORY );
 	}
 	return next;
 }
@@ -3811,8 +3839,9 @@ static struct element* parse_array_assignment( struct element *elem, struct envi
 	struct function *func, struct statement *prev, char *message ) {
 	struct expression expr;
 	struct element *next = elem->next, *child = next->child;
-	struct statement *stmt = new_statement( message );
+	struct statement *stmt = calloc( 1, sizeof( struct array_assignment_statement ) );
 	if( stmt ) {
+		stmt->dispose = dispose_array_assignment;
 		prev->next = stmt;
 		expr.next = NULL;
 		child = parse_expression( child, env, func, &expr, message );
@@ -3824,7 +3853,7 @@ static struct element* parse_array_assignment( struct element *elem, struct envi
 			expr.next = NULL;
 			child = parse_expression( child, env, func, &expr, message );
 			if( expr.next ) {
-				stmt->index = expr.next;
+				( ( struct array_assignment_statement * ) stmt )->index = expr.next;
 				expr.next = NULL;
 				next = parse_expression( next->next->next, env, func, &expr, message );
 				if( expr.next ) {
@@ -3834,6 +3863,8 @@ static struct element* parse_array_assignment( struct element *elem, struct envi
 				}
 			}
 		}
+	} else {
+		strcpy( message, OUT_OF_MEMORY );
 	}
 	return next;
 }
@@ -3845,7 +3876,7 @@ static struct element* parse_struct_assignment( struct element *elem, struct env
 	struct expression expr;
 	struct structure *struc;
 	struct element *next = elem->next, *child = next->child;
-	struct statement *stmt = new_statement( message );
+	struct statement *stmt = calloc( 1, sizeof( struct statement ) );
 	if( stmt ) {
 		prev->next = stmt;
 		struc = get_structure_indexed( env->structures_index, next->str.string );
@@ -3877,6 +3908,8 @@ static struct element* parse_struct_assignment( struct element *elem, struct env
 		} else {
 			sprintf( message, "Undeclared structure or field '%.64s' on line %d.", next->str.string, next->line );
 		}
+	} else {
+		strcpy( message, OUT_OF_MEMORY );
 	}
 	return next;
 }
@@ -3888,7 +3921,7 @@ static struct element* parse_local_assignment( struct element *elem, struct envi
 	struct element *next = elem->next;
 	struct structure *struc = local->type;
 	char *field = strchr( next->str.string, '.' );
-	struct statement *stmt = new_statement( message );
+	struct statement *stmt = calloc( 1, sizeof( struct statement ) );
 	if( stmt ) {
 		prev->next = stmt;
 		expr.next = NULL;
@@ -3921,6 +3954,8 @@ static struct element* parse_local_assignment( struct element *elem, struct envi
 				next = next->next;
 			}
 		}
+	} else {
+		strcpy( message, OUT_OF_MEMORY );
 	}
 	return next;
 }
@@ -3932,7 +3967,7 @@ static struct element* parse_global_assignment( struct element *elem, struct env
 	struct element *next = elem->next;
 	struct structure *struc = global->type;
 	char *field = strchr( next->str.string, '.' );
-	struct statement *stmt = new_statement( message );
+	struct statement *stmt = calloc( 1, sizeof( struct global_assignment_statement ) );
 	if( stmt ) {
 		prev->next = stmt;
 		expr.next = NULL;
@@ -3960,11 +3995,13 @@ static struct element* parse_global_assignment( struct element *elem, struct env
 			} else if( field ) {
 				sprintf( message, "Variable '%.64s' has no associated structure on line %d.", global->name, elem->line );
 			} else {
-				stmt->global = &global->value;
+				( ( struct global_assignment_statement * ) stmt )->destination = &global->value;
 				stmt->execute = execute_global_assignment;
 				next = next->next;
 			}
 		}
+	} else {
+		strcpy( message, OUT_OF_MEMORY );
 	}
 	return next;
 }
@@ -4001,7 +4038,7 @@ struct element* parse_expr_list_statement( struct element *elem, struct environm
 	char *message ) {
 	struct expression head, *expr;
 	struct element *next = elem->next;
-	struct statement *stmt = new_statement( message );
+	struct statement *stmt = calloc( 1, sizeof( struct statement ) );
 	if( stmt ) {
 		prev->next = stmt;
 		head.next = NULL;
@@ -4018,6 +4055,8 @@ struct element* parse_expr_list_statement( struct element *elem, struct environm
 			stmt->execute = execute;
 			next = next->next;
 		}
+	} else {
+		strcpy( message, OUT_OF_MEMORY );
 	}
 	return next;
 }
@@ -4055,11 +4094,13 @@ static struct element* parse_exit_statement( struct element *elem, struct enviro
 static struct element* parse_break_statement( struct element *elem, struct environment *env,
 	struct function *func, struct statement *prev, char *message ) {
 	struct element *next = elem->next;
-	struct statement *stmt = new_statement( message );
+	struct statement *stmt = calloc( 1, sizeof( struct statement ) );
 	if( stmt ) {
 		stmt->execute = execute_break_statement;
 		prev->next = stmt;
 		next = next->next;
+	} else {
+		strcpy( message, OUT_OF_MEMORY );
 	}
 	return next;
 }
@@ -4067,11 +4108,13 @@ static struct element* parse_break_statement( struct element *elem, struct envir
 static struct element* parse_continue_statement( struct element *elem, struct environment *env,
 	struct function *func, struct statement *prev, char *message ) {
 	struct element *next = elem->next;
-	struct statement *stmt = new_statement( message );
+	struct statement *stmt = calloc( 1, sizeof( struct statement ) );
 	if( stmt ) {
 		stmt->execute = execute_continue_statement;
 		prev->next = stmt;
 		next = next->next;
+	} else {
+		strcpy( message, OUT_OF_MEMORY );
 	}
 	return next;
 }
@@ -4085,7 +4128,7 @@ static struct element* parse_dim_statement( struct element *elem, struct environ
 	struct function *func, struct statement *prev, char *message ) {
 	struct expression expr;
 	struct element *next = elem->next, *child = next->child;
-	struct statement *stmt = new_statement( message );
+	struct statement *stmt = calloc( 1, sizeof( struct statement ) );
 	if( stmt ) {
 		prev->next = stmt;
 		expr.next = NULL;
@@ -4103,6 +4146,8 @@ static struct element* parse_dim_statement( struct element *elem, struct environ
 			}
 			stmt->execute = execute_dim_statement;
 		}
+	} else {
+		strcpy( message, OUT_OF_MEMORY );
 	}
 	return next;
 }
@@ -4111,20 +4156,23 @@ static struct element* parse_case_statement( struct element *elem, struct enviro
 	struct function *func, struct statement *prev, char *message ) {
 	struct expression expr;
 	struct element *next = elem->next;
-	struct statement block, *stmt = new_statement( message );
+	struct statement block, *stmt = calloc( 1, sizeof( struct block_statement ) );
 	if( stmt ) {
+		stmt->dispose = dispose_block_statement;
 		prev->next = stmt;
 		next = parse_expressions( next, env, func, '{', &expr, NULL, message );
 		stmt->source = expr.next;
 		if( message[ 0 ] == 0 ) {
 			block.next = NULL;
 			parse_keywords_indexed( env->statements_index, next->child, env, func, &block, message );
-			stmt->if_block = block.next;
+			( ( struct block_statement * ) stmt )->if_block = block.next;
 			if( message[ 0 ] == 0 ) {
 				stmt->execute = execute_case_statement;
 				next = next->next;
 			}
 		}
+	} else {
+		strcpy( message, OUT_OF_MEMORY );
 	}
 	return next;
 }
@@ -4132,16 +4180,19 @@ static struct element* parse_case_statement( struct element *elem, struct enviro
 static struct element* parse_default_statement( struct element *elem, struct environment *env,
 	struct function *func, struct statement *prev, char *message ) {
 	struct element *next = elem->next;
-	struct statement block, *stmt = new_statement( message );
+	struct statement block, *stmt = calloc( 1, sizeof( struct block_statement ) );
 	if( stmt ) {
+		stmt->dispose = dispose_block_statement;
 		prev->next = stmt;
 		block.next = NULL;
 		parse_keywords_indexed( env->statements_index, next->child, env, func, &block, message );
-		stmt->if_block = block.next;
+		( ( struct block_statement * ) stmt )->if_block = block.next;
 		if( message[ 0 ] == 0 ) {
 			stmt->execute = execute_case_statement;
 			next = next->next;
 		}
+	} else {
+		strcpy( message, OUT_OF_MEMORY );
 	}
 	return elem->next->next;
 }
@@ -4156,18 +4207,19 @@ static struct element* parse_switch_statement( struct element *elem, struct envi
 	struct function *func, struct statement *prev, char *message ) {
 	struct expression expr;
 	struct element *next = elem->next;
-	struct statement *stmt = new_statement( message ), block, *cas, *def;
+	struct statement block, *cas, *def;
+	struct block_statement *stmt = calloc( 1, sizeof( struct block_statement ) );
 	if( stmt ) {
-		prev->next = stmt;
+		stmt->stmt.dispose = dispose_block_statement;
+		prev->next = &stmt->stmt;
 		expr.next = NULL;
 		next = parse_expression( next, env, func, &expr, message );
 		if( expr.next ) {
-			stmt->source = expr.next;
+			stmt->stmt.source = expr.next;
 			block.next = NULL;
 			parse_keywords( switch_stmts, next->child, env, func, &block, message );
-			stmt->if_block = block.next;
 			if( message[ 0 ] == 0 ) {
-				stmt->if_block = cas = def = NULL;
+				cas = def = NULL;
 				while( block.next ) {
 					if( block.next->source ) {
 						if( cas ) {
@@ -4191,12 +4243,16 @@ static struct element* parse_switch_statement( struct element *elem, struct envi
 				}
 				if( stmt->else_block == NULL || stmt->else_block->next == NULL ) {
 					next = next->next;
-					stmt->execute = execute_switch_statement;
+					stmt->stmt.execute = execute_switch_statement;
 				} else {
 					sprintf( message, "Duplicate default block in switch statement on line %d.", elem->line );
 				}
+			} else {
+				dispose_statements( block.next );
 			}
 		}
+	} else {
+		strcpy( message, OUT_OF_MEMORY );
 	}
 	return next;
 }
@@ -4205,8 +4261,9 @@ static struct element* parse_lock_statement( struct element *elem, struct enviro
 	struct function *func, struct statement *prev, char *message ) {
 	struct expression expr;
 	struct element *next = elem->next;
-	struct statement block, *stmt = new_statement( message );
+	struct statement block, *stmt = calloc( 1, sizeof( struct block_statement ) );
 	if( stmt ) {
+		stmt->dispose = dispose_block_statement;
 		prev->next = stmt;
 		if( next->str.string[ 0 ] == '{' ) {
 			expr.next = calloc( 1, sizeof( struct expression ) );
@@ -4227,12 +4284,14 @@ static struct element* parse_lock_statement( struct element *elem, struct enviro
 			if( next->child ) {
 				block.next = NULL;
 				parse_keywords_indexed( env->statements_index, next->child, env, func, &block, message );
-				stmt->if_block = block.next;
+				( ( struct block_statement * ) stmt )->if_block = block.next;
 			}
 			if( message[ 0 ] == 0 ) {
 				next = next->next;
 			}
 		}
+	} else {
+		strcpy( message, OUT_OF_MEMORY );
 	}
 	return next;
 }
@@ -4434,8 +4493,9 @@ static struct element* parse_if_statement( struct element *elem, struct environm
 	struct function *func, struct statement *prev, char *message ) {
 	struct expression expr;
 	struct element *next = elem->next;
-	struct statement block, *stmt = new_statement( message );
+	struct statement block, *stmt = calloc( 1, sizeof( struct block_statement ) );
 	if( stmt ) {
+		stmt->dispose = dispose_block_statement;
 		prev->next = stmt;
 		expr.next = NULL;
 		next = parse_expression( next, env, func, &expr, message );
@@ -4445,7 +4505,7 @@ static struct element* parse_if_statement( struct element *elem, struct environm
 			if( next->child ) {
 				block.next = NULL;
 				parse_keywords_indexed( env->statements_index, next->child, env, func, &block, message );
-				stmt->if_block = block.next;
+				( ( struct block_statement * ) stmt )->if_block = block.next;
 			}
 			if( message[ 0 ] == 0 ) {
 				next = next->next;
@@ -4455,7 +4515,7 @@ static struct element* parse_if_statement( struct element *elem, struct environm
 						if( next->child ) {
 							block.next = NULL;
 							parse_keywords_indexed( env->statements_index, next->child, env, func, &block, message );
-							stmt->else_block = block.next;
+							( ( struct block_statement * ) stmt )->else_block = block.next;
 						}
 						if( message[ 0 ] == 0 ) {
 							next = next->next;
@@ -4466,6 +4526,8 @@ static struct element* parse_if_statement( struct element *elem, struct environm
 				}
 			}
 		}
+	} else {
+		strcpy( message, OUT_OF_MEMORY );
 	}
 	return next;
 }
@@ -4474,8 +4536,9 @@ static struct element* parse_while_statement( struct element *elem, struct envir
 	struct function *func, struct statement *prev, char *message ) {
 	struct expression expr;
 	struct element *next = elem->next;
-	struct statement block, *stmt = new_statement( message );
+	struct statement block, *stmt = calloc( 1, sizeof( struct block_statement ) );
 	if( stmt ) {
+		stmt->dispose = dispose_block_statement;
 		prev->next = stmt;
 		expr.next = NULL;
 		next = parse_expression( next, env, func, &expr, message );
@@ -4484,7 +4547,7 @@ static struct element* parse_while_statement( struct element *elem, struct envir
 			if( next->child ) {
 				block.next = NULL;
 				parse_keywords_indexed( env->statements_index, next->child, env, func, &block, message );
-				stmt->if_block = block.next;
+				( ( struct block_statement * ) stmt )->if_block = block.next;
 			}
 			if( message[ 0 ] == 0 ) {
 				next = next->next;
@@ -4496,6 +4559,8 @@ static struct element* parse_while_statement( struct element *elem, struct envir
 			}
 			stmt->execute = execute_while_statement;
 		}
+	} else {
+		strcpy( message, OUT_OF_MEMORY );
 	}
 	return next;
 }
@@ -4503,14 +4568,15 @@ static struct element* parse_while_statement( struct element *elem, struct envir
 static struct element* parse_try_statement( struct element *elem, struct environment *env,
 	struct function *func, struct statement *prev, char *message ) {
 	struct local_variable *local;
-	struct statement block, *stmt;
 	struct element *next = elem->next;
-	stmt = new_statement( message );
+	struct statement block, *stmt = calloc( 1, sizeof( struct block_statement ) );
 	if( stmt ) {
+		stmt->dispose = dispose_block_statement;
+		prev->next = stmt;
 		if( next->child ) {
 			block.next = NULL;
 			parse_keywords_indexed( env->statements_index, next->child, env, func, &block, message );
-			stmt->if_block = block.next;
+			( ( struct block_statement * ) stmt )->if_block = block.next;
 		}
 		if( message[ 0 ] == 0 ) {
 			next = next->next->next;
@@ -4521,7 +4587,7 @@ static struct element* parse_try_statement( struct element *elem, struct environ
 				if( next->child ) {
 					block.next = NULL;
 					parse_keywords_indexed( env->statements_index, next->child, env, func, &block, message );
-					stmt->else_block = block.next;
+					( ( struct block_statement * ) stmt )->else_block = block.next;
 				}
 				if( message[ 0 ] == 0 ) {
 					next = next->next;
@@ -4531,7 +4597,8 @@ static struct element* parse_try_statement( struct element *elem, struct environ
 				sprintf( message, "Undeclared local variable '%.64s' on line %d.", next->str.string, next->line );
 			}
 		}
-		prev->next = stmt;
+	} else {
+		strcpy( message, OUT_OF_MEMORY );
 	}
 	return next;
 }

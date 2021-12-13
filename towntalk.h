@@ -142,11 +142,11 @@ struct expression {
 /* Statement list. */
 struct statement {
 	int local;
-	struct variable *global;
-	struct expression *source, *destination, *index;
-	struct statement *if_block, *else_block, *next;
+	struct expression *source, *destination;
 	enum result ( *execute )( struct statement *this,
 		struct variables *vars, struct variable *result );
+	void ( *dispose )( struct statement *this );
+	struct statement *next;
 };
 
 /* Parser keyword. */
@@ -222,9 +222,6 @@ struct element* parse_expr_list_statement( struct element *elem, struct environm
 	struct function *func, struct statement *prev,
 	enum result ( *execute )( struct statement *this, struct variables *vars, struct variable *result ),
 	char *message );
-
-/* Allocate and return a new statement. Returns NULL and writes message on failure. */
-struct statement* new_statement( char *message );
 
 /* Allocate and return a string of the specified length and reference count of 1. */
 struct string* new_string_value( int length );
