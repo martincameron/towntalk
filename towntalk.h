@@ -132,7 +132,6 @@ struct variables {
 /* Expression list. */
 struct expression {
 	int line, index;
-	struct global_variable *global;
 	struct function *function;
 	struct expression *parameters, *next;
 	enum result ( *evaluate )( struct expression *this,

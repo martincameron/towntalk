@@ -190,6 +190,11 @@ struct block_statement {
 	struct statement *if_block, *else_block;
 };
 
+struct global_expression {
+	struct expression expr;
+	struct global_variable *global;
+};
+
 /* The maximum integer value. */
 const int MAX_INTEGER = ( 1 << ( sizeof( int ) * 8 - 1 ) ) - 1u;
 
@@ -1316,7 +1321,7 @@ static enum result evaluate_local_post_dec( struct expression *this,
 
 static enum result evaluate_global( struct expression *this,
 	struct variables *vars, struct variable *result ) {
-	struct variable *var = &this->global->value;
+	struct variable *var = &( ( struct global_expression * ) this )->global->value;
 	result->integer_value = var->integer_value;
 	result->string_value = var->string_value;
 	if( result->string_value ) {
@@ -1901,7 +1906,8 @@ static enum result evaluate_thiscall_expression( struct expression *this,
 	struct array *arr;
 	struct string *function = NULL;
 	struct global_variable obj = { 0 };
-	struct expression obj_expr = { 0 }, call_expr = { 0 };
+	struct expression call_expr = { 0 };
+	struct global_expression obj_expr = { 0 };
 	enum result ret = this->parameters->evaluate( this->parameters, vars, &obj.value );
 	if( ret ) {
 		if( obj.value.string_value && obj.value.string_value->type == ARRAY ) {
@@ -1914,11 +1920,11 @@ static enum result evaluate_thiscall_expression( struct expression *this,
 				}
 				if( function && function->type == FUNCTION ) {
 					obj_expr.global = &obj;
-					obj_expr.evaluate = evaluate_global;
-					obj_expr.next = this->parameters->next;
+					obj_expr.expr.evaluate = evaluate_global;
+					obj_expr.expr.next = this->parameters->next;
 					call_expr.line = this->line;
 					call_expr.function = ( struct function * ) function;
-					call_expr.parameters = &obj_expr;
+					call_expr.parameters = &obj_expr.expr;
 					if( call_expr.function->num_parameters == count ) {
 						function->reference_count++;
 						ret = evaluate_call_expression( &call_expr, vars, result );
@@ -2052,7 +2058,7 @@ static enum result evaluate_index_expression( struct expression *this,
 	return ret;
 }
 
-static enum result evaluate_integer_constant_expression( struct expression *this,
+static enum result evaluate_integer_literal_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	result->integer_value = this->index;
 	return OKAY;
@@ -2354,7 +2360,7 @@ static enum result evaluate_arithmetic_expression( struct expression *this,
 	}
 	while( parameter->next ) {
 		parameter = parameter->next;
-		if( parameter->evaluate == evaluate_integer_constant_expression ) {
+		if( parameter->evaluate == evaluate_integer_literal_expression ) {
 			rhs = parameter->index;
 		} else if( parameter->evaluate == evaluate_local ) {
 			rhs = vars->locals[ parameter->index ].integer_value;
@@ -3305,414 +3311,496 @@ static struct operator* get_operator( char *name, struct operator *oper ) {
 }
 
 static struct element* parse_infix_expression( struct element *elem, struct environment *env,
-	struct function *func, struct expression *expr, char *message ) {
+	struct function *func, struct expression *prev, char *message ) {
+	int num_operands;
+	struct operator *oper;
 	struct element *next = elem->next;
 	struct element *child = next->child;
-	struct expression prev;
-	struct operator *oper;
-	int num_operands;
-	if( child ) {
-		prev.next = NULL;
-		child = parse_expression( child, env, func, &prev, message );
-		expr->parameters = prev.next;
-		if( message[ 0 ] == 0 ) {
-			if( child ) {
-				oper = get_operator( child->str.string, env->operators_index[ hash_code( child->str.string, 0 ) ] );
-				if( oper ) {
-					expr->index = oper->oper;
-					expr->evaluate = oper->evaluate;
-					if( oper->num_operands != 0 ) {
-						parse_expressions( child->next, env, func, 0, expr->parameters, &num_operands, message );
-						num_operands++;
-						if( message[ 0 ] == 0 ) {
-							if( num_operands == oper->num_operands
-							|| ( oper->num_operands < 0 && num_operands >= -oper->num_operands ) ) {
-								next = next->next;
-							} else {
-								sprintf( message, "Wrong number of arguments to '%.64s()' on line %d.", oper->name, child->line );
+	struct expression param = { 0 }, *expr = calloc( 1, sizeof( struct expression ) );
+	if( expr ) {
+		prev->next = expr;
+		expr->line = elem->line;
+		expr->function = func;
+		if( child ) {
+			child = parse_expression( child, env, func, &param, message );
+			expr->parameters = param.next;
+			if( message[ 0 ] == 0 ) {
+				if( child ) {
+					oper = get_operator( child->str.string, env->operators_index[ hash_code( child->str.string, 0 ) ] );
+					if( oper ) {
+						expr->index = oper->oper;
+						expr->evaluate = oper->evaluate;
+						if( oper->num_operands != 0 ) {
+							parse_expressions( child->next, env, func, 0, expr->parameters, &num_operands, message );
+							num_operands++;
+							if( message[ 0 ] == 0 ) {
+								if( num_operands == oper->num_operands
+								|| ( oper->num_operands < 0 && num_operands >= -oper->num_operands ) ) {
+									next = next->next;
+								} else {
+									sprintf( message, "Wrong number of arguments to '%.64s()' on line %d.", oper->name, child->line );
+								}
 							}
+						} else {
+							sprintf( message, "Wrong number of arguments to '%.64s()' on line %d.", oper->name, child->line );
 						}
 					} else {
-						sprintf( message, "Wrong number of arguments to '%.64s()' on line %d.", oper->name, child->line );
+						sprintf( message, "Unhandled operator '%.64s' on line %d.", child->str.string, child->line );
 					}
 				} else {
-					sprintf( message, "Unhandled operator '%.64s' on line %d.", child->str.string, child->line );
+					sprintf( message, "Expected operator after '( on line %d.", elem->line );
 				}
-			} else {
-				sprintf( message, "Expected operator after '( on line %d.", elem->line );
-			}
-		} 
+			} 
+		} else {
+			sprintf( message, "Expected expression after '( on line %d.", elem->line );
+		}
 	} else {
-		sprintf( message, "Expected expression after '( on line %d.", elem->line );
+		strcpy( message, OUT_OF_MEMORY );
 	}
 	return next;
 }
 
 static struct element* parse_operator_expression( struct element *elem, struct environment *env,
-	struct function *func, struct expression *expr, char *message ) {
-	struct element *next = elem->next;
-	struct expression prev;
+	struct function *func, struct expression *prev, char *message ) {
 	int num_operands;
+	struct element *next = elem->next;
 	struct operator *oper = get_operator( elem->str.string, env->operators_index[ hash_code( elem->str.string, 0 ) ] );
-	if( oper ) {
-		expr->index = oper->oper;
-		expr->evaluate = oper->evaluate;
-		if( oper->num_operands != 0 ) {
-			if( next && next->str.string[ 0 ] == '(' ) {
-				prev.next = NULL;
-				parse_expressions( next->child, env, func, 0, &prev, &num_operands, message );
-				expr->parameters = prev.next;
-				if( message[ 0 ] == 0 ) {
-					if( num_operands == oper->num_operands
-					|| ( oper->num_operands < 0 && num_operands >= -oper->num_operands ) ) {
-						next = next->next;
-					} else {
-						sprintf( message, "Wrong number of arguments to '%.64s()' on line %d.", oper->name, next->line );
+	struct expression param = { 0 }, *expr = calloc( 1, sizeof( struct expression ) );
+	if( expr ) {
+		prev->next = expr;
+		expr->line = elem->line;
+		expr->function = func;
+		if( oper ) {
+			expr->index = oper->oper;
+			expr->evaluate = oper->evaluate;
+			if( oper->num_operands != 0 ) {
+				if( next && next->str.string[ 0 ] == '(' ) {
+					parse_expressions( next->child, env, func, 0, &param, &num_operands, message );
+					expr->parameters = param.next;
+					if( message[ 0 ] == 0 ) {
+						if( num_operands == oper->num_operands
+						|| ( oper->num_operands < 0 && num_operands >= -oper->num_operands ) ) {
+							next = next->next;
+						} else {
+							sprintf( message, "Wrong number of arguments to '%.64s()' on line %d.", oper->name, next->line );
+						}
 					}
+				} else {
+					sprintf( message, "Expected '(' after '%.64s' on line %d.", oper->name, elem->line );
 				}
-			} else {
-				sprintf( message, "Expected '(' after '%.64s' on line %d.", oper->name, elem->line );
 			}
+		} else {
+			sprintf( message, "Unhandled expression '%.64s' on line %d.", elem->str.string, elem->line );
 		}
 	} else {
-		sprintf( message, "Unhandled expression '%.64s' on line %d.", elem->str.string, elem->line );
+		strcpy( message, OUT_OF_MEMORY );
 	}
 	return next;
 }
 
 static struct element* parse_call_expression( struct element *elem, struct environment *env,
-	struct function *func, struct function *decl, struct expression *expr, char *message ) {
-	struct element *next = elem->next;
-	struct expression prev;
+	struct function *func, struct function *decl, struct expression *prev, char *message ) {
 	int num_params;
-	if( next && next->str.string[ 0 ] == '(' ) {
+	struct element *next = elem->next;
+	struct expression param = { 0 }, *expr = calloc( 1, sizeof( struct expression ) );
+	if( expr ) {
+		prev->next = expr;
+		expr->line = elem->line;
 		expr->function = decl;
-		expr->evaluate = evaluate_call_expression;
-		prev.next = NULL;
-		parse_expressions( next->child, env, func, 0, &prev, &num_params, message );
-		expr->parameters = prev.next;
-		if( message[ 0 ] == 0 ) {
-			if( num_params == expr->function->num_parameters ) {
-				next = next->next;
-			} else {
-				sprintf( message, "Wrong number of arguments to '%.64s()' on line %d.", elem->str.string, next->line );
+		if( next && next->str.string[ 0 ] == '(' ) {
+			parse_expressions( next->child, env, func, 0, &param, &num_params, message );
+			expr->parameters = param.next;
+			if( message[ 0 ] == 0 ) {
+				if( num_params == expr->function->num_parameters ) {
+					expr->evaluate = evaluate_call_expression;
+					next = next->next;
+				} else {
+					sprintf( message, "Wrong number of arguments to '%.64s()' on line %d.", elem->str.string, next->line );
+				}
 			}
+		} else {
+			sprintf( message, "Expected '(' after function name on line %d.", next->line );
 		}
 	} else {
-		sprintf( message, "Expected '(' after function name on line %d.", next->line );
+		strcpy( message, OUT_OF_MEMORY );
 	}
 	return next;
 }
 
 static struct element* parse_func_ref_expression( struct element *elem, struct environment *env,
-	struct function *func, struct expression *expr, char *message ) {
+	struct function *func, struct expression *prev, char *message ) {
 	char *name = &elem->str.string[ 1 ];
-	struct function *function = get_function_indexed( env->functions_index, name );
-	if( function ) {
-		expr->function = function;
-		expr->evaluate = evaluate_func_ref_expression;
+	struct expression *expr = calloc( 1, sizeof( struct expression ) );
+	if( expr ) {
+		prev->next = expr;
+		expr->line = elem->line;
+		expr->function = get_function_indexed( env->functions_index, name );
+		if( expr->function ) {
+			expr->evaluate = evaluate_func_ref_expression;
+		} else {
+			sprintf( message, "Function '%.64s' not defined on line %d.", name, elem->line );
+		}
 	} else {
-		sprintf( message, "Function '%.64s' not defined on line %d.", name, elem->line );
+		strcpy( message, OUT_OF_MEMORY );
 	}
 	return elem->next;
 }
 
 static struct element* parse_index_expression( struct element *elem, struct environment *env,
-	struct function *func, struct expression *expr, char *message ) {
-	struct expression prev;
+	struct function *func, struct expression *prev, char *message ) {
 	int num_params;
-	prev.next = NULL;
-	parse_expressions( elem->child, env, func, 0, &prev, &num_params, message );
-	expr->parameters = prev.next;
-	if( message[ 0 ] == 0 ) {
-		if( num_params == 2 ) {
-			expr->evaluate = evaluate_index_expression;
-		} else {
-			sprintf( message, "Invalid index expression on line %d.", elem->line );
+	struct expression param = { 0 }, *expr = calloc( 1, sizeof( struct expression ) );
+	if( expr ) {
+		prev->next = expr;
+		expr->line = elem->line;
+		expr->function = func;
+		parse_expressions( elem->child, env, func, 0, &param, &num_params, message );
+		expr->parameters = param.next;
+		if( message[ 0 ] == 0 ) {
+			if( num_params == 2 ) {
+				expr->evaluate = evaluate_index_expression;
+			} else {
+				sprintf( message, "Invalid index expression on line %d.", elem->line );
+			}
 		}
+	} else {
+		strcpy( message, OUT_OF_MEMORY );
 	}
 	return elem->next;
 }
 
 static struct element* parse_struct_expression( struct element *elem, struct environment *env,
-	struct function *func, struct structure *struc, struct expression *expr, char *message ) {
+	struct function *func, struct structure *struc, struct expression *prev, char *message ) {
 	int idx, count;
-	struct expression prev;
 	struct element *next = elem->next;
 	char *field = strchr( elem->str.string, '.' );
-	if( field ) {
-		idx = get_string_list_index( struc->fields, &field[ 1 ] );
-		if( idx >= 0 ) {
-			expr->index = idx;
-			if( next && next->str.string[ 0 ] == '(' ) {
-				prev.next = NULL;
-				parse_expressions( next->child, env, func, 0, &prev, &count, message );
-				expr->parameters = prev.next;
-				if( message[ 0 ] == 0 ) {
-					if( count == 1 ) {
-						expr->evaluate = evaluate_struct_expression;
-						next = next->next;
-					} else {
-						sprintf( message, "Wrong number of arguments to struct expression on line %d.", next->line );
+	struct expression param = { 0 }, *expr = calloc( 1, sizeof( struct expression ) );
+	if( expr ) {
+		prev->next = expr;
+		expr->line = elem->line;
+		expr->function = func;
+		if( field ) {
+			idx = get_string_list_index( struc->fields, &field[ 1 ] );
+			if( idx >= 0 ) {
+				expr->index = idx;
+				if( next && next->str.string[ 0 ] == '(' ) {
+					parse_expressions( next->child, env, func, 0, &param, &count, message );
+					expr->parameters = param.next;
+					if( message[ 0 ] == 0 ) {
+						if( count == 1 ) {
+							expr->evaluate = evaluate_struct_expression;
+							next = next->next;
+						} else {
+							sprintf( message, "Wrong number of arguments to struct expression on line %d.", next->line );
+						}
 					}
+				} else {
+					expr->evaluate = evaluate_integer_literal_expression;
 				}
 			} else {
-				expr->evaluate = evaluate_integer_constant_expression;
+				sprintf( message, "Field '%.64s' not declared on line %d.", elem->str.string, elem->line );
 			}
 		} else {
-			sprintf( message, "Field '%.64s' not declared on line %d.", elem->str.string, elem->line );
+			expr->index = struc->length;
+			expr->evaluate = evaluate_integer_literal_expression;
 		}
 	} else {
-		expr->index = struc->length;
-		expr->evaluate = evaluate_integer_constant_expression;
+		strcpy( message, OUT_OF_MEMORY );
 	}
 	return next;
 }
 
 static struct element* parse_refcall_expression( struct element *elem, struct environment *env,
-	struct function *func, struct expression *expr, char *message ) {
-	struct element *next = elem->next;
-	struct expression prev;
+	struct function *func, struct expression *prev, char *message ) {
 	int count;
-	if( next && next->str.string[ 0 ] == '(' ) {
-		prev.next = NULL;
-		parse_expressions( next->child, env, func, 0, &prev, &count, message );
-		expr->parameters = prev.next;
-		if( message[ 0 ] == 0 ) {
-			if( count > 0 ) {
-				expr->index = count - 1;
-				expr->evaluate = evaluate_refcall_expression;
-				next = next->next;
-			} else {
-				sprintf( message, "Expected expression after '(' on line %d.", next->line );
+	struct element *next = elem->next;
+	struct expression param = { 0 }, *expr = calloc( 1, sizeof( struct expression ) );
+	if( expr ) {
+		prev->next = expr;
+		expr->line = elem->line;
+		expr->function = func;
+		if( next && next->str.string[ 0 ] == '(' ) {
+			parse_expressions( next->child, env, func, 0, &param, &count, message );
+			expr->parameters = param.next;
+			if( message[ 0 ] == 0 ) {
+				if( count > 0 ) {
+					expr->index = count - 1;
+					expr->evaluate = evaluate_refcall_expression;
+					next = next->next;
+				} else {
+					sprintf( message, "Expected expression after '(' on line %d.", next->line );
+				}
 			}
+		} else {
+			sprintf( message, "Expected '(' after ':' on line %d.", elem->line );
 		}
 	} else {
-		sprintf( message, "Expected '(' after ':' on line %d.", elem->line );
+		strcpy( message, OUT_OF_MEMORY );
 	}
 	return next;
 }
 
 static struct element* parse_thiscall_expression( struct element *elem, struct environment *env,
-	struct function *func, struct expression *expr, char *message ) {
+	struct function *func, struct expression *prev, char *message ) {
 	int idx, count;
 	struct structure *struc;
-	struct expression prev, *this;
 	struct element *next = elem->next;
 	char *field = strchr( elem->str.string, '.' );
 	struct local_variable *local = get_local_variable( func->variable_decls, &elem->str.string[ 1 ], "." );
 	struct global_variable *global = get_global_indexed( env->globals_index, &elem->str.string[ 1 ] );
-	if( local ) {
-		struc = local->type;
-	} else if( global ) {
-		struc = global->type;
-	} else {
-		struc = get_structure_indexed( env->structures_index, &elem->str.string[ 1 ] );
-	}
-	if( struc && field ) {
-		idx = get_string_list_index( struc->fields, &field[ 1 ] );
-		if( idx >= 0 ) {
-			if( next && next->str.string[ 0 ] == '(' ) {
-				prev.next = NULL;
-				parse_expressions( next->child, env, func, 0, &prev, &count, message );
-				expr->parameters = prev.next;
-				if( local || global ) {
-					this = calloc( 1, sizeof( struct expression ) );
-					if( this ) {
-						if( local ) {
-							this->index = local->index;
-							this->evaluate = evaluate_local;
+	struct expression param = { 0 }, *this, *expr = calloc( 1, sizeof( struct global_expression ) );
+	if( expr ) {
+		prev->next = expr;
+		expr->line = elem->line;
+		expr->function = func;
+		if( local ) {
+			struc = local->type;
+		} else if( global ) {
+			struc = global->type;
+		} else {
+			struc = get_structure_indexed( env->structures_index, &elem->str.string[ 1 ] );
+		}
+		if( struc && field ) {
+			idx = get_string_list_index( struc->fields, &field[ 1 ] );
+			if( idx >= 0 ) {
+				if( next && next->str.string[ 0 ] == '(' ) {
+					parse_expressions( next->child, env, func, 0, &param, &count, message );
+					expr->parameters = param.next;
+					if( local || global ) {
+						this = calloc( 1, sizeof( struct global_expression ) );
+						if( this ) {
+							if( local ) {
+								this->index = local->index;
+								this->evaluate = evaluate_local;
+							} else {
+								( ( struct global_expression * ) this )->global = global;
+								this->evaluate = evaluate_global;
+							}
+							this->next = expr->parameters;
+							expr->parameters = this;
+							count++;
 						} else {
-							this->global = global;
-							this->evaluate = evaluate_global;
+							strcpy( message, OUT_OF_MEMORY );
 						}
-						this->next = expr->parameters;
-						expr->parameters = this;
-						count++;
-					} else {
-						strcpy( message, OUT_OF_MEMORY );
 					}
-				}
-				if( message[ 0 ] == 0 ) {
-					if( count > 0 && count < 256 ) {
-						expr->index = ( ( idx & 0x7FFFFF ) << 8 ) | count;
-						expr->evaluate = evaluate_thiscall_expression;
-						next = next->next;
-					} else {
-						sprintf( message, "Expected expression after '(' on line %d.", next->line );
+					if( message[ 0 ] == 0 ) {
+						if( count > 0 && count < 256 ) {
+							expr->index = ( ( idx & 0x7FFFFF ) << 8 ) | count;
+							expr->evaluate = evaluate_thiscall_expression;
+							next = next->next;
+						} else {
+							sprintf( message, "Expected expression after '(' on line %d.", next->line );
+						}
 					}
+				} else {
+					sprintf( message, "Expected '(' after '%.64s' on line %d.", elem->str.string, elem->line );
 				}
 			} else {
-				sprintf( message, "Expected '(' after '%.64s' on line %d.", elem->str.string, elem->line );
+				sprintf( message, "Field '%.64s' not declared on line %d.", &elem->str.string[ 1 ], elem->line );
 			}
 		} else {
-			sprintf( message, "Field '%.64s' not declared on line %d.", &elem->str.string[ 1 ], elem->line );
+			sprintf( message, "Undeclared variable, structure or field '%.64s' on line %d.", elem->str.string, elem->line );
 		}
 	} else {
-		sprintf( message, "Undeclared variable, structure or field '%.64s' on line %d.", elem->str.string, elem->line );
+		strcpy( message, OUT_OF_MEMORY );
 	}
 	return next;
 }
 
 static struct element* parse_local_expression( struct element *elem, struct environment *env,
-	struct function *func, struct local_variable *local, struct expression *expr, char *message ) {
+	struct function *func, struct local_variable *local, struct expression *prev, char *message ) {
 	int idx, len;
-	struct expression prev;
 	struct element *next = elem->next;
 	struct structure *struc = local->type;
 	char *field = &elem->str.string[ strlen( local->name ) ];
-	if( struc && field[ 0 ] == '.' ) {
-		idx = get_string_list_index( struc->fields, &field[ 1 ] );
-		if( idx >= 0 ) {
-			expr->parameters = calloc( 1, sizeof( struct expression ) );
-			if( expr->parameters ) {
-				expr->parameters->index = local->index;
-				expr->parameters->evaluate = evaluate_local;
-				expr->index = idx;
-				expr->evaluate = evaluate_struct_expression;
+	struct expression *expr = calloc( 1, sizeof( struct expression ) );
+	if( expr ) {
+		prev->next = expr;
+		expr->line = elem->line;
+		expr->function = func;
+		if( struc && field[ 0 ] == '.' ) {
+			idx = get_string_list_index( struc->fields, &field[ 1 ] );
+			if( idx >= 0 ) {
+				expr->parameters = calloc( 1, sizeof( struct expression ) );
+				if( expr->parameters ) {
+					expr->parameters->index = local->index;
+					expr->parameters->evaluate = evaluate_local;
+					expr->index = idx;
+					expr->evaluate = evaluate_struct_expression;
+				} else {
+					strcpy( message, OUT_OF_MEMORY );
+				}
 			} else {
-				strcpy( message, OUT_OF_MEMORY );
+				sprintf( message, "Field not declared in expression '%.64s' on line %d.", elem->str.string, elem->line );
 			}
+		} else if( field[ 0 ] == '.' ) {
+			sprintf( message, "Expression '%.64s' has no associated structure on line %d.", elem->str.string, elem->line );
 		} else {
-			sprintf( message, "Field not declared in expression '%.64s' on line %d.", elem->str.string, elem->line );
+			expr->index = local->index;
+			if( !strcmp( field, "++" ) ) {
+				expr->evaluate = evaluate_local_post_inc;
+			} else if( !strcmp( field, "--" ) ) {
+				expr->evaluate = evaluate_local_post_dec;
+			} else if( field[ 0 ] == 0 ) {
+				expr->evaluate = evaluate_local;
+			} else {
+				sprintf( message, "Invalid local variable expression '%.64s' on line %d.", elem->str.string, elem->line );
+			}
 		}
-	} else if( field[ 0 ] == '.' ) {
-		sprintf( message, "Expression '%.64s' has no associated structure on line %d.", elem->str.string, elem->line );
 	} else {
-		expr->index = local->index;
-		if( !strcmp( field, "++" ) ) {
-			expr->evaluate = evaluate_local_post_inc;
-		} else if( !strcmp( field, "--" ) ) {
-			expr->evaluate = evaluate_local_post_dec;
-		} else if( field[ 0 ] == 0 ) {
-			expr->evaluate = evaluate_local;
-		} else {
-			sprintf( message, "Invalid local variable expression '%.64s' on line %d.", elem->str.string, elem->line );
-		}
+		strcpy( message, OUT_OF_MEMORY );
 	}
 	return next;
 }
 
 static struct element* parse_global_expression( struct element *elem, struct environment *env,
-	struct function *func, struct global_variable *global, struct expression *expr, char *message ) {
+	struct function *func, struct global_variable *global, struct expression *prev, char *message ) {
 	int idx, count;
-	struct expression prev;
 	struct element *next = elem->next;
 	struct structure *struc = global->type;
 	char *field = strchr( elem->str.string, '.' );
-	if( struc && field ) {
-		idx = get_string_list_index( struc->fields, &field[ 1 ] );
-		if( idx >= 0 ) {
-			expr->parameters = calloc( 1, sizeof( struct expression ) );
-			if( expr->parameters ) {
-				expr->parameters->global = global;
-				expr->parameters->evaluate = evaluate_global;
-				expr->index = idx;
-				expr->evaluate = evaluate_struct_expression;
+	struct expression *expr = calloc( 1, sizeof( struct global_expression ) );
+	if( expr ) {
+		prev->next = expr;
+		expr->line = elem->line;
+		expr->function = func;
+		if( struc && field ) {
+			idx = get_string_list_index( struc->fields, &field[ 1 ] );
+			if( idx >= 0 ) {
+				expr->parameters = calloc( 1, sizeof( struct global_expression ) );
+				if( expr->parameters ) {
+					( ( struct global_expression * ) expr->parameters )->global = global;
+					expr->parameters->evaluate = evaluate_global;
+					expr->index = idx;
+					expr->evaluate = evaluate_struct_expression;
+				} else {
+					strcpy( message, OUT_OF_MEMORY );
+				}
 			} else {
-				strcpy( message, OUT_OF_MEMORY );
+				sprintf( message, "Field not declared in expression '%.64s' on line %d.", elem->str.string, elem->line );
 			}
+		} else if( field ) {
+			sprintf( message, "Expression '%.64s' has no associated structure on line %d.", elem->str.string, elem->line );
 		} else {
-			sprintf( message, "Field not declared in expression '%.64s' on line %d.", elem->str.string, elem->line );
+			( ( struct global_expression * ) expr )->global = global;
+			expr->evaluate = evaluate_global;
 		}
-	} else if( field ) {
-		sprintf( message, "Expression '%.64s' has no associated structure on line %d.", elem->str.string, elem->line );
 	} else {
-		expr->global = global;
-		expr->evaluate = evaluate_global;
+		strcpy( message, OUT_OF_MEMORY );
 	}
 	return next;
+}
+
+static struct element* parse_integer_literal_expression( struct element *elem, struct environment *env,
+	struct function *func, struct expression *prev, char *message ) {
+	struct variable var = { 0 };
+	struct element *next = parse_constant( elem, &var, message );
+	struct expression *expr = calloc( 1, sizeof( struct expression ) );
+	if( expr ) {
+		prev->next = expr;
+		expr->line = elem->line;
+		expr->index = var.integer_value;
+		expr->function = func;
+		expr->evaluate = evaluate_integer_literal_expression;
+	} else {
+		strcpy( message, OUT_OF_MEMORY );
+	}
+	return next;
+}
+
+static struct element* parse_string_literal_expression( struct element *elem, struct environment *env,
+	struct function *func, struct expression *prev, char *message ) {
+	struct global_variable *literal;
+	struct expression *expr = calloc( 1, sizeof( struct global_expression ) );
+	if( expr ) {
+		prev->next = expr;
+		expr->line = elem->line;
+		expr->function = func;
+		literal = new_global_variable( "", NULL, NULL );
+		if( literal ) {
+			literal->next = func->literals;
+			func->literals = literal;
+			( ( struct global_expression * ) expr )->global = literal;
+			expr->evaluate = evaluate_global;
+			elem = parse_constant( elem, &literal->value, message );
+		} else {
+			strcpy( message, OUT_OF_MEMORY );
+		}
+	} else {
+		strcpy( message, OUT_OF_MEMORY );
+	}
+	return elem;
 }
 
 static struct element* parse_expression( struct element *elem, struct environment *env,
 	struct function *func, struct expression *prev, char *message ) {
 	struct element *next = elem->next;
-	struct global_variable *literal, *global;
 	char *value = elem->str.string;
+	struct global_variable *global;
 	struct local_variable *local;
 	struct structure *struc;
 	struct function *decl;
-	struct variable var;
-	struct expression *expr = calloc( 1, sizeof( struct expression ) );
-	if( expr ) {
-		expr->line = elem->line;
-		expr->function = func;
-		if( ( value[ 0 ] >= '0' && value[ 0 ] <= '9' )
-			|| ( value[ 0 ] == '-' && ( value[ 1 ] >= '0' && value[ 1 ] <= '9' ) ) ) {
-			/* Integer literal. */
-			next = parse_constant( elem, &var, message );
-			expr->index = var.integer_value;
-			expr->evaluate = evaluate_integer_constant_expression;
-		} else if( value[ 0 ] == '"' || ( value[ 0 ] == '$' && value[ 1 ] == 0 ) ) {
-			/* String or element literal. */
-			literal = new_global_variable( "", NULL, NULL );
-			if( literal ) {
-				literal->next = func->literals;
-				func->literals = literal;
-				expr->global = literal;
-				expr->evaluate = evaluate_global;
-				next = parse_constant( elem, &literal->value, message );
-			} else {
-				strcpy( message, OUT_OF_MEMORY );
-			}
-		} else if( value[ 0 ] == '\'' ) {
-			/* Infix operator.*/
-			next = parse_infix_expression( elem, env, func, expr, message );
-		} else if( value[ 0 ] == '[' ) {
-			/* Array index operator. */
-			next = parse_index_expression( elem, env, func, expr, message );
-		} else if( value[ 0 ] == '@' ) {
-			/* Function reference operator. */
-			next = parse_func_ref_expression( elem, env, func, expr, message );
-		} else if( value[ 0 ] == ':' ) {
-			if( value[ 1 ] == 0 ) {
-				/* Function reference call. */
-				next = parse_refcall_expression( elem, env, func, expr, message );
-			} else {
-				/* Member function call. */
-				next = parse_thiscall_expression( elem, env, func, expr, message );
-			}
+	if( ( value[ 0 ] >= '0' && value[ 0 ] <= '9' )
+		|| ( value[ 0 ] == '-' && ( value[ 1 ] >= '0' && value[ 1 ] <= '9' ) ) ) {
+		/* Integer literal. */
+		next = parse_integer_literal_expression( elem, env, func, prev, message );
+	} else if( value[ 0 ] == '"' || ( value[ 0 ] == '$' && value[ 1 ] == 0 ) ) {
+		/* String or element literal. */
+		next = parse_string_literal_expression( elem, env, func, prev, message );
+	} else if( value[ 0 ] == '\'' ) {
+		/* Infix operator.*/
+		next = parse_infix_expression( elem, env, func, prev, message );
+	} else if( value[ 0 ] == '[' ) {
+		/* Array index operator. */
+		next = parse_index_expression( elem, env, func, prev, message );
+	} else if( value[ 0 ] == '@' ) {
+		/* Function reference operator. */
+		next = parse_func_ref_expression( elem, env, func, prev, message );
+	} else if( value[ 0 ] == ':' ) {
+		if( value[ 1 ] == 0 ) {
+			/* Function reference call. */
+			next = parse_refcall_expression( elem, env, func, prev, message );
 		} else {
-			local = get_local_variable( func->variable_decls, value, ".+-" );
-			if( local ) {
-				/* Local variable reference.*/
-				next = parse_local_expression( elem, env, func, local, expr, message );
+			/* Member function call. */
+			next = parse_thiscall_expression( elem, env, func, prev, message );
+		}
+	} else {
+		local = get_local_variable( func->variable_decls, value, ".+-" );
+		if( local ) {
+			/* Local variable reference.*/
+			next = parse_local_expression( elem, env, func, local, prev, message );
+		} else {
+			global = get_global_indexed( env->constants_index, value );
+			if( global == NULL ) {
+				global = get_global_indexed( env->globals_index, value );
+			}
+			if( global ) {
+				/* Global variable reference.*/
+				next = parse_global_expression( elem, env, func, global, prev, message );
 			} else {
-				global = get_global_indexed( env->constants_index, value );
-				if( global == NULL ) {
-					global = get_global_indexed( env->globals_index, value );
-				}
-				if( global ) {
-					/* Global variable reference.*/
-					next = parse_global_expression( elem, env, func, global, expr, message );
+				decl = get_function_indexed( env->functions_index, value );
+				if( decl ) {
+					/* Function call.*/
+					next = parse_call_expression( elem, env, func, decl, prev, message );
 				} else {
-					decl = get_function_indexed( env->functions_index, value );
-					if( decl ) {
-						/* Function call.*/
-						next = parse_call_expression( elem, env, func, decl, expr, message );
+					struc = get_structure_indexed( env->structures_index, value );
+					if( struc ) {
+						/* Structure. */
+						next = parse_struct_expression( elem, env, func, struc, prev, message );
 					} else {
-						struc = get_structure_indexed( env->structures_index, value );
-						if( struc ) {
-							/* Structure. */
-							next = parse_struct_expression( elem, env, func, struc, expr, message );
-						} else {
-							/* Prefix Operator. */
-							next = parse_operator_expression( elem, env, func, expr, message );
-						}
+						/* Prefix Operator. */
+						next = parse_operator_expression( elem, env, func, prev, message );
 					}
 				}
 			}
 		}
-		if( message[ 0 ] == 0 && next && next->str.string[ 0 ] == '(' ) {
-			sprintf( message, "Unexpected '(' after expression on line %d.", next->line );
-		}
-		if( message[ 0 ] == 0 ) {
-			prev->next = expr;
-		} else {
-			dispose_expressions( expr );
-		}
-	} else {
-		strcpy( message, OUT_OF_MEMORY );
+	}
+	if( message[ 0 ] == 0 && next && next->str.string[ 0 ] == '(' ) {
+		sprintf( message, "Unexpected '(' after expression on line %d.", next->line );
+	}
+	if( message[ 0 ] ) {
+		dispose_expressions( prev->next );
+		prev->next = NULL;
 	}
 	return next;
 }
@@ -3978,10 +4066,10 @@ static struct element* parse_global_assignment( struct element *elem, struct env
 				idx = get_string_list_index( struc->fields, &field[ 1 ] );
 				if( idx >= 0 ) {
 					stmt->local = idx;
-					stmt->destination = calloc( 1, sizeof( struct expression ) );
+					stmt->destination = calloc( 1, sizeof( struct global_expression ) );
 					if( stmt->destination ) {
 						stmt->destination->line = next->line;
-						stmt->destination->global = global;
+						( ( struct global_expression * ) stmt->destination )->global = global;
 						stmt->destination->function = func;
 						stmt->destination->evaluate = evaluate_global;
 						stmt->execute = execute_struct_assignment;
@@ -4270,7 +4358,7 @@ static struct element* parse_lock_statement( struct element *elem, struct enviro
 			if( expr.next ) {
 				expr.next->line = elem->line;
 				expr.next->function = func;
-				expr.next->evaluate = evaluate_integer_constant_expression;
+				expr.next->evaluate = evaluate_integer_literal_expression;
 			} else {
 				strcpy( message, OUT_OF_MEMORY );
 			}
@@ -5241,12 +5329,12 @@ static struct worker* parse_worker( struct element *elem, struct environment *en
 				work->globals = calloc( params, sizeof( struct global_variable ) );
 			}
 			if( work->globals ) {
-				work->parameters = calloc( params, sizeof( struct expression ) );
+				work->parameters = calloc( params, sizeof( struct global_expression ) );
 			}
 			if( work->parameters ) {
 				for( idx = 0; idx < params; idx++ ) {
 					work->parameters[ idx ].evaluate = evaluate_global;
-					work->parameters[ idx ].global = &work->globals[ idx ];
+					( ( struct global_expression * ) work->parameters )[ idx ].global = &work->globals[ idx ];
 					work->parameters[ idx ].next = &work->parameters[ idx + 1 ];
 				}
 				parse_function_body( func, &work->env, message );
