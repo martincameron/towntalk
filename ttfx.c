@@ -1411,32 +1411,37 @@ static enum result evaluate_dir_expression( struct expression *this,
 	enum result ret = parameter->evaluate( parameter, vars, &var );
 	if( ret ) {
 		if( var.string_value ) {
-			errno = 0;
 			path = realpath( var.string_value->string, NULL );
 			if( path ) {
 				dir = opendir( path );
 				if( dir ) {
+					errno = 0;
 					dentry = readdir( dir );
-					while( dentry && ret ) {
-						elem = new_directory_element( dentry->d_name, get_file_length( path, dentry->d_name ), elem );
-						if( head == NULL ) {
-							head = elem;
+					if( dentry ) {
+						while( dentry && ret ) {
+							elem = new_directory_element( dentry->d_name, get_file_length( path, dentry->d_name ), elem );
+							if( head == NULL ) {
+								head = elem;
+							}
+							if( elem ) {
+								errno = 0;
+								dentry = readdir( dir );
+								if( errno ) {
+									ret = throw( vars, this, errno, strerror( errno ) );
+								}
+							} else {
+								ret = throw( vars, this, 0, OUT_OF_MEMORY );
+							}
 						}
-						if( elem ) {
-							dentry = readdir( dir );
-						} else {
-							ret = throw( vars, this, 0, OUT_OF_MEMORY );
+						if( head ) {
+							if( ret ) {
+								result->string_value = &head->str;
+							} else {
+								unref_string( &head->str );
+							}
 						}
-					}
-					if( errno ) {
+					} else if( errno ) {
 						ret = throw( vars, this, errno, strerror( errno ) );
-					}
-					if( head ) {
-						if( ret ) {
-							result->string_value = &head->str;
-						} else {
-							unref_string( &head->str );
-						}
 					}
 					closedir( dir );
 				} else {
@@ -1444,11 +1449,7 @@ static enum result evaluate_dir_expression( struct expression *this,
 				}
 				free( path );
 			} else {
-				if( errno ) {
-					ret = throw( vars, this, errno, strerror( errno ) );
-				} else {
-					ret = throw( vars, this, 0, "Invalid path." );
-				}
+				ret = throw( vars, this, errno, strerror( errno ) );
 			}
 		} else {
 			ret = throw( vars, this, 0, "Not a string." );
