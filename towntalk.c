@@ -180,11 +180,6 @@ struct global_assignment_statement {
 	struct variable *destination;
 };
 
-struct array_assignment_statement {
-	struct statement stmt;
-	struct expression *index;
-};
-
 struct block_statement {
 	struct statement stmt;
 	struct statement *if_block, *else_block;
@@ -770,7 +765,6 @@ static void dispose_statements( struct statement *statements ) {
 	while( statements ) {
 		next = statements->next;
 		dispose_expressions( statements->source );
-		dispose_expressions( statements->destination );
 		if( statements->dispose ) {
 			statements->dispose( statements );
 		} else {
@@ -1609,7 +1603,8 @@ static enum result execute_call_statement( struct statement *this,
 static enum result execute_dim_statement( struct statement *this,
 	struct variables *vars, struct variable *result ) {
 	struct variable var = { 0, NULL }, len = { 0, NULL };
-	enum result ret = this->destination->evaluate( this->destination, vars, &var );
+	struct expression *destination = this->source->next;
+	enum result ret = destination->evaluate( destination, vars, &var );
 	if( ret ) {
 		ret = this->source->evaluate( this->source, vars, &len );
 		if( ret ) {
@@ -1622,7 +1617,7 @@ static enum result execute_dim_statement( struct statement *this,
 					ret = throw( vars, this->source, 0, "Negative array size." );
 				}
 			} else {
-				ret = throw( vars, this->destination, 0, "Not an array." );
+				ret = throw( vars, destination, 0, "Not an array." );
 			}
 			dispose_temporary( &len );
 		}
@@ -1636,8 +1631,7 @@ static enum result execute_array_assignment( struct statement *this,
 	struct array *arr;
 	enum result ret = OKAY;
 	struct variable dest = { 0, NULL }, idx = { 0, NULL }, src = { 0, NULL };
-	struct expression *src_expr = this->source, *dest_expr = this->destination;
-	struct expression *idx_expr = ( ( struct array_assignment_statement * ) this )->index;
+	struct expression *src_expr = this->source, *dest_expr = src_expr->next, *idx_expr = dest_expr->next;
 	if( dest_expr->evaluate == evaluate_local ) {
 		arr = ( struct array * ) vars->locals[ dest_expr->index ].string_value;
 	} else {
@@ -1673,23 +1667,19 @@ static enum result execute_array_assignment( struct statement *this,
 				}
 			}
 		} else {
-			ret = throw( vars, this->destination, 0, "Not an array." );
+			ret = throw( vars, dest_expr, 0, "Not an array." );
 		}
 		dispose_temporary( &dest );
 	}
 	return ret;
 }
 
-static void dispose_array_assignment( struct statement *this ) {
-	dispose_expressions( ( ( struct array_assignment_statement * ) this )->index );
-	free( this );
-}
-
 static enum result execute_struct_assignment( struct statement *this,
 	struct variables *vars, struct variable *result ) {
 	struct array *arr;
+	struct expression *destination = this->source->next;
 	struct variable obj = { 0, NULL }, var = { 0, NULL };
-	enum result ret = this->destination->evaluate( this->destination, vars, &obj );
+	enum result ret = destination->evaluate( destination, vars, &obj );
 	if( ret ) {
 		if( obj.string_value && obj.string_value->type == ARRAY ) {
 			arr = ( struct array * ) obj.string_value;
@@ -1707,10 +1697,10 @@ static enum result execute_struct_assignment( struct statement *this,
 					}
 				}
 			} else {
-				ret = throw( vars, this->destination, this->local, "Array index out of bounds." );
+				ret = throw( vars, destination, this->local, "Array index out of bounds." );
 			}
 		} else {
-			ret = throw( vars, this->destination, obj.integer_value, "Not an array." );
+			ret = throw( vars, destination, obj.integer_value, "Not an array." );
 		}
 		dispose_temporary( &obj );
 	}
@@ -1810,7 +1800,7 @@ static enum result execute_save_statement( struct statement *this,
 	struct variable str = { 0, NULL }, file = { 0, NULL };
 	enum result ret = this->source->evaluate( this->source, vars, &str );
 	if( ret ) {
-		ret = this->destination->evaluate( this->destination, vars, &file );
+		ret = this->source->next->evaluate( this->source->next, vars, &file );
 		if( ret ) {
 			sval = str.string_value;
 			fval = file.string_value;
@@ -3888,30 +3878,7 @@ static struct element* parse_decrement_statement( struct element *elem, struct e
 
 static struct element* parse_save_statement( struct element *elem, struct environment *env,
 	struct function *func, struct statement *prev, char *message ) {
-	struct expression expr;
-	struct element *next = elem->next;
-	struct statement *stmt = calloc( 1, sizeof( struct statement ) );
-	if( stmt ) {
-		prev->next = stmt;
-		expr.next = NULL;
-		next = parse_expression( next, env, func, &expr, message );
-		if( expr.next ) {
-			stmt->source = expr.next;
-			if( next->str.string[ 0 ] == ',' ) {
-				next = next->next;
-			}
-			expr.next = NULL;
-			next = parse_expression( next, env, func, &expr, message );
-			if( expr.next ) {
-				stmt->destination = expr.next;
-				stmt->execute = execute_save_statement;
-				next = next->next;
-			}
-		}
-	} else {
-		strcpy( message, OUT_OF_MEMORY );
-	}
-	return next;
+	return parse_expr_list_statement( elem, env, func, prev, execute_save_statement, message );
 }
 
 static struct element* parse_append_statement( struct element *elem, struct environment *env,
@@ -3927,24 +3894,24 @@ static struct element* parse_array_assignment( struct element *elem, struct envi
 	struct function *func, struct statement *prev, char *message ) {
 	struct expression expr;
 	struct element *next = elem->next, *child = next->child;
-	struct statement *stmt = calloc( 1, sizeof( struct array_assignment_statement ) );
+	struct statement *stmt = calloc( 1, sizeof( struct statement ) );
 	if( stmt ) {
-		stmt->dispose = dispose_array_assignment;
 		prev->next = stmt;
 		expr.next = NULL;
 		child = parse_expression( child, env, func, &expr, message );
 		if( expr.next ) {
-			stmt->destination = expr.next;
+			stmt->source = expr.next;
 			if( child->str.string[ 0 ] == ',' ) {
 				child = child->next;
 			}
 			expr.next = NULL;
 			child = parse_expression( child, env, func, &expr, message );
 			if( expr.next ) {
-				( ( struct array_assignment_statement * ) stmt )->index = expr.next;
+				stmt->source->next = expr.next;
 				expr.next = NULL;
 				next = parse_expression( next->next->next, env, func, &expr, message );
 				if( expr.next ) {
+					expr.next->next = stmt->source;
 					stmt->source = expr.next;
 					stmt->execute = execute_array_assignment;
 					next = next->next;
@@ -3976,12 +3943,13 @@ static struct element* parse_struct_assignment( struct element *elem, struct env
 				next = next->next;
 				expr.next = NULL;
 				parse_expressions( next->child, env, func, 0, &expr, &count, message );
-				stmt->destination = expr.next;
+				stmt->source = expr.next;
 				if( message[ 0 ] == 0 ) {
 					if( count == 1 ) {
 						expr.next = NULL;
 						next = parse_expression( next->next->next, env, func, &expr, message );
 						if( expr.next ) {
+							expr.next->next = stmt->source;
 							stmt->source = expr.next;
 							stmt->execute = execute_struct_assignment;
 							next = next->next;
@@ -4020,12 +3988,13 @@ static struct element* parse_local_assignment( struct element *elem, struct envi
 				idx = get_string_list_index( struc->fields, &field[ 1 ] );
 				if( idx >= 0 ) {
 					stmt->local = idx;
-					stmt->destination = calloc( 1, sizeof( struct expression ) );
-					if( stmt->destination ) {
-						stmt->destination->line = next->line;
-						stmt->destination->index = local->index;
-						stmt->destination->function = func;
-						stmt->destination->evaluate = evaluate_local;
+					expr.next = calloc( 1, sizeof( struct expression ) );
+					if( expr.next ) {
+						stmt->source->next = expr.next;
+						expr.next->line = next->line;
+						expr.next->index = local->index;
+						expr.next->function = func;
+						expr.next->evaluate = evaluate_local;
 						stmt->execute = execute_struct_assignment;
 						next = next->next;
 					} else {
@@ -4066,12 +4035,13 @@ static struct element* parse_global_assignment( struct element *elem, struct env
 				idx = get_string_list_index( struc->fields, &field[ 1 ] );
 				if( idx >= 0 ) {
 					stmt->local = idx;
-					stmt->destination = calloc( 1, sizeof( struct global_expression ) );
-					if( stmt->destination ) {
-						stmt->destination->line = next->line;
-						( ( struct global_expression * ) stmt->destination )->global = global;
-						stmt->destination->function = func;
-						stmt->destination->evaluate = evaluate_global;
+					expr.next = calloc( 1, sizeof( struct global_expression ) );
+					if( expr.next ) {
+						stmt->source->next = expr.next;
+						expr.next->line = next->line;
+						expr.next->function = func;
+						expr.next->evaluate = evaluate_global;
+						( ( struct global_expression * ) expr.next )->global = global;
 						stmt->execute = execute_struct_assignment;
 						next = next->next;
 					} else {
@@ -4222,13 +4192,14 @@ static struct element* parse_dim_statement( struct element *elem, struct environ
 		expr.next = NULL;
 		child = parse_expression( child, env, func, &expr, message );
 		if( expr.next ) {
-			stmt->destination = expr.next;
+			stmt->source = expr.next;
 			if( child->str.string[ 0 ] == ',' ) {
 				child = child->next;
 			}
 			expr.next = NULL;
 			child = parse_expression( child, env, func, &expr, message );
 			if( expr.next ) {
+				expr.next->next = stmt->source;
 				stmt->source = expr.next;
 				next = next->next->next;
 			}

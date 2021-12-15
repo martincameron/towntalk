@@ -141,7 +141,7 @@ struct expression {
 /* Statement list. */
 struct statement {
 	int local;
-	struct expression *source, *destination;
+	struct expression *source;
 	enum result ( *execute )( struct statement *this,
 		struct variables *vars, struct variable *result );
 	void ( *dispose )( struct statement *this );
