@@ -1386,7 +1386,7 @@ static int get_file_length( char *path, char *name ) {
 		}
 		strcpy( &file[ pathlen + 1 ], name );
 		if( stat( file, &status ) ) {
-			errno = status.st_mode = status.st_size = 0;
+			status.st_mode = status.st_size = 0;
 		}
 		if( status.st_mode & S_IFDIR ) {
 			length = -1;
@@ -1426,7 +1426,7 @@ static enum result evaluate_dir_expression( struct expression *this,
 							if( elem ) {
 								errno = 0;
 								dentry = readdir( dir );
-								if( errno ) {
+								if( dentry == NULL && errno ) {
 									ret = throw( vars, this, errno, strerror( errno ) );
 								}
 							} else {
@@ -1479,12 +1479,10 @@ static enum result evaluate_path_expression( struct expression *this,
 					ret = throw( vars, this, 0, OUT_OF_MEMORY );
 				}
 				free( path );
+			} else if( errno ) {
+				ret = throw( vars, this, errno, strerror( errno ) );
 			} else {
-				if( errno ) {
-					ret = throw( vars, this, errno, strerror( errno ) );
-				} else {
-					ret = throw( vars, this, 0, "Invalid path." );
-				}
+				ret = throw( vars, this, 0, "Invalid path." );
 			}
 		} else {
 			ret = throw( vars, this, 0, "Not a string." );
