@@ -119,12 +119,14 @@ struct global_variable {
 	char *name;
 	struct variable value;
 	struct structure *type;
+	struct function *init_function;
 	struct expression *initializer;
 	struct global_variable *next;
 };
 
 /* Current local variable array and exception. */
 struct variables {
+	struct function *func;
 	struct variable *locals;
 	struct variable *exception;
 };
@@ -132,10 +134,15 @@ struct variables {
 /* Expression list. */
 struct expression {
 	int line, index;
-	struct function *function;
 	struct expression *parameters, *next;
 	enum result ( *evaluate )( struct expression *this,
 		struct variables *vars, struct variable *result );
+};
+
+/* Expression with associated function. */
+struct function_expression {
+	struct expression expr;
+	struct function *function;
 };
 
 /* Statement list. */
@@ -203,7 +210,7 @@ int parse_tt_file( char *file_name, struct environment *env, char *message );
 int parse_tt_program( char *program, char *file_name, struct environment *env, char *message );
 
 /* Initialize expr to call the specified function when evaluated. */
-void initialize_call_expr( struct expression *expr, struct function *func );
+void initialize_call_expr( struct function_expression *expr, struct function *func );
 
 /* Evaluate the global-variable initialization expressions for env before program execution.
    Returns zero and assigns exception on failure. */
@@ -244,7 +251,7 @@ void assign_array_variable( struct variable *src, struct array *arr, int idx );
 enum result throw( struct variables *vars, struct expression *source, int integer, const char *string );
 
 /* Assign an uncatchable exception with the specified exit code and message to vars and return EXCEPTION. */
-enum result throw_exit( struct environment *env, struct variables *vars, int exit_code, const char *message );
+enum result throw_exit( struct variables *vars, int exit_code, const char *message );
 
 /* Write the specified bytes as a string literal to output (if not null).
    The encoded length is returned. */

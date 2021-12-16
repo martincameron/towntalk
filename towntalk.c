@@ -944,8 +944,9 @@ static int get_string_list_index( struct string_list *list, char *value ) {
 }
 
 /* Assign an uncatchable exception with the specified exit code and message to vars and return EXCEPTION. */
-enum result throw_exit( struct environment *env, struct variables *vars, int exit_code, const char *message ) {
+enum result throw_exit( struct variables *vars, int exit_code, const char *message ) {
 	struct variable *exception = vars->exception;
+	struct environment *env = vars->func->env;
 	env->exit.reference_count = 2;
 	env->exit.type = EXIT;
 	env->exit.string = ( char * ) message;
@@ -958,17 +959,16 @@ enum result throw_exit( struct environment *env, struct variables *vars, int exi
 /* Assign an exception with the specified error code and message to vars and return EXCEPTION. */
 enum result throw( struct variables *vars, struct expression *source, int integer, const char *string ) {
 	struct variable *exception = vars->exception;
-	struct function *func = source->function;
-	struct string *str = NULL;
+	struct string *file = vars->func->file, *str = NULL;
 	if( string ) {
 		str = new_string_value( strlen( string ) + 64 );
 		if( str ) {
-			if( sprintf( str->string, "%s (on line %d of '%.32s')", string, source->line, func->file->string ) < 0 ) {
+			if( sprintf( str->string, "%s (on line %d of '%.32s')", string, source->line, file->string ) < 0 ) {
 				strcpy( str->string, string );
 			}
 			str->length = strlen( str->string );
 		} else {
-			return throw_exit( func->env, vars, 1, OUT_OF_MEMORY );
+			return throw_exit( vars, 1, OUT_OF_MEMORY );
 		}
 	}
 	dispose_variable( exception );
@@ -1196,22 +1196,24 @@ static struct local_variable* new_local_variable( int index, char *name, struct 
 	return local;
 }
 
-static struct global_variable* new_global_variable( char *name, struct structure *type, struct expression *initializer ) {
+static struct global_variable* new_global_variable( char *name,
+	struct structure *type, struct function *init_function, struct expression *initializer ) {
 	struct global_variable *global = calloc( 1, sizeof( struct global_variable ) + sizeof( char ) * ( strlen( name ) + 1 ) );
 	if( global ) {
 		global->name = ( char * ) &global[ 1 ];
 		strcpy( global->name, name );
 		global->type = type;
+		global->init_function = init_function;
 		global->initializer = initializer;
 		global->next = NULL;
 	}
 	return global;
 }
 
-static struct global_variable* new_array_variable( struct environment *env,
-	char *name, struct structure *type, struct expression *initializer ) {
+static struct global_variable* new_array_variable( struct environment *env, char *name,
+	struct structure *type, struct function *init_function, struct expression *initializer ) {
 	struct array *arr;
-	struct global_variable *global = new_global_variable( name, type, initializer );
+	struct global_variable *global = new_global_variable( name, type, init_function, initializer );
 	if( global ) {
 		arr = new_array( env, type ? type->length : 0 , 0 );
 		if( arr ) {
@@ -1262,7 +1264,7 @@ static int add_global( struct environment *env, struct global_variable *global )
 int add_constants( struct constant *constants, struct environment *env, char *message ) {
 	struct global_variable *global;
 	while( constants->name && message[ 0 ] == 0 ) {
-		global = new_global_variable( constants->name, NULL, NULL );
+		global = new_global_variable( constants->name, NULL, NULL, NULL );
 		if( global && add_constant( env, global ) ) {
 			global->value.integer_value = constants->integer_value;
 			if( constants->string_value ) {
@@ -1410,10 +1412,10 @@ static enum result execute_exit_statement( struct statement *this,
 	char *message = NULL;
 	enum result ret = this->source->evaluate( this->source, vars, &exit_code );
 	if( ret ) {
-		if( this->source->function->env->worker ) {
+		if( vars->func->env->worker ) {
 			message = "Worker exited.";
 		}
-		ret = throw_exit( this->source->function->env, vars, exit_code.integer_value, message );
+		ret = throw_exit( vars, exit_code.integer_value, message );
 		dispose_temporary( &exit_code );
 	}
 	return ret;
@@ -1448,6 +1450,7 @@ static enum result execute_try_statement( struct statement *this,
 	enum result ret = OKAY;
 	struct variables try_vars;
 	struct statement *stmt = ( ( struct block_statement * ) this )->if_block;
+	try_vars.func = vars->func;
 	try_vars.locals = vars->locals;
 	try_vars.exception = &vars->locals[ this->local ];
 	while( stmt ) {
@@ -1511,7 +1514,7 @@ static enum result execute_lock_statement( struct statement *this,
 			work = ( struct worker * ) var.string_value;
 			lock = 1;
 		} else {
-			work = this->source->function->env->worker;
+			work = vars->func->env->worker;
 			lock = 2;
 		}
 		if( work->locked != lock && lock_worker( work ) ) {
@@ -1539,7 +1542,7 @@ static enum result execute_lock_statement( struct statement *this,
 
 static enum result execute_while_statement( struct statement *this,
 	struct variables *vars, struct variable *result ) {
-	struct environment *env = this->source->function->env;
+	struct environment *env = vars->func->env;
 	struct variable condition = { 0, NULL };
 	struct statement *stmt;
 	int lhs = 0, rhs = 0;
@@ -1576,7 +1579,7 @@ static enum result execute_while_statement( struct statement *this,
 			if( env->interrupted ) {
 				dispose_temporary( &condition );
 				if( env->worker ) {
-					return throw_exit( this->source->function->env, vars, 0, "Interrupted." );
+					return throw_exit( vars, 0, "Interrupted." );
 				} else {
 					return throw( vars, this->source, 0, "Interrupted.");
 				}
@@ -1710,7 +1713,7 @@ static enum result execute_struct_assignment( struct statement *this,
 static int parse_constant_list( struct element *elem, struct global_variable *prev, char *message ) {
 	int count = 0;
 	while( elem && message[ 0 ] == 0 ) {
-		prev->next = new_global_variable( "", NULL, NULL );
+		prev->next = new_global_variable( "", NULL, NULL, NULL );
 		if( prev->next ) {
 			count++;
 			prev = prev->next;
@@ -1825,13 +1828,13 @@ static enum result evaluate_call_expression( struct expression *this,
 	enum result ret = OKAY;
 	struct statement *stmt;
 	struct variables call_vars;
-	struct function *function = this->function;
 	struct expression *parameter = this->parameters;
-	count = sizeof( struct variable ) * function->num_variables;
+	call_vars.func = ( ( struct function_expression * ) this )->function;
+	count = sizeof( struct variable ) * call_vars.func->num_variables;
 	call_vars.locals = alloca( count );
 	call_vars.exception = vars->exception;
 	memset( call_vars.locals, 0, count );
-	idx = 0, count = function->num_parameters;
+	idx = 0, count = call_vars.func->num_parameters;
 	while( idx < count ) {
 		ret = parameter->evaluate( parameter, vars, &call_vars.locals[ idx++ ] );
 		if( ret ) {
@@ -1841,7 +1844,7 @@ static enum result evaluate_call_expression( struct expression *this,
 		}
 	}
 	if( ret ) {
-		stmt = function->statements;
+		stmt = call_vars.func->statements;
 		while( stmt ) {
 			ret = stmt->execute( stmt, &call_vars, result );
 			if( ret == OKAY ) {
@@ -1857,7 +1860,7 @@ static enum result evaluate_call_expression( struct expression *this,
 			}
 		}
 	}
-	idx = 0, count = function->num_variables;
+	idx = 0, count = call_vars.func->num_variables;
 	while( idx < count ) {
 		dispose_temporary( &call_vars.locals[ idx++ ] );
 	}
@@ -1866,19 +1869,17 @@ static enum result evaluate_call_expression( struct expression *this,
 
 static enum result evaluate_refcall_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
-	struct function *function;
-	struct expression expr = { 0 };
+	struct function_expression expr = { 0 };
 	struct variable func = { 0, NULL };
 	struct expression *parameter = this->parameters;
 	enum result ret = parameter->evaluate( parameter, vars, &func );
 	if( ret ) {
 		if( func.string_value && func.string_value->type == FUNCTION ) {
-			function = ( struct function * ) func.string_value;
-			expr.line = this->line;
-			expr.function = function;
-			if( function->num_parameters == this->index ) {
-				expr.parameters = parameter->next;
-				ret = evaluate_call_expression( &expr, vars, result );
+			expr.expr.line = this->line;
+			expr.function = ( struct function * ) func.string_value;
+			if( expr.function->num_parameters == this->index ) {
+				expr.expr.parameters = parameter->next;
+				ret = evaluate_call_expression( &expr.expr, vars, result );
 			} else {
 				ret = throw( vars, this, this->index, "Incorrect number of parameters to function." );
 			}
@@ -1896,7 +1897,7 @@ static enum result evaluate_thiscall_expression( struct expression *this,
 	struct array *arr;
 	struct string *function = NULL;
 	struct global_variable obj = { 0 };
-	struct expression call_expr = { 0 };
+	struct function_expression call_expr = { 0 };
 	struct global_expression obj_expr = { 0 };
 	enum result ret = this->parameters->evaluate( this->parameters, vars, &obj.value );
 	if( ret ) {
@@ -1912,12 +1913,12 @@ static enum result evaluate_thiscall_expression( struct expression *this,
 					obj_expr.global = &obj;
 					obj_expr.expr.evaluate = evaluate_global;
 					obj_expr.expr.next = this->parameters->next;
-					call_expr.line = this->line;
+					call_expr.expr.line = this->line;
 					call_expr.function = ( struct function * ) function;
-					call_expr.parameters = &obj_expr.expr;
+					call_expr.expr.parameters = &obj_expr.expr;
 					if( call_expr.function->num_parameters == count ) {
 						function->reference_count++;
-						ret = evaluate_call_expression( &call_expr, vars, result );
+						ret = evaluate_call_expression( &call_expr.expr, vars, result );
 						function->reference_count--;
 					} else {
 						ret = throw( vars, this, count, "Incorrect number of parameters to function." );
@@ -1975,7 +1976,7 @@ static enum result evaluate_array_expression( struct expression *this,
 			inputs.next = NULL;
 			len = parse_constant_list( ( struct element * ) var.string_value, &inputs, msg );
 			if( msg[ 0 ] == 0 ) {
-				arr = new_array( this->function->env, len, this->index == 'B' );
+				arr = new_array( vars->func->env, len, this->index == 'B' );
 				if( arr ) {
 					idx = 0;
 					input = inputs.next;
@@ -1992,7 +1993,7 @@ static enum result evaluate_array_expression( struct expression *this,
 			}
 			dispose_global_variables( inputs.next );
 		} else if( var.integer_value >= 0 ) {
-			arr = new_array( this->function->env, var.integer_value, this->index == 'B' );
+			arr = new_array( vars->func->env, var.integer_value, this->index == 'B' );
 			if( arr ) {
 				result->string_value = &arr->str;
 			} else {
@@ -2098,7 +2099,7 @@ static struct global_variable* get_global_indexed( struct global_variable **inde
 static int add_global_constant( struct element *elem, struct environment *env,
 	struct function *func, struct structure *type, struct expression *initializer,
 	struct statement *prev, char *message ) {
-	struct global_variable *global = new_global_variable( elem->str.string, type, initializer );
+	struct global_variable *global = new_global_variable( elem->str.string, type, func, initializer );
 	if( global == NULL || !add_constant( env, global ) ) {
 		dispose_global_variables( global );
 		strcpy( message, OUT_OF_MEMORY );
@@ -2109,7 +2110,7 @@ static int add_global_constant( struct element *elem, struct environment *env,
 static int add_global_variable( struct element *elem, struct environment *env,
 	struct function *func, struct structure *type, struct expression *initializer,
 	struct statement *prev, char *message ) {
-	struct global_variable *global = new_global_variable( elem->str.string, type, initializer );
+	struct global_variable *global = new_global_variable( elem->str.string, type, func, initializer );
 	if( global == NULL || !add_global( env, global ) ) {
 		dispose_global_variables( global );
 		strcpy( message, OUT_OF_MEMORY );
@@ -2120,7 +2121,7 @@ static int add_global_variable( struct element *elem, struct environment *env,
 static int add_array_variable( struct element *elem, struct environment *env,
 	struct function *func, struct structure *type, struct expression *initializer,
 	struct statement *prev, char *message ) {
-	struct global_variable *array = new_array_variable( env, elem->str.string, type, initializer );
+	struct global_variable *array = new_array_variable( env, elem->str.string, type, func, initializer );
 	if( array == NULL || !add_global( env, array ) ) {
 		dispose_global_variables( array );
 		strcpy( message, OUT_OF_MEMORY );
@@ -2192,7 +2193,6 @@ static struct element* parse_variable_declaration( struct element *elem,
 					array_expr = calloc( 1, sizeof( struct expression ) );
 					if( array_expr ) {
 						array_expr->line = elem->line;
-						array_expr->function = func;
 						array_expr->parameters = expr.next;
 						array_expr->evaluate = evaluate_array_expression;
 						if( add( elem->child, env, func, type, array_expr, prev, message ) ) {
@@ -2835,7 +2835,7 @@ static enum result evaluate_values_expression( struct expression *this,
 
 static enum result evaluate_argc_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
-	result->integer_value = this->function->env->argc;
+	result->integer_value = vars->func->env->argc;
 	return OKAY;
 }
 
@@ -2848,8 +2848,8 @@ static enum result evaluate_argv_expression( struct expression *this,
 	struct variable idx = { 0, NULL };
 	ret = parameter->evaluate( parameter, vars, &idx );
 	if( ret ) {
-		if( idx.integer_value >= 0 && idx.integer_value < this->function->env->argc ) {
-			val = this->function->env->argv[ idx.integer_value ];
+		if( idx.integer_value >= 0 && idx.integer_value < vars->func->env->argc ) {
+			val = vars->func->env->argv[ idx.integer_value ];
 			str = new_string_value( strlen( val ) );
 			if( str ) {
 				memcpy( str->string, val, sizeof( char ) * str->length );
@@ -2871,7 +2871,7 @@ static enum result evaluate_time_expression( struct expression *this,
 	time_t seconds = time( NULL );
 	struct string *str = NULL;
 	char *time_str;
-	if( this->function->env->worker == NULL ) {
+	if( vars->func->env->worker == NULL ) {
 		time_str = ctime( &seconds );
 		str = new_string_value( strlen( time_str ) - 1 );
 		if( str ) {
@@ -3220,7 +3220,7 @@ static enum result evaluate_unpack_expression( struct expression *this,
 
 static enum result evaluate_func_ref_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
-	result->string_value = &this->function->str;
+	result->string_value = &( ( struct function_expression * ) this )->function->str;
 	result->string_value->reference_count++;
 	return OKAY;
 }
@@ -3278,7 +3278,7 @@ static enum result evaluate_stridx_expression( struct expression *this,
 
 static enum result evaluate_interrupted_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
-	struct environment *env = this->function->env; 
+	struct environment *env = vars->func->env; 
 	result->integer_value = env->interrupted;
 	if( env->worker == NULL ) {
 		env->interrupted = 0;
@@ -3288,7 +3288,7 @@ static enum result evaluate_interrupted_expression( struct expression *this,
 
 static enum result evaluate_source_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
-	result->string_value = this->function->file;
+	result->string_value = vars->func->file;
 	result->string_value->reference_count++;
 	return OKAY;
 }
@@ -3310,7 +3310,6 @@ static struct element* parse_infix_expression( struct element *elem, struct envi
 	if( expr ) {
 		prev->next = expr;
 		expr->line = elem->line;
-		expr->function = func;
 		if( child ) {
 			child = parse_expression( child, env, func, &param, message );
 			expr->parameters = param.next;
@@ -3359,7 +3358,6 @@ static struct element* parse_operator_expression( struct element *elem, struct e
 	if( expr ) {
 		prev->next = expr;
 		expr->line = elem->line;
-		expr->function = func;
 		if( oper ) {
 			expr->index = oper->oper;
 			expr->evaluate = oper->evaluate;
@@ -3392,16 +3390,16 @@ static struct element* parse_call_expression( struct element *elem, struct envir
 	struct function *func, struct function *decl, struct expression *prev, char *message ) {
 	int num_params;
 	struct element *next = elem->next;
-	struct expression param = { 0 }, *expr = calloc( 1, sizeof( struct expression ) );
+	struct expression param = { 0 }, *expr = calloc( 1, sizeof( struct function_expression ) );
 	if( expr ) {
 		prev->next = expr;
 		expr->line = elem->line;
-		expr->function = decl;
+		( ( struct function_expression * ) expr )->function = decl;
 		if( next && next->str.string[ 0 ] == '(' ) {
 			parse_expressions( next->child, env, func, 0, &param, &num_params, message );
 			expr->parameters = param.next;
 			if( message[ 0 ] == 0 ) {
-				if( num_params == expr->function->num_parameters ) {
+				if( num_params == ( ( struct function_expression * ) expr )->function->num_parameters ) {
 					expr->evaluate = evaluate_call_expression;
 					next = next->next;
 				} else {
@@ -3420,13 +3418,13 @@ static struct element* parse_call_expression( struct element *elem, struct envir
 static struct element* parse_func_ref_expression( struct element *elem, struct environment *env,
 	struct function *func, struct expression *prev, char *message ) {
 	char *name = &elem->str.string[ 1 ];
-	struct expression *expr = calloc( 1, sizeof( struct expression ) );
+	struct function_expression *expr = calloc( 1, sizeof( struct function_expression ) );
 	if( expr ) {
-		prev->next = expr;
-		expr->line = elem->line;
+		prev->next = &expr->expr;
+		expr->expr.line = elem->line;
 		expr->function = get_function_indexed( env->functions_index, name );
 		if( expr->function ) {
-			expr->evaluate = evaluate_func_ref_expression;
+			expr->expr.evaluate = evaluate_func_ref_expression;
 		} else {
 			sprintf( message, "Function '%.64s' not defined on line %d.", name, elem->line );
 		}
@@ -3443,7 +3441,6 @@ static struct element* parse_index_expression( struct element *elem, struct envi
 	if( expr ) {
 		prev->next = expr;
 		expr->line = elem->line;
-		expr->function = func;
 		parse_expressions( elem->child, env, func, 0, &param, &num_params, message );
 		expr->parameters = param.next;
 		if( message[ 0 ] == 0 ) {
@@ -3468,7 +3465,6 @@ static struct element* parse_struct_expression( struct element *elem, struct env
 	if( expr ) {
 		prev->next = expr;
 		expr->line = elem->line;
-		expr->function = func;
 		if( field ) {
 			idx = get_string_list_index( struc->fields, &field[ 1 ] );
 			if( idx >= 0 ) {
@@ -3508,7 +3504,6 @@ static struct element* parse_refcall_expression( struct element *elem, struct en
 	if( expr ) {
 		prev->next = expr;
 		expr->line = elem->line;
-		expr->function = func;
 		if( next && next->str.string[ 0 ] == '(' ) {
 			parse_expressions( next->child, env, func, 0, &param, &count, message );
 			expr->parameters = param.next;
@@ -3542,7 +3537,6 @@ static struct element* parse_thiscall_expression( struct element *elem, struct e
 	if( expr ) {
 		prev->next = expr;
 		expr->line = elem->line;
-		expr->function = func;
 		if( local ) {
 			struc = local->type;
 		} else if( global ) {
@@ -3607,7 +3601,6 @@ static struct element* parse_local_expression( struct element *elem, struct envi
 	if( expr ) {
 		prev->next = expr;
 		expr->line = elem->line;
-		expr->function = func;
 		if( struc && field[ 0 ] == '.' ) {
 			idx = get_string_list_index( struc->fields, &field[ 1 ] );
 			if( idx >= 0 ) {
@@ -3653,7 +3646,6 @@ static struct element* parse_global_expression( struct element *elem, struct env
 	if( expr ) {
 		prev->next = expr;
 		expr->line = elem->line;
-		expr->function = func;
 		if( struc && field ) {
 			idx = get_string_list_index( struc->fields, &field[ 1 ] );
 			if( idx >= 0 ) {
@@ -3690,7 +3682,6 @@ static struct element* parse_integer_literal_expression( struct element *elem, s
 		prev->next = expr;
 		expr->line = elem->line;
 		expr->index = var.integer_value;
-		expr->function = func;
 		expr->evaluate = evaluate_integer_literal_expression;
 	} else {
 		strcpy( message, OUT_OF_MEMORY );
@@ -3705,8 +3696,7 @@ static struct element* parse_string_literal_expression( struct element *elem, st
 	if( expr ) {
 		prev->next = expr;
 		expr->line = elem->line;
-		expr->function = func;
-		literal = new_global_variable( "", NULL, NULL );
+		literal = new_global_variable( "", NULL, NULL, NULL );
 		if( literal ) {
 			literal->next = func->literals;
 			func->literals = literal;
@@ -3833,7 +3823,6 @@ static struct element* parse_increment_statement( struct element *elem, struct e
 			if( stmt->source ) {
 				stmt->local = local->index;
 				stmt->source->line = next->line;
-				stmt->source->function = func;
 				stmt->execute = execute_increment_statement;
 				next = next->next->next;
 			} else {
@@ -3861,7 +3850,6 @@ static struct element* parse_decrement_statement( struct element *elem, struct e
 			if( stmt->source ) {
 				stmt->local = local->index;
 				stmt->source->line = next->line;
-				stmt->source->function = func;
 				stmt->execute = execute_decrement_statement;
 				next = next->next->next;
 			} else {
@@ -3993,7 +3981,6 @@ static struct element* parse_local_assignment( struct element *elem, struct envi
 						stmt->source->next = expr.next;
 						expr.next->line = next->line;
 						expr.next->index = local->index;
-						expr.next->function = func;
 						expr.next->evaluate = evaluate_local;
 						stmt->execute = execute_struct_assignment;
 						next = next->next;
@@ -4039,7 +4026,6 @@ static struct element* parse_global_assignment( struct element *elem, struct env
 					if( expr.next ) {
 						stmt->source->next = expr.next;
 						expr.next->line = next->line;
-						expr.next->function = func;
 						expr.next->evaluate = evaluate_global;
 						( ( struct global_expression * ) expr.next )->global = global;
 						stmt->execute = execute_struct_assignment;
@@ -4328,7 +4314,6 @@ static struct element* parse_lock_statement( struct element *elem, struct enviro
 			expr.next = calloc( 1, sizeof( struct expression ) );
 			if( expr.next ) {
 				expr.next->line = elem->line;
-				expr.next->function = func;
 				expr.next->evaluate = evaluate_integer_literal_expression;
 			} else {
 				strcpy( message, OUT_OF_MEMORY );
@@ -4746,11 +4731,11 @@ static enum result evaluate_function_expression( struct expression *this,
 		if( var.string_value && var.string_value->type == ELEMENT ) {
 			elem = ( struct element * ) var.string_value;
 			key.line = this->line;
-			validate_syntax( "({0", elem, &key, this->function->env, message );
+			validate_syntax( "({0", elem, &key, vars->func->env, message );
 			if( message[ 0 ] == 0 ) {
-				func = parse_function( elem, "function", this->function->file->string, this->function->env, message );
+				func = parse_function( elem, "function", vars->func->file->string, vars->func->env, message );
 				if( func ) {
-					if( parse_function_body( func, this->function->env, message ) ) {
+					if( parse_function_body( func, vars->func->env, message ) ) {
 						result->string_value = &func->str;
 					} else {
 						unref_string( &func->str );
@@ -4780,12 +4765,12 @@ int initialize_worker( struct worker *work, char *message ) {
 /* Begin execution of the specified worker. Returns 0 on failure. */
 int start_worker( struct worker *work ) {
 	struct variables vars = { 0 };
-	struct expression expr = { 0 };
+	struct function_expression expr = { 0 };
 	vars.exception = &work->exception;
-	expr.line = work->env.entry_point->line;
+	expr.expr.line = work->env.entry_point->line;
+	expr.expr.parameters = work->parameters;
 	expr.function = work->env.entry_point;
-	expr.parameters = work->parameters;
-	work->ret = evaluate_call_expression( &expr, &vars, &work->result );
+	work->ret = evaluate_call_expression( &expr.expr, &vars, &work->result );
 	return 1;
 }
 
@@ -4813,7 +4798,7 @@ static enum result evaluate_worker_expression( struct expression *this,
 	char message[ 128 ] = "";
 	struct worker *work;
 	enum result ret;
-	if( this->function->env->worker ) {
+	if( vars->func->env->worker ) {
 		ret = throw( vars, this, 0, "Operation not permitted." );
 	} else {
 		ret = parameter->evaluate( parameter, vars, &var );
@@ -4824,9 +4809,9 @@ static enum result evaluate_worker_expression( struct expression *this,
 			elem = copy_element( ( struct element * ) var.string_value );
 			if( elem ) {
 				key.line = this->line;
-				validate_syntax( "({0", elem, &key, this->function->env, message );
+				validate_syntax( "({0", elem, &key, vars->func->env, message );
 				if( message[ 0 ] == 0 ) {
-					work = parse_worker( elem, this->function->env, this->function->file->string, message );
+					work = parse_worker( elem, vars->func->env, vars->func->file->string, message );
 					if( work ) {
 						result->string_value = &work->str;
 					} else {
@@ -4898,15 +4883,15 @@ static enum result evaluate_execute_expression( struct expression *this,
 				}
 				if( ret ) {
 					work->ret = OKAY;
-					work->env.interrupted = this->function->env->interrupted;
-					this->function->env->worker = work;
+					work->env.interrupted = vars->func->env->interrupted;
+					vars->func->env->worker = work;
 					if( start_worker( work ) ) {
 						result->string_value = var.string_value;
 						result->string_value->reference_count++;
 					} else {
 						ret = throw( vars, this, 0, "Unable to start worker." );
 					}
-					this->function->env->worker = NULL;
+					vars->func->env->worker = NULL;
 				}
 			} else {
 				ret = throw( vars, this, count, "Incorrect number of parameters to function." );
@@ -4931,9 +4916,9 @@ static enum result evaluate_result_expression( struct expression *this,
 		if( var.string_value && var.string_value->type == WORKER ) {
 			work = ( struct worker * ) var.string_value;
 			if( work->locked != 1 ) {
-				this->function->env->worker = work;
+				vars->func->env->worker = work;
 				await_worker( work, 0 );
-				this->function->env->worker = NULL;
+				vars->func->env->worker = NULL;
 				count = work->env.entry_point->num_parameters;
 				for( idx = 0; idx < count; idx++ ) {
 					if( work->args[ idx ].string_value ) {
@@ -5402,6 +5387,7 @@ int initialize_globals( struct environment *env, struct variable *exception ) {
 	vars.exception = exception;
 	while( name ) {
 		global = get_global_indexed( env->constants_index, name->value );
+		vars.func = global->init_function;
 		init = global->initializer;
 		if( init && init->evaluate( init, &vars, &global->value ) == EXCEPTION ) {
 			return 0;
@@ -5411,6 +5397,7 @@ int initialize_globals( struct environment *env, struct variable *exception ) {
 	name = env->globals;
 	while( name ) {
 		global = get_global_indexed( env->globals_index, name->value );
+		vars.func = global->init_function;
 		init = global->initializer;
 		if( init && init->evaluate( init, &vars, &global->value ) == EXCEPTION ) {
 			return 0;
@@ -5504,10 +5491,9 @@ int initialize_environment( struct environment *env, char *message ) {
 }
 
 /* Initialize expr to execute the specified function when evaluated. */
-void initialize_call_expr( struct expression *expr, struct function *func ) {
-	memset( expr, 0, sizeof( struct expression ) );
-	expr->evaluate = evaluate_call_expression;
-	expr->line = func->line;
+void initialize_call_expr( struct function_expression *expr, struct function *func ) {
+	memset( expr, 0, sizeof( struct function_expression ) );
+	expr->expr.evaluate = evaluate_call_expression;
+	expr->expr.line = func->line;
 	expr->function = func;
 }
-

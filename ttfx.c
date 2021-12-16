@@ -199,12 +199,12 @@ static void ( *interrupt_handler )( int signum );
 #if defined( MULTI_THREAD )
 int worker_thread( void *data ) {
 	struct variables vars = { 0 };
-	struct expression expr = { 0 };
+	struct function_expression expr = { 0 };
 	struct worker *work = ( struct worker * ) data;
 	vars.exception = &work->exception;
 	initialize_call_expr( &expr, work->env.entry_point );
-	expr.parameters = work->parameters;
-	work->ret = expr.evaluate( &expr, &vars, &work->result );
+	expr.expr.parameters = work->parameters;
+	work->ret = expr.expr.evaluate( &expr.expr, &vars, &work->result );
 	return 0;
 }
 
@@ -586,7 +586,7 @@ static enum result execute_display_statement( struct statement *this,
 	struct variable width = { 0, NULL }, height = { 0, NULL }, caption = { 0, NULL };
 	struct expression *expr = this->source;
 #if SDL_MAJOR_VERSION > 1
-	struct fxenvironment *fxenv = ( struct fxenvironment * ) expr->function->env;
+	struct fxenvironment *fxenv = ( struct fxenvironment * ) vars->func->env;
 #endif
 	enum result ret = expr->evaluate( expr, vars, &width );
 	if( ret ) {
@@ -663,7 +663,7 @@ static enum result execute_surface_statement( struct statement *this,
 	struct SDL_Surface *surface = NULL;
 #endif
 	struct expression *expr = this->source;
-	struct fxenvironment *fxenv = ( struct fxenvironment * ) expr->function->env;
+	struct fxenvironment *fxenv = ( struct fxenvironment * ) vars->func->env;
 	memset( params, 0, 4 * sizeof( struct variable ) );
 	ret = expr->evaluate( expr, vars, &params[ idx++ ] );
 	expr = expr->next;
@@ -787,7 +787,7 @@ static enum result execute_blit_statement( struct statement *this,
 #endif
 	struct variable params[ 7 ];
 	struct expression *expr = this->source;
-	struct fxenvironment *fxenv = ( struct fxenvironment * ) expr->function->env;
+	struct fxenvironment *fxenv = ( struct fxenvironment * ) vars->func->env;
 	memset( params, 0, 7 * sizeof( struct variable ) );
 	ret = expr->evaluate( expr, vars, &params[ idx++ ] );
 	expr = expr->next;
@@ -841,7 +841,7 @@ static enum result execute_rect_statement( struct statement *this,
 	struct expression *expr = this->source;
 #if SDL_MAJOR_VERSION > 1
 	int colour;
-	struct fxenvironment *fxenv = ( struct fxenvironment * ) expr->function->env;
+	struct fxenvironment *fxenv = ( struct fxenvironment * ) vars->func->env;
 #endif
 	memset( params, 0, 5 * sizeof( struct variable ) );
 	ret = expr->evaluate( expr, vars, &params[ idx++ ] );
@@ -879,7 +879,7 @@ static enum result execute_rect_statement( struct statement *this,
 static enum result execute_show_statement( struct statement *this,
 	struct variables *vars, struct variable *result ) {
 #if SDL_MAJOR_VERSION > 1
-	struct fxenvironment *fxenv = ( struct fxenvironment * ) this->source->function->env;
+	struct fxenvironment *fxenv = ( struct fxenvironment * ) vars->func->env;
 	SDL_SetRenderTarget( fxenv->renderer, NULL );
 	SDL_RenderCopy( fxenv->renderer, fxenv->target, NULL, NULL );
 	SDL_RenderPresent( fxenv->renderer );
@@ -906,7 +906,7 @@ static enum result execute_sleep_statement( struct statement *this,
 static enum result execute_timer_statement( struct statement *this,
 	struct variables *vars, struct variable *result ) {
 	struct variable millis = { 0, NULL };
-	struct fxenvironment *fxenv = ( struct fxenvironment * ) this->source->function->env;
+	struct fxenvironment *fxenv = ( struct fxenvironment * ) vars->func->env;
 	enum result ret = this->source->evaluate( this->source, vars, &millis );
 	if( ret ) {
 		if( millis.integer_value > 0 ) {
@@ -927,7 +927,7 @@ static enum result execute_timer_statement( struct statement *this,
 static enum result execute_audio_statement( struct statement *this,
 	struct variables *vars, struct variable *result ) {
 	struct variable param = { 0, NULL };
-	struct fxenvironment *fxenv = ( struct fxenvironment * ) this->source->function->env;
+	struct fxenvironment *fxenv = ( struct fxenvironment * ) vars->func->env;
 	SDL_AudioSpec audiospec = { 0 };
 	int ticklen;
 	enum result ret = this->source->evaluate( this->source, vars, &param );
@@ -975,7 +975,7 @@ static enum result execute_sample_statement( struct statement *this,
 	struct string *data;
 	struct variable params[ 4 ];
 	struct expression *expr = this->source;
-	struct fxenvironment *fxenv = ( struct fxenvironment * ) this->source->function->env;
+	struct fxenvironment *fxenv = ( struct fxenvironment * ) vars->func->env;
 	memset( params, 0, 4 * sizeof( struct variable ) );
 	ret = expr->evaluate( expr, vars, &params[ idx++ ] );
 	expr = expr->next;
@@ -1022,7 +1022,7 @@ static enum result execute_play_statement( struct statement *this,
 	struct variables *vars, struct variable *result ) {
 	struct expression *expr = this->source;
 	struct variable channel = { 0, NULL }, sequence = { 0, NULL };
-	struct fxenvironment *fxenv = ( struct fxenvironment * ) this->source->function->env;
+	struct fxenvironment *fxenv = ( struct fxenvironment * ) vars->func->env;
 	enum result ret = expr->evaluate( expr, vars, &channel );
 	if( ret ) {
 		expr = expr->next;
@@ -1059,7 +1059,7 @@ static enum result execute_midi_statement( struct statement *this,
 	struct variables *vars, struct variable *result ) {
 	#if defined( ALSA_MIDI )
 	int err = 0;
-	struct fxenvironment *fxenv = ( struct fxenvironment * ) this->source->function->env;
+	struct fxenvironment *fxenv = ( struct fxenvironment * ) vars->func->env;
 	#endif
 	struct variable device = { 0, NULL };
 	enum result ret = this->source->evaluate( this->source, vars, &device );
@@ -1098,7 +1098,6 @@ static struct element* parse_show_statement( struct element *elem, struct enviro
 		stmt->source = calloc( 1, sizeof( struct expression ) );
 		if( stmt->source ) {
 			stmt->source->line = elem->line;
-			stmt->source->function = func;
 			stmt->execute = execute_show_statement;
 			prev->next = stmt;
 			next = next->next;
@@ -1167,10 +1166,10 @@ static struct element* parse_midi_statement( struct element *elem, struct enviro
 
 static enum result handle_event_expression( struct expression *this, SDL_Event *event,
 	struct variables *vars, struct variable *result ) {
-	struct fxenvironment *fxenv = ( struct fxenvironment * ) this->function->env;
+	struct fxenvironment *fxenv = ( struct fxenvironment * ) vars->func->env;
 	enum result ret = OKAY;
 	if( event->type == SDL_QUIT ) {
-		ret = throw_exit( &fxenv->env, vars, 0, NULL );
+		ret = throw_exit( vars, 0, NULL );
 	} else {
 		if( event->type == fxenv->seq_event_type ) {
 			fxenv->seq_msg = event->user.code;
@@ -1199,7 +1198,7 @@ static enum result handle_event_expression( struct expression *this, SDL_Event *
 static enum result evaluate_winmsg_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 #if SDL_MAJOR_VERSION > 1
-	result->integer_value = ( ( struct fxenvironment * ) this->function->env )->win_event;
+	result->integer_value = ( ( struct fxenvironment * ) vars->func->env )->win_event;
 #else
 	result->integer_value = SDL_VIDEOEXPOSE;
 #endif
@@ -1208,7 +1207,7 @@ static enum result evaluate_winmsg_expression( struct expression *this,
 
 static enum result evaluate_midimsg_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
-	result->integer_value = ( ( struct fxenvironment * ) this->function->env )->midi_msg;
+	result->integer_value = ( ( struct fxenvironment * ) vars->func->env )->midi_msg;
 	return OKAY;
 }
 
@@ -1257,13 +1256,13 @@ static enum result evaluate_mousekey_expression( struct expression *this,
 
 static enum result evaluate_mousewheel_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
-	result->integer_value = ( ( struct fxenvironment * ) this->function->env )->wheel;
+	result->integer_value = ( ( struct fxenvironment * ) vars->func->env )->wheel;
 	return OKAY;
 }
 
 static enum result evaluate_keyboard_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
-	result->integer_value = ( ( struct fxenvironment * ) this->function->env )->key;
+	result->integer_value = ( ( struct fxenvironment * ) vars->func->env )->key;
 	return OKAY;
 }
 
@@ -1275,14 +1274,14 @@ static enum result evaluate_keyshift_expression( struct expression *this,
 
 static enum result evaluate_keyheld_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
-	result->integer_value = ( ( struct fxenvironment * ) this->function->env )->key_held;
+	result->integer_value = ( ( struct fxenvironment * ) vars->func->env )->key_held;
 	return OKAY;
 }
 
 /* Returns a value incremented every sequencer tick while the audio device is running. */
 static enum result evaluate_seqtick_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
-	result->integer_value = ( ( struct fxenvironment * ) this->function->env )->tick;
+	result->integer_value = ( ( struct fxenvironment * ) vars->func->env )->tick;
 	return OKAY;
 }
 
@@ -1292,7 +1291,7 @@ static enum result evaluate_seqmix_expression( struct expression *this,
 	int length, idx, end;
 	struct expression *parameter = this->parameters;
 	struct variable arr = { 0, NULL }, var = { 0, NULL };
-	struct fxenvironment *fxenv = ( struct fxenvironment * ) this->function->env;
+	struct fxenvironment *fxenv = ( struct fxenvironment * ) vars->func->env;
 	enum result ret = parameter->evaluate( parameter, vars, &arr );
 	if( ret ) {
 		if( arr.string_value && arr.string_value->type == ARRAY ) {
@@ -1340,7 +1339,7 @@ static enum result evaluate_seqrate_expression( struct expression *this,
 */
 static enum result evaluate_seqmsg_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
-	result->integer_value = ( ( struct fxenvironment * ) this->function->env )->seq_msg;
+	result->integer_value = ( ( struct fxenvironment * ) vars->func->env )->seq_msg;
 	return OKAY;
 }
 
@@ -1495,7 +1494,7 @@ static enum result evaluate_path_expression( struct expression *this,
 /* If a program was loaded from bank 0 of a datfile, return the entire datfile as a string. */
 static enum result evaluate_datfile_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
-	struct fxenvironment *fxenv = ( struct fxenvironment * ) this->function->env;
+	struct fxenvironment *fxenv = ( struct fxenvironment * ) vars->func->env;
 	assign_variable( &fxenv->datfile, result );
 	return OKAY;
 }
@@ -1549,7 +1548,7 @@ static enum result evaluate_stream_expression( struct expression *this,
 	int length, samples, idx, end, off, *values;
 	struct expression *parameter = this->parameters;
 	struct variable arr = { 0, NULL }, offset = { 0, NULL }, count = { 0, NULL };
-	struct fxenvironment *fxenv = ( struct fxenvironment * ) this->function->env;
+	struct fxenvironment *fxenv = ( struct fxenvironment * ) vars->func->env;
 	enum result ret = parameter->evaluate( parameter, vars, &arr );
 	if( ret ) {
 		parameter = parameter->next;
@@ -1806,7 +1805,7 @@ int main( int argc, char **argv ) {
 	int exit_code = EXIT_FAILURE;
 	char *file_name, message[ 256 ] = "";
 	struct variable result = { 0 }, except = { 0 };
-	struct expression expr = { 0 };
+	struct function_expression expr = { 0 };
 	struct variables vars = { 0 };
 	vars.exception = &except;
 	/* Handle command-line.*/
@@ -1828,7 +1827,7 @@ int main( int argc, char **argv ) {
 				if( interrupt_handler != SIG_ERR ) {
 					/* Evaluate the last entry-point function. */
 					initialize_call_expr( &expr, fxenv.env.entry_point );
-					if( initialize_globals( &fxenv.env, &except ) && expr.evaluate( &expr, &vars, &result ) ) {
+					if( initialize_globals( &fxenv.env, &except ) && expr.expr.evaluate( &expr.expr, &vars, &result ) ) {
 						exit_code = EXIT_SUCCESS;
 					} else if( except.string_value && except.string_value->type == EXIT ) {
 						if( except.string_value->string ) {

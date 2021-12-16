@@ -723,8 +723,8 @@ static int parse_instructions( struct element *elem, struct function *func, stru
 }
 
 static enum result throw_interrupt( struct variables *vars, struct expression *source ) {
-	if( source->function->env->worker ) {
-		return throw_exit( source->function->env, vars, 0, "Interrupted." );
+	if( vars->func->env->worker ) {
+		return throw_exit( vars, 0, "Interrupted." );
 	} else {
 		return throw( vars, source, 0, "Interrupted.");
 	}
@@ -732,13 +732,13 @@ static enum result throw_interrupt( struct variables *vars, struct expression *s
 
 static enum result execute_asm_statement( struct statement *this,
 	struct variables *vars, struct variable *result ) {
-	struct environment *env = this->source->function->env;
 	struct asm_statement *stmt = ( struct asm_statement * ) this;
 	unsigned int idx, len, string_bounds[ 128 ], array_bounds[ 128 ];
 	struct instruction *ins = stmt->instructions;
+	struct environment *env = vars->func->env;
 	struct variable *locals = vars->locals;
 	struct string *str;
-	for( idx = 0, len = this->source->function->num_variables; idx < len; idx++ ) {
+	for( idx = 0, len = vars->func->num_variables; idx < len; idx++ ) {
 		str = locals[ idx ].string_value;
 		if( str ) {
 			string_bounds[ idx ] = str->length;
@@ -1093,7 +1093,6 @@ struct element* parse_asm_statement( struct element *elem, struct environment *e
 			}
 			if( stmt && stmt->stmt.source ) {
 				stmt->stmt.source->line = elem->line;
-				stmt->stmt.source->function = func;
 				stmt->instructions = ( struct instruction * ) &stmt[ 1 ];
 				parse_instructions( next->child, func, stmt->instructions, &labels, message );
 				stmt->stmt.execute = execute_asm_statement;
