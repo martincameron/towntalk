@@ -1543,41 +1543,41 @@ static enum result execute_lock_statement( struct statement *this,
 static enum result execute_while_statement( struct statement *this,
 	struct variables *vars, struct variable *result ) {
 	struct environment *env = vars->func->env;
-	struct variable condition = { 0, NULL };
+	struct variable condition = { 0, NULL }, *lhs = NULL, *rhs = NULL;
 	struct statement *stmt;
-	int lhs = 0, rhs = 0;
 	enum result ret;
 	if( this->local ) {
-		lhs = this->source->parameters->index;
-		rhs = this->source->parameters->next->index;
+		lhs = &vars->locals[ this->source->parameters->index ];
+		rhs = &vars->locals[ this->source->parameters->next->index ];
 	}
 	while( 1 ) {
 		if( this->local == '<' ) {
-			condition.integer_value = vars->locals[ lhs ].integer_value < vars->locals[ rhs ].integer_value;
-		} else if( !this->source->evaluate( this->source, vars, &condition ) ) {
+			condition.integer_value = lhs->integer_value < rhs->integer_value;
+		} else if( this->source->evaluate( this->source, vars, &condition ) ) {
+			if( condition.string_value ) {
+				dispose_variable( &condition );
+				condition.integer_value = 1;
+			}
+		} else {
 			break;
 		}
-		if( condition.integer_value || condition.string_value ) {
+		if( condition.integer_value ) {
 			stmt = ( ( struct block_statement * ) this )->if_block;
 			while( stmt ) {
 				ret = stmt->execute( stmt, vars, result );
 				if( ret == OKAY ) {
 					stmt = stmt->next;
 				} else if( ret == RETURN ) {
-					dispose_temporary( &condition );
 					return RETURN;
 				} else if( ret == BREAK ) {
-					dispose_temporary( &condition );
 					return OKAY;
 				} else if( ret == CONTINUE ) {
 					break;
 				} else if( ret == EXCEPTION ) {
-					dispose_temporary( &condition );
 					return EXCEPTION;
 				}
 			}
 			if( env->interrupted ) {
-				dispose_temporary( &condition );
 				if( env->worker ) {
 					return throw_exit( vars, 0, "Interrupted." );
 				} else {
@@ -1585,11 +1585,9 @@ static enum result execute_while_statement( struct statement *this,
 				}
 			}
 		} else {
-			dispose_temporary( &condition );
 			return OKAY;
 		}
 	}
-	dispose_temporary( &condition );
 	return EXCEPTION;
 }
 
