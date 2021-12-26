@@ -38,13 +38,13 @@ Here's how you might add a native upper-case expression to an embedded program:
 
 #include "towntalk.h"
 
-static enum result evaluate_upcase_expression( struct expression *this, struct variable *variables,
-	struct variable *result, struct variable *exception ) {
+static enum result evaluate_upcase_expression( struct expression *this,
+	struct variables *vars, struct variable *result ) {
 	int idx, len;
 	enum result ret;
 	struct string *str;
 	struct variable var = { 0 };
-	ret = this->parameters->evaluate( this->parameters, variables, &var, exception );
+	ret = this->parameters->evaluate( this->parameters, vars, &var );
 	if( ret ) {
 		if( var.string_value ) {
 			str = new_string_value( strlen( var.string_value->string ) );
@@ -52,14 +52,12 @@ static enum result evaluate_upcase_expression( struct expression *this, struct v
 				for( idx = 0, len = var.string_value->length; idx < len; idx++ ) {
 					str->string[ idx ] = toupper( var.string_value->string[ idx ] );
 				}
-				dispose_variable( result );
-				result->integer_value = 0;
 				result->string_value = str;
 			} else {
-				ret = throw( exception, this, 0, OUT_OF_MEMORY );
+				ret = throw( vars, this, 0, OUT_OF_MEMORY );
 			}
 		} else {
-			ret = throw( exception, this, 0, "Not a string." );
+			ret = throw( vars, this, 0, "Not a string." );
 		}
 		dispose_variable( &var );
 	}
@@ -69,13 +67,13 @@ static enum result evaluate_upcase_expression( struct expression *this, struct v
 int main( int argc, char **argv ) {
 	int exit_code = EXIT_FAILURE;
 	char message[ 256 ] = "";
-	struct operator upcase = { "$upcase", '$', 1, evaluate_upcase_expression, NULL };
 	struct environment env = { 0 };
+	struct operator operators[ 2 ] = { { "$upcase", '$', 1, evaluate_upcase_expression, NULL }, { NULL } };
 	struct variable result = { 0 }, except = { 0 };
 	struct function_expression expr = { 0 };
 	struct variables vars = { 0 };
 	vars.exception = &except;
-	if( initialize_environment( &env, message ) && add_operators( &upcase, &env, message )
+	if( initialize_environment( &env, message ) && add_operators( operators, &env, message )
 		&& parse_tt_program( "program hello { print $upcase( \"Hello, World!\" ); } ", "hello", &env, message ) ) {
 		initialize_call_expr( &expr, env.entry_point );
 		if( initialize_globals( &env, &except ) && expr.expr.evaluate( &expr.expr, &vars, &result ) ) {
