@@ -2318,6 +2318,93 @@ static enum result evaluate_ternary_expression( struct expression *this,
 	return ret;
 }
 
+static enum result evaluate_fast_arithmetic_expr( struct expression *this,
+	struct variables *vars, struct variable *result ) {
+	struct expression *parameter = this->parameters;
+	int lhs, oper = this->index;
+	struct variable var;
+	enum result ret;
+	if( parameter->evaluate == evaluate_local ) {
+		lhs = vars->locals[ parameter->index ].integer_value;
+	} else {
+		var.integer_value = 0;
+		var.string_value = NULL;
+		ret = parameter->evaluate( parameter, vars, &var );
+		if( ret ) {
+			lhs = var.integer_value;
+			dispose_temporary( &var );
+		} else {
+			return ret;
+		}
+	}
+	while( oper ) {
+		parameter = parameter->next;
+		switch( oper & 0xFF ) {
+			case  '%':
+				if( parameter->index != 0 ) {
+					lhs = lhs % parameter->index;
+				} else {
+					return throw( vars, this, 0, "Modulo division by zero." );
+				}
+				break;
+			case 0xA5:
+				if( vars->locals[ parameter->index ].integer_value != 0 ) {
+					lhs = lhs % vars->locals[ parameter->index ].integer_value;
+				} else {
+					return throw( vars, this, 0, "Modulo division by zero." );
+				}
+				break;
+			case  '&': lhs = lhs  & parameter->index; break;
+			case 0xA6: lhs = lhs  & vars->locals[ parameter->index ].integer_value; break;
+			case  '*': lhs = lhs  * parameter->index; break;
+			case 0xAA: lhs = lhs  * vars->locals[ parameter->index ].integer_value; break;
+			case  '+': lhs = lhs  + parameter->index; break;
+			case 0xAB: lhs = lhs  + vars->locals[ parameter->index ].integer_value; break;
+			case  '-': lhs = lhs  - parameter->index; break;
+			case 0xAD: lhs = lhs  - vars->locals[ parameter->index ].integer_value; break;
+			case  '/':
+				if( parameter->index != 0 ) {
+					lhs = lhs / parameter->index;
+				} else {
+					return throw( vars, this, 0, "Integer division by zero." );
+				}
+				break;
+			case 0xAF:
+				if( vars->locals[ parameter->index ].integer_value != 0 ) {
+					lhs = lhs / vars->locals[ parameter->index ].integer_value;
+				} else {
+					return throw( vars, this, 0, "Integer division by zero." );
+				}
+				break;
+			case  '<': lhs = lhs  < parameter->index; break;
+			case 0xBC: lhs = lhs  < vars->locals[ parameter->index ].integer_value; break;
+			case  '>': lhs = lhs  > parameter->index; break;
+			case 0xBE: lhs = lhs  > vars->locals[ parameter->index ].integer_value; break;
+			case  'A': lhs = lhs << parameter->index; break;
+			case 0xC1: lhs = lhs << vars->locals[ parameter->index ].integer_value; break;
+			case  'B': lhs = lhs >> parameter->index; break;
+			case 0xC2: lhs = lhs >> vars->locals[ parameter->index ].integer_value; break;
+			case  'G': lhs = lhs >= parameter->index; break;
+			case 0xC7: lhs = lhs >= vars->locals[ parameter->index ].integer_value; break;
+			case  'L': lhs = lhs <= parameter->index; break;
+			case 0xCC: lhs = lhs <= vars->locals[ parameter->index ].integer_value; break;
+			case  '^': lhs = lhs  ^ parameter->index; break;
+			case 0xDE: lhs = lhs  ^ vars->locals[ parameter->index ].integer_value; break;
+			case  '=': lhs = lhs == parameter->index; break;
+			case 0xBD: lhs = lhs == vars->locals[ parameter->index ].integer_value; break;
+			case  '!': lhs = lhs != parameter->index; break;
+			case 0xA1: lhs = lhs != vars->locals[ parameter->index ].integer_value; break;
+			case  '|': lhs = lhs  | parameter->index; break;
+			case 0xFC: lhs = lhs  | vars->locals[ parameter->index ].integer_value; break;
+			default :
+				return throw( vars, this, 0, "Unhandled integer operator." );
+		}
+		oper = oper >> 8;
+	}
+	result->integer_value = lhs;
+	return OKAY;
+}
+
 static enum result evaluate_arithmetic_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	struct expression *parameter = this->parameters;
@@ -2339,20 +2426,14 @@ static enum result evaluate_arithmetic_expression( struct expression *this,
 	}
 	while( parameter->next ) {
 		parameter = parameter->next;
-		if( parameter->evaluate == evaluate_integer_literal_expression ) {
-			rhs = parameter->index;
-		} else if( parameter->evaluate == evaluate_local ) {
-			rhs = vars->locals[ parameter->index ].integer_value;
+		var.integer_value = 0;
+		var.string_value = NULL;
+		ret = parameter->evaluate( parameter, vars, &var );
+		if( ret ) {
+			rhs = var.integer_value;
+			dispose_temporary( &var );
 		} else {
-			var.integer_value = 0;
-			var.string_value = NULL;
-			ret = parameter->evaluate( parameter, vars, &var );
-			if( ret ) {
-				rhs = var.integer_value;
-				dispose_temporary( &var );
-			} else {
-				return ret;
-			}
+			return ret;
 		}
 		switch( this->index ) {
 			case '%':
@@ -3289,9 +3370,45 @@ static struct operator* get_operator( char *name, struct operator *oper ) {
 	return oper;
 }
 
+static void optimize_expression( struct expression *expr ) {
+	int count;
+	struct expression *param, *next;
+	if( expr->evaluate == evaluate_arithmetic_expression ) {
+		param = expr->parameters->next;
+		if( param->next == NULL ) {
+			if( param->evaluate == evaluate_integer_literal_expression ) {
+				/* Arithmetic with integer-literal on rhs.*/
+				expr->evaluate = evaluate_fast_arithmetic_expr;
+			} else if( param->evaluate == evaluate_local ) {
+				/* Arithmetic with local-variable on rhs.*/
+				expr->index |= 0x80;
+				expr->evaluate = evaluate_fast_arithmetic_expr;
+			}
+		}
+	}
+	if( expr->evaluate == evaluate_fast_arithmetic_expr ) {
+		param = expr->parameters;
+		if( param->evaluate == evaluate_fast_arithmetic_expr ) {
+			count = 0;
+			next = param->parameters;
+			while( next->next ) {
+				next = next->next;
+				count++;
+			}
+			if( count < 3 ) {
+				/* Combine fast-arithmetic expressions. */
+				expr->index = param->index | ( expr->index << ( count * 8 ) );
+				next->next = param->next;
+				expr->parameters = param->parameters;
+				free( param );
+			}
+		}
+	}
+}
+
 static struct element* parse_infix_expression( struct element *elem, struct environment *env,
 	struct function *func, struct expression *prev, char *message ) {
-	int num_operands;
+	int count;
 	struct operator *oper;
 	struct element *next = elem->next;
 	struct element *child = next->child;
@@ -3309,11 +3426,11 @@ static struct element* parse_infix_expression( struct element *elem, struct envi
 						expr->index = oper->oper;
 						expr->evaluate = oper->evaluate;
 						if( oper->num_operands != 0 ) {
-							parse_expressions( child->next, env, func, 0, expr->parameters, &num_operands, message );
-							num_operands++;
+							parse_expressions( child->next, env, func, 0, expr->parameters, &count, message );
 							if( message[ 0 ] == 0 ) {
-								if( num_operands == oper->num_operands
-								|| ( oper->num_operands < 0 && num_operands >= -oper->num_operands ) ) {
+								count++;
+								if( count == oper->num_operands || ( oper->num_operands < 0 && count >= -oper->num_operands ) ) {
+									optimize_expression( expr );
 									next = next->next;
 								} else {
 									sprintf( message, "Wrong number of arguments to '%.64s()' on line %d.", oper->name, child->line );
@@ -3340,7 +3457,7 @@ static struct element* parse_infix_expression( struct element *elem, struct envi
 
 static struct element* parse_operator_expression( struct element *elem, struct environment *env,
 	struct function *func, struct expression *prev, char *message ) {
-	int num_operands;
+	int count;
 	struct element *next = elem->next;
 	struct operator *oper = get_operator( elem->str.string, env->operators_index[ hash_code( elem->str.string, 0 ) ] );
 	struct expression param = { 0 }, *expr = calloc( 1, sizeof( struct expression ) );
@@ -3352,11 +3469,11 @@ static struct element* parse_operator_expression( struct element *elem, struct e
 			expr->evaluate = oper->evaluate;
 			if( oper->num_operands != 0 ) {
 				if( next && next->str.string[ 0 ] == '(' ) {
-					parse_expressions( next->child, env, func, 0, &param, &num_operands, message );
+					parse_expressions( next->child, env, func, 0, &param, &count, message );
 					expr->parameters = param.next;
 					if( message[ 0 ] == 0 ) {
-						if( num_operands == oper->num_operands
-						|| ( oper->num_operands < 0 && num_operands >= -oper->num_operands ) ) {
+						if( count == oper->num_operands || ( oper->num_operands < 0 && count >= -oper->num_operands ) ) {
+							optimize_expression( expr );
 							next = next->next;
 						} else {
 							sprintf( message, "Wrong number of arguments to '%.64s()' on line %d.", oper->name, next->line );
