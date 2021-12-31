@@ -2318,99 +2318,12 @@ static enum result evaluate_ternary_expression( struct expression *this,
 	return ret;
 }
 
-static enum result evaluate_fast_arithmetic_expr( struct expression *this,
-	struct variables *vars, struct variable *result ) {
-	struct expression *parameter = this->parameters;
-	int lhs, oper = this->index;
-	struct variable var;
-	enum result ret;
-	if( parameter->evaluate == evaluate_local ) {
-		lhs = vars->locals[ parameter->index ].integer_value;
-	} else {
-		var.integer_value = 0;
-		var.string_value = NULL;
-		ret = parameter->evaluate( parameter, vars, &var );
-		if( ret ) {
-			lhs = var.integer_value;
-			dispose_temporary( &var );
-		} else {
-			return ret;
-		}
-	}
-	while( oper ) {
-		parameter = parameter->next;
-		switch( oper & 0xFF ) {
-			case  '%':
-				if( parameter->index != 0 ) {
-					lhs = lhs % parameter->index;
-				} else {
-					return throw( vars, this, 0, "Modulo division by zero." );
-				}
-				break;
-			case 0xA5:
-				if( vars->locals[ parameter->index ].integer_value != 0 ) {
-					lhs = lhs % vars->locals[ parameter->index ].integer_value;
-				} else {
-					return throw( vars, this, 0, "Modulo division by zero." );
-				}
-				break;
-			case  '&': lhs = lhs  & parameter->index; break;
-			case 0xA6: lhs = lhs  & vars->locals[ parameter->index ].integer_value; break;
-			case  '*': lhs = lhs  * parameter->index; break;
-			case 0xAA: lhs = lhs  * vars->locals[ parameter->index ].integer_value; break;
-			case  '+': lhs = lhs  + parameter->index; break;
-			case 0xAB: lhs = lhs  + vars->locals[ parameter->index ].integer_value; break;
-			case  '-': lhs = lhs  - parameter->index; break;
-			case 0xAD: lhs = lhs  - vars->locals[ parameter->index ].integer_value; break;
-			case  '/':
-				if( parameter->index != 0 ) {
-					lhs = lhs / parameter->index;
-				} else {
-					return throw( vars, this, 0, "Integer division by zero." );
-				}
-				break;
-			case 0xAF:
-				if( vars->locals[ parameter->index ].integer_value != 0 ) {
-					lhs = lhs / vars->locals[ parameter->index ].integer_value;
-				} else {
-					return throw( vars, this, 0, "Integer division by zero." );
-				}
-				break;
-			case  '<': lhs = lhs  < parameter->index; break;
-			case 0xBC: lhs = lhs  < vars->locals[ parameter->index ].integer_value; break;
-			case  '>': lhs = lhs  > parameter->index; break;
-			case 0xBE: lhs = lhs  > vars->locals[ parameter->index ].integer_value; break;
-			case  'A': lhs = lhs << parameter->index; break;
-			case 0xC1: lhs = lhs << vars->locals[ parameter->index ].integer_value; break;
-			case  'B': lhs = lhs >> parameter->index; break;
-			case 0xC2: lhs = lhs >> vars->locals[ parameter->index ].integer_value; break;
-			case  'G': lhs = lhs >= parameter->index; break;
-			case 0xC7: lhs = lhs >= vars->locals[ parameter->index ].integer_value; break;
-			case  'L': lhs = lhs <= parameter->index; break;
-			case 0xCC: lhs = lhs <= vars->locals[ parameter->index ].integer_value; break;
-			case  '^': lhs = lhs  ^ parameter->index; break;
-			case 0xDE: lhs = lhs  ^ vars->locals[ parameter->index ].integer_value; break;
-			case  '=': lhs = lhs == parameter->index; break;
-			case 0xBD: lhs = lhs == vars->locals[ parameter->index ].integer_value; break;
-			case  '!': lhs = lhs != parameter->index; break;
-			case 0xA1: lhs = lhs != vars->locals[ parameter->index ].integer_value; break;
-			case  '|': lhs = lhs  | parameter->index; break;
-			case 0xFC: lhs = lhs  | vars->locals[ parameter->index ].integer_value; break;
-			default :
-				return throw( vars, this, 0, "Unhandled integer operator." );
-		}
-		oper = oper >> 8;
-	}
-	result->integer_value = lhs;
-	return OKAY;
-}
-
 static enum result evaluate_arithmetic_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	struct expression *parameter = this->parameters;
 	struct variable var;
 	enum result ret;
-	int lhs, rhs;
+	int lhs, rhs, oper = this->index;
 	if( parameter->evaluate == evaluate_local ) {
 		lhs = vars->locals[ parameter->index ].integer_value;
 	} else {
@@ -2426,16 +2339,26 @@ static enum result evaluate_arithmetic_expression( struct expression *this,
 	}
 	while( parameter->next ) {
 		parameter = parameter->next;
-		var.integer_value = 0;
-		var.string_value = NULL;
-		ret = parameter->evaluate( parameter, vars, &var );
-		if( ret ) {
-			rhs = var.integer_value;
-			dispose_temporary( &var );
+		if( parameter->evaluate == evaluate_integer_literal_expression ) {
+			rhs = parameter->index;
+		} else if( parameter->evaluate == evaluate_local ) {
+			rhs = vars->locals[ parameter->index ].integer_value;
 		} else {
-			return ret;
+			var.integer_value = 0;
+			var.string_value = NULL;
+			ret = parameter->evaluate( parameter, vars, &var );
+			if( ret ) {
+				rhs = var.integer_value;
+				dispose_temporary( &var );
+			} else {
+				return ret;
+			}
 		}
-		switch( this->index ) {
+		evaluate:
+		switch( oper & 0xFF ) {
+			case 0:
+				oper = this->index;
+				goto evaluate;
 			case '%':
 				if( rhs != 0 ) {
 					lhs = lhs % rhs;
@@ -2467,6 +2390,7 @@ static enum result evaluate_arithmetic_expression( struct expression *this,
 			default :
 				return throw( vars, this, 0, "Unhandled integer operator." );
 		}
+		oper = oper >> 8;
 	}
 	result->integer_value = lhs;
 	return OKAY;
@@ -3373,30 +3297,17 @@ static struct operator* get_operator( char *name, struct operator *oper ) {
 static void optimize_expression( struct expression *expr ) {
 	int count;
 	struct expression *param, *next;
-	if( expr->evaluate == evaluate_arithmetic_expression ) {
-		param = expr->parameters->next;
-		if( param->next == NULL ) {
-			if( param->evaluate == evaluate_integer_literal_expression ) {
-				/* Arithmetic with integer-literal on rhs.*/
-				expr->evaluate = evaluate_fast_arithmetic_expr;
-			} else if( param->evaluate == evaluate_local ) {
-				/* Arithmetic with local-variable on rhs.*/
-				expr->index |= 0x80;
-				expr->evaluate = evaluate_fast_arithmetic_expr;
-			}
-		}
-	}
-	if( expr->evaluate == evaluate_fast_arithmetic_expr ) {
+	if( expr->evaluate == evaluate_arithmetic_expression && expr->parameters->next->next == NULL ) {
 		param = expr->parameters;
-		if( param->evaluate == evaluate_fast_arithmetic_expr ) {
+		if( param->evaluate == evaluate_arithmetic_expression && ( ( param->index & 0xFF00 ) || param->parameters->next->next == NULL ) ) {
 			count = 0;
 			next = param->parameters;
 			while( next->next ) {
 				next = next->next;
 				count++;
 			}
-			if( count < 3 ) {
-				/* Combine fast-arithmetic expressions. */
+			if( count < 4 ) {
+				/* Combine arithmetic expressions. */
 				expr->index = param->index | ( expr->index << ( count * 8 ) );
 				next->next = param->next;
 				expr->parameters = param->parameters;
