@@ -1214,13 +1214,10 @@ static enum result evaluate_midimsg_expression( struct expression *this,
 static enum result evaluate_pollevent_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	SDL_Event event = { 0 };
-#if SDL_MAJOR_VERSION > 1
-	event.type = SDL_FIRSTEVENT;
-#else
-	event.type = SDL_NOEVENT;
-#endif
-	SDL_PollEvent( &event );
-	return handle_event_expression( this, &event, vars, result );
+	if( SDL_PollEvent( &event ) ) {
+		return handle_event_expression( this, &event, vars, result );
+	}
+	return OKAY;
 }
 
 static enum result evaluate_waitevent_expression( struct expression *this,
