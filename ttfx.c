@@ -1765,13 +1765,13 @@ static int parse_ttfx_file( char *file_name, struct fxenvironment *env, char *me
 	long file_length, bank_length, success = 0;
 	struct string *program_buffer;
 	/* Load program file into string.*/
-	file_length = load_file( file_name, NULL, message );
+	file_length = load_file( file_name, NULL, 0, 0, message );
 	if( file_length >= MAX_INTEGER ) {
 		strcpy( message, "File too large." );
 	} else if( file_length >= 0 ) {
 		program_buffer = new_string_value( file_length );
 		if( program_buffer ) {
-			file_length = load_file( file_name, program_buffer->string, message );
+			file_length = load_file( file_name, program_buffer->string, 0, file_length, message );
 			bank_length = datfile_extract( program_buffer->string, file_length, 0, NULL );
 			if( bank_length >= 0 ) {
 				/* Extract program from bank 0 of datfile. */

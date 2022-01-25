@@ -149,6 +149,7 @@
 		$array(${0,"a"})         Create array with values from element.
 		$new(struct)             Same as $array(struct).
 		$load("abc.bin")         Load raw bytes into string.
+		$load("file", off, len)  Load section of file into string.
 		$flen("file")            Get the length of a file.
 		$src                     Path of current source file.
 		$stridx(str,"chars",idx) The index of a member of chars in str from idx.
@@ -562,33 +563,38 @@ static struct element* parse_element( char *buffer, char *message ) {
 	return elem.child;
 }
 
-/* Load the specified file into buffer (if not null) and returns the file length.
+/* Load the specified portion of a file into buffer (if not null).
+   Returns the number of bytes available to read from offset.
    Returns -1 and writes message on failure. */
-long load_file( char *file_name, char *buffer, char *message ) {
-	size_t bytes_read;
-	long file_length = -1;
+long load_file( char *file_name, char *buffer, long offset, long count, char *message ) {
+	long length, remain = -1;
 	FILE *input_file = fopen( file_name, "rb" );
 	if( input_file != NULL ) {
 		if( fseek( input_file, 0L, SEEK_END ) == 0 ) {
-			file_length = ftell( input_file ) / sizeof( char );
-			if( file_length >= 0 && buffer ) {
-				if( fseek( input_file, 0L, SEEK_SET ) == 0 ) {
-					bytes_read = fread( buffer, sizeof( char ), file_length, input_file ); 
-					if( bytes_read != file_length * sizeof( char ) ) {
-						file_length = -1;
+			length = ftell( input_file );
+			if( length >= 0 ) {
+				if( offset < 0 || offset > length ) {
+					offset = length;
+				}
+				remain = length - offset;
+				if( remain > 0 && count > 0 && buffer ) {
+					if( count > remain ) {
+						count = remain;
 					}
-				} else {
-					file_length = -1;
+					if( fseek( input_file, offset, SEEK_SET ) < 0
+					||  fread( buffer, 1, count, input_file ) < ( size_t ) count ) {
+						remain = -1;
+					}
 				}
 			}
 		}
 		fclose( input_file );
 	}
-	if( file_length < 0 ) {
+	if( remain < 0 ) {
 		strncpy( message, strerror( errno ), 63 );
 		message[ 63 ] = 0;
 	}
-	return file_length;
+	return remain;
 }
 
 static int save_file( char *file_name, char *buffer, int length, int append, char *message ) {
@@ -2561,35 +2567,54 @@ static enum result evaluate_load_expression( struct expression *this,
 	long len;
 	char message[ 64 ];
 	struct string *str;
-	struct variable file = { 0, NULL };
-	enum result ret = this->parameters->evaluate( this->parameters, vars, &file );
+	struct expression *parameter = this->parameters;
+	struct variable file = { 0, NULL }, offset = { 0, NULL }, count = { -1, NULL };
+	enum result ret = parameter->evaluate( parameter, vars, &file );
 	if( ret ) {
 		if( file.string_value ) {
-			len = load_file( file.string_value->string, NULL, message );
-			if( len >= 0 ) {
-				if( len < MAX_INTEGER ) {
-					str = new_string_value( len );
-					if( str ) {
-						len = load_file( file.string_value->string, str->string, message );
-						if( len >= 0 ) {
-							result->string_value = str;
+			parameter = parameter->next;
+			if( parameter ) {
+				ret = parameter->evaluate( parameter, vars, &offset );
+				parameter = parameter->next;
+			}
+			if( ret && parameter ) {
+				ret = parameter->evaluate( parameter, vars, &count );
+				if( ret && parameter->next ) {
+					ret = throw( vars, this, 0, "Too many parameters." );
+				}
+			}
+			if( ret ) {
+				len = load_file( file.string_value->string, NULL, offset.integer_value, 0, message );
+				if( len >= 0 ) {
+					if( count.integer_value >= 0 && count.integer_value < len ) {
+						len = count.integer_value;
+					}
+					if( len < MAX_INTEGER ) {
+						str = new_string_value( len );
+						if( str ) {
+							len = load_file( file.string_value->string, str->string, offset.integer_value, len, message );
+							if( len >= 0 ) {
+								result->string_value = str;
+							} else {
+								free( str );
+								ret = throw( vars, this, 0, message );
+							}
 						} else {
-							free( str );
-							ret = throw( vars, this, 0, message );
+							ret = throw( vars, this, 0, OUT_OF_MEMORY );
 						}
 					} else {
-						ret = throw( vars, this, 0, OUT_OF_MEMORY );
+						ret = throw( vars, this, 0, "File too large." );
 					}
 				} else {
-					ret = throw( vars, this, 0, "File too large." );
+					ret = throw( vars, this, 0, message );
 				}
-			} else {
-				ret = throw( vars, this, 0, message );
 			}
 		} else {
 			ret = throw( vars, this, 0, "Not a string." );
 		}
 		dispose_temporary( &file );
+		dispose_temporary( &offset );
+		dispose_temporary( &count );
 	}
 	return ret;
 }
@@ -2602,7 +2627,7 @@ static enum result evaluate_flen_expression( struct expression *this,
 	enum result ret = this->parameters->evaluate( this->parameters, vars, &file );
 	if( ret ) {
 		if( file.string_value ) {
-			len = load_file( file.string_value->string, NULL, message );
+			len = load_file( file.string_value->string, NULL, 0, 0, message );
 			if( len >= 0 ) {
 				if( len < MAX_INTEGER ) {
 					result->integer_value = len;
@@ -5210,7 +5235,7 @@ static struct operator operators[] = {
 	{ "$tup", '$', 2, evaluate_tup_expression, NULL },
 	{ "$array", 'A', 1, evaluate_array_expression, NULL },
 	{ "$new", '$', 1, evaluate_array_expression, NULL },
-	{ "$load", '$', 1, evaluate_load_expression, NULL },
+	{ "$load", '$',-1, evaluate_load_expression, NULL },
 	{ "$flen", '$', 1, evaluate_flen_expression, NULL },
 	{ "$stridx", '$', 3, evaluate_stridx_expression, NULL },
 	{ "$endidx", '$', 2, evaluate_stridx_expression, NULL },
@@ -5388,13 +5413,13 @@ int parse_tt_file( char *file_name, struct environment *env, char *message ) {
 	long file_length, success = 0;
 	char *program_buffer, error[ 128 ] = "";
 	/* Load program file into string.*/
-	file_length = load_file( file_name, NULL, message );
+	file_length = load_file( file_name, NULL, 0, 0, message );
 	if( file_length >= 0 ) {
 		if( file_length < MAX_INTEGER ) {
 			/* printf( "Parsing '%s'. Length %ld\n", file_name, file_length ); */
 			program_buffer = malloc( file_length + 1 );
 			if( program_buffer ) {
-				file_length = load_file( file_name, program_buffer, message );
+				file_length = load_file( file_name, program_buffer, 0, file_length, message );
 				if( file_length >= 0 ) {
 					program_buffer[ file_length ] = 0;
 					/* Parse program structure.*/

@@ -257,9 +257,10 @@ enum result throw_exit( struct variables *vars, int exit_code, const char *messa
    The encoded length is returned. */
 int write_byte_string( char *bytes, int count, char *output );
 
-/* Load the specified file into buffer (if not null) and returns the file length.
+/* Load the specified portion of a file into buffer (if not null).
+   Returns the number of bytes available to read from offset.
    Returns -1 and writes message on failure. */
-long load_file( char *file_name, char *buffer, char *message );
+long load_file( char *file_name, char *buffer, long offset, long count, char *message );
 
 /* Unpack a 32-bit big-endian integer from str at the specified index. */
 int unpack( char *str, int idx );

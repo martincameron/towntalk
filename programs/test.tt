@@ -528,8 +528,17 @@ function testtup() {
 }
 
 function testload() {
-	call assert( $chr( $load( $src ) 0 ), ${-} );
+	var src = $load( $src );
+	call assert_equals( $load( $src, 100 ), $sub( src, 100, -( $len( src ) 100 ) ), ${-} );
+	call assert_equals( $load( $src, 100, 100 ), $sub( src, 100, 100 ), ${-} );
+	call assert_equals( "", $load( $src, 0, 0 ), ${-} );
+	call assert_equals( "", $load( $src, -1, 0 ), ${-} );
+	call assert_equals( "", $load( $src, $len( src ), 1 ), ${-} );
+	call assert_equals( src, $load( $src, 0, +( $len( src ) 1 ) ), ${-} );
 	call assert_throws( "1", ${ () { call $load( except( ${ 1 } ) ); } } );
+	call assert_throws( "2", ${ () { call $load( "", except( ${ 2 } ) ); } } );
+	call assert_throws( "3", ${ () { call $load( "", 0, except( ${ 3 } ) ); } } );
+	call assert_throws( "Too many", ${ () { call $load( "", 0, 0, 0 ); } } );
 	call assert_throws( "Not a string", ${ () { call $load( 0 ); } } );
 }
 
