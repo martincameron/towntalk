@@ -148,7 +148,8 @@
 		$array(len)              Create array of specified length.
 		$array(${0,"a"})         Create array with values from element.
 		$new(struct)             Same as $array(struct).
-		$load("abc.bin")         Load raw bytes into string.
+		$read(len)               Read string from standard input.
+		$load("abc.bin")         Load file into string.
 		$load("file", off, len)  Load section of file into string.
 		$flen("file")            Get the length of a file.
 		$src                     Path of current source file.
@@ -2558,6 +2559,41 @@ static enum result evaluate_tup_expression( struct expression *this,
 		} else {
 			dispose_temporary( &str );
 		}
+	}
+	return ret;
+}
+
+static enum result evaluate_read_expression( struct expression *this,
+	struct variables *vars, struct variable *result ) {
+	size_t len;
+	char message[ 64 ];
+	struct string *str;
+	struct variable count = { 0, NULL };
+	enum result ret = this->parameters->evaluate( this->parameters, vars, &count );
+	if( ret ) {
+		if( count.integer_value >= 0 ) {
+			len = count.integer_value;
+			str = new_string_value( len );
+			if( str ) {
+				clearerr( stdin );
+				if( len > 0 ) {
+					str->length = fread( str->string, 1, len, stdin );
+				}
+				if( ferror( stdin ) ) {
+					free( str );
+					strncpy( message, strerror( errno ), 63 );
+					message[ 63 ] = 0;
+					ret = throw( vars, this, 0, message );
+				} else {
+					result->string_value = str;
+				}
+			} else {
+				ret = throw( vars, this, 0, OUT_OF_MEMORY );
+			}
+		} else {
+			ret = throw( vars, this, count.integer_value, "Invalid length." );
+		}
+		dispose_temporary( &count );
 	}
 	return ret;
 }
@@ -5236,6 +5272,7 @@ static struct operator operators[] = {
 	{ "$array", 'A', 1, evaluate_array_expression, NULL },
 	{ "$new", '$', 1, evaluate_array_expression, NULL },
 	{ "$load", '$',-1, evaluate_load_expression, NULL },
+	{ "$read", '$', 1, evaluate_read_expression, NULL },
 	{ "$flen", '$', 1, evaluate_flen_expression, NULL },
 	{ "$stridx", '$', 3, evaluate_stridx_expression, NULL },
 	{ "$endidx", '$', 2, evaluate_stridx_expression, NULL },
