@@ -258,7 +258,7 @@ enum result throw_exit( struct variables *vars, int exit_code, const char *messa
 int write_byte_string( char *bytes, int count, char *output );
 
 /* Load the specified portion of a file into buffer (if not null).
-   Returns the number of bytes available to read from offset.
+   Returns the number of bytes available or read from offset.
    Returns -1 and writes message on failure. */
 long load_file( char *file_name, char *buffer, long offset, long count, char *message );
 

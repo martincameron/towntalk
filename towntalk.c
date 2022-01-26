@@ -565,12 +565,13 @@ static struct element* parse_element( char *buffer, char *message ) {
 }
 
 /* Load the specified portion of a file into buffer (if not null).
-   Returns the number of bytes available to read from offset.
+   Returns the number of bytes available or read from offset.
    Returns -1 and writes message on failure. */
 long load_file( char *file_name, char *buffer, long offset, long count, char *message ) {
 	long length, remain = -1;
 	FILE *input_file = fopen( file_name, "rb" );
 	if( input_file != NULL ) {
+		clearerr( input_file );
 		if( fseek( input_file, 0L, SEEK_END ) == 0 ) {
 			length = ftell( input_file );
 			if( length >= 0 ) {
@@ -578,22 +579,22 @@ long load_file( char *file_name, char *buffer, long offset, long count, char *me
 					offset = length;
 				}
 				remain = length - offset;
-				if( remain > 0 && count > 0 && buffer ) {
+				if( remain > 0 && buffer ) {
 					if( count > remain ) {
 						count = remain;
 					}
-					if( fseek( input_file, offset, SEEK_SET ) < 0
-					||  fread( buffer, 1, count, input_file ) < ( size_t ) count ) {
-						remain = -1;
+					if( fseek( input_file, offset, SEEK_SET ) == 0 ) {
+						remain = fread( buffer, 1, count, input_file );
 					}
 				}
 			}
 		}
+		if( ferror( input_file ) ) {
+			strncpy( message, strerror( errno ), 63 );
+			message[ 63 ] = 0;
+			remain = -1;
+		}
 		fclose( input_file );
-	}
-	if( remain < 0 ) {
-		strncpy( message, strerror( errno ), 63 );
-		message[ 63 ] = 0;
 	}
 	return remain;
 }
@@ -2577,7 +2578,9 @@ static enum result evaluate_read_expression( struct expression *this,
 			if( str ) {
 				clearerr( stdin );
 				if( len > 0 ) {
-					str->length = fread( str->string, 1, len, stdin );
+					len = fread( str->string, 1, len, stdin );
+					str->string[ len ] = 0;
+					str->length = len;
 				}
 				if( ferror( stdin ) ) {
 					free( str );
@@ -2630,6 +2633,8 @@ static enum result evaluate_load_expression( struct expression *this,
 						if( str ) {
 							len = load_file( file.string_value->string, str->string, offset.integer_value, len, message );
 							if( len >= 0 ) {
+								str->length = len;
+								str->string[ len ] = 0;
 								result->string_value = str;
 							} else {
 								free( str );
