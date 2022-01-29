@@ -53,7 +53,7 @@
 		const name = value;      Integer, string or tuple constant.
 		global a, b = expr;      Global variables.
 		global ( struct ) a;     Global variable with associated struct.
-		array [ a expr ];        Global variable initialized with array of specified length.
+		global [ a expr ];       Global variable initialized with array of specified length.
 		struct s { a,b,c }       Layout for formatting arrays.
 		struct t( s ) { d,e,f }  Struct with fields inherited from s.
 		function f(param){stmts} Function declaration.
@@ -85,7 +85,6 @@
 		try {statements}         Execute statements unless exception thrown.
 		   catch a {statements}  Assign exception to local var and execute.
 		call expr;               Evaluate expression and discard result.
-		dim [ arr len ];         Resize specified array.
 		set [ arr idx ] = expr;  Variable/Array assignment (same as let).
 		inc a;                   Increment local variable.
 		dec a;                   Decrement local variable.
@@ -613,39 +612,6 @@ static int save_file( char *file_name, char *buffer, int length, int append, cha
 	return count;
 }
 
-static int resize_array( struct array *arr, int len ) {
-	int idx, count;
-	int *integers = calloc( len + 1, sizeof( int ) );
-	struct string **strings = calloc( len + 1, sizeof( struct string * ) );
-	if( integers && strings ) {
-		count = arr->length;
-		if( count > len ) {
-			memcpy( integers, arr->integer_values, sizeof( int ) * len );
-			memcpy( strings, arr->string_values, sizeof( struct string * ) * len );
-			idx = len;
-			while( idx < count ) {
-				if( arr->string_values[ idx ] ) {
-					unref_string( arr->string_values[ idx ] );
-				}
-				idx++;
-			}
-		} else {
-			memcpy( integers, arr->integer_values, sizeof( int ) * count );
-			memcpy( strings, arr->string_values, sizeof( struct string * ) * count );
-		}
-		free( arr->integer_values );
-		arr->integer_values = integers;
-		free( arr->string_values );
-		arr->string_values = strings;
-		arr->length = len;
-		return 1;
-	} else {
-		free( integers );
-		free( strings );
-	}
-	return 0;
-}
-
 static void dispose_string_list( struct string_list *str ) {
 	struct string_list *next;
 	while( str ) {
@@ -799,10 +765,11 @@ static void dispose_element( struct element *elem ) {
 	}
 }
 
-static void dispose_array( struct array *arr ) {
-	int idx = 0, len = arr->length;
+static void truncate_array( struct array *arr ) {
 	struct string *str;
+	int idx = 0, len = arr->length;
 	free( arr->integer_values );
+	arr->integer_values = NULL;
 	if( arr->string_values ) {
 		while( idx < len ) {
 			str = arr->string_values[ idx++ ];
@@ -811,6 +778,14 @@ static void dispose_array( struct array *arr ) {
 			}
 		}
 		free( arr->string_values );
+		arr->string_values = NULL;
+	}
+	arr->length = 0;
+}
+
+static void dispose_array( struct array *arr ) {
+	truncate_array( arr );
+	if( arr->prev ) {
 		arr->prev->next = arr->next;
 		if( arr->next ) {
 			arr->next->prev = arr->prev;
@@ -890,7 +865,7 @@ static void dispose_arrays( struct array *head ) {
 	struct array *arr = head->next;
 	while( arr ) {
 		arr->str.reference_count++;
-		resize_array( arr, 0 );
+		truncate_array( arr );
 		arr = arr->next;
 	}
 	while( head->next ) {
@@ -1214,22 +1189,6 @@ static struct global_variable* new_global_variable( char *name,
 		global->init_function = init_function;
 		global->initializer = initializer;
 		global->next = NULL;
-	}
-	return global;
-}
-
-static struct global_variable* new_array_variable( struct environment *env, char *name,
-	struct structure *type, struct function *init_function, struct expression *initializer ) {
-	struct array *arr;
-	struct global_variable *global = new_global_variable( name, type, init_function, initializer );
-	if( global ) {
-		arr = new_array( env, type ? type->length : 0 , 0 );
-		if( arr ) {
-			global->value.string_value = &arr->str;
-		} else {
-			dispose_global_variables( global );
-			global = NULL;
-		}
 	}
 	return global;
 }
@@ -1595,32 +1554,6 @@ static enum result execute_call_statement( struct statement *this,
 	struct variable var = { 0, NULL };
 	enum result ret = this->source->evaluate( this->source, vars, &var );
 	if( ret ) {
-		dispose_temporary( &var );
-	}
-	return ret;
-}
-
-static enum result execute_dim_statement( struct statement *this,
-	struct variables *vars, struct variable *result ) {
-	struct variable var = { 0, NULL }, len = { 0, NULL };
-	struct expression *destination = this->source->next;
-	enum result ret = destination->evaluate( destination, vars, &var );
-	if( ret ) {
-		ret = this->source->evaluate( this->source, vars, &len );
-		if( ret ) {
-			if( var.string_value && var.string_value->type == ARRAY && ( ( struct array * ) var.string_value )->string_values ) {
-				if( len.integer_value >= 0 ) {
-					if( !resize_array( ( struct array * ) var.string_value, len.integer_value ) ) {
-						ret = throw( vars, this->source, 0, OUT_OF_MEMORY );
-					}
-				} else {
-					ret = throw( vars, this->source, 0, "Negative array size." );
-				}
-			} else {
-				ret = throw( vars, destination, 0, "Not an array." );
-			}
-			dispose_temporary( &len );
-		}
 		dispose_temporary( &var );
 	}
 	return ret;
@@ -2115,17 +2048,6 @@ static int add_global_variable( struct element *elem, struct environment *env,
 	return message[ 0 ] == 0;
 }
 
-static int add_array_variable( struct element *elem, struct environment *env,
-	struct function *func, struct structure *type, struct expression *initializer,
-	struct statement *prev, char *message ) {
-	struct global_variable *array = new_array_variable( env, elem->str.string, type, func, initializer );
-	if( array == NULL || !add_global( env, array ) ) {
-		dispose_global_variables( array );
-		strcpy( message, OUT_OF_MEMORY );
-	}
-	return message[ 0 ] == 0;
-}
-
 static int add_local_variable( struct element *elem, struct environment *env,
 	struct function *func, struct structure *type, struct expression *initializer,
 	struct statement *prev, char *message ) {
@@ -2241,11 +2163,6 @@ static struct element* parse_const_declaration( struct element *elem, struct env
 static struct element* parse_global_declaration( struct element *elem, struct environment *env,
 	struct function *func, struct statement *prev, char *message ) {
 	return parse_variable_declaration( elem->next, env, func, prev, add_global_variable, message);
-}
-
-static struct element* parse_array_declaration( struct element *elem, struct environment *env,
-	struct function *func, struct statement *prev, char *message ) {
-	return parse_variable_declaration( elem->next, env, func, prev, add_array_variable, message);
 }
 
 static struct element* parse_local_declaration( struct element *elem, struct environment *env,
@@ -4282,35 +4199,6 @@ static struct element* parse_call_statement( struct element *elem, struct enviro
 	return parse_expr_list_statement( elem, env, func, prev, execute_call_statement, message );
 }
 
-static struct element* parse_dim_statement( struct element *elem, struct environment *env,
-	struct function *func, struct statement *prev, char *message ) {
-	struct expression expr;
-	struct element *next = elem->next, *child = next->child;
-	struct statement *stmt = calloc( 1, sizeof( struct statement ) );
-	if( stmt ) {
-		prev->next = stmt;
-		expr.next = NULL;
-		child = parse_expression( child, env, func, &expr, message );
-		if( expr.next ) {
-			stmt->source = expr.next;
-			if( child->str.string[ 0 ] == ',' ) {
-				child = child->next;
-			}
-			expr.next = NULL;
-			child = parse_expression( child, env, func, &expr, message );
-			if( expr.next ) {
-				expr.next->next = stmt->source;
-				stmt->source = expr.next;
-				next = next->next->next;
-			}
-			stmt->execute = execute_dim_statement;
-		}
-	} else {
-		strcpy( message, OUT_OF_MEMORY );
-	}
-	return next;
-}
-
 static struct element* parse_case_statement( struct element *elem, struct environment *env,
 	struct function *func, struct statement *prev, char *message ) {
 	struct expression expr;
@@ -5229,7 +5117,6 @@ static struct keyword statements[] = {
 	{ "while", "x{", parse_while_statement, NULL },
 	{ "call", "x;", parse_call_statement, NULL },
 	{ "try", "{cn{", parse_try_statement, NULL },
-	{ "dim", "[;", parse_dim_statement, NULL },
 	{ "set", "x=x;", parse_assignment_statement, NULL },
 	{ "switch", "x{", parse_switch_statement, NULL },
 	{ "inc", "n;", parse_increment_statement, NULL },
@@ -5311,8 +5198,7 @@ static struct keyword declarations[] = {
 	{ "function", "n({", parse_function_declaration, &declarations[ 3 ] },
 	{ "program", "n{", parse_program_declaration, &declarations[ 4 ] },
 	{ "global", "V;", parse_global_declaration, &declarations[ 5 ] },
-	{ "array", "V;", parse_array_declaration, &declarations[ 6 ] },
-	{ "const", "V;", parse_const_declaration, &declarations[ 7 ] },
+	{ "const", "V;", parse_const_declaration, &declarations[ 6 ] },
 	{ "struct", "n", parse_struct_declaration, NULL }
 };
 

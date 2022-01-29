@@ -16,7 +16,7 @@ struct exten( struc ) {
 };
 
 global g, g1 = 1, g2 = +( g1 1 );
-array a, a1 = $array( 1 ), [ a2 g2 ] [ a3 ${ 1, 2, 3 } ], ( exten ) ext;
+global [ a 3 ], a1 = $array( 1 ), [ a2 g2 ] [ a3 ${ 1, 2, 3 } ], ( exten ) ext = $new( exten );
 
 include "hello.tt";
 
@@ -95,24 +95,20 @@ function testarray() {
 	var b, c, err, idx, [ arr *( TWO TWO ) ];
 	call setg( 0 );	
 	call assert_equals( 0, g, ${-} );
-	call assert_equals( 0, $len( a ), ${-} );
+	call assert_equals( 3, $len( a ), ${-} );
 	call assert_equals( 1, $len( a1 ), ${-} );
 	call assert_equals( 2, $len( a2 ), ${-} );
 	call assert_equals( 3, $len( a3 ), ${-} );
-	call assert_equals( exten, $len( ext ), ${-} );
 	call assert_equals( 4, $len( arr ), ${-} );
-	dim [ a 3 ];
-	set [ a,idx ] = "a";
+	set [ a, idx ] = "a";
+	call assert_equals( "a", [ a 0 ], ${-} );
 	set [ a 1 ] = 1;
 	set [ a 2 ] = [ a idx ];
 	set [ a 2 ] = [ a idx++ ];
 	call assert_equals( 1, idx, ${-} );
-	dim [ a,2 ];
 	set [ a idx++ ] = 2;
 	call assert_equals( 2, [ a 1 ], ${-} );
 	call assert_equals( 2, idx, ${-} );
-	dim [ a 1 ];
-	call assert_equals( "a", [ a 0 ], ${-} );
 	let a = $array( ${ 0, $str( "\"one", "\"" ), $tup( "\\two\\"2 ), "\063", ${ four(4) }, 84, 84 } );
 	let a = $array( $parse( $unparse( $values( a ) ) ) );
 	call assert_equals( 7, $len( a ), ${-} );
@@ -134,10 +130,6 @@ function testarray() {
 	set [ b 1 ] = c;
 	set [ c 0 ] = c;
 	set [ c 1 ] = b;
-	call assert_throws( "1", ${ () { dim [ except( ${ 1 } ) setg( 2 ) ]; } } );
-	call assert_throws( "1", ${ () { dim [ a except( ${ 1 } ) ]; } } );
-	call assert_throws( "Not an array.", ${ () { dim[ 0 0 ]; } } );
-	call assert_throws( "Negative array size.", ${ () { dim[ a -1 ]; } } );
 	call assert_throws( "Invalid array length.", ${ () { call $array( -1 ); } });
 	call assert_throws( "Array index", ${ () { set [ $array( 0 ) -1 ] = except( ${ 0 } ); } } );
 	call assert_throws( "Array index", ${ () { set [ $array( 0 ) 0 ] = except( ${ 0 } ); } } );
@@ -147,8 +139,6 @@ function testarray() {
 	call assert_throws( "Not an array", ${ () { set [ 0 0 ] = 0; } } );
 	call assert_throws( "Invalid index expression", ${ () { call []; } } );
 	call assert_throws( "Invalid index expression", ${ () { set [] = 0; } } );
-	call assert_throws( "Expected '[' after 'dim'", ${ () { dim 0 = 0; } } );
-	call assert_throws( "Unexpected 'x' after 'dim'", ${ () { dim [ 0 0 x ] = 0; } } );
 	call assert_throws( "Expected '{' after '$'", ${ () { call $array( ${ $ } ); } } );
 	call assert_throws( "Expected '(' after '$str'", ${ () { call $array( ${ $str } ); } } );
 	call assert_throws( "Invalid string literal", ${ () { call $array( ${ $str() } ); } } );
@@ -232,7 +222,7 @@ function testwhile() {
 		call assert( FALSE, ${-} );
 	}
 	call assert_equals( 5, n, ${-} );
-	while TRUE {
+	while "" {
 		try { break; } catch n { call assert( FALSE, ${-} ); }
 		call assert( FALSE, ${-} );
 	}

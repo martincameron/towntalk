@@ -37,7 +37,6 @@ function load_tmf( tmf, names ) {
 		throw "Not a TMF file.";
 	}
 	if names {
-		dim [ names 64 ];
 		set [ names 0 ] = trim( $sub( tmf 8 32 ) );
 	}
 	let offset = *( 32 64 );
@@ -82,7 +81,6 @@ function load_mod( mod, names ) {
 		}
 	}
 	if names {
-		dim [ names 32 ];
 		set [ names 0 ] = trim( $sub( mod, 0, 20 ) );
 	}
 	let offset = 952;
@@ -151,7 +149,7 @@ function map_key( keymap, key ) {
 }
 
 program synthesizer {
-	var sequence, idx, name, names;
+	var sequence, idx, name, names = $array( 64 );
 	var cmd, chn, key, vel, ins, voc, va;
 	var keyvoice, voicekey, keymap, keyfreq, bank, c0;
 	var attack, decay;
@@ -166,14 +164,13 @@ program synthesizer {
 			#   R   S   T   U   V   W   X   Y   Z   [   \   ]
 			   65, 49, 67, 71, 53, 62, 50, 69, 48, 77, 47, 79
 		} );
-		let names = $array( 0 );
 		let sequence = load_song( $load( $argv( 1 ) ), names );
 		print $cat( "Song name: " [ names 0 ] );
 		print $cat( "Sequence length: " $len( sequence ) " bytes.");
 		let idx = 1;
 		while <( idx $len( names ) ) {
 			let name = [ names idx ];
-			if >( $len( name ) 0 ) {
+			if &&( name >( $len( name ) 0 ) ) {
 				print $cat( "Instrument " idx ": " name );
 			}
 			inc idx;

@@ -5,9 +5,7 @@ rem {
 
 const MAX_WORDS = 0x80000;
 
-global wordfile;
-
-array words, stat, stats, index;
+global wordfile, [ words MAX_WORDS ], [ stat 32 ], [ stats MAX_WORDS ], [ index 0x10000 ];
 
 function calculate_stats( wordidx ) {
 	var word, widx, wlen, sidx, hash;
@@ -99,10 +97,6 @@ program anagrams {
 	if '( <( $argc 2 ) | >( $argc 3 ) ) {
 		error "Usage: tt anagrams.tt words.txt [ word ]";
 	} else {
-		dim [ words MAX_WORDS ];
-		dim [ stat 32 ];
-		dim [ stats MAX_WORDS ];
-		dim [ index 0x10000 ];
 		let wordcount = parse_words( $load( $argv( 1 ) ) );
 		if '( $argc > 2 ) {
 			let word = $argv( 2 );

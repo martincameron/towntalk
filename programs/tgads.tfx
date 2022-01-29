@@ -1,10 +1,10 @@
 
-array palette, charset;
+global palette, charset;
 
-array tg_zorder, tg_type, tg_parent;
-array tg_x, tg_y, tg_w, tg_h, tg_min;
-array tg_anchor, tg_mode, tg_link, tg_action;
-array tg_a, tg_b, tg_c;
+global tg_zorder, tg_type, tg_parent;
+global tg_x, tg_y, tg_w, tg_h, tg_min;
+global tg_anchor, tg_mode, tg_link, tg_action;
+global tg_a, tg_b, tg_c;
 
 global tg_update, tg_selx, tg_sely, tg_focus, tg_time, tg_draw_background;
 global fs_win, fs_dir, fs_slider, fs_list, fs_file, fs_cancel, fs_okay, fs_path;
@@ -19,8 +19,7 @@ function tg_charset( str ) {
 	}
 	let w = *( 8 96 );
 	let h = *( 16 $len( palette ) );
-	dim [ charset 0 ];
-	dim [ charset *( w h ) ];
+	let charset = $array( *( w h ) );
 	let clr = 0;
 	while <( clr $len( palette ) ) {
 		let stroff = 0;
@@ -208,21 +207,21 @@ function tg_label( n, parent, x, y, w, colour, text ) {
 
 function tg_init( gadcount, width, height ) {
 	var idx;
-	dim [ tg_zorder gadcount ];
-	dim [ tg_type gadcount ];
-	dim [ tg_parent gadcount ];
-	dim [ tg_x gadcount ];
-	dim [ tg_y gadcount ];
-	dim [ tg_w gadcount ];
-	dim [ tg_h gadcount ];
-	dim [ tg_min gadcount ];
-	dim [ tg_anchor gadcount ];
-	dim [ tg_mode gadcount ];
-	dim [ tg_link gadcount ];
-	dim [ tg_action gadcount ];
-	dim [ tg_a gadcount ];
-	dim [ tg_b gadcount ];
-	dim [ tg_c gadcount ];
+	let tg_zorder = $array( gadcount );
+	let tg_type = $array( gadcount );
+	let tg_parent = $array( gadcount );
+	let tg_x = $array( gadcount );
+	let tg_y = $array( gadcount );
+	let tg_w = $array( gadcount );
+	let tg_h = $array( gadcount );
+	let tg_min = $array( gadcount );
+	let tg_anchor = $array( gadcount );
+	let tg_mode = $array( gadcount );
+	let tg_link = $array( gadcount );
+	let tg_action = $array( gadcount );
+	let tg_a = $array( gadcount );
+	let tg_b = $array( gadcount );
+	let tg_c = $array( gadcount );
 	set [ tg_w 0 ] = width;
 	set [ tg_h 0 ] = height;
 	while <( idx gadcount ) {

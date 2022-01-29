@@ -8,16 +8,13 @@ rem {
 	When offset is positive, length bytes are to be copied from the output.
 }
 
-array index, chain, buffer;
-
 function encode( input ) {
-	var inputIdx, inputLen, outputIdx;
+	var inputIdx, inputLen = $len( input ), outputIdx;
 	var literals, matchOffset, matchLength;
 	var key, searchIdx, literalIdx, idx, end, len;
-	dim [ index 65536 ];
-	dim [ chain 65536 ];
-	let inputLen = $len( input );
-	dim [ buffer inputLen ];
+	var index = $buffer( 65536 );
+	var chain = $buffer( 65536 );
+	var buffer = $buffer( inputLen );
 	while '( inputIdx < inputLen ) {
 		let matchOffset = 0;
 		let matchLength = 1;
@@ -98,9 +95,8 @@ function encode( input ) {
 }
 
 function decode( input ) {
-	var inputIdx, inputLen, outputIdx, outputEnd, matchOffset, matchLength, output;
-	let inputLen = $len( input );
-	dim [ buffer 0 ];
+	var inputIdx, inputLen = $len( input ), outputIdx, outputEnd;
+	var matchOffset, matchLength, buffer, output;
 	while !( output ) {
 		let inputIdx = 0;
 		let outputIdx = 0;
@@ -115,7 +111,7 @@ function decode( input ) {
 				let matchOffset = '( '( matchOffset * 256 ) | '( $chr( input inputIdx ) & 0xFF ) );
 				inc inputIdx;
 			}
-			if '( $len( buffer ) = 0 ) {
+			if !( buffer ) {
 				let outputIdx = '( outputIdx + matchLength );
 				if '( matchOffset = 0 ) {
 					let inputIdx = '( inputIdx + matchLength );
@@ -136,8 +132,8 @@ function decode( input ) {
 				}
 			}
 		}
-		if '( $len( buffer ) = 0 ) {
-			dim [ buffer outputIdx ];
+		if !( buffer ) {
+			let buffer = $buffer( outputIdx );
 		} else {
 			let output = $sub( buffer 0, outputIdx );
 		}

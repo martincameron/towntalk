@@ -1,13 +1,11 @@
 
-array image;
-
 program fxtest {
-	var c, x, y, w, h, s;
+	var c, x, y, w, h, s, image;
 	display 640, 480, "fxtest";
 
 	let w = 320;
 	let h = 240;
-	dim [ image *( w h ) ];
+	let image = $array( *( w h ) );
 
 	let y = 0;
 	while <( y h ) {
