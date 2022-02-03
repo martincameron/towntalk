@@ -4608,7 +4608,8 @@ static struct element* parse_while_statement( struct element *elem, struct envir
 			if( message[ 0 ] == 0 ) {
 				if( stmt->source->evaluate == evaluate_arithmetic_expression
 				&& stmt->source->parameters->evaluate == evaluate_local
-				&& stmt->source->parameters->next->evaluate == evaluate_local ) {
+				&& stmt->source->parameters->next->evaluate == evaluate_local
+				&& stmt->source->parameters->next->next == NULL ) {
 					stmt->local = stmt->source->index & 0x3F;
 				}
 				stmt->execute = execute_while_statement;
