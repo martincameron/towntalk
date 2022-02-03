@@ -1513,10 +1513,20 @@ static enum result execute_while_statement( struct statement *this,
 	struct variable condition = { 0, NULL }, *lhs = NULL, *rhs = NULL;
 	struct statement *stmt;
 	enum result ret;
-	while( this->source->evaluate( this->source, vars, &condition ) ) {
-		if( condition.string_value ) {
-			dispose_variable( &condition );
-			condition.integer_value = 1;
+	if( this->local ) {
+		lhs = &vars->locals[ this->source->parameters->index ];
+		rhs = &vars->locals[ this->source->parameters->next->index ];
+	}
+	while( 1 ) {
+		if( this->local == '<' ) {
+			condition.integer_value = lhs->integer_value < rhs->integer_value;
+		} else if( this->source->evaluate( this->source, vars, &condition ) ) {
+			if( condition.string_value ) {
+				dispose_variable( &condition );
+				condition.integer_value = 1;
+			}
+		} else {
+			break;
 		}
 		if( condition.integer_value ) {
 			condition.integer_value = 0;
@@ -4596,6 +4606,11 @@ static struct element* parse_while_statement( struct element *elem, struct envir
 				( ( struct block_statement * ) stmt )->if_block = block.next;
 			}
 			if( message[ 0 ] == 0 ) {
+				if( stmt->source->evaluate == evaluate_arithmetic_expression
+				&& stmt->source->parameters->evaluate == evaluate_local
+				&& stmt->source->parameters->next->evaluate == evaluate_local ) {
+					stmt->local = stmt->source->index & 0x3F;
+				}
 				stmt->execute = execute_while_statement;
 				next = next->next;
 			}
