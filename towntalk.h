@@ -216,7 +216,8 @@ void initialize_call_expr( struct function_expression *expr, struct function *fu
    Returns zero and assigns exception on failure. */
 int initialize_globals( struct environment *env, struct variable *exception );
 
-/* Decrement the reference-count of any types referenced by var, and deallocate if necessary.
+/* Decrement the reference-count of any referenced types,
+   deallocate if necessary, and assign null to the specified variable.
    This must be called for all variables assigned during program execution. */
 void dispose_variable( struct variable *var );
 

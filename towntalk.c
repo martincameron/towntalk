@@ -621,18 +621,20 @@ static void dispose_string_list( struct string_list *str ) {
 	}
 }
 
-/* Decrement the reference-count of any types referenced by var, and deallocate if necessary.
+/* Decrement the reference-count of any referenced types,
+   deallocate if necessary, and assign null to the specified variable.
    This must be called for all variables assigned during program execution. */
 void dispose_variable( struct variable *var ) {
+	var->integer_value = 0;
 	if( var->string_value ) {
 		unref_string( var->string_value );
 		var->string_value = NULL;
 	}
 }
 
-/* As dispose_variable(), but may leave an invalid pointer in var. May improve performance
-   when the variable will not be re-used or the string reference is to be re-assigned. */
-void dispose_temporary( struct variable *var ) {
+/* As dispose_variable(), but do not assign null for performance reasons.
+   The resulting variable may contain an invalid pointer and should not be re-used. */
+static void dispose_temporary( struct variable *var ) {
 	if( var->string_value ) {
 		unref_string( var->string_value );
 	}
@@ -727,7 +729,7 @@ static void dispose_global_variables( struct global_variable *global ) {
 	struct global_variable *next;
 	while( global ) {
 		next = global->next;
-		dispose_variable( &global->value );
+		dispose_temporary( &global->value );
 		dispose_expressions( global->initializer );
 		free( global );
 		global = next;
@@ -818,11 +820,11 @@ static void dispose_worker( struct worker *work ) {
 	if( work->env.entry_point ) {
 		len = work->env.entry_point->num_parameters;
 	}
-	dispose_variable( &work->result );
-	dispose_variable( &work->exception );
+	dispose_temporary( &work->result );
+	dispose_temporary( &work->exception );
 	dispose_environment( &work->env );
 	for( idx = 0; idx < len; idx++ ) {
-		dispose_variable( &work->args[ idx ] );
+		dispose_temporary( &work->args[ idx ] );
 	}
 	free( work->args );
 	free( work->strings );
@@ -933,7 +935,7 @@ enum result throw_exit( struct variables *vars, int exit_code, const char *messa
 	env->exit.reference_count = 2;
 	env->exit.type = EXIT;
 	env->exit.string = ( char * ) message;
-	dispose_variable( exception );
+	dispose_temporary( exception );
 	exception->integer_value = exit_code;
 	exception->string_value = &env->exit;
 	return EXCEPTION;
@@ -954,7 +956,7 @@ enum result throw( struct variables *vars, struct expression *source, int intege
 			return throw_exit( vars, 1, OUT_OF_MEMORY );
 		}
 	}
-	dispose_variable( exception );
+	dispose_temporary( exception );
 	exception->integer_value = integer;
 	exception->string_value = str;
 	return EXCEPTION;
@@ -1522,8 +1524,9 @@ static enum result execute_while_statement( struct statement *this,
 			condition.integer_value = lhs->integer_value < rhs->integer_value;
 		} else if( this->source->evaluate( this->source, vars, &condition ) ) {
 			if( condition.string_value ) {
-				dispose_variable( &condition );
+				dispose_temporary( &condition );
 				condition.integer_value = 1;
+				condition.string_value = NULL;
 			}
 		} else {
 			break;
