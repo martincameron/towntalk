@@ -2261,7 +2261,7 @@ static enum result evaluate_arithmetic_expression( struct expression *this,
 	struct expression *parameter = this->parameters;
 	struct variable var;
 	enum result ret;
-	int lhs, oper = this->index;
+	int lhs, rhs, oper = this->index;
 	if( parameter->evaluate == evaluate_local ) {
 		lhs = vars->locals[ parameter->index ].integer_value;
 	} else {
@@ -2275,86 +2275,60 @@ static enum result evaluate_arithmetic_expression( struct expression *this,
 			return ret;
 		}
 	}
-	parameter = parameter->next;
-	while( parameter ) {
+	while( parameter->next ) {
+		parameter = parameter->next;
+		if( parameter->evaluate == evaluate_integer_literal_expression ) {
+			rhs = parameter->index;
+		} else if( parameter->evaluate == evaluate_local ) {
+			rhs = vars->locals[ parameter->index ].integer_value;
+		} else {
+			var.integer_value = 0;
+			var.string_value = NULL;
+			ret = parameter->evaluate( parameter, vars, &var );
+			if( ret ) {
+				rhs = var.integer_value;
+				dispose_temporary( &var );
+			} else {
+				return ret;
+			}
+		}
 		evaluate:
 		switch( oper & 0xFF ) {
 			case 0:
 				oper = this->index;
 				goto evaluate;
-			case 0x41: lhs = lhs != parameter->index; break;
-			case 0x61: lhs = lhs != vars->locals[ parameter->index ].integer_value; break;
-			case 0x46: lhs = lhs & parameter->index; break;
-			case 0x66: lhs = lhs & vars->locals[ parameter->index ].integer_value; break;
-			case 0x48: lhs = lhs <= parameter->index; break;
-			case 0x68: lhs = lhs <= vars->locals[ parameter->index ].integer_value; break;
-			case 0x49: lhs = lhs >= parameter->index; break;
-			case 0x69: lhs = lhs >= vars->locals[ parameter->index ].integer_value; break;
-			case 0x4A: lhs = lhs * parameter->index; break;
-			case 0x6A: lhs = lhs * vars->locals[ parameter->index ].integer_value; break;
-			case 0x4B: lhs = lhs + parameter->index; break;
-			case 0x6B: lhs = lhs + vars->locals[ parameter->index ].integer_value; break;
-			case 0x4D: lhs = lhs - parameter->index; break;
-			case 0x6D: lhs = lhs - vars->locals[ parameter->index ].integer_value; break;
-			case 0x51: lhs = lhs << parameter->index; break;
-			case 0x71: lhs = lhs << vars->locals[ parameter->index ].integer_value; break;
-			case 0x52: lhs = lhs >> parameter->index; break;
-			case 0x72: lhs = lhs >> vars->locals[ parameter->index ].integer_value; break;
-			case 0x53: lhs = lhs ^ parameter->index; break;
-			case 0x73: lhs = lhs ^ vars->locals[ parameter->index ].integer_value; break;
-			case 0x5A: lhs = lhs | parameter->index; break;
-			case 0x7A: lhs = lhs | vars->locals[ parameter->index ].integer_value; break;
-			case 0x5C: lhs = lhs < parameter->index; break;
-			case 0x7C: lhs = lhs < vars->locals[ parameter->index ].integer_value; break;
-			case 0x5D: lhs = lhs == parameter->index; break;
-			case 0x7D: lhs = lhs == vars->locals[ parameter->index ].integer_value; break;
-			case 0x5E: lhs = lhs > parameter->index; break;
-			case 0x7E: lhs = lhs > vars->locals[ parameter->index ].integer_value; break;
-			default:
-				var.integer_value = 0;
-				var.string_value = NULL;
-				ret = parameter->evaluate( parameter, vars, &var );
-				if( ret ) {
-					switch( oper & 0xFF ) {
-						case '!': lhs = lhs != var.integer_value; break;
-						case '%': case 0x45: case 0x65:
-							if( var.integer_value != 0 ) {
-								lhs = lhs % var.integer_value;
-							} else {
-								return throw( vars, this, 0, "Modulo division by zero." );
-							}
-							break;
-						case '&': lhs = lhs  & var.integer_value; break;
-						case '(': lhs = lhs <= var.integer_value; break;
-						case ')': lhs = lhs >= var.integer_value; break;
-						case '*': lhs = lhs  * var.integer_value; break;
-						case '+': lhs = lhs  + var.integer_value; break;
-						case '-': lhs = lhs  - var.integer_value; break;
-						case '/': case 0x4F: case 0x6F:
-							if( var.integer_value != 0 ) {
-								lhs = lhs / var.integer_value;
-							} else {
-								return throw( vars, this, 0, "Integer division by zero." );
-							}
-							break;
-						case '1': lhs = lhs << var.integer_value; break;
-						case '2': lhs = lhs >> var.integer_value; break;
-						case '3': lhs = lhs  ^ var.integer_value; break;
-						case ':': lhs = lhs  | var.integer_value; break;
-						case '<': lhs = lhs  < var.integer_value; break;
-						case '=': lhs = lhs == var.integer_value; break;
-						case '>': lhs = lhs  > var.integer_value; break;
-						default :
-							return throw( vars, this, 0, "Unhandled integer operator." );
-					}
-					dispose_temporary( &var );
+			case '!': lhs = lhs != rhs; break;
+			case '%':
+				if( rhs != 0 ) {
+					lhs = lhs % rhs;
 				} else {
-					return ret;
+					return throw( vars, this, 0, "Modulo division by zero." );
 				}
-			break;
+				break;
+			case '&': lhs = lhs  & rhs; break;
+			case '(': lhs = lhs <= rhs; break;
+			case ')': lhs = lhs >= rhs; break;
+			case '*': lhs = lhs  * rhs; break;
+			case '+': lhs = lhs  + rhs; break;
+			case '-': lhs = lhs  - rhs; break;
+			case '/':
+				if( rhs != 0 ) {
+					lhs = lhs / rhs;
+				} else {
+					return throw( vars, this, 0, "Integer division by zero." );
+				}
+				break;
+			case '1': lhs = lhs << rhs; break;
+			case '2': lhs = lhs >> rhs; break;
+			case '3': lhs = lhs  ^ rhs; break;
+			case ':': lhs = lhs  | rhs; break;
+			case '<': lhs = lhs  < rhs; break;
+			case '=': lhs = lhs == rhs; break;
+			case '>': lhs = lhs  > rhs; break;
+			default :
+				return throw( vars, this, 0, "Unhandled integer operator." );
 		}
 		oper = oper >> 8;
-		parameter = parameter->next;
 	}
 	result->integer_value = lhs;
 	return OKAY;
@@ -3320,13 +3294,10 @@ static void optimize_expression( struct expression *expr ) {
 	int count;
 	struct expression *param, *next;
 	if( expr->evaluate == evaluate_arithmetic_expression && expr->parameters->next->next == NULL ) {
+		/* Expression is a two-operand arithmetic expression. */
 		param = expr->parameters;
-		if( param->next->evaluate == evaluate_integer_literal_expression ) {
-			expr->index += 0x20;
-		} else if( param->next->evaluate == evaluate_local ) {
-			expr->index += 0x40;
-		}
 		if( param->evaluate == evaluate_arithmetic_expression && ( ( param->index & 0xFF00 ) || param->parameters->next->next == NULL ) ) {
+			/* Left-hand side is a combined, or two-operand arithmetic expression. */
 			count = 0;
 			next = param->parameters;
 			while( next->next ) {
@@ -4613,7 +4584,7 @@ static struct element* parse_while_statement( struct element *elem, struct envir
 				&& stmt->source->parameters->evaluate == evaluate_local
 				&& stmt->source->parameters->next->evaluate == evaluate_local
 				&& stmt->source->parameters->next->next == NULL ) {
-					stmt->local = stmt->source->index & 0x3F;
+					stmt->local = stmt->source->index;
 				}
 				stmt->execute = execute_while_statement;
 				next = next->next;
