@@ -50,7 +50,7 @@
 	Declarations:
 		rem {}                   Comment (all brackets inside must be balanced).
 		include "file.tt";       Include declarations from specified file.
-		const name = value;      Integer, string or tuple constant.
+		const name = expr;       Global constants.
 		global a, b = expr;      Global variables.
 		global ( struct ) a;     Global variable with associated struct.
 		global [ a expr ];       Global variable initialized with array of specified length.
