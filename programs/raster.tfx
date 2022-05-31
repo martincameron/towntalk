@@ -286,7 +286,7 @@ program raster {
 								call fore_to_back();
 								let paint = TRUE;
 							}
-							let y = $ymouse;
+							let y = tg_clamp( $ymouse, 0, [ tg_h 0 ] );
 							call fill_array( foreground, -1 );
 							if <( tg_sely y ) {
 								call gradient( c1, c2, foreground, /( tg_sely 2 ), /( -( y tg_sely ) 2 ) );

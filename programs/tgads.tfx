@@ -596,21 +596,33 @@ function tg_unused() {
 	}
 }
 
+function tg_clamp( value, min, max ) {
+	if <( value min ) {
+		return min;
+	}
+	if >( value max ) {
+		return max;
+	}
+	return value;
+}
+
 function tg_scan( event ) {
 	var n, s, o, p, e, t, c, l, w, x, y, selected;
+	var mousex = tg_clamp( $xmouse, 1, -( [ tg_w 0 ] 1 ) );
+	var mousey = tg_clamp( $ymouse, 1, -( [ tg_h 0 ] 1 ) );
 	switch event {
 		case MOUSE_MOTION_EVENT {
 			if =( $mousekey 1 ) {
 				if =( tg_selx 0 ) {
-					let tg_selx = $xmouse;
-					let tg_sely = $ymouse;
+					let tg_selx = mousex;
+					let tg_sely = mousey;
 				}
 				let n = tg_find( tg_selx, tg_sely, 0 );
 				let w = tg_wintofront( n );
 				switch [ tg_type n ] {
 					case 1 {
-						let x = $xmouse;
-						let y = $ymouse;
+						let x = mousex;
+						let y = mousey;
 						set [ tg_x n ] = -( +( [ tg_x n ] x ) tg_selx );
 						set [ tg_y n ] = -( +( [ tg_y n ] y ) tg_sely );
 						let tg_selx = x;
@@ -618,7 +630,7 @@ function tg_scan( event ) {
 						let tg_update = TRUE;
 					}
 					case 2 {
-						if =( tg_find( $xmouse, $ymouse, 0 ) n ) {
+						if =( tg_find( mousex, mousey, 0 ) n ) {
 							set [ tg_b n ] = 1;
 						} else {
 							set [ tg_b n ] = 0;
@@ -631,7 +643,7 @@ function tg_scan( event ) {
 						let e = -( -( [ tg_h n ] 4 ) s );
 						let y = +( +( tg_gety( n ) o ) 2 );
 						if &&( >( tg_sely y ) <( tg_sely +( y s ) ) ) {
-							let p = +( o -( $ymouse tg_sely ) );
+							let p = +( o -( mousey tg_sely ) );
 							if <( p 0 ) {
 								let p = 0;
 							}
@@ -649,8 +661,8 @@ function tg_scan( event ) {
 						}
 					}
 					case 5 {
-						let x = $xmouse;
-						let y = $ymouse;
+						let x = mousex;
+						let y = mousey;
 						let o = -( tg_selx tg_getx( n ) );
 						let p = -( tg_sely tg_gety( n ) );
 						call tg_resize( w, [ tg_x w ], [ tg_y w ], 
@@ -667,7 +679,7 @@ function tg_scan( event ) {
 						let e = -( -( [ tg_w n ] 4 ) s );
 						let x = +( +( tg_getx( n ) o ) 2 );
 						if &&( >( tg_selx x ) <( tg_selx +( x s ) ) ) {
-							let p = +( o -( $xmouse tg_selx ) );
+							let p = +( o -( mousex tg_selx ) );
 							if <( p 0 ) {
 								let p = 0;
 							}
@@ -691,8 +703,8 @@ function tg_scan( event ) {
 			let tg_selx = 0;
 			let tg_sely = 0;
 			if =( $mousekey 1 ) {
-				let tg_selx = $xmouse;
-				let tg_sely = $ymouse;
+				let tg_selx = mousex;
+				let tg_sely = mousey;
 				if tg_focus {
 					let t = tg_focus;
 					let tg_focus = 0;
@@ -802,7 +814,7 @@ function tg_scan( event ) {
 					case 2 {
 						set [ tg_b n ] = 0;
 						let tg_update = TRUE;
-						if =( tg_find( $xmouse, $ymouse, 0 ) n ) {
+						if =( tg_find( mousex, mousey, 0 ) n ) {
 							let selected = n;
 						}
 					}
@@ -812,7 +824,7 @@ function tg_scan( event ) {
 			}
 		}
 		case MOUSE_WHEEL_EVENT {
-			let n = tg_find( $xmouse, $ymouse, 0 );
+			let n = tg_find( mousex, mousey, 0 );
 			if &&( =( [ tg_type n ] 6 ) >( [ tg_link n ] 0 ) ) {
 				let w = tg_wintofront( n );
 				set [ tg_a [ tg_link n ] ] = -( [ tg_a [ tg_link n ] ] $mousewheel );
