@@ -234,33 +234,28 @@ struct element* new_element( int str_len ) {
 
 /* Allocate and return a new array or buffer of the specified length and reference count of 1. */
 struct array* new_array( struct environment *env, int length, int buffer ) {
-	struct array *arr = calloc( 1, sizeof( struct array ) );
+	struct array *arr = malloc( sizeof( struct array ) + sizeof( int ) * length );
 	if( arr ) {
+		memset( arr, 0, sizeof( struct array ) );
+		arr->integer_values = ( int * ) &arr[ 1 ];
 		arr->str.string = buffer ? "[Buffer]" : "[Array]";
 		arr->str.reference_count = 1;
 		arr->str.length = strlen( arr->str.string );
 		arr->str.type = ARRAY;
 		arr->length = length;
-		arr->integer_values = calloc( length + 1, sizeof( int ) );
-		if( arr->integer_values ) {
-			if( !buffer ) {
-				arr->string_values = calloc( length + 1, sizeof( struct string * ) );
-				if( arr->string_values ) {
-					arr->prev = &env->arrays;
-					arr->next = env->arrays.next;
-					if( arr->next ) {
-						arr->next->prev = arr;
-					} 
-					env->arrays.next = arr;
-				} else {
-					free( arr->integer_values );
-					free( arr );
-					arr = NULL;
-				}
+		if( !buffer ) {
+			arr->string_values = calloc( length + 1, sizeof( struct string * ) );
+			if( arr->string_values ) {
+				arr->prev = &env->arrays;
+				arr->next = env->arrays.next;
+				if( arr->next ) {
+					arr->next->prev = arr;
+				} 
+				env->arrays.next = arr;
+			} else {
+				free( arr );
+				arr = NULL;
 			}
-		} else {
-			free( arr );
-			arr = NULL;
 		}
 	}
 	return arr;
@@ -771,8 +766,6 @@ static void dispose_element( struct element *elem ) {
 static void truncate_array( struct array *arr ) {
 	struct string *str;
 	int idx = 0, len = arr->length;
-	free( arr->integer_values );
-	arr->integer_values = NULL;
 	if( arr->string_values ) {
 		while( idx < len ) {
 			str = arr->string_values[ idx++ ];
