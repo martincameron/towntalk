@@ -15,7 +15,10 @@ function gradient( c1, c2, out, off, len ) {
 		let r = +( r1 /( *( -( r2 r1 ) idx ) len ) );
 		let g = +( g1 /( *( -( g2 g1 ) idx ) len ) );
 		let b = +( b1 /( *( -( b2 b1 ) idx ) len ) );
-		set [ out +( off idx ) ] = +( *( r 65536 ) +( *( g 256 ) b ) );
+		if &&( >e( off 0 ) <( off $len( out ) ) ) {
+			set [ out off ] = +( *( r 65536 ) +( *( g 256 ) b ) );
+		}
+		inc off;
 		inc idx;
 	}
 }
@@ -286,7 +289,7 @@ program raster {
 								call fore_to_back();
 								let paint = TRUE;
 							}
-							let y = tg_clamp( $ymouse, 0, [ tg_h 0 ] );
+							let y = &( $ymouse -2 );
 							call fill_array( foreground, -1 );
 							if <( tg_sely y ) {
 								call gradient( c1, c2, foreground, /( tg_sely 2 ), /( -( y tg_sely ) 2 ) );
