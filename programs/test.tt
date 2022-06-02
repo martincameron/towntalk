@@ -683,6 +683,17 @@ function testfuncref() {
 	call assert_throws( "Function 'xxx' not defined", ${ () { call @xxx; } } );
 }
 
+function testsame() {
+	call assert_equals( 1, $same( 0 0 ), ${-} );
+	call assert_equals( 1, $same( STR STR ), ${-} );
+	call assert_equals( 1, $same( @testsame @testsame ), ${-} );
+	call assert_equals( 0, $same( STR "*" ), ${-} );
+	call assert_equals( 0, $same( STR $tup( STR 1 ) ), ${-} );
+	call assert_throws( "1", ${ () { call setg( 0 ); call $same( except( ${ 1 } ) setg( 2 ) ); } } );
+	call assert_equals( 0, g, ${-} );
+	call assert_throws( "2", ${ () { call $same( 0, except( ${ 2 } ) ); } } );
+}
+
 function testeq() {
 	call assert_equals( 1, $eq( 0 0 ), ${-} );
 	call assert_equals( 1, $eq( "" "" ), ${-} );
@@ -885,6 +896,7 @@ program test {
 	call testunpack();
 	call teststruct();
 	call testfuncref();
+	call testsame();
 	call testeq();
 	call teststridx();
 	call testinterrupted();

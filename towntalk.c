@@ -133,9 +133,10 @@
 		&&(expr expr ...)        Evaluates to 1 if all arguments are non-null.
 		||(expr expr ...)        Evaluates to 1 if any argument is non-null.
 		?(expr expr expr)        Evaluates second expr if first is non-null, else third.
-		$eq(expr expr)           Evaluates to 1 if arguments have the same value.
+		$same(expr expr)         Evaluates to 1 if arguments have the same value.
+		$cmp(str str)            String/Tuple comparison, evaluates to 0 if equal.
+		$eq(expr expr)           Equivalent to !( $cmp( expr expr ) ).
 		$str(str int ...)        Integer to string and string concatenation.
-		$cmp(str str)            String/Tuple comparison, returns 0 if equal.
 		$cat(str str ...)        String concatenation (same as $str).
 		$chr(str idx)            Character at idx as integer.
 		$sub(str off len)        Substring (or byte array to string).
@@ -3215,6 +3216,24 @@ static enum result evaluate_func_ref_expression( struct expression *this,
 	return OKAY;
 }
 
+static enum result evaluate_same_expression( struct expression *this,
+	struct variables *vars, struct variable *result ) {
+	struct variable lhs = { 0, NULL }, rhs = { 0, NULL };
+	struct expression *parameter = this->parameters;
+	enum result ret = parameter->evaluate( parameter, vars, &lhs );
+	if( ret ) {
+		parameter = parameter->next;
+		ret = parameter->evaluate( parameter, vars, &rhs );
+		if( ret ) {
+			result->integer_value = ( lhs.integer_value == rhs.integer_value )
+				&& ( lhs.string_value == rhs.string_value );
+			dispose_temporary( &rhs );
+		}
+		dispose_temporary( &lhs );
+	}
+	return ret;
+}
+
 static enum result evaluate_eq_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	struct variable lhs = { 0, NULL }, rhs = { 0, NULL };
@@ -5140,6 +5159,7 @@ static struct operator operators[] = {
 	{ "&&",'&',-2, evaluate_logical_expression, NULL },
 	{ "||",'|',-2, evaluate_logical_expression, NULL },
 	{ "?", '?', 3, evaluate_ternary_expression, NULL },
+	{ "$same", '$', 2, evaluate_same_expression, NULL },
 	{ "$eq", '$', 2, evaluate_eq_expression, NULL },
 	{ "$str", '$',-1, evaluate_str_expression, NULL },
 	{ "$cmp", '$', 2, evaluate_cmp_expression, NULL },
