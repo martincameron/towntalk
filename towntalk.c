@@ -234,9 +234,8 @@ struct element* new_element( int str_len ) {
 
 /* Allocate and return a new array or buffer of the specified length and reference count of 1. */
 struct array* new_array( struct environment *env, int length, int buffer ) {
-	struct array *arr = malloc( sizeof( struct array ) + sizeof( int ) * length );
+	struct array *arr = calloc( 1, sizeof( struct array ) + sizeof( int ) * length );
 	if( arr ) {
-		memset( arr, 0, sizeof( struct array ) );
 		arr->integer_values = ( int * ) &arr[ 1 ];
 		arr->str.string = buffer ? "[Buffer]" : "[Array]";
 		arr->str.reference_count = 1;
@@ -566,7 +565,6 @@ long load_file( char *file_name, char *buffer, long offset, long count, char *me
 	long length, remain = -1;
 	FILE *input_file = fopen( file_name, "rb" );
 	if( input_file != NULL ) {
-		clearerr( input_file );
 		if( fseek( input_file, 0L, SEEK_END ) == 0 ) {
 			length = ftell( input_file );
 			if( length >= 0 ) {
@@ -578,18 +576,22 @@ long load_file( char *file_name, char *buffer, long offset, long count, char *me
 					if( count > remain ) {
 						count = remain;
 					}
-					if( fseek( input_file, offset, SEEK_SET ) == 0 ) {
+					remain = fseek( input_file, offset, SEEK_SET );
+					if( remain == 0 ) {
+						clearerr( input_file );
 						remain = fread( buffer, 1, count, input_file );
+						if( ferror( input_file ) ) {
+							remain = -1;
+						}
 					}
 				}
 			}
 		}
-		if( ferror( input_file ) ) {
-			strncpy( message, strerror( errno ), 63 );
-			message[ 63 ] = 0;
-			remain = -1;
-		}
 		fclose( input_file );
+	}
+	if( remain < 0 ) {
+		strncpy( message, strerror( errno ), 63 );
+		message[ 63 ] = 0;
 	}
 	return remain;
 }
