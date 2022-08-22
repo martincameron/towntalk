@@ -38,7 +38,7 @@ struct writer {
 
 struct nodetype {
 	# Enumerated node types.
-	node, pi, element, text, entity, comment
+	node, pi, text, entity, comment, element
 }
 
 struct node {
@@ -393,6 +393,23 @@ function parse_node_list( ( parser ) p ) {
 	return nodes;
 }
 
+# Insert text nodes to indent output.
+function indent_node_list( ( list ) nodes, linefeed ) {
+	var indented, idx;
+	while <( idx nodes.len ) {
+		var ( node ) n = [ nodes.array idx ];
+		if >e( n.type nodetype.element ) {
+			let indented = TRUE;
+			call list_insert( nodes new_text( linefeed ) idx++ );
+			if indent_node_list( element.children( n ), $cat( linefeed "  " ) ) {
+				call list_add( element.children( n ) new_text( linefeed ) ) ;
+			}
+		}
+		inc idx;
+	}
+	return indented;
+}
+
 # Return a simple writer that writes to standard-output.
 function new_writer() {
 	var ( writer ) w = $new( writer );
@@ -401,7 +418,8 @@ function new_writer() {
 }
 
 program xml {
-	var ( list ) nodes = parse_node_list( new_parser( "<!---test--><?xml version=\"?\"?><elem>text<child x=\"y\"/>&ent;</elem>\12" ) );
+	var ( list ) nodes = parse_node_list( new_parser( "<?xml version=\"?\"?><!---test--><elem>text<child x=\"y\">txt<x/><x>x</x></child>&ent;</elem>\12" ) );
+	call indent_node_list( nodes "\12" );
 	var ( writer ) out = new_writer();
 	var idx;
 	while <( idx nodes.len ) {
