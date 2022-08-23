@@ -53,7 +53,7 @@ struct pi( node ) {
 
 struct element( node ) {
 	# Element node, short-tags are enabled for output if empty is true.
-	attributes, children, empty, create_element
+	attributes, children, template, create_element
 }
 
 # Return the first index of the specified code-point in str, or -1.
@@ -209,7 +209,7 @@ function write_element( ( element ) this, ( writer ) output ) {
 		call :output.write_string( "\"" );
 	}
 	var ( list ) children = this.children;
-	if &&( this.empty <e( children.len 0 ) ) {
+	if &&( this.template <e( list.len( element.children( this.template ) ) 0 ) <e( children.len 0 ) ) {
 		call :output.write_string( "/>" );
 	} else {
 		call :output.write_string( ">" );
@@ -225,6 +225,21 @@ function write_element( ( element ) this, ( writer ) output ) {
 
 # Member function to create a new element, this may be replaced to create custom elements.
 function create_element( ( element ) this, name ) {
+	if this.template {
+		var ( list ) nodes = element.children( this.template );
+		var idx;
+		while <( idx nodes.len ) {
+			var ( node ) n = [ nodes.array idx++ ];
+			if >e( n.type nodetype.element ) {
+				if $eq( n.value name ) {
+					var ( element ) elem = new_element( name );
+					let elem.template = n;
+					return elem;
+				}
+			}
+		}
+		throw $cat( "Element '" name "' not permitted as child of '" this.value "'." );
+	}
 	return new_element( name );
 }
 
@@ -384,9 +399,13 @@ function parse_comment( ( parser ) p ) {
 }
 
 # Return a list of nodes from the specified parser.
-function parse_node_list( ( parser ) p ) {
-	var ( element ) parent = new_element( "" );
+function parse_node_list( ( parser ) p, template ) {
+	var ( element ) parent = new_element( "doc" );
 	var ( list ) nodes = new_list( 16 );
+	if template {
+		call list_add( parent.children parse_node( new_parser( template ) parent ) );
+		let parent.template = parent;
+	}
 	while >e( p.current 0 ) {
 		call list_add( nodes parse_node( p parent ) );
 	}
@@ -418,7 +437,11 @@ function new_writer() {
 }
 
 program xml {
-	var ( list ) nodes = parse_node_list( new_parser( "<?xml version=\"?\"?><!---test--><elem>text<child x=\"y\">txt<x/><x>x</x></child>&ent;</elem>\12" ) );
+	# Document template used to specify permitted element names.
+	var template = "<elem><child><x>cdata</x><y/></child></elem>";
+	# Parse document against template.
+	var ( list ) nodes = parse_node_list( new_parser( "<?xml version=\"?\"?><!---test--><elem>text<child x=\"y\">txt<x/><x>x</x><y/></child>&ent;</elem>\12" ), template );
+	# Format and output.
 	call indent_node_list( nodes "\12" );
 	var ( writer ) out = new_writer();
 	var idx;
