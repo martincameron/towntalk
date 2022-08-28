@@ -310,9 +310,9 @@ function parse_node( ( parser ) p, ( element ) parent ) {
 			if $cmp( elem.value name ) {
 				throw $cat( "Unexpected close tag '</" name ">' on line " p.line "." );
 			}
-			call parser_skip_space( p );
 		}
 	}
+	call parser_skip_space( p );
 	call parser_expect( p ascii.gt );
 	call parser_next_char( p );
 	return elem;

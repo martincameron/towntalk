@@ -1,0 +1,263 @@
+
+rem {
+	Regular-expression compiler with matcher based on algorithm explained at:
+	http://morepypy.blogspot.com/2010/05/efficient-and-elegant-regular.html
+	Supported syntax:
+		Literal Characters: abc
+		Wildcard character: a.c
+		Escaped character: \.
+		Character ranges: [a-z]
+		Subexpressions: (abc)
+		Alternatives: a|b|c
+		Zero or more: a*
+		One or more: a+
+		Zero or one: a?
+		Fixed repetition: a{10}
+}
+
+struct regex {
+	# Regular-expression element.
+	empty, a, b, left, right, marked, shift
+}
+
+struct regex_parser {
+	# Character source.
+	expr, idx
+}
+
+# Return the current character as a string.
+function regex_parser_current( ( regex_parser ) this ) {
+	return $sub( this.expr this.idx 1 );
+}
+
+function regex_shift_epsilon( ( regex ) this, chr, mark ) {
+	return FALSE;
+}
+
+# Expression for absence of a character.
+function regex_new_epsilon() {
+	var ( regex ) this = $new( regex );
+	let this.empty = TRUE;
+	let this.shift = @regex_shift_epsilon;
+	return this;
+}
+
+function regex_shift_char_range( ( regex ) this, chr, mark ) {
+	let this.marked = &&( mark >e( chr this.a ) <e( chr this.b ) );
+	return this.marked;
+}
+
+# Expression for a character within a specified range.
+function regex_new_char_range( a, b ) {
+	var ( regex ) this = $new( regex );
+	let this.a = ?( >( b a ) a b );
+	let this.b = ?( >( b a ) b a );
+	let this.shift = @regex_shift_char_range;
+	return this;
+}
+
+# Expression for a single character.
+function regex_new_char( chr ) {
+	return regex_new_char_range( chr, chr );
+}
+
+# Expression for any character.
+function regex_new_any() {
+	return regex_new_char_range( -0x1000000, 0x1000000 );
+}
+
+function regex_shift_alternative( ( regex ) this, chr, mark ) {
+	let this.marked = |( :regex.shift( this.left, chr, mark ) :regex.shift( this.right, chr, mark ) );
+	return this.marked;
+}
+
+# Expression for either of a pair of expressions.
+function regex_new_alternative( ( regex ) left, ( regex ) right ) {
+	var ( regex ) this = $new( regex );
+	let this.empty = ||( left.empty right.empty );
+	let this.left = left;
+	let this.right = right;
+	let this.shift = @regex_shift_alternative;
+	return this;
+}
+
+function regex_shift_sequence( ( regex ) this, chr, mark ) {
+	var old_marked_left = regex.marked( this.left );
+	var marked_left = :regex.shift( this.left, chr, mark );
+	var marked_right = :regex.shift( this.right, chr, ||( old_marked_left &&( mark regex.empty( this.left ) ) ) );
+	let this.marked = ||( &&( marked_left regex.empty( this.right ) ) marked_right );
+	return this.marked;
+}
+
+# Expression for a pair of expressions in sequence.
+function regex_new_sequence( ( regex ) left, ( regex ) right ) {
+	var ( regex ) this = $new( regex );
+	let this.empty = &&( left.empty right.empty );
+	let this.left = left;
+	let this.right = right;
+	let this.shift = @regex_shift_sequence;
+	return this;
+}
+
+function regex_shift_repeat( ( regex ) this, chr, mark ) {
+	let this.marked = :regex.shift( this.left, chr, ||( mark this.marked ) );
+	return this.marked;
+}
+
+# Expression for a repeated expression.
+function regex_new_repeat( ( regex ) re, empty ) {
+	var ( regex ) this = $new( regex );
+	let this.empty = ||( empty re.empty );
+	let this.left = re;
+	let this.shift = @regex_shift_repeat;
+	return this;
+}
+
+# Reset the matching state of a compound expression.
+function regex_reset( ( regex ) re ) {
+	let re.marked = FALSE;
+	if re.left {
+		call regex_reset( re.left );
+	}
+	if re.right {
+		call regex_reset( re.right );
+	}
+}
+
+# Make a copy of the specified expression.
+function regex_copy( ( regex ) re ) {
+	var ( regex ) copy = $new( regex );
+	let copy.empty = re.empty;
+	let copy.a = re.a;
+	let copy.b = re.b;
+	if re.left {
+		let copy.left = regex_copy( re.left );
+	}
+	if re.right {
+		let copy.right = regex_copy( re.right );
+	}
+	let copy.shift = re.shift;
+	return copy;
+}
+
+# Parse a single regex instance.
+function regex_parse( ( regex_parser ) parser ) {
+	var re;
+	switch regex_parser_current( parser ) {
+		case "(" {
+			let parser.idx = +( parser.idx 1 );
+			let re = regex_new_epsilon();
+			while &&( <( parser.idx $len( parser.expr ) ) $cmp( regex_parser_current( parser ) ")" ) ) {
+				var lhs = regex_parse( parser );
+				while &&( <( parser.idx $len( parser.expr ) ) $eq( regex_parser_current( parser ) "|" ) ) {
+					let parser.idx = +( parser.idx 1 );
+					let lhs = regex_new_alternative( lhs, regex_parse( parser ) );
+				}
+				let re = regex_new_sequence( re, lhs );
+			}
+			let parser.idx = +( parser.idx 1 );
+		}
+		case "[" {
+			let re = regex_new_char_range( $chr( parser.expr +( parser.idx 1 ) ), $chr( parser.expr +( parser.idx 3 ) ) );
+			let parser.idx = +( parser.idx 5 );
+		}
+		case "." {
+			let re = regex_new_any();
+			let parser.idx = +( parser.idx 1 );
+		}
+		case "\\" {
+			let re = regex_new_char( $chr( parser.expr +( parser.idx 1 ) ) );
+			let parser.idx = +( parser.idx 2 );
+		}
+		default {
+			let re = regex_new_char( $chr( parser.expr parser.idx ) );
+			let parser.idx = +( parser.idx 1 );
+		}
+	}
+	while <( parser.idx $len( parser.expr ) ) {
+		switch regex_parser_current( parser ) {
+			case "{" {
+				var len, rx = re;
+				while <>( $chr( parser.expr +( parser.idx len 1 ) ) $chr( "}" 0 ) ) {
+					inc len;
+				}
+				var count = $int( $sub( parser.expr +( parser.idx 1 ) len ) );
+				while >( count-- 1 ) {
+					let re = regex_new_sequence( re, regex_copy( rx ) );
+				}
+				let parser.idx = +( parser.idx len 2 );
+			}
+			case "*", "+" {
+				let re = regex_new_repeat( re, $eq( regex_parser_current( parser ) "*" ) );
+				let parser.idx = +( parser.idx 1 );
+			}
+			case "?" {
+				let re = regex_new_alternative( re, regex_new_epsilon() );
+				let parser.idx = +( parser.idx 1 );
+			}
+			default {
+				break;
+			}
+		}
+	}
+	return re;
+}
+
+# Compile a compound regex instance. 
+function regex_compile( expr ) {
+	var ( regex_parser ) parser = $new( regex_parser );
+	let parser.expr = $cat( "(" expr ")" );
+	return regex_parse( parser );
+}
+
+# Return TRUE if the specified regex matches the specified string.
+function regex_match( ( regex ) re, str ) {
+	if <e( $len( str ) 0 ) {
+		return re.empty;
+	}
+	call regex_reset( re );
+	var result = :re.shift( $chr( str 0 ), TRUE );
+	var idx = 1;
+	while <( idx $len( str ) ) {
+		let result = :re.shift( $chr( str idx++ ), FALSE );
+	}
+	return result;
+}
+
+# Test function.
+function regex_assert( expected actual elem ) {
+	if $cmp( expected actual ) {
+		throw $cat( "Expected " expected " on line " $line( elem ) "." );
+	}
+}
+
+# Test program.
+program regex_test {
+	call regex_assert( TRUE regex_match( regex_compile( "" ), "" ), ${-} );
+	call regex_assert( FALSE regex_match( regex_compile( "!" ) "" ), ${-} );
+	call regex_assert( TRUE regex_match( regex_compile( "!" ), "!" ), ${-} );
+	call regex_assert( FALSE regex_match( regex_compile( "!" ), "" ), ${-} );
+	call regex_assert( FALSE regex_match( regex_compile( "!" ), "!!" ), ${-} );
+	call regex_assert( FALSE regex_match( regex_compile( " |!" ), "" ), ${-} );
+	call regex_assert( FALSE regex_match( regex_compile( " |!" ), "a" ), ${-} );
+	call regex_assert( TRUE regex_match( regex_compile( " |!" ), " " ), ${-} );
+	call regex_assert( TRUE regex_match( regex_compile( " |!" ), "!" ), ${-} );
+	call regex_assert( FALSE regex_match( regex_compile( " !" ), "" ), ${-} );
+	call regex_assert( FALSE regex_match( regex_compile( " !" ), "!" ), ${-} );
+	call regex_assert( FALSE regex_match( regex_compile( " !" ), "!!" ), ${-} );
+	call regex_assert( TRUE regex_match( regex_compile( " !" ), " !" ), ${-} );
+	call regex_assert( FALSE regex_match( regex_compile( "!+" ), "" ), ${-} );
+	call regex_assert( TRUE regex_match( regex_compile( "!*" ), "" ), ${-} );
+	call regex_assert( TRUE regex_match( regex_compile( "!*" ), "!" ), ${-} );
+	call regex_assert( TRUE regex_match( regex_compile( "!*" ), "!!" ), ${-} );
+	call regex_assert( TRUE regex_match( regex_compile( "!?" ) "" ), ${-} );
+	call regex_assert( TRUE regex_match( regex_compile( "!?" ) "!" ), ${-} );
+	call regex_assert( FALSE regex_match( regex_compile( "!?" ) "!!" ), ${-} );
+	call regex_assert( FALSE regex_match( regex_compile( "!{2}" ) "" ), ${-} );
+	call regex_assert( FALSE regex_match( regex_compile( "!{2}" ) "!" ), ${-} );
+	call regex_assert( TRUE regex_match( regex_compile( "!{2}" ) "!!" ), ${-} );
+	call regex_assert( TRUE regex_match( regex_compile( "(ab)|(ac)" ) "ab" ), ${-} );
+	call regex_assert( TRUE regex_match( regex_compile( "(ab)|(ac)" ) "ac" ), ${-} );
+	call regex_assert( FALSE regex_match( regex_compile( "(ab)|(ac)" ) "ad" ), ${-} );
+	print "Okay.";
+}
