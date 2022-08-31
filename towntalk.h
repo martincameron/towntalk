@@ -10,7 +10,7 @@ enum result {
 
 /* Reference type. */
 enum reference_type {
-	STRING, ELEMENT, ARRAY, FUNCTION, WORKER, CUSTOM, EXIT
+	STRING, ELEMENT, ARRAY, STRUCT, FUNCTION, WORKER, CUSTOM, EXIT
 };
 
 /* String list. */
@@ -39,6 +39,7 @@ struct array {
 	struct string str;
 	int *integer_values;
 	struct string **string_values;
+	struct structure *structure;
 	struct array *prev, *next;
 	int length;
 };
@@ -98,9 +99,9 @@ struct custom_type {
 	void ( *dispose )( struct string *this );
 };
 
-/* Struct declaration list.*/
+/* Reference-counted structure declaration list.*/
 struct structure {
-	char *name;
+	struct string str;
 	int length;
 	struct string_list *fields, *fields_tail;
 	struct structure *super, *next;
@@ -143,6 +144,12 @@ struct expression {
 struct function_expression {
 	struct expression expr;
 	struct function *function;
+};
+
+/* Expression with associated structure. */
+struct structure_expression {
+	struct expression expr;
+	struct structure *structure;
 };
 
 /* Statement list. */

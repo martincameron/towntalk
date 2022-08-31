@@ -643,8 +643,8 @@ function teststruct() {
 	let exten.f( obj ) = "a";
 	let exten.f( obj ) = 1;
 	let obj.g = 2;
-	call assert_equals( 5, struc, ${-} );
-	call assert_equals( 7, exten, ${-} );
+	call assert_equals( 5, $len( struc ), ${-} );
+	call assert_equals( 7, $len( exten ), ${-} );
 	call assert_equals( 0, struc.a, ${-} );
 	call assert_equals( 4, struc.e, ${-} );
 	call assert_equals( 6, exten.g, ${-} );

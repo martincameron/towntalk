@@ -104,7 +104,7 @@
 		local--                  Value of named local variable prior to decrement.
 		function(expr ...)       Call function with specified args.
 		[arr idx]                Array element.
-		struct                   Length of structure.
+		struct                   Structure reference.
 		struct.field             Index of named struct field.
 		struct.field(array)      Value of named field of specified array.
 		variable.field           Value of associated struct field of specified array variable.
@@ -143,11 +143,11 @@
 		$asc(int)                Character code to string.
 		$hex(int)                Integer to fixed-length signed hex string.
 		$int(str)                String to integer.
-		$len(str/arr)            String/Array length.
+		$len(str/arr)            Length of string, array or structure.
 		$tup(str int)            String/Integer tuple.
 		$array(len)              Create array of specified length.
 		$array(${0,"a"})         Create array with values from element.
-		$new(struct)             Same as $array(struct).
+		$new(struct)             Create structured array, same as $array(struct).
 		$read(len)               Read string from standard input.
 		$load("abc.bin")         Load file into string.
 		$load("file", off, len)  Load section of file into string.
@@ -872,13 +872,18 @@ static void dispose_arrays( struct array *head ) {
 }
 
 static void dispose_structure_declarations( struct structure *sct ) {
-	struct structure *next;
+	struct string *str;
 	while( sct ) {
-		next = sct->next;
-		free( sct->name );
-		dispose_string_list( sct->fields );
-		free( sct );
-		sct = next;
+		str = &sct->str;
+		if( str->reference_count == 1 ) {
+			free( sct->str.string );
+			dispose_string_list( sct->fields );
+			sct = sct->next;
+			free( str );
+		} else {
+			str->reference_count--;
+			sct = NULL;
+		}
 	}
 }
 
@@ -1251,8 +1256,8 @@ static enum result evaluate_local( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	struct variable *var = &vars->locals[ this->index ];
 	result->integer_value = var->integer_value;
-	result->string_value = var->string_value;
-	if( result->string_value ) {
+	if( var->string_value ) {
+		result->string_value = var->string_value;
 		result->string_value->reference_count++;
 	}
 	return OKAY;
@@ -1284,8 +1289,8 @@ static enum result evaluate_global( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	struct variable *var = &( ( struct global_expression * ) this )->global->value;
 	result->integer_value = var->integer_value;
-	result->string_value = var->string_value;
-	if( result->string_value ) {
+	if( var->string_value ) {
+		result->string_value = var->string_value;
 		result->string_value->reference_count++;
 	}
 	return OKAY;
@@ -1878,6 +1883,14 @@ static enum result evaluate_thiscall_expression( struct expression *this,
 
 static enum result evaluate_struct_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
+	result->integer_value = ( ( struct structure_expression * ) this )->structure->length;
+	result->string_value = &( ( struct structure_expression * ) this )->structure->str;
+	result->string_value->reference_count++;
+	return OKAY;
+}
+
+static enum result evaluate_member_expression( struct expression *this,
+	struct variables *vars, struct variable *result ) {
 	struct array *arr;
 	struct variable obj = { 0, NULL };
 	struct expression *parameter = this->parameters;
@@ -1904,10 +1917,11 @@ static enum result evaluate_struct_expression( struct expression *this,
 
 static enum result evaluate_array_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
-	int idx, len;
+	int idx, len, buf;
 	char msg[ 128 ] = "";
 	struct variable var = { 0, NULL };
 	struct global_variable inputs, *input;
+	struct structure *struc;
 	struct array *arr;
 	enum result ret = this->parameters->evaluate( this->parameters, vars, &var );
 	if( ret ) {
@@ -1931,15 +1945,27 @@ static enum result evaluate_array_expression( struct expression *this,
 				ret = throw( vars, this, 0, msg );
 			}
 			dispose_global_variables( inputs.next );
-		} else if( var.integer_value >= 0 ) {
-			arr = new_array( vars->func->env, var.integer_value, this->index == 'B' );
-			if( arr ) {
-				result->string_value = &arr->str;
-			} else {
-				ret = throw( vars, this, 0, OUT_OF_MEMORY );
-			}
+			
 		} else {
-			ret = throw( vars, this, var.integer_value, "Invalid array length." );
+			buf = this->index == 'B';
+			if( var.string_value && var.string_value->type == STRUCT && !buf ) {
+				struc = ( struct structure * ) var.string_value;
+				len = struc->length;
+			} else {
+				struc = NULL;
+				len = var.integer_value;
+			}
+			if( len >= 0 ) {
+				arr = new_array( vars->func->env, len, buf );
+				if( arr ) {
+					arr->structure = struc;
+					result->string_value = &arr->str;
+				} else {
+					ret = throw( vars, this, 0, OUT_OF_MEMORY );
+				}
+			} else {
+				ret = throw( vars, this, var.integer_value, "Invalid array length." );
+			}
 		}
 		dispose_temporary( &var );
 	}
@@ -1995,7 +2021,7 @@ static enum result evaluate_integer_literal_expression( struct expression *this,
 }
 
 static struct structure* get_structure( struct structure *struc, char *name, size_t len ) {
-	while( struc && ( strncmp( struc->name, name, len ) || strlen( struc->name ) != len ) ) {
+	while( struc && ( strncmp( struc->str.string, name, len ) || strlen( struc->str.string ) != len ) ) {
 		struc = struc->next;
 	}
 	return struc;
@@ -2432,10 +2458,17 @@ static enum result evaluate_len_expression( struct expression *this,
 	}
 	if( ret ) {
 		if( str ) {
-			if( str->type == ARRAY ) {
-				result->integer_value = ( ( struct array * ) str )->length;
-			} else {
-				result->integer_value = str->length;
+			switch( str->type ) {
+				default:
+				case STRING:
+					result->integer_value = str->length;
+					break;
+				case ARRAY:
+					result->integer_value = ( ( struct array * ) str )->length;
+					break;
+				case STRUCT:
+					result->integer_value = ( ( struct structure * ) str )->length;
+					break;
 			}
 		} else {
 			ret = throw( vars, this, 0, "Not a string or array." );
@@ -3490,10 +3523,11 @@ static struct element* parse_struct_expression( struct element *elem, struct env
 	int idx, count;
 	struct element *next = elem->next;
 	char *field = strchr( elem->str.string, '.' );
-	struct expression param = { 0 }, *expr = calloc( 1, sizeof( struct expression ) );
+	struct expression param = { 0 }, *expr = calloc( 1, sizeof( struct structure_expression ) );
 	if( expr ) {
 		prev->next = expr;
 		expr->line = elem->line;
+		( ( struct structure_expression * ) expr )->structure = struc;
 		if( field ) {
 			idx = get_string_list_index( struc->fields, &field[ 1 ] );
 			if( idx >= 0 ) {
@@ -3503,7 +3537,7 @@ static struct element* parse_struct_expression( struct element *elem, struct env
 					expr->parameters = param.next;
 					if( message[ 0 ] == 0 ) {
 						if( count == 1 ) {
-							expr->evaluate = evaluate_struct_expression;
+							expr->evaluate = evaluate_member_expression;
 							next = next->next;
 						} else {
 							sprintf( message, "Wrong number of arguments to struct expression on line %d.", next->line );
@@ -3516,8 +3550,7 @@ static struct element* parse_struct_expression( struct element *elem, struct env
 				sprintf( message, "Field '%.64s' not declared on line %d.", elem->str.string, elem->line );
 			}
 		} else {
-			expr->index = struc->length;
-			expr->evaluate = evaluate_integer_literal_expression;
+			expr->evaluate = evaluate_struct_expression;
 		}
 	} else {
 		strcpy( message, OUT_OF_MEMORY );
@@ -3638,7 +3671,7 @@ static struct element* parse_local_expression( struct element *elem, struct envi
 					expr->parameters->index = local->index;
 					expr->parameters->evaluate = evaluate_local;
 					expr->index = idx;
-					expr->evaluate = evaluate_struct_expression;
+					expr->evaluate = evaluate_member_expression;
 				} else {
 					strcpy( message, OUT_OF_MEMORY );
 				}
@@ -3683,7 +3716,7 @@ static struct element* parse_global_expression( struct element *elem, struct env
 					( ( struct global_expression * ) expr->parameters )->global = global;
 					expr->parameters->evaluate = evaluate_global;
 					expr->index = idx;
-					expr->evaluate = evaluate_struct_expression;
+					expr->evaluate = evaluate_member_expression;
 				} else {
 					strcpy( message, OUT_OF_MEMORY );
 				}
@@ -5053,10 +5086,13 @@ static struct element* parse_struct_declaration( struct element *elem, struct en
 		name = new_string( next->str.string );
 		struc = calloc( 1, sizeof( struct structure ) );
 		if( name && struc ) {
+			struc->str.reference_count = 1;
+			struc->str.string = name;
+			struc->str.length = strlen( name );
+			struc->str.type = STRUCT;
 			idx = hash_code( name, 0 );
 			struc->next = env->structures_index[ idx ];
 			env->structures_index[ idx ] = struc;
-			struc->name = name;
 			next = next->next;
 			if( next && next->str.string[ 0 ] == '(' ) {
 				child = next->child;
