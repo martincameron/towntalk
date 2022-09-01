@@ -175,6 +175,7 @@
 		$execute(worker arg ...) Begin execution of the specified worker and return it.
 		$result(worker)          Wait for the return value of a worker function.
 		$buffer(len)             Create a numerical array that may be passed to workers.
+		$type(expr)              Return a value representing the type of the expression.
 */
 
 struct global_assignment_statement {
@@ -1883,10 +1884,27 @@ static enum result evaluate_thiscall_expression( struct expression *this,
 
 static enum result evaluate_struct_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
-	result->integer_value = ( ( struct structure_expression * ) this )->structure->length;
+	result->integer_value = ARRAY + 1;
 	result->string_value = &( ( struct structure_expression * ) this )->structure->str;
 	result->string_value->reference_count++;
 	return OKAY;
+}
+
+static enum result evaluate_type_expression( struct expression *this,
+	struct variables *vars, struct variable *result ) {
+	struct variable var = { 0, NULL };
+	enum result ret = this->parameters->evaluate( this->parameters, vars, &var );
+	if( ret && var.string_value ) {
+		result->integer_value = var.string_value->type + 1;
+		if( var.string_value->type == ARRAY ) {
+			result->string_value = &( ( struct array * ) var.string_value )->structure->str;
+			if( result->string_value ) {
+				result->string_value->reference_count++;
+			}
+		}
+		dispose_temporary( &var );
+	}
+	return ret;
 }
 
 static enum result evaluate_member_expression( struct expression *this,
@@ -5230,6 +5248,7 @@ static struct operator operators[] = {
 	{ "$result", '$', 1, evaluate_result_expression, NULL },
 	{ "$buffer", 'B', 1, evaluate_array_expression, NULL },
 	{ "$src", '$', 0, evaluate_source_expression, NULL },
+	{ "$type", '$', 1, evaluate_type_expression, NULL },
 	{ NULL }
 };
 

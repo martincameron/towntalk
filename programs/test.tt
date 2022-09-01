@@ -850,6 +850,15 @@ function testthiscall() {
 	call assert_throws( "Expected expression", ${ () { call :exten.g(); } } );
 }
 
+function testtype() {
+	call assert_equals( 0, $type( 0 ), ${-} );
+	call assert_equals( 1, $type( "" ), ${-} );
+	call assert_equals( 2, $type( ${-} ), ${-} );
+	call assert_equals( 3, $type( $array( 0 ) ), ${-} );
+	call assert_equals( 4, $type( struc ), ${-} );
+	call assert( $same( $type( $new( struc ) ) struc ), ${-} );
+}
+
 program test {
 	call hello();
 	call assert( =( testvoid() 0 ), ${-} );
@@ -906,5 +915,6 @@ program test {
 	call testfunction();
 	call testworker();
 	call testthiscall();
+	call testtype();
 	print "Tests passed.";
 }
