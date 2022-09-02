@@ -866,6 +866,13 @@ function testfield() {
 	call assert_throws( "Field index", ${ () { call $field( struc 5 ); } } );
 }
 
+function testinstanceof() {
+	call assert_equals( 0, $instanceof( $new( struc ) exten ), ${-} );
+	call assert( $same( ext $instanceof( ext exten ) ), ${-} );
+	call assert( $same( ext $instanceof( ext struc ) ), ${-} );
+	call assert_throws( "Not a structure", ${ () { call $instanceof( ext 0 ); } } );
+}
+
 program test {
 	call hello();
 	call assert( =( testvoid() 0 ), ${-} );
@@ -924,5 +931,6 @@ program test {
 	call testthiscall();
 	call testtype();
 	call testfield();
+	call testinstanceof();
 	print "Tests passed.";
 }

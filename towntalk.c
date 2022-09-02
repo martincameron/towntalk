@@ -177,6 +177,7 @@
 		$buffer(len)             Create a numerical array that may be passed to workers.
 		$type(expr)              Return a value representing the type of the expression.
 		$field(struct idx)       Name of specified struct field.
+		$instanceof(arr struct)  Returns arr if an instance of struct, null otherwise.
 */
 
 struct global_assignment_statement {
@@ -1940,6 +1941,36 @@ static enum result evaluate_field_expression( struct expression *this,
 			ret = throw( vars, this, struc.integer_value, "Not a structure." );
 		}
 		dispose_temporary( &struc );
+	}
+	return ret;
+}
+
+static enum result evaluate_instanceof_expression( struct expression *this,
+	struct variables *vars, struct variable *result ) {
+	struct variable arr = { 0, NULL }, struc = { 0, NULL };
+	struct expression *parameter = this->parameters;
+	struct structure *structure;
+	enum result ret = parameter->evaluate( parameter, vars, &arr );
+	if( ret ) {
+		if( arr.string_value && arr.string_value->type == ARRAY ) {
+			ret = parameter->next->evaluate( parameter->next, vars, &struc );
+			if( ret ) {
+				if( struc.string_value && struc.string_value->type == STRUCT ) {
+					structure = ( ( struct array * ) arr.string_value )->structure;
+					while( structure ) {
+						if( struc.string_value == ( struct string * ) structure ) {
+							assign_variable( &arr, result );
+							break;
+						}
+						structure = structure->super;
+					}
+				} else {
+					ret = throw( vars, this, struc.integer_value, "Not a structure." );	
+				}
+				dispose_temporary( &struc );
+			}
+		}
+		dispose_temporary( &arr );
 	}
 	return ret;
 }
@@ -5287,6 +5318,7 @@ static struct operator operators[] = {
 	{ "$src", '$', 0, evaluate_source_expression, NULL },
 	{ "$type", '$', 1, evaluate_type_expression, NULL },
 	{ "$field", '$', 2, evaluate_field_expression, NULL },
+	{ "$instanceof", '$', 2, evaluate_instanceof_expression, NULL },
 	{ NULL }
 };
 
