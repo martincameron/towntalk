@@ -12,7 +12,7 @@
 #include "towntalk.h"
 
 /*
-	Towntalk (c)2021 Martin Cameron.
+	Towntalk (c)2022 Martin Cameron.
 
 	A program file consists of a list of declarations.
 	When a '#' character is encountered, the rest of the line is ignored.
@@ -176,6 +176,7 @@
 		$result(worker)          Wait for the return value of a worker function.
 		$buffer(len)             Create a numerical array that may be passed to workers.
 		$type(expr)              Return a value representing the type of the expression.
+		$field(struct idx)       Name of specified struct field.
 */
 
 struct global_assignment_statement {
@@ -1903,6 +1904,42 @@ static enum result evaluate_type_expression( struct expression *this,
 			}
 		}
 		dispose_temporary( &var );
+	}
+	return ret;
+}
+
+static enum result evaluate_field_expression( struct expression *this,
+	struct variables *vars, struct variable *result ) {
+	struct variable struc = { 0, NULL }, index = { 0, NULL };
+	struct expression *parameter = this->parameters;
+	struct string_list *field;
+	int idx, len;
+	enum result ret = parameter->evaluate( parameter, vars, &struc );
+	if( ret ) {
+		if( struc.string_value && struc.string_value->type == STRUCT ) {
+			ret = parameter->next->evaluate( parameter->next, vars, &index );
+			if( ret ) {
+				len = ( ( struct structure * ) struc.string_value )->length;
+				if( index.integer_value >= 0 && index.integer_value < len ) {
+					field = ( ( struct structure * ) struc.string_value )->fields;
+					for( idx = 0; idx < index.integer_value; idx++ ) {
+						field = field->next;
+					}
+					result->string_value = new_string_value( strlen( field->value ) );
+					if( result->string_value ) {
+						strcpy( result->string_value->string, field->value );
+					} else {
+						ret = throw( vars, this, 0, OUT_OF_MEMORY );
+					}
+				} else {
+					ret = throw( vars, this, index.integer_value, "Field index out of bounds." );
+				}
+				dispose_temporary( &index );
+			}
+		} else {
+			ret = throw( vars, this, struc.integer_value, "Not a structure." );
+		}
+		dispose_temporary( &struc );
 	}
 	return ret;
 }
@@ -5249,6 +5286,7 @@ static struct operator operators[] = {
 	{ "$buffer", 'B', 1, evaluate_array_expression, NULL },
 	{ "$src", '$', 0, evaluate_source_expression, NULL },
 	{ "$type", '$', 1, evaluate_type_expression, NULL },
+	{ "$field", '$', 2, evaluate_field_expression, NULL },
 	{ NULL }
 };
 
