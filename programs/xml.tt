@@ -41,19 +41,34 @@ struct nodetype {
 	node, pi, text, entity, comment, element
 }
 
-struct node {
+struct xml_node {
 	# Common node properties and functions.
-	type, value, write_node
+	write_node
 }
 
-struct pi( node ) {
+struct xml_pi( xml_node ) {
 	# Processing-instruction node.
-	target
+	target, value
 }
 
-struct element( node ) {
-	# Element node, short-tags are enabled for output if empty is true.
-	attributes, children, template, create_element
+struct xml_text( xml_node ) {
+	# Text node.
+	text
+}
+
+struct xml_entity( xml_node ) {
+	# Entity-reference node.
+	name
+}
+
+struct xml_comment( xml_node ) {
+	# Comment node.
+	comment
+}
+
+struct xml_element( xml_node ) {
+	# Element node, short-tags are enabled for output template has no children.
+	name, attributes, children, template, create_element
 }
 
 # Return the first index of the specified code-point in str, or -1.
@@ -158,7 +173,7 @@ function parser_expect( ( parser ) this, chr ) {
 }
 
 # Member function for writing processing-instruction nodes.
-function write_pi( ( pi ) this, ( writer ) output ) {
+function write_xml_pi( ( xml_pi ) this, ( writer ) output ) {
 	call :output.write_string( "<?" );
 	call :output.write_string( this.target );
 	call :output.write_string( " " );
@@ -167,17 +182,16 @@ function write_pi( ( pi ) this, ( writer ) output ) {
 }
 
 # Return a new processing-instruction node.
-function new_pi( target, value ) {
-	var ( pi ) p = $new( pi );
-	let p.type = nodetype.pi;
+function new_xml_pi( target, value ) {
+	var ( xml_pi ) p = $new( xml_pi );
 	let p.target = target;
 	let p.value = value;
-	let p.write_node = @write_pi;
+	let p.write_node = @write_xml_pi;
 	return p;
 }
 
 # Parse a processing-instruction node from the specified parser positioned at the first question-mark.
-function parse_pi( ( parser ) p ) {
+function parse_xml_pi( ( parser ) p ) {
 	call parser_expect( p ascii.question );
 	call parser_next_char( p );
 	var target = parser_parse_string( p "\11\12\15 " );
@@ -191,13 +205,13 @@ function parse_pi( ( parser ) p ) {
 		call parser_next_char( p );
 	}
 	call parser_next_char( p );
-	return new_pi( target value );
+	return new_xml_pi( target value );
 }
 
 # Member function for writing element nodes and their children.
-function write_element( ( element ) this, ( writer ) output ) {
+function write_xml_element( ( xml_element ) this, ( writer ) output ) {
 	call :output.write_string( "<" );
-	call :output.write_string( this.value );
+	call :output.write_string( this.name );
 	var idx;
 	var ( list ) atts = this.attributes;
 	while <( idx atts.len ) {
@@ -209,62 +223,61 @@ function write_element( ( element ) this, ( writer ) output ) {
 		call :output.write_string( "\"" );
 	}
 	var ( list ) children = this.children;
-	if &&( this.template <e( list.len( element.children( this.template ) ) 0 ) <e( children.len 0 ) ) {
+	if &&( this.template <e( list.len( xml_element.children( this.template ) ) 0 ) <e( children.len 0 ) ) {
 		call :output.write_string( "/>" );
 	} else {
 		call :output.write_string( ">" );
 		let idx = 0;
 		while <( idx children.len ) {
-			call :node.write_node( [ children.array idx++ ], output );
+			call :xml_node.write_node( [ children.array idx++ ], output );
 		}
 		call :output.write_string( "</" );
-		call :output.write_string( this.value );
+		call :output.write_string( this.name );
 		call :output.write_string( ">" );
 	}
 }
 
 # Member function to create a new element, this may be replaced to create custom elements.
-function create_element( ( element ) this, name ) {
+function create_xml_element( ( xml_element ) this, name ) {
 	if this.template {
-		var ( list ) nodes = element.children( this.template );
+		var ( list ) children = xml_element.children( this.template );
 		var idx;
-		while <( idx nodes.len ) {
-			var ( node ) n = [ nodes.array idx++ ];
-			if >e( n.type nodetype.element ) {
-				if $eq( n.value name ) {
-					var ( element ) elem = new_element( name );
-					let elem.template = n;
+		while <( idx children.len ) {
+			var child = [ children.array idx++ ];
+			if $instanceof( child xml_element ) {
+				if $eq( xml_element.name( child ) name ) {
+					var ( xml_element ) elem = new_xml_element( name );
+					let elem.template = child;
 					return elem;
 				}
 			}
 		}
-		throw $cat( "Element '" name "' not permitted as child of '" this.value "'." );
+		throw $cat( "Element '" name "' not permitted as child of '" this.name "'." );
 	}
-	return new_element( name );
+	return new_xml_element( name );
 }
 
 # Return a new element with the specified name.
-function new_element( name ) {
-	var ( element ) elem = $new( element );
-	let elem.type = nodetype.element;
-	let elem.value = name;
-	let elem.write_node = @write_element;
+function new_xml_element( name ) {
+	var ( xml_element ) elem = $new( xml_element );
+	let elem.name = name;
+	let elem.write_node = @write_xml_element;
 	let elem.attributes = new_list( 4 );
 	let elem.children = new_list( 4 );
-	let elem.create_element = @create_element;
+	let elem.create_element = @create_xml_element;
 	return elem;
 }
 
 # Parse an appropriately-typed node using the specified parser and parent element.
-function parse_node( ( parser ) p, ( element ) parent ) {
+function parse_xml_node( ( parser ) p, ( xml_element ) parent ) {
 	switch p.current {
 		case ascii.lt {
 			switch parser_next_char( p ) {
 				case ascii.exclam {
-					return parse_comment( p );
+					return parse_xml_comment( p );
 				}
 				case ascii.question {
-					return parse_pi( p );
+					return parse_xml_pi( p );
 				}
 				case ascii.slash {
 					return 0;
@@ -272,13 +285,13 @@ function parse_node( ( parser ) p, ( element ) parent ) {
 			}
 		}
 		case ascii.amp {
-			return parse_entity( p );
+			return parse_xml_entity( p );
 		}
 		default {
-			return new_text( parser_parse_string( p, "&<" ) );
+			return new_xml_text( parser_parse_string( p, "&<" ) );
 		}
 	}
-	var ( element ) elem = :parent.create_element( parser_parse_string( p, "\11\12\15 />" ) );
+	var ( xml_element ) elem = :parent.create_element( parser_parse_string( p, "\11\12\15 />" ) );
 	call parser_skip_space( p );
 	while <( index_of( "/>" p.current ) 0 ) {
 		var name = parser_parse_string( p, "\11\12\15 =" );
@@ -299,15 +312,15 @@ function parse_node( ( parser ) p, ( element ) parent ) {
 		}
 		case ascii.gt {
 			call parser_next_char( p );
-			var child = parse_node( p, elem );
+			var child = parse_xml_node( p, elem );
 			while child {
 				call list_add( elem.children child );
-				let child = parse_node( p, elem );
+				let child = parse_xml_node( p, elem );
 			}
 			call parser_expect( p ascii.slash );
 			call parser_next_char( p );
 			let name = parser_parse_string( p, "\11\12\15 >" );
-			if $cmp( elem.value name ) {
+			if $cmp( elem.name name ) {
 				throw $cat( "Unexpected close tag '</" name ">' on line " p.line "." );
 			}
 		}
@@ -319,63 +332,60 @@ function parse_node( ( parser ) p, ( element ) parent ) {
 }
 
 # Member function for writing text-nodes.
-function write_text( ( node ) this, ( writer ) output ) {
-	call :output.write_string( this.value );
+function write_xml_text( ( xml_text ) this, ( writer ) output ) {
+	call :output.write_string( this.text );
 }
 
 # Return a new text-node with the specified value.
-function new_text( value ) {
-	var ( node ) txt = $new( node );
-	let txt.type = nodetype.text;
-	let txt.value = value;
-	let txt.write_node = @write_text;
-	return txt;
+function new_xml_text( text ) {
+	var ( xml_text ) this = $new( xml_text );
+	let this.text = text;
+	let this.write_node = @write_xml_text;
+	return this;
 }
 
 # Member function for writing entity-references.
-function write_entity( ( node ) this, ( writer ) output ) {
+function write_xml_entity( ( xml_entity ) this, ( writer ) output ) {
 	call :output.write_string( "&" );
-	call :output.write_string( this.value );
+	call :output.write_string( this.name );
 	call :output.write_string( ";" );
 }
 
 # Return a new entity-reference node with the specified value.
-function new_entity( value ) {
-	var ( node ) ent = $new( node );
-	let ent.type = nodetype.entity;
-	let ent.value = value;
-	let ent.write_node = @write_entity;
-	return ent;
+function new_xml_entity( name ) {
+	var ( xml_entity ) this = $new( xml_entity );
+	let this.name = name;
+	let this.write_node = @write_xml_entity;
+	return this;
 }
 
 # Parse an entity-reference node from the specified parser.
-function parse_entity( ( parser ) p ) {
+function parse_xml_entity( ( parser ) p ) {
 	call parser_expect( p ascii.amp );
 	call parser_next_char( p );
-	var ent = new_entity( parser_parse_string( p ";" ) );
+	var ent = new_xml_entity( parser_parse_string( p ";" ) );
 	call parser_expect( p ascii.semicolon );
 	call parser_next_char( p );
 	return ent;
 }
 
 # Member function for writing comment-nodes.
-function write_comment( ( node ) this, ( writer ) output ) {
+function write_xml_comment( ( xml_comment ) this, ( writer ) output ) {
 	call :output.write_string( "<!--" );
-	call :output.write_string( this.value );
+	call :output.write_string( this.comment );
 	call :output.write_string( "-->" );
 }
 
 # Return a new comment-node with the specified value.
-function new_comment( value ) {
-	var ( node ) comment = $new( node );
-	let comment.type = nodetype.comment;
-	let comment.value = value;
-	let comment.write_node = @write_comment;
-	return comment;
+function new_xml_comment( comment ) {
+	var ( xml_comment ) this = $new( xml_comment );
+	let this.comment = comment;
+	let this.write_node = @write_xml_comment;
+	return this;
 }
 
 # Parse a comment-node from the specified parser positioned at the exclamation-mark.
-function parse_comment( ( parser ) p ) {
+function parse_xml_comment( ( parser ) p ) {
 	call parser_expect( p ascii.exclam );
 	call parser_next_char( p );
 	call parser_skip_space( p );
@@ -391,7 +401,7 @@ function parse_comment( ( parser ) p ) {
 			call parser_skip_space( p );
 			call parser_expect( p ascii.gt );
 			call parser_next_char( p );
-			return new_comment( str );
+			return new_xml_comment( str );
 		} else {
 			let str = $cat( str "-" parser_parse_string( p "-" ) );
 		}
@@ -399,29 +409,29 @@ function parse_comment( ( parser ) p ) {
 }
 
 # Return a list of nodes from the specified parser.
-function parse_node_list( ( parser ) p, template ) {
-	var ( element ) parent = new_element( "doc" );
+function parse_xml_node_list( ( parser ) p, template ) {
+	var ( xml_element ) parent = new_xml_element( "doc" );
 	var ( list ) nodes = new_list( 16 );
 	if template {
-		call list_add( parent.children parse_node( new_parser( template ) parent ) );
+		call list_add( parent.children parse_xml_node( new_parser( template ) parent ) );
 		let parent.template = parent;
 	}
 	while >e( p.current 0 ) {
-		call list_add( nodes parse_node( p parent ) );
+		call list_add( nodes parse_xml_node( p parent ) );
 	}
 	return nodes;
 }
 
 # Insert text nodes to indent output.
-function indent_node_list( ( list ) nodes, linefeed ) {
+function indent_xml_node_list( ( list ) nodes, linefeed ) {
 	var indented, idx;
 	while <( idx nodes.len ) {
-		var ( node ) n = [ nodes.array idx ];
-		if >e( n.type nodetype.element ) {
+		var n = [ nodes.array idx ];
+		if $instanceof( n xml_element ) {
 			let indented = TRUE;
-			call list_insert( nodes new_text( linefeed ) idx++ );
-			if indent_node_list( element.children( n ), $cat( linefeed "  " ) ) {
-				call list_add( element.children( n ) new_text( linefeed ) ) ;
+			call list_insert( nodes new_xml_text( linefeed ) idx++ );
+			if indent_xml_node_list( xml_element.children( n ), $cat( linefeed "  " ) ) {
+				call list_add( xml_element.children( n ) new_xml_text( linefeed ) ) ;
 			}
 		}
 		inc idx;
@@ -440,12 +450,12 @@ program xml {
 	# Document template used to specify permitted element names.
 	var template = "<elem><child><x>cdata</x><y/></child></elem>";
 	# Parse document against template.
-	var ( list ) nodes = parse_node_list( new_parser( "<?xml version=\"?\"?><!---test--><elem>text<child x=\"y\">txt<x/><x>x</x><y/></child>&ent;</elem>\12" ), template );
+	var ( list ) nodes = parse_xml_node_list( new_parser( "<?xml version=\"?\"?><!---test--><elem>text<child x=\"y\">txt<x/><x>x</x><y/></child>&ent;</elem>\12" ), template );
 	# Format and output.
-	call indent_node_list( nodes "\12" );
+	call indent_xml_node_list( nodes "\12" );
 	var ( writer ) out = new_writer();
 	var idx;
 	while <( idx nodes.len ) {
-		call :node.write_node( [ nodes.array idx++ ] out );
+		call :xml_node.write_node( [ nodes.array idx++ ] out );
 	}
 }
