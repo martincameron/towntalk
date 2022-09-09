@@ -66,18 +66,6 @@ struct xml_element( xml_node ) {
 	name, attributes, children, template, create_element
 }
 
-# Return the first index of the specified code-point in str, or -1.
-function index_of( str, chr ) {
-	var idx;
-	while <( idx $len( str ) ) {
-		if =( &( $chr( str idx ) 0xFF ) chr ) {
-			return idx;
-		}
-		inc idx;
-	}
-	return -1;
-}
-
 # Return a new tuple, initialized with the specified values.
 function new_tuple( key value ) { 
 	var ( tuple ) tup = $new( tuple );
@@ -122,7 +110,7 @@ function list_insert( ( list ) this, value, idx ) {
 function new_parser( source ) {
 	var ( parser ) this = $new( parser );
 	let this.source = source;
-	let this.idx = 0;
+	let this.idx = -1;
 	let this.current = parser_next_char( this );
 	let this.line = 1;
 	return this;
@@ -130,9 +118,9 @@ function new_parser( source ) {
 
 # Return the next character from the specified parser, or -1 if no more are available.
 function parser_next_char( ( parser ) this ) {
+	let this.idx = +( this.idx 1 );
 	if <( this.idx $len( this.source ) ) {
 		let this.current = &( $chr( this.source this.idx ) 0xFF );
-		let this.idx = +( this.idx 1 );
 		if =( this.current ascii.lf ) {
 			let this.line = +( this.line 1 );
 		}
@@ -144,12 +132,28 @@ function parser_next_char( ( parser ) this ) {
 
 # Return a string from the specified parser, up to the end or one of the characters in the specified string.
 function parser_parse_string( ( parser ) this, terminators ) {
-	var ( list ) out = new_list( 16 );
-	while &&( >e( this.current 0 ) <( index_of( terminators this.current ) 0 ) ) {
-		call list_add( out, this.current );
-		call parser_next_char( this );
+	if <( this.current 0 ) {
+		return "";
 	}
-	return $sub( out.array 0 out.len );
+	var end = $stridx( this.source, terminators, this.idx );
+	if <( end 0 ) {
+		let end = $len( this.source );
+		let this.current = -1;
+	} else {
+		let this.current = &( $chr( this.source end ) 0xFF );
+		if =( this.current ascii.lf ) {
+			let this.line = +( this.line 1 );
+		}
+	}
+	var str = $sub( this.source, this.idx, -( end this.idx ) );
+	let this.idx = end;
+	var idx = ?( $len( str ) $stridx( str, "\12", 0 ) -1 );
+	while >e( idx 0 ) {
+		let this.line = +( this.line 1 );
+		inc idx;
+		let idx = ?( <( idx $len( str ) ) $stridx( str, "\12", idx ) -1 );
+	}
+	return str;
 }
 
 # Return the content of a quoted string from the specified parser.
@@ -301,7 +305,7 @@ function parse_xml_node( ( parser ) p, ( xml_element ) parent ) {
 	}
 	var ( xml_element ) elem = :parent.create_element( parser_parse_string( p, "\11\12\15 />" ) );
 	call parser_skip_space( p );
-	while <( index_of( "/>" p.current ) 0 ) {
+	while &&( <>( p.current ascii.slash ) <>( p.current ascii.gt ) ) {
 		var name = parser_parse_string( p, "\11\12\15 =" );
 		call parser_skip_space( p );
 		call parser_expect( p ascii.equals );
@@ -566,6 +570,7 @@ program xml {
 	var template = "<elem><child><x>cdata</x><y/></child></elem>";
 	# Parse document against template.
 	var ( list ) nodes = parse_xml_node_list( new_parser( "<?xml version=\"?\"?><!---test--><!DOCTYPE elem PUBLIC \"a\" 'b'[]><elem>text<child x=\"y\"><![CDATA[]txt]]><x/><x>x</x><y/></child>&ent;</elem>\12" ), template );
+	#var ( list ) nodes = parse_xml_node_list( new_parser( $load( $argv( 1 ) ) ) 0 );
 	# Format and output.
 	call indent_xml_node_list( nodes "\12" );
 	var ( writer ) out = new_writer();
