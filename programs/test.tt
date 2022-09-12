@@ -49,6 +49,14 @@ function except( elem ) {
 	throw $tup( elem, $line( elem ) );
 }
 
+function struc_geta( ( struc ) this ) {
+	return this.a;
+}
+
+function exten_getg( ( exten ) this ) {
+	return this.g;
+}
+
 function setg( x ) {
 	let g = x;
 	return g;
@@ -850,6 +858,17 @@ function testthiscall() {
 	call assert_throws( "Expected expression", ${ () { call :exten.g(); } } );
 }
 
+function testmembercall() {
+	var ( exten ) obj = $new( exten );
+	let obj.a = 1;
+	let obj.g = 2;
+	call assert_equals( 1, obj:geta(), ${-} );
+	call assert_equals( 2, obj:getg(), ${-} );
+	call assert_throws( "Member function", ${ () { var ( exten ) x; call x:xxx(); } } );
+	call assert_throws( "Expected '('", ${ () { var ( exten ) x; call x:geta; } } );
+	call assert_throws( "Wrong number", ${ () { var ( exten ) x; call x:geta(0); } } );
+}
+
 function testtype() {
 	call assert_equals( 0, $type( 0 ), ${-} );
 	call assert_equals( 1, $type( "" ), ${-} );
@@ -929,6 +948,7 @@ program test {
 	call testfunction();
 	call testworker();
 	call testthiscall();
+	call testmembercall();
 	call testtype();
 	call testfield();
 	call testinstanceof();

@@ -111,7 +111,8 @@
 		@function                Function reference.
 		:(func expr ...)         Call function reference with specified args.
 		:struct.memb(this ...)   Call member function of specified array.
-		:variable.member(...)    Call member function of associated struct of specified array.
+		:variable.member(...)    Member function call, equivalent to ":struct.member(variable ...)".
+		variable:func(...)       Static member function call, equivalent to "struct_func(variable ...)".
 		'(expr operator ...)     Infix operator, eg '( 1 + 2 ).
 		+(int int ...)           Addition.
 		-(int int ...)           Subtraction.
@@ -3555,7 +3556,7 @@ static struct element* parse_call_expression( struct element *elem, struct envir
 				}
 			}
 		} else {
-			sprintf( message, "Expected '(' after function name on line %d.", next->line );
+			sprintf( message, "Expected '(' after function name on line %d.", elem->line );
 		}
 	} else {
 		strcpy( message, OUT_OF_MEMORY );
@@ -3739,6 +3740,51 @@ static struct element* parse_thiscall_expression( struct element *elem, struct e
 	return next;
 }
 
+static struct element* parse_member_call_expression( struct structure *struc, struct expression *this, char *memb, struct element *elem,
+	struct environment *env, struct function *func, struct expression *prev, char *message ) {
+	char *name;
+	int num_params;
+	struct expression *expr;
+	struct function *decl = NULL;
+	struct element *next = elem->next;
+	while( struc && decl == NULL ) {
+		name = malloc( struc->str.length + 1 + strlen( memb ) + 1 );
+		strcpy( name, struc->str.string );
+		name[ struc->str.length ] = '_';
+		strcpy( &name[ struc->str.length + 1 ], memb );
+		decl = get_function_indexed( env->functions_index, name );
+		free( name );
+		struc = struc->super;
+	}
+	if( decl ) {
+		expr = calloc( 1, sizeof( struct function_expression ) );
+		if( expr ) {
+			prev->next = expr;
+			expr->line = elem->line;
+			expr->parameters = this;
+			( ( struct function_expression * ) expr )->function = decl;
+			if( next && next->str.string[ 0 ] == '(' ) {
+				parse_expressions( next->child, env, func, 0, this, &num_params, message );
+				if( message[ 0 ] == 0 ) {
+					if( num_params + 1 == ( ( struct function_expression * ) expr )->function->num_parameters ) {
+						expr->evaluate = evaluate_call_expression;
+						next = next->next;
+					} else {
+						sprintf( message, "Wrong number of arguments to '%.64s()' on line %d.", decl->str.string, next->line );
+					}
+				}
+			} else {
+				sprintf( message, "Expected '(' after function name on line %d.", elem->line );
+			}
+		} else {
+			strcpy( message, OUT_OF_MEMORY );
+		}
+	} else {
+		sprintf( message, "Member function not found for expression '%.64s' on line %d.", elem->str.string, elem->line );
+	}
+	return next;
+}
+
 static struct element* parse_local_expression( struct element *elem, struct environment *env,
 	struct function *func, struct local_variable *local, struct expression *prev, char *message ) {
 	int idx, len;
@@ -3749,23 +3795,31 @@ static struct element* parse_local_expression( struct element *elem, struct envi
 	if( expr ) {
 		prev->next = expr;
 		expr->line = elem->line;
-		if( struc && field[ 0 ] == '.' ) {
-			idx = get_string_list_index( struc->fields, &field[ 1 ] );
-			if( idx >= 0 ) {
-				expr->parameters = calloc( 1, sizeof( struct expression ) );
-				if( expr->parameters ) {
-					expr->parameters->index = local->index;
-					expr->parameters->evaluate = evaluate_local;
-					expr->index = idx;
-					expr->evaluate = evaluate_member_expression;
+		if( field[ 0 ] == '.' || field[ 0 ] == ':' ) {
+			if( struc ) {
+				if( field[ 0 ] == ':' ) {
+					expr->index = local->index;
+					expr->evaluate = evaluate_local;
+					next = parse_member_call_expression( struc, expr, &field[ 1 ], elem, env, func, prev, message );
 				} else {
-					strcpy( message, OUT_OF_MEMORY );
+					idx = get_string_list_index( struc->fields, &field[ 1 ] );
+					if( idx >= 0 ) {
+						expr->parameters = calloc( 1, sizeof( struct expression ) );
+						if( expr->parameters ) {
+							expr->parameters->index = local->index;
+							expr->parameters->evaluate = evaluate_local;
+							expr->index = idx;
+							expr->evaluate = evaluate_member_expression;
+						} else {
+							strcpy( message, OUT_OF_MEMORY );
+						}
+					} else {
+						sprintf( message, "Field not declared in expression '%.64s' on line %d.", elem->str.string, elem->line );
+					}
 				}
 			} else {
-				sprintf( message, "Field not declared in expression '%.64s' on line %d.", elem->str.string, elem->line );
+				sprintf( message, "Expression '%.64s' has no associated structure on line %d.", elem->str.string, elem->line );
 			}
-		} else if( field[ 0 ] == '.' ) {
-			sprintf( message, "Expression '%.64s' has no associated structure on line %d.", elem->str.string, elem->line );
 		} else {
 			expr->index = local->index;
 			if( !strcmp( field, "++" ) ) {
@@ -3893,7 +3947,7 @@ static struct element* parse_expression( struct element *elem, struct environmen
 			next = parse_thiscall_expression( elem, env, func, prev, message );
 		}
 	} else {
-		local = get_local_variable( func->variable_decls, value, ".+-" );
+		local = get_local_variable( func->variable_decls, value, ".:+-" );
 		if( local ) {
 			/* Local variable reference.*/
 			next = parse_local_expression( elem, env, func, local, prev, message );
