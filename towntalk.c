@@ -303,7 +303,7 @@ static char* cat_string( char *left, int llen, char *right, int rlen ) {
 static int hash_code( char *str, char terminator ) {
 	char chr = str[ 0 ];
 	int idx = 1, hash = 0;
-	while( chr && chr != terminator ) {
+	while( chr != terminator && chr ) {
 		hash = hash ^ chr;
 		chr = str[ idx++ ];
 	}
@@ -2145,7 +2145,8 @@ static struct global_variable* get_global( struct global_variable *global, char 
 }
 
 static struct global_variable* get_global_indexed( struct global_variable **index, char *name ) {
-	return get_global( index[ hash_code( name, '.' ) ], name, field_length( name, "." ) );
+	size_t len = field_length( name, ".:" );
+	return get_global( index[ hash_code( name, name[ len ] ) ], name, len );
 }
 
 static int add_global_constant( struct element *elem, struct environment *env,
@@ -3843,31 +3844,37 @@ static struct element* parse_global_expression( struct element *elem, struct env
 	int idx, count;
 	struct element *next = elem->next;
 	struct structure *struc = global->type;
-	char *field = strchr( elem->str.string, '.' );
-	struct expression *expr = calloc( 1, sizeof( struct global_expression ) );
+	char *field = &elem->str.string[ strlen( global->name ) ];
+	struct global_expression *expr = calloc( 1, sizeof( struct global_expression ) );
 	if( expr ) {
-		prev->next = expr;
-		expr->line = elem->line;
-		if( struc && field ) {
-			idx = get_string_list_index( struc->fields, &field[ 1 ] );
-			if( idx >= 0 ) {
-				expr->parameters = calloc( 1, sizeof( struct global_expression ) );
-				if( expr->parameters ) {
-					( ( struct global_expression * ) expr->parameters )->global = global;
-					expr->parameters->evaluate = evaluate_global;
-					expr->index = idx;
-					expr->evaluate = evaluate_member_expression;
+		prev->next = &expr->expr;
+		expr->global = global;
+		expr->expr.line = elem->line;
+		expr->expr.evaluate = evaluate_global;
+		if( field[ 0 ] == '.' || field[ 0 ] == ':' ) {
+			if( struc ) {
+				if( field[ 0 ] == ':' ) {
+					next = parse_member_call_expression( struc, &expr->expr, &field[ 1 ], elem, env, func, prev, message );
 				} else {
-					strcpy( message, OUT_OF_MEMORY );
+					idx = get_string_list_index( struc->fields, &field[ 1 ] );
+					if( idx >= 0 ) {
+						prev->next = calloc( 1, sizeof( struct expression ) );
+						if( prev->next ) {
+							prev->next->index = idx;
+							prev->next->line = elem->line;
+							prev->next->parameters = &expr->expr;
+							prev->next->evaluate = evaluate_member_expression;
+						} else {
+							prev->next = &expr->expr;
+							strcpy( message, OUT_OF_MEMORY );
+						}
+					} else {
+						sprintf( message, "Field not declared in expression '%.64s' on line %d.", elem->str.string, elem->line );
+					}
 				}
 			} else {
-				sprintf( message, "Field not declared in expression '%.64s' on line %d.", elem->str.string, elem->line );
+				sprintf( message, "Expression '%.64s' has no associated structure on line %d.", elem->str.string, elem->line );
 			}
-		} else if( field ) {
-			sprintf( message, "Expression '%.64s' has no associated structure on line %d.", elem->str.string, elem->line );
-		} else {
-			( ( struct global_expression * ) expr )->global = global;
-			expr->evaluate = evaluate_global;
 		}
 	} else {
 		strcpy( message, OUT_OF_MEMORY );
@@ -5415,8 +5422,8 @@ static int validate_name( char *name, struct environment *env ) {
 
 static int validate_decl( struct element *elem, struct environment *env, char *message ) {
 	char *name = elem->str.string;
-	int hash = hash_code( name, '.' ); 
-	size_t len = field_length( name, "." );
+	int hash = hash_code( name, 0 );
+	size_t len = strlen( name );
 	if( get_global( env->constants_index[ hash ], name, len )
 	|| get_global( env->globals_index[ hash ], name, len )
 	|| get_function( env->functions_index[ hash ], name )

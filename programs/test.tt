@@ -864,6 +864,7 @@ function testmembercall() {
 	let obj.g = 2;
 	call assert_equals( 1, obj:geta(), ${-} );
 	call assert_equals( 2, obj:getg(), ${-} );
+	call assert_equals( 0, ext:geta(), ${-} );
 	call assert_throws( "Member function", ${ () { var ( exten ) x; call x:xxx(); } } );
 	call assert_throws( "Expected '('", ${ () { var ( exten ) x; call x:geta; } } );
 	call assert_throws( "Wrong number", ${ () { var ( exten ) x; call x:geta(0); } } );
