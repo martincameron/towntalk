@@ -5410,13 +5410,6 @@ static int validate_name( char *name, struct environment *env ) {
 	} else {
 		result = 0;
 	}
-	if( result ) {
-		idx = hash_code( name, 0 );
-		/* Declarations, statements and operator names not permitted. */
-		result = ( get_keyword( name, declarations ) == NULL )
-			&& ( get_keyword( name, env->statements_index[ idx ] ) == NULL )
-			&& ( get_operator( name, env->operators_index[ idx ] ) == NULL );
-	}
 	return result;
 }
 
@@ -5424,7 +5417,10 @@ static int validate_decl( struct element *elem, struct environment *env, char *m
 	char *name = elem->str.string;
 	int hash = hash_code( name, 0 );
 	size_t len = strlen( name );
-	if( get_global( env->constants_index[ hash ], name, len )
+	if( get_keyword( name, declarations )
+	|| get_keyword( name, env->statements_index[ hash ] )
+	|| get_operator( name, env->operators_index[ hash ] )
+	|| get_global( env->constants_index[ hash ], name, len )
 	|| get_global( env->globals_index[ hash ], name, len )
 	|| get_function( env->functions_index[ hash ], name )
 	|| get_structure( env->structures_index[ hash ], name, len ) ) {
