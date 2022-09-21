@@ -191,6 +191,16 @@ struct block_statement {
 	struct statement *if_block, *else_block;
 };
 
+struct structure_statement {
+	struct statement stmt;
+	struct structure *structure;
+};
+
+struct structure_expression {
+	struct expression expr;
+	struct structure *structure;
+};
+
 struct global_expression {
 	struct expression expr;
 	struct global_variable *global;
@@ -1625,6 +1635,17 @@ static enum result execute_array_assignment( struct statement *this,
 	return ret;
 }
 
+static int instance_of( struct array *arr, struct structure *struc ) {
+	struct structure *structure = arr->structure;
+	while( structure ) {
+		if( struc == structure ) {
+			return 1;
+		}
+		structure = structure->super;
+	}
+	return 0;
+}
+
 static enum result execute_struct_assignment( struct statement *this,
 	struct variables *vars, struct variable *result ) {
 	struct array *arr;
@@ -1632,26 +1653,23 @@ static enum result execute_struct_assignment( struct statement *this,
 	struct variable obj = { 0, NULL }, var = { 0, NULL };
 	enum result ret = destination->evaluate( destination, vars, &obj );
 	if( ret ) {
-		if( obj.string_value && obj.string_value->type == ARRAY ) {
+		if( obj.string_value && obj.string_value->type == ARRAY
+		&& instance_of( ( struct array * ) obj.string_value, ( ( struct structure_statement * ) this )->structure ) ) {
 			arr = ( struct array * ) obj.string_value;
-			if( this->local < arr->length ) {
-				ret = this->source->evaluate( this->source, vars, &var );
-				if( ret ) {
-					arr->integer_values[ this->local ] = var.integer_value;
-					if( arr->string_values ) {
-						if( arr->string_values[ this->local ] ) {
-							unref_string( arr->string_values[ this->local ] );
-						}
-						arr->string_values[ this->local ] = var.string_value;
-					} else {
-						dispose_temporary( &var );
+			ret = this->source->evaluate( this->source, vars, &var );
+			if( ret ) {
+				arr->integer_values[ this->local ] = var.integer_value;
+				if( arr->string_values ) {
+					if( arr->string_values[ this->local ] ) {
+						unref_string( arr->string_values[ this->local ] );
 					}
+					arr->string_values[ this->local ] = var.string_value;
+				} else {
+					dispose_temporary( &var );
 				}
-			} else {
-				ret = throw( vars, destination, this->local, "Array index out of bounds." );
 			}
 		} else {
-			ret = throw( vars, destination, obj.integer_value, "Not an array." );
+			ret = throw( vars, destination, obj.integer_value, "Not an instance of specified structure." );
 		}
 		dispose_temporary( &obj );
 	}
@@ -1849,36 +1867,33 @@ static enum result evaluate_thiscall_expression( struct expression *this,
 	struct global_expression obj_expr = { 0 };
 	enum result ret = this->parameters->evaluate( this->parameters, vars, &obj.value );
 	if( ret ) {
-		if( obj.value.string_value && obj.value.string_value->type == ARRAY ) {
+		if( obj.value.string_value && obj.value.string_value->type == ARRAY
+		&& instance_of( ( struct array * ) obj.value.string_value, ( ( struct structure_expression * ) this )->structure ) ) {
 			arr = ( struct array * ) obj.value.string_value;
 			idx = this->index >> 8;
 			count = this->index & 0xFF;
-			if( idx < arr->length ) {
-				if( arr->string_values ) {
-					function = arr->string_values[ idx ];
-				}
-				if( function && function->type == FUNCTION ) {
-					obj_expr.global = &obj;
-					obj_expr.expr.evaluate = evaluate_global;
-					obj_expr.expr.next = this->parameters->next;
-					call_expr.expr.line = this->line;
-					call_expr.function = ( struct function * ) function;
-					call_expr.expr.parameters = &obj_expr.expr;
-					if( call_expr.function->num_parameters == count ) {
-						function->reference_count++;
-						ret = evaluate_call_expression( &call_expr.expr, vars, result );
-						function->reference_count--;
-					} else {
-						ret = throw( vars, this, count, "Incorrect number of parameters to function." );
-					}
+			if( arr->string_values ) {
+				function = arr->string_values[ idx ];
+			}
+			if( function && function->type == FUNCTION ) {
+				obj_expr.global = &obj;
+				obj_expr.expr.evaluate = evaluate_global;
+				obj_expr.expr.next = this->parameters->next;
+				call_expr.expr.line = this->line;
+				call_expr.function = ( struct function * ) function;
+				call_expr.expr.parameters = &obj_expr.expr;
+				if( call_expr.function->num_parameters == count ) {
+					function->reference_count++;
+					ret = evaluate_call_expression( &call_expr.expr, vars, result );
+					function->reference_count--;
 				} else {
-					ret = throw( vars, this, arr->integer_values[ idx ], "Not a function reference." );
+					ret = throw( vars, this, count, "Incorrect number of parameters to function." );
 				}
 			} else {
-				ret = throw( vars, this, idx, "Array index out of bounds." );
+				ret = throw( vars, this, arr->integer_values[ idx ], "Not a function reference." );
 			}
 		} else {
-			ret = throw( vars, this, obj.value.integer_value, "Not an array." );
+			ret = throw( vars, this, obj.value.integer_value, "Not an instance of specified structure." );
 		}
 		dispose_temporary( &obj.value );
 	}
@@ -1950,20 +1965,14 @@ static enum result evaluate_instanceof_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	struct variable arr = { 0, NULL }, struc = { 0, NULL };
 	struct expression *parameter = this->parameters;
-	struct structure *structure;
 	enum result ret = parameter->evaluate( parameter, vars, &arr );
 	if( ret ) {
 		if( arr.string_value && arr.string_value->type == ARRAY ) {
 			ret = parameter->next->evaluate( parameter->next, vars, &struc );
 			if( ret ) {
 				if( struc.string_value && struc.string_value->type == STRUCT ) {
-					structure = ( ( struct array * ) arr.string_value )->structure;
-					while( structure ) {
-						if( struc.string_value == ( struct string * ) structure ) {
-							assign_variable( &arr, result );
-							break;
-						}
-						structure = structure->super;
+					if( instance_of( ( struct array * ) arr.string_value, ( struct structure * ) struc.string_value ) ) {
+						assign_variable( &arr, result );
 					}
 				} else {
 					ret = throw( vars, this, struc.integer_value, "Not a structure." );	
@@ -1983,19 +1992,16 @@ static enum result evaluate_member_expression( struct expression *this,
 	struct expression *parameter = this->parameters;
 	enum result ret = parameter->evaluate( parameter, vars, &obj );
 	if( ret ) {
-		if( obj.string_value && obj.string_value->type == ARRAY ) {
+		if( obj.string_value && obj.string_value->type == ARRAY
+		&& instance_of( ( struct array * ) obj.string_value, ( ( struct structure_expression * ) this )->structure ) ) {
 			arr = ( struct array * ) obj.string_value;
-			if( this->index < arr->length ) {
-				result->integer_value = arr->integer_values[ this->index ];
-				if( arr->string_values && arr->string_values[ this->index ] ) {
-					result->string_value = arr->string_values[ this->index ];
-					result->string_value->reference_count++;
-				}
-			} else {
-				ret = throw( vars, this, this->index, "Array index out of bounds." );
+			result->integer_value = arr->integer_values[ this->index ];
+			if( arr->string_values && arr->string_values[ this->index ] ) {
+				result->string_value = arr->string_values[ this->index ];
+				result->string_value->reference_count++;
 			}
 		} else {
-			ret = throw( vars, this, obj.integer_value, "Not an array." );
+			ret = throw( vars, this, obj.integer_value, "Not an instance of specified structure." );
 		}
 		dispose_temporary( &obj );
 	}
@@ -2032,7 +2038,6 @@ static enum result evaluate_array_expression( struct expression *this,
 				ret = throw( vars, this, 0, msg );
 			}
 			dispose_global_variables( inputs.next );
-			
 		} else {
 			buf = this->index == 'B';
 			if( var.string_value && var.string_value->type == STRUCT && !buf ) {
@@ -3683,7 +3688,7 @@ static struct element* parse_thiscall_expression( struct element *elem, struct e
 	char *field = strchr( elem->str.string, '.' );
 	struct local_variable *local = get_local_variable( func->variable_decls, &elem->str.string[ 1 ], "." );
 	struct global_variable *global = get_global_indexed( env->globals_index, &elem->str.string[ 1 ] );
-	struct expression param = { 0 }, *this, *expr = calloc( 1, sizeof( struct global_expression ) );
+	struct expression param = { 0 }, *this, *expr = calloc( 1, sizeof( struct structure_expression ) );
 	if( expr ) {
 		prev->next = expr;
 		expr->line = elem->line;
@@ -3695,6 +3700,7 @@ static struct element* parse_thiscall_expression( struct element *elem, struct e
 			struc = get_structure_indexed( env->structures_index, &elem->str.string[ 1 ] );
 		}
 		if( struc && field ) {
+			( ( struct structure_expression * ) expr )->structure = struc;
 			idx = get_string_list_index( struc->fields, &field[ 1 ] );
 			if( idx >= 0 ) {
 				if( next && next->str.string[ 0 ] == '(' ) {
@@ -3796,22 +3802,24 @@ static struct element* parse_local_expression( struct element *elem, struct envi
 	if( expr ) {
 		prev->next = expr;
 		expr->line = elem->line;
+		expr->index = local->index;
+		expr->evaluate = evaluate_local;
 		if( field[ 0 ] == '.' || field[ 0 ] == ':' ) {
 			if( struc ) {
 				if( field[ 0 ] == ':' ) {
-					expr->index = local->index;
-					expr->evaluate = evaluate_local;
 					next = parse_member_call_expression( struc, expr, &field[ 1 ], elem, env, func, prev, message );
 				} else {
 					idx = get_string_list_index( struc->fields, &field[ 1 ] );
 					if( idx >= 0 ) {
-						expr->parameters = calloc( 1, sizeof( struct expression ) );
-						if( expr->parameters ) {
-							expr->parameters->index = local->index;
-							expr->parameters->evaluate = evaluate_local;
-							expr->index = idx;
-							expr->evaluate = evaluate_member_expression;
+						prev->next = calloc( 1, sizeof( struct structure_expression ) );
+						if( prev->next ) {
+							( ( struct structure_expression * ) prev->next )->structure = struc;
+							prev->next->index = idx;
+							prev->next->line = elem->line;
+							prev->next->parameters = expr;
+							prev->next->evaluate = evaluate_member_expression;
 						} else {
+							prev->next = expr;
 							strcpy( message, OUT_OF_MEMORY );
 						}
 					} else {
@@ -3821,17 +3829,12 @@ static struct element* parse_local_expression( struct element *elem, struct envi
 			} else {
 				sprintf( message, "Expression '%.64s' has no associated structure on line %d.", elem->str.string, elem->line );
 			}
-		} else {
-			expr->index = local->index;
-			if( !strcmp( field, "++" ) ) {
-				expr->evaluate = evaluate_local_post_inc;
-			} else if( !strcmp( field, "--" ) ) {
-				expr->evaluate = evaluate_local_post_dec;
-			} else if( field[ 0 ] == 0 ) {
-				expr->evaluate = evaluate_local;
-			} else {
-				sprintf( message, "Invalid local variable expression '%.64s' on line %d.", elem->str.string, elem->line );
-			}
+		} else if( !strcmp( field, "++" ) ) {
+			expr->evaluate = evaluate_local_post_inc;
+		} else if( !strcmp( field, "--" ) ) {
+			expr->evaluate = evaluate_local_post_dec;
+		} else if( field[ 0 ] ) {
+			sprintf( message, "Invalid local variable expression '%.64s' on line %d.", elem->str.string, elem->line );
 		}
 	} else {
 		strcpy( message, OUT_OF_MEMORY );
@@ -3845,27 +3848,28 @@ static struct element* parse_global_expression( struct element *elem, struct env
 	struct element *next = elem->next;
 	struct structure *struc = global->type;
 	char *field = &elem->str.string[ strlen( global->name ) ];
-	struct global_expression *expr = calloc( 1, sizeof( struct global_expression ) );
+	struct expression *expr = calloc( 1, sizeof( struct global_expression ) );
 	if( expr ) {
-		prev->next = &expr->expr;
-		expr->global = global;
-		expr->expr.line = elem->line;
-		expr->expr.evaluate = evaluate_global;
+		prev->next = expr;
+		( ( struct global_expression * ) expr )->global = global;
+		expr->line = elem->line;
+		expr->evaluate = evaluate_global;
 		if( field[ 0 ] == '.' || field[ 0 ] == ':' ) {
 			if( struc ) {
 				if( field[ 0 ] == ':' ) {
-					next = parse_member_call_expression( struc, &expr->expr, &field[ 1 ], elem, env, func, prev, message );
+					next = parse_member_call_expression( struc, expr, &field[ 1 ], elem, env, func, prev, message );
 				} else {
 					idx = get_string_list_index( struc->fields, &field[ 1 ] );
 					if( idx >= 0 ) {
-						prev->next = calloc( 1, sizeof( struct expression ) );
+						prev->next = calloc( 1, sizeof( struct structure_expression ) );
 						if( prev->next ) {
+							( ( struct structure_expression * ) prev->next )->structure = struc;
 							prev->next->index = idx;
 							prev->next->line = elem->line;
-							prev->next->parameters = &expr->expr;
+							prev->next->parameters = expr;
 							prev->next->evaluate = evaluate_member_expression;
 						} else {
-							prev->next = &expr->expr;
+							prev->next = expr;
 							strcpy( message, OUT_OF_MEMORY );
 						}
 					} else {
@@ -4128,12 +4132,13 @@ static struct element* parse_struct_assignment( struct element *elem, struct env
 	struct expression expr;
 	struct structure *struc;
 	struct element *next = elem->next, *child = next->child;
-	struct statement *stmt = calloc( 1, sizeof( struct statement ) );
+	struct statement *stmt = calloc( 1, sizeof( struct structure_statement ) );
 	if( stmt ) {
 		prev->next = stmt;
 		struc = get_structure_indexed( env->structures_index, next->str.string );
 		field = strchr( next->str.string, '.' );
 		if( struc && field ) {
+			( ( struct structure_statement * ) stmt )->structure = struc;
 			idx = get_string_list_index( struc->fields, &field[ 1 ] );
 			if( idx >= 0 ) {
 				stmt->local = idx;
@@ -4170,18 +4175,20 @@ static struct element* parse_struct_assignment( struct element *elem, struct env
 static struct element* parse_local_assignment( struct element *elem, struct environment *env,
 	struct function *func, struct local_variable *local, struct statement *prev, char *message ) {
 	int idx;
+	struct statement *stmt;
 	struct expression expr;
 	struct element *next = elem->next;
 	struct structure *struc = local->type;
 	char *field = strchr( next->str.string, '.' );
-	struct statement *stmt = calloc( 1, sizeof( struct statement ) );
-	if( stmt ) {
-		prev->next = stmt;
-		expr.next = NULL;
-		next = parse_expression( next->next->next, env, func, &expr, message );
-		if( expr.next ) {
-			stmt->source = expr.next;
-			if( struc && field ) {
+	if( struc && field ) {
+		stmt = calloc( 1, sizeof( struct structure_statement ) );
+		if( stmt ) {
+			prev->next = stmt;
+			expr.next = NULL;
+			next = parse_expression( next->next->next, env, func, &expr, message );
+			if( expr.next ) {
+				stmt->source = expr.next;
+				( ( struct structure_statement * ) stmt )->structure = struc;
 				idx = get_string_list_index( struc->fields, &field[ 1 ] );
 				if( idx >= 0 ) {
 					stmt->local = idx;
@@ -4199,16 +4206,27 @@ static struct element* parse_local_assignment( struct element *elem, struct envi
 				} else {
 					sprintf( message, "Field '%.64s' not declared on line %d.", &field[ 1 ], elem->line );
 				}
-			} else if( field ) {
-				sprintf( message, "Variable '%.64s' has no associated structure on line %d.", local->name, elem->line );
-			} else {
+			}
+		} else {
+			strcpy( message, OUT_OF_MEMORY );
+		}
+	} else if( field ) {
+		sprintf( message, "Variable '%.64s' has no associated structure on line %d.", local->name, elem->line );
+	} else {
+		stmt = calloc( 1, sizeof( struct statement ) );
+		if( stmt ) {
+			prev->next = stmt;
+			expr.next = NULL;
+			next = parse_expression( next->next->next, env, func, &expr, message );
+			if( expr.next ) {
+				stmt->source = expr.next;
 				stmt->local = local->index;
 				stmt->execute = execute_local_assignment;
 				next = next->next;
 			}
+		} else {
+			strcpy( message, OUT_OF_MEMORY );
 		}
-	} else {
-		strcpy( message, OUT_OF_MEMORY );
 	}
 	return next;
 }
@@ -4220,14 +4238,16 @@ static struct element* parse_global_assignment( struct element *elem, struct env
 	struct element *next = elem->next;
 	struct structure *struc = global->type;
 	char *field = strchr( next->str.string, '.' );
-	struct statement *stmt = calloc( 1, sizeof( struct global_assignment_statement ) );
-	if( stmt ) {
-		prev->next = stmt;
-		expr.next = NULL;
-		next = parse_expression( next->next->next, env, func, &expr, message );
-		if( expr.next ) {
-			stmt->source = expr.next;
-			if( struc && field ) {
+	struct statement *stmt;
+	if( struc && field ) {
+		stmt = calloc( 1, sizeof( struct structure_statement ) );
+		if( stmt ) {
+			prev->next = stmt;
+			expr.next = NULL;
+			next = parse_expression( next->next->next, env, func, &expr, message );
+			if( expr.next ) {
+				stmt->source = expr.next;
+				( ( struct structure_statement * ) stmt )->structure = struc;
 				idx = get_string_list_index( struc->fields, &field[ 1 ] );
 				if( idx >= 0 ) {
 					stmt->local = idx;
@@ -4245,16 +4265,27 @@ static struct element* parse_global_assignment( struct element *elem, struct env
 				} else {
 					sprintf( message, "Field '%.64s' not declared on line %d.", &field[ 1 ], elem->line );
 				}
-			} else if( field ) {
-				sprintf( message, "Variable '%.64s' has no associated structure on line %d.", global->name, elem->line );
-			} else {
+			}
+		} else {
+			strcpy( message, OUT_OF_MEMORY );
+		}
+	} else if( field ) {
+		sprintf( message, "Variable '%.64s' has no associated structure on line %d.", global->name, elem->line );
+	} else {
+		stmt = calloc( 1, sizeof( struct global_assignment_statement ) );
+		if( stmt ) {
+			prev->next = stmt;
+			expr.next = NULL;
+			next = parse_expression( next->next->next, env, func, &expr, message );
+			if( expr.next ) {
+				stmt->source = expr.next;
 				( ( struct global_assignment_statement * ) stmt )->destination = &global->value;
 				stmt->execute = execute_global_assignment;
 				next = next->next;
 			}
+		} else {
+			strcpy( message, OUT_OF_MEMORY );
 		}
-	} else {
-		strcpy( message, OUT_OF_MEMORY );
 	}
 	return next;
 }

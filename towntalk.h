@@ -146,12 +146,6 @@ struct function_expression {
 	struct function *function;
 };
 
-/* Expression with associated structure. */
-struct structure_expression {
-	struct expression expr;
-	struct structure *structure;
-};
-
 /* Statement list. */
 struct statement {
 	int local;

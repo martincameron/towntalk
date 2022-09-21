@@ -165,8 +165,8 @@ function testbuffer() {
 	call assert_equals( 1, $len( b ), ${-} );
 	call assert_equals( 1, [ b 0 ], ${-} );
 	let b = $buffer( struc );
-	let struc.a( b ) = $tup( "a", 2 );
-	call assert_equals( 2, struc.a( b ), ${-} );
+	let [ b struc.a ] = $tup( "a", 2 );
+	call assert_equals( 2, [ b struc.a ], ${-} );
 	call assert_throws( "Invalid array length.", ${ () { call $buffer( -1 ); } });
 }
 
@@ -661,13 +661,13 @@ function teststruct() {
 	call assert_equals( 2, obj.g, ${-} );
 	call assert_throws( "Field 'struc.xxx' not declared", ${ () { call struc.xxx; } } );
 	call assert_throws( "Wrong number", ${ () { call struc.a( 0 0 ); } } );
-	call assert_throws( "Not an array", ${ () { call struc.a( 0 ); } } );
-	call assert_throws( "Array index", ${ () { call exten.g( $new( struc ) ); } } );
+	call assert_throws( "Not an instance", ${ () { call struc.a( 0 ); } } );
+	call assert_throws( "Not an instance", ${ () { call exten.g( $new( struc ) ); } } );
 	call assert_throws( "Undeclared", ${ () { set struc( 0 ) = 0; } } );
 	call assert_throws( "Field 'struc.xxx' not declared", ${ () { set struc.xxx( 0 ) = 0; } } );
 	call assert_throws( "Invalid", ${ () { set struc.a() = 0; } } );
-	call assert_throws( "Not an array", ${ () { set struc.a( 0 ) = 0; } } );
-	call assert_throws( "Array index", ${ () { set exten.g( $new( struc ) ) = 0; } } );
+	call assert_throws( "Not an instance", ${ () { set struc.a( 0 ) = 0; } } );
+	call assert_throws( "Not an instance", ${ () { set exten.g( $new( struc ) ) = 0; } } );
 	call assert_throws( "Structure 'xxx' not", ${ () { var ( xxx ) a; } } );
 	call assert_throws( "Expression 'p.xxx' has no", ${ ( p ) { call p.xxx; } } );
 	call assert_throws( "Field not declared", ${ ( ( exten ) p ) { call p.xxx; } } );
@@ -847,8 +847,8 @@ function testthiscall() {
 	let ext.g = obj.g;
 	call assert_equals( 3, :ext.g( 3 ), ${-} );
 	call assert_equals( 3, ext.f, ${-} );
-	call assert_throws( "Not an array", ${ () { call :exten.g( 0 ); } } );
-	call assert_throws( "Array index", ${ () { call :exten.g( $array( 0 ) ); } } );
+	call assert_throws( "Not an instance", ${ () { call :exten.g( 0 ); } } );
+	call assert_throws( "Not an instance", ${ () { call :exten.g( $array( 0 ) ); } } );
 	call assert_throws( "Not a function", ${ () { call :exten.g( $array( exten ) ); } } );
 	call assert_throws( "Incorrect number of parameters", ${ () { call :ext.g(); } } );
 	call assert_throws( "Undeclared", ${ () { call :x(); } } );
