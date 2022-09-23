@@ -1635,15 +1635,16 @@ static enum result execute_array_assignment( struct statement *this,
 	return ret;
 }
 
-static int instance_of( struct array *arr, struct structure *struc ) {
-	struct structure *structure = arr->structure;
-	while( structure ) {
-		if( struc == structure ) {
-			return 1;
+static struct structure* instance_of( struct string *str, struct structure *struc ) {
+	struct structure *structure;
+	if( str->type == ARRAY ) {
+		structure = ( ( struct array * ) str )->structure;
+		while( struc != structure && structure ) {
+			structure = structure->super;
 		}
-		structure = structure->super;
+		return structure;
 	}
-	return 0;
+	return NULL;
 }
 
 static enum result execute_struct_assignment( struct statement *this,
@@ -1653,8 +1654,7 @@ static enum result execute_struct_assignment( struct statement *this,
 	struct variable obj = { 0, NULL }, var = { 0, NULL };
 	enum result ret = destination->evaluate( destination, vars, &obj );
 	if( ret ) {
-		if( obj.string_value && obj.string_value->type == ARRAY
-		&& instance_of( ( struct array * ) obj.string_value, ( ( struct structure_statement * ) this )->structure ) ) {
+		if( obj.string_value && instance_of( obj.string_value, ( ( struct structure_statement * ) this )->structure ) ) {
 			arr = ( struct array * ) obj.string_value;
 			ret = this->source->evaluate( this->source, vars, &var );
 			if( ret ) {
@@ -1867,8 +1867,7 @@ static enum result evaluate_thiscall_expression( struct expression *this,
 	struct global_expression obj_expr = { 0 };
 	enum result ret = this->parameters->evaluate( this->parameters, vars, &obj.value );
 	if( ret ) {
-		if( obj.value.string_value && obj.value.string_value->type == ARRAY
-		&& instance_of( ( struct array * ) obj.value.string_value, ( ( struct structure_expression * ) this )->structure ) ) {
+		if( obj.value.string_value && instance_of( obj.value.string_value, ( ( struct structure_expression * ) this )->structure ) ) {
 			arr = ( struct array * ) obj.value.string_value;
 			idx = this->index >> 8;
 			count = this->index & 0xFF;
@@ -1967,18 +1966,16 @@ static enum result evaluate_instanceof_expression( struct expression *this,
 	struct expression *parameter = this->parameters;
 	enum result ret = parameter->evaluate( parameter, vars, &arr );
 	if( ret ) {
-		if( arr.string_value && arr.string_value->type == ARRAY ) {
-			ret = parameter->next->evaluate( parameter->next, vars, &struc );
-			if( ret ) {
-				if( struc.string_value && struc.string_value->type == STRUCT ) {
-					if( instance_of( ( struct array * ) arr.string_value, ( struct structure * ) struc.string_value ) ) {
-						assign_variable( &arr, result );
-					}
-				} else {
-					ret = throw( vars, this, struc.integer_value, "Not a structure." );	
+		ret = parameter->next->evaluate( parameter->next, vars, &struc );
+		if( ret ) {
+			if( struc.string_value && struc.string_value->type == STRUCT ) {
+				if( arr.string_value && instance_of( arr.string_value, ( struct structure * ) struc.string_value ) ) {
+					assign_variable( &arr, result );
 				}
-				dispose_temporary( &struc );
+			} else {
+				ret = throw( vars, this, struc.integer_value, "Not a structure." );	
 			}
+			dispose_temporary( &struc );
 		}
 		dispose_temporary( &arr );
 	}
@@ -1992,8 +1989,7 @@ static enum result evaluate_member_expression( struct expression *this,
 	struct expression *parameter = this->parameters;
 	enum result ret = parameter->evaluate( parameter, vars, &obj );
 	if( ret ) {
-		if( obj.string_value && obj.string_value->type == ARRAY
-		&& instance_of( ( struct array * ) obj.string_value, ( ( struct structure_expression * ) this )->structure ) ) {
+		if( obj.string_value && instance_of( obj.string_value, ( ( struct structure_expression * ) this )->structure ) ) {
 			arr = ( struct array * ) obj.string_value;
 			result->integer_value = arr->integer_values[ this->index ];
 			if( arr->string_values && arr->string_values[ this->index ] ) {
