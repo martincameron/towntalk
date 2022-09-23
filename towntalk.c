@@ -107,12 +107,12 @@
 		struct                   Structure reference.
 		struct.field             Index of named struct field.
 		struct.field(array)      Value of named field of specified array.
-		variable.field           Value of associated struct field of specified array variable.
+		variable.field           Value of named field of associated structure of specified array variable.
 		@function                Function reference.
 		:(func expr ...)         Call function reference with specified args.
-		:struct.memb(this ...)   Call member function of specified array.
-		:variable.member(...)    Member function call, equivalent to ":struct.member(variable ...)".
-		variable:func(...)       Static member function call, equivalent to "struct_func(variable ...)".
+		:struct.memb(this ...)   Call member-function. Equivalent to ":([this struct.memb] this ...)", but this evaluated once.
+		:variable.member(...)    Call member-function using associated structure. Equivalent to ":struct.member(variable ...)".
+		variable:func(...)       Call static member-function using associated struct. Equivalent to "struct_func(variable ...)".
 		'(expr operator ...)     Infix operator, eg '( 1 + 2 ).
 		+(int int ...)           Addition.
 		-(int int ...)           Subtraction.
