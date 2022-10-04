@@ -179,6 +179,7 @@
 		$type(expr)              Return a value representing the type of the expression.
 		$field(struct idx)       Name of specified struct field.
 		$instanceof(arr struct)  Returns arr if an instance of struct, null otherwise.
+		$trace(message)          Return a stack-trace array of function and line-number tuples.
 */
 
 struct global_assignment_statement {
@@ -246,30 +247,38 @@ struct element* new_element( int str_len ) {
 	return elem;
 }
 
-/* Allocate and return a new array or buffer of the specified length and reference count of 1. */
-struct array* new_array( struct environment *env, int length, int buffer ) {
+/* Allocate and return a new array with the specified size, associated string length and reference count of 1. */
+struct array* new_array( struct environment *env, int length, int str_len ) {
+	size_t refs_size = length * sizeof( struct string * );
+	size_t ints_size = length * sizeof( int );
+	struct array *arr = calloc( 1, sizeof( struct array ) + refs_size + ints_size + str_len + 1 );
+	if( arr ) {
+		arr->string_values = ( struct string ** ) &arr[ 1 ];
+		arr->integer_values = ( int * ) &arr->string_values[ length ];
+		arr->str.string = ( char * ) &arr->integer_values[ length ];
+		arr->str.length = str_len;
+		arr->str.reference_count = 1;
+		arr->str.type = ARRAY;
+		arr->length = length;
+		arr->prev = &env->arrays;
+		arr->next = env->arrays.next;
+		if( arr->next ) {
+			arr->next->prev = arr;
+		} 
+		env->arrays.next = arr;
+	}
+	return arr;
+}
+
+static struct array* new_buffer( struct environment *env, int length ) {
 	struct array *arr = calloc( 1, sizeof( struct array ) + sizeof( int ) * length );
 	if( arr ) {
 		arr->integer_values = ( int * ) &arr[ 1 ];
-		arr->str.string = buffer ? "[Buffer]" : "[Array]";
+		arr->str.string = "[Buffer]";
+		arr->str.length = 8;
 		arr->str.reference_count = 1;
-		arr->str.length = strlen( arr->str.string );
 		arr->str.type = ARRAY;
 		arr->length = length;
-		if( !buffer ) {
-			arr->string_values = calloc( length + 1, sizeof( struct string * ) );
-			if( arr->string_values ) {
-				arr->prev = &env->arrays;
-				arr->next = env->arrays.next;
-				if( arr->next ) {
-					arr->next->prev = arr;
-				} 
-				env->arrays.next = arr;
-			} else {
-				free( arr );
-				arr = NULL;
-			}
-		}
 	}
 	return arr;
 }
@@ -789,8 +798,6 @@ static void truncate_array( struct array *arr ) {
 				unref_string( str );
 			}
 		}
-		free( arr->string_values );
-		arr->string_values = NULL;
 	}
 	arr->length = 0;
 }
@@ -956,24 +963,41 @@ enum result throw_exit( struct variables *vars, int exit_code, const char *messa
 	return EXCEPTION;
 }
 
+static struct array* stack_trace( struct expression *expr, struct variables *vars, int msg_len, int max_depth ) {
+	struct array *arr = new_array( vars->func->env, max_depth, msg_len );
+	int idx = 0, line = expr->line;
+	if( arr ) {
+		while( vars && vars->func && idx < max_depth ) {
+			vars->func->str.reference_count++;
+			arr->string_values[ idx ] = &vars->func->str;
+			arr->integer_values[ idx++ ] = line;
+			line = vars->line;
+			vars = vars->parent;
+		}
+		arr->length = idx;
+	}
+	return arr;
+}
+
 /* Assign an exception with the specified error code and message to vars and return EXCEPTION. */
 enum result throw( struct variables *vars, struct expression *source, int integer, const char *string ) {
 	struct variable *exception = vars->exception;
-	struct string *file = vars->func->file, *str = NULL;
+	struct string *file = vars->func->file;
+	struct array *arr = NULL;
 	if( string ) {
-		str = new_string_value( strlen( string ) + 64 );
-		if( str ) {
-			if( sprintf( str->string, "%s (on line %d of '%.32s')", string, source->line, file->string ) < 0 ) {
-				strcpy( str->string, string );
+		arr = stack_trace( source, vars, strlen( string ) + 64, 16 );
+		if( arr ) {
+			if( sprintf( arr->str.string, "%s (on line %d of '%.32s')", string, source->line, file->string ) < 0 ) {
+				strcpy( arr->str.string, string );
 			}
-			str->length = strlen( str->string );
+			arr->str.length = strlen( arr->str.string );
 		} else {
 			return throw_exit( vars, 1, OUT_OF_MEMORY );
 		}
 	}
 	dispose_temporary( exception );
 	exception->integer_value = integer;
-	exception->string_value = str;
+	exception->string_value = &arr->str;
 	return EXCEPTION;
 }
 
@@ -1434,9 +1458,11 @@ static enum result execute_try_statement( struct statement *this,
 	enum result ret = OKAY;
 	struct variables try_vars;
 	struct statement *stmt = ( ( struct block_statement * ) this )->if_block;
-	try_vars.func = vars->func;
-	try_vars.locals = vars->locals;
+	try_vars.parent = vars->parent;
 	try_vars.exception = &vars->locals[ this->local ];
+	try_vars.locals = vars->locals;
+	try_vars.func = vars->func;
+	try_vars.line = vars->line;
 	while( stmt ) {
 		ret = stmt->execute( stmt, &try_vars, result );
 		if( ret == OKAY ) {
@@ -1795,6 +1821,8 @@ static enum result evaluate_call_expression( struct expression *this,
 	struct statement *stmt;
 	struct variables call_vars;
 	struct expression *parameter = this->parameters;
+	call_vars.parent = vars;
+	call_vars.line = this->line;
 	call_vars.func = ( ( struct function_expression * ) this )->function;
 	count = sizeof( struct variable ) * call_vars.func->num_variables;
 	call_vars.locals = alloca( count );
@@ -1982,6 +2010,32 @@ static enum result evaluate_instanceof_expression( struct expression *this,
 	return ret;
 }
 
+static enum result evaluate_trace_expression( struct expression *this,
+	struct variables *vars, struct variable *result ) {
+	char *msg = "";
+	int msg_len = 0;
+	struct array *arr;
+	struct variable var = { 0, NULL };
+	struct expression *parameter = this->parameters;
+	enum result ret = parameter->evaluate( parameter, vars, &var );
+	if( ret ) {
+		if( var.string_value ) {
+			msg = var.string_value->string;
+			msg_len = var.string_value->length;
+		}
+		arr = stack_trace( this, vars, msg_len, 16 );
+		if( arr ) {
+			memcpy( arr->str.string, msg, msg_len );
+			result->integer_value = var.integer_value;
+			result->string_value = &arr->str;
+		} else {
+			ret = throw( vars, this, 0, OUT_OF_MEMORY );
+		}
+		dispose_temporary( &var );
+	}
+	return ret;
+}
+
 static enum result evaluate_member_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	struct array *arr;
@@ -2006,7 +2060,7 @@ static enum result evaluate_member_expression( struct expression *this,
 
 static enum result evaluate_array_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
-	int idx, len, buf;
+	int idx, len, buf = this->index == 'B';
 	char msg[ 128 ] = "";
 	struct variable var = { 0, NULL };
 	struct global_variable inputs, *input;
@@ -2018,7 +2072,15 @@ static enum result evaluate_array_expression( struct expression *this,
 			inputs.next = NULL;
 			len = parse_constant_list( ( struct element * ) var.string_value, &inputs, msg );
 			if( msg[ 0 ] == 0 ) {
-				arr = new_array( vars->func->env, len, this->index == 'B' );
+				if( buf ) {
+					arr = new_buffer( vars->func->env, len );
+				} else {
+					arr = new_array( vars->func->env, len, 0 );
+					if( arr ) {
+						arr->str.string = "[Array]";
+						arr->str.length = 7;
+					}
+				}
 				if( arr ) {
 					idx = 0;
 					input = inputs.next;
@@ -2035,7 +2097,6 @@ static enum result evaluate_array_expression( struct expression *this,
 			}
 			dispose_global_variables( inputs.next );
 		} else {
-			buf = this->index == 'B';
 			if( var.string_value && var.string_value->type == STRUCT && !buf ) {
 				struc = ( struct structure * ) var.string_value;
 				len = struc->length;
@@ -2044,7 +2105,15 @@ static enum result evaluate_array_expression( struct expression *this,
 				len = var.integer_value;
 			}
 			if( len >= 0 ) {
-				arr = new_array( vars->func->env, len, buf );
+				if( buf ) {
+					arr = new_buffer( vars->func->env, len );
+				} else {
+					arr = new_array( vars->func->env, len, 0 );
+					if( arr ) {
+						arr->str.string = "[Array]";
+						arr->str.length = 7;
+					}
+				}
 				if( arr ) {
 					arr->structure = struc;
 					result->string_value = &arr->str;
@@ -4941,7 +5010,7 @@ static enum result evaluate_function_expression( struct expression *this,
 			key.line = this->line;
 			validate_syntax( "({0", elem, &key, vars->func->env, message );
 			if( message[ 0 ] == 0 ) {
-				func = parse_function( elem, "function", vars->func->file->string, vars->func->env, message );
+				func = parse_function( elem, "[Function]", vars->func->file->string, vars->func->env, message );
 				if( func ) {
 					if( parse_function_body( func, vars->func->env, message ) ) {
 						result->string_value = &func->str;
@@ -5407,6 +5476,7 @@ static struct operator operators[] = {
 	{ "$type", '$', 1, evaluate_type_expression, NULL },
 	{ "$field", '$', 2, evaluate_field_expression, NULL },
 	{ "$instanceof", '$', 2, evaluate_instanceof_expression, NULL },
+	{ "$trace", '$', 1, evaluate_trace_expression, NULL },
 	{ NULL }
 };
 
@@ -5589,11 +5659,10 @@ int parse_tt_file( char *file_name, struct environment *env, char *message ) {
 /* Evaluate the global-variable initialization expressions for env.
    Returns zero and assigns exception on failure. */
 int initialize_globals( struct environment *env, struct variable *exception ) {
-	struct variables vars;
+	struct variables vars = { 0 };
 	struct expression *init;
 	struct global_variable *global;
 	struct string_list *name = env->constants;
-	vars.locals = NULL;
 	vars.exception = exception;
 	while( name ) {
 		global = get_global_indexed( env->constants_index, name->value );

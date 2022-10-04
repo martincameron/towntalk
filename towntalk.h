@@ -127,9 +127,11 @@ struct global_variable {
 
 /* Current local variable array and exception. */
 struct variables {
-	struct function *func;
-	struct variable *locals;
+	struct variables *parent;
 	struct variable *exception;
+	struct variable *locals;
+	struct function *func;
+	int line;
 };
 
 /* Expression list. */
@@ -237,8 +239,8 @@ struct string* new_string_value( int length );
 /* Allocate and return a new element with the specified string length. */
 struct element* new_element( int str_len );
 
-/* Allocate and return a new array or buffer of the specified length and reference count of 1. */
-struct array* new_array( struct environment *env, int length, int buffer );
+/* Allocate and return a new array with the specified size, associated string length and reference count of 1. */
+struct array* new_array( struct environment *env, int length, int str_len );
 
 /* Decrement the reference count of the specified value and deallocate if necessary. */
 void unref_string( struct string *str );

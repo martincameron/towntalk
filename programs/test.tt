@@ -38,6 +38,7 @@ function assert_throws( expected, elem ) {
 	try {
 		call :( $function( elem ) );
 	} catch err {
+		let err = $str( err );
 		if <e( $len( expected ) $len( err ) ) {
 			let err = $sub( err 0 $len( expected ) );
 		}
@@ -893,6 +894,16 @@ function testinstanceof() {
 	call assert_throws( "Not a structure", ${ () { call $instanceof( ext 0 ); } } );
 }
 
+function testtrace() {
+	var elem = ${ () { return $trace( "abc" ); } };
+	var trace = :( $function( elem ) );
+	call assert_equals( "abc", trace, ${-} );
+	call assert_equals( 3, $len( trace ), ${-} );
+	call assert_equals( $line( elem ), $tup( 0 [ trace 0 ] ), ${-} );
+	call assert_equals( "testtrace", $str( [ trace 1 ] ), ${-} );
+	call assert_equals( "test", $str( [ trace 2 ] ), ${-} );
+}
+
 program test {
 	call hello();
 	call assert( =( testvoid() 0 ), ${-} );
@@ -953,5 +964,6 @@ program test {
 	call testtype();
 	call testfield();
 	call testinstanceof();
+	call testtrace();
 	print "Tests passed.";
 }
