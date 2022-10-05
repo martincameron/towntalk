@@ -536,7 +536,7 @@ function parse_xml_node_list( ( parser ) p, template ) {
 		let parent.template = parent;
 	}
 	while >e( p.current 0 ) {
-		call list_add( nodes parse_xml_node( p parent ) );
+		call nodes:add( parse_xml_node( p parent ) );
 	}
 	return nodes;
 }
@@ -548,7 +548,7 @@ function indent_xml_node_list( ( list ) nodes, linefeed ) {
 		var n = [ nodes.array idx ];
 		if $instanceof( n xml_element ) {
 			let indented = TRUE;
-			call list_insert( nodes new_xml_text( linefeed ) idx++ );
+			call nodes:insert( new_xml_text( linefeed ) idx++ );
 			if indent_xml_node_list( xml_element.children( n ), $cat( linefeed "  " ) ) {
 				call list_add( xml_element.children( n ) new_xml_text( linefeed ) ) ;
 			}

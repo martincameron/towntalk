@@ -1199,12 +1199,13 @@ function req_dispose() {
 }
 
 program tgads {
+	var path = $src( @tgads );
 	var event, selected, file;
 	let palette = $array( ${ 0x000000, 0xFFFFFF, 0xA0A0A0, 0x6080B0 } );
 	
 	display 640, 480, "tgads";
 	
-	call tg_charset( $load( $str( $sub( $src 0 +( $endidx( $src, "/:\\" ) 1 ) ) "topaz8.txt" ) ) );
+	call tg_charset( $load( $str( $sub( path 0 +( $endidx( path, "/:\\" ) 1 ) ) "topaz8.txt" ) ) );
 	call tg_init( 16, 640, 480 );
 	
 	call tg_window( 1, 16, 16, 320, 160, "Gadget Test" );

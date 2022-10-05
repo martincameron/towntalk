@@ -153,7 +153,7 @@
 		$load("abc.bin")         Load file into string.
 		$load("file", off, len)  Load section of file into string.
 		$flen("file")            Get the length of a file.
-		$src                     Path of current source file.
+		$src(func)               Source file path of specified function reference.
 		$stridx(str,"chars",idx) The index of a member of chars in str from idx.
 		$endidx(str,"chars")     The index of the last member of chars in str.
 		$argc                    Number of command-line arguments.
@@ -3483,9 +3483,18 @@ static enum result evaluate_interrupted_expression( struct expression *this,
 
 static enum result evaluate_source_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
-	result->string_value = vars->func->file;
-	result->string_value->reference_count++;
-	return OKAY;
+	struct variable var = { 0, NULL };
+	enum result ret = this->parameters->evaluate( this->parameters, vars, &var );
+	if( ret ) {
+		if( var.string_value && var.string_value->type == FUNCTION ) {
+			result->string_value = ( ( struct function * ) var.string_value )->file;
+			result->string_value->reference_count++;
+		} else {
+			ret = throw( vars, this, 0, "Not a function reference." );
+		}
+		dispose_temporary( &var );
+	}
+	return ret;
 }
 
 static struct operator* get_operator( char *name, struct operator *oper ) {
@@ -5472,7 +5481,7 @@ static struct operator operators[] = {
 	{ "$execute", '$',-1, evaluate_execute_expression, NULL },
 	{ "$result", '$', 1, evaluate_result_expression, NULL },
 	{ "$buffer", 'B', 1, evaluate_array_expression, NULL },
-	{ "$src", '$', 0, evaluate_source_expression, NULL },
+	{ "$src", '$', 1, evaluate_source_expression, NULL },
 	{ "$type", '$', 1, evaluate_type_expression, NULL },
 	{ "$field", '$', 2, evaluate_field_expression, NULL },
 	{ "$instanceof", '$', 2, evaluate_instanceof_expression, NULL },
