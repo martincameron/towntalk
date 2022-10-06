@@ -110,7 +110,7 @@
 		variable.field           Value of named field of associated structure of specified array variable.
 		@function                Function reference.
 		:(func expr ...)         Call function reference with specified args.
-		:struct.memb(this ...)   Call member-function. Equivalent to ":([this struct.memb] this ...)", but this evaluated once.
+		:struct.memb(this ...)   Call member-function. Equivalent to ":(struct.memb(this) this ...)", but this evaluated once.
 		:variable.member(...)    Call member-function using associated structure. Equivalent to ":struct.member(variable ...)".
 		variable:func(...)       Call static member-function using associated struct. Equivalent to "struct_func(variable ...)".
 		'(expr operator ...)     Infix operator, eg '( 1 + 2 ).
