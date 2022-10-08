@@ -152,19 +152,6 @@ function testarray() {
 	call assert_throws( "Not an array", ${ () { set [ 0 0 ] = 0; } } );
 	call assert_throws( "Invalid index expression", ${ () { call []; } } );
 	call assert_throws( "Invalid index expression", ${ () { set [] = 0; } } );
-	call assert_throws( "Expected '{' after '$'", ${ () { call $array( ${ $ } ); } } );
-	call assert_throws( "Expected '(' after '$str'", ${ () { call $array( ${ $str } ); } } );
-	call assert_throws( "Invalid string literal", ${ () { call $array( ${ $str() } ); } } );
-	call assert_throws( "Invalid string literal", ${ () { call $array( ${ $str( "" a ) } ); } } );
-	call assert_throws( "Invalid tuple constant", ${ () { call $array( ${ $tup } ); } } );
-	call assert_throws( "Invalid tuple constant", ${ () { call $array( ${ $tup() } ); } } );
-	call assert_throws( "Invalid tuple constant", ${ () { call $array( ${ $tup( "", ) } ); } } );
-	call assert_throws( "Invalid tuple integer", ${ () { call $array( ${ $tup( "", a ) } ); } } );
-	call assert_throws( "Expected '(' after '$array'", ${ () { call $array( ${ $array } ); } } );
-	call assert_throws( "Expected '(' after '$buffer'", ${ () { call $array( ${ $buffer } ); } } );
-	call assert_throws( "Expected '$' after '$array('", ${ () { call $array( ${ $array() } ); } } );
-	call assert_throws( "Expected '{' after '$array($'", ${ () { call $array( ${ $array($) } ); } } );
-	call assert_throws( "Invalid integer constant", ${ () { call $array( ${ a } ); } } );
 	call assert_throws( "Local variable 'x' already", ${ ( x ) { var [ x 0 ]; } } );
 	call assert_throws( "Local variable 'x' already", ${ ( x ) { var x = $array( 0 ); } } );
 }

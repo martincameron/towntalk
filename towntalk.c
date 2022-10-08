@@ -148,7 +148,7 @@
 		$tup(str int)            String/Integer tuple.
 		$array(len ...)          Create array of specified length and values.
 		$array(${0,"a"})         Create array with values from element.
-		$new(struct)             Create structured array, same as $array(struct).
+		$new(struct ...)         Create structured array, same as $array(struct ...).
 		$read(len)               Read string from standard input.
 		$load("abc.bin")         Load file into string.
 		$load("file", off, len)  Load section of file into string.
@@ -232,8 +232,6 @@ static struct element* parse_expressions( struct element *elem, struct environme
 	struct function *func, char terminator, struct expression *prev, int *num_exprs, char *message );
 static struct worker* parse_worker( struct element *elem, struct environment *env,
 	char *file, char *message );
-static struct array* element_to_array( struct element *elem, struct environment *env,
-	int buffer, char *message );
 
 /* Allocate and return a new element with the specified string length. */
 struct element* new_element( int str_len ) {
@@ -304,20 +302,6 @@ static char* new_string( char *source ) {
 		strcpy( dest, source );
 	}
 	return dest;
-}
-
-static char* cat_string( char *left, int llen, char *right, int rlen ) {
-	char *str = malloc( sizeof( char ) * ( llen + rlen + 1 ) );
-	if( str ) {
-		if( left ) {
-			memcpy( str, left, sizeof( char ) * llen );
-		}
-		if( right ) {
-			memcpy( &str[ llen ], right, sizeof( char ) * rlen );
-		}
-		str[ llen + rlen ] = 0;
-	}
-	return str;
 }
 
 /* Return a 5-bit hash-code to be used for indexing the specified string. */
@@ -1083,120 +1067,6 @@ static int write_element( struct element *elem, char *output ) {
 	return length;
 }
 
-static struct element* parse_constant( struct element *elem, struct environment *env, struct variable *constant, char *message ) {
-	int len = 0;
-	struct variable var = { 0, NULL };
-	struct element *child, *next = elem->next;
-	char *end, *str = NULL;
-	if( elem->str.string[ 0 ] == '$' ) {
-		if( strcmp( elem->str.string, "$str" ) == 0 ) {
-			/* Concatenated string constant. */
-			if( next && next->str.string[ 0 ] == '(' ) {
-				child = next->child;
-				while( child && message[ 0 ] == 0 ) {
-					if( child->str.string[ 0 ] == '"' ) {
-						end = cat_string( str, len, child->str.string, child->str.length );
-						if( end ) {
-							len = len + child->str.length;
-							free( str );
-							str = end;
-						} else {
-							strcpy( message, OUT_OF_MEMORY );
-						}
-					} else {
-						sprintf( message, "Invalid string literal on line %d.", child->line );
-					}
-					if( child->next && child->next->str.string[ 0 ] == ',' ) {
-						child = child->next;
-					}
-					child = child->next;
-				}
-				if( str ) {
-					var.string_value = new_string_literal( str );
-					if( var.string_value ) {
-						next = next->next;
-					} else {
-						strcpy( message, OUT_OF_MEMORY );
-					}
-					free( str );
-				} else {
-					sprintf( message, "Invalid string literal on line %d.", next->line );
-				}
-			} else {
-				sprintf( message, "Expected '(' after '$str' on line %d.", elem->line );
-			}
-		} else if( strcmp( elem->str.string, "$tup" ) == 0 ) {
-			/* Tuple constant. */
-			if( next && next->str.string[ 0 ] == '(' && next->child ) {
-				child = parse_constant( next->child, env, &var, message );
-				if( message[ 0 ] == 0 ) {
-					if( child && child->str.string[ 0 ] == ',' ) {
-						child = child->next;
-					}
-					if( child && child->next == NULL ) {
-						errno = 0;
-						var.integer_value = ( int ) strtoul( child->str.string, &end, 0 );
-						if( end[ 0 ] || errno ) {
-							sprintf( message, "Invalid tuple integer on line %d.", next->line );
-						} else {
-							next = next->next;
-						}
-					} else {
-						sprintf( message, "Invalid tuple constant on line %d.", next->line );
-					}
-				}
-			} else {
-				sprintf( message, "Invalid tuple constant on line %d.", elem->line );
-			}
-		} else if( strcmp( elem->str.string, "$array" ) == 0 || strcmp( elem->str.string, "$buffer" ) == 0 ) {
-			/* Array. */
-			if( next && next->str.string[ 0 ] == '(' ) {
-				child = next->child;
-				if( child && child->str.string[ 0 ] == '$' && child->str.string[ 1 ] == 0 ) {
-					child = child->next;
-					if( child && child->str.string[ 0 ] == '{' ) {
-						var.string_value = ( struct string * ) element_to_array( child->child, env, elem->str.string[ 1 ] == 'b', message );
-						next = next->next;
-					} else {
-						sprintf( message, "Expected '{' after '%s($' on line %d.", elem->str.string, elem->line );
-					}
-				} else {
-					sprintf( message, "Expected '$' after '%s(' on line %d.", elem->str.string, elem->line );
-				}
-			} else {
-				sprintf( message, "Expected '(' after '%s' on line %d.", elem->str.string, elem->line );
-			}
-		} else {
-			/* Element. */
-			if( next && next->str.string[ 0 ] == '{' ) {
-				if( next->child ) {
-					next->child->str.reference_count++;
-					var.string_value = &next->child->str;
-				}
-				next = next->next;
-			} else {
-				sprintf( message, "Expected '{' after '$' on line %d.", elem->line );
-			}
-		}
-	} else if( elem->str.string[ 0 ] == '"' ) {
-		/* String literal. */
-		var.string_value = new_string_literal( elem->str.string );
-		if( var.string_value == NULL ) {
-			strcpy( message, OUT_OF_MEMORY );
-		}
-	} else {
-		/* Integer constant. */
-		errno = 0;
-		var.integer_value = ( int ) strtoul( elem->str.string, &end, 0 );
-		if( end[ 0 ] || errno ) {
-			sprintf( message, "Invalid integer constant '%.64s' at line %d.", elem->str.string, elem->line );
-		}
-	}
-	constant->integer_value = var.integer_value;
-	constant->string_value = var.string_value;
-	return next;
-}
-
 static struct function* new_function( char *name, char *file, char *message ) {
 	struct function *func = calloc( 1, sizeof( struct function ) );
 	if( func ) {
@@ -1246,54 +1116,6 @@ static struct global_variable* new_global_variable( char *name,
 		global->next = NULL;
 	}
 	return global;
-}
-
-static int parse_constant_list( struct element *elem, struct environment *env, struct global_variable *prev, char *message ) {
-	int count = 0;
-	while( elem && message[ 0 ] == 0 ) {
-		prev->next = new_global_variable( "", NULL, NULL, NULL );
-		if( prev->next ) {
-			count++;
-			prev = prev->next;
-			elem = parse_constant( elem, env, &prev->value, message );
-			if( elem && elem->str.string[ 0 ] == ',' ) {
-				elem = elem->next;
-			}
-		} else {
-			strcpy( message, OUT_OF_MEMORY );
-		}
-	}
-	return count;
-}
-
-static struct array* element_to_array( struct element *elem, struct environment *env, int buffer, char *message ) {
-	int idx = 0, len;
-	struct global_variable inputs, *input;
-	struct array *arr = NULL;
-	inputs.next = NULL;
-	len = parse_constant_list( elem, env, &inputs, message );
-	if( message[ 0 ] == 0 ) {
-		if( buffer ) {
-			arr = new_buffer( len );
-		} else {
-			arr = new_array( env, len, 0 );
-			if( arr ) {
-				arr->str.string = "[Array]";
-				arr->str.length = 7;
-			}
-		}
-		if( arr ) {
-			input = inputs.next;
-			while( idx < len ) {
-				assign_array_variable( &input->value, arr, idx++ );
-				input = input->next;
-			}
-		} else {
-			strcpy( message, OUT_OF_MEMORY );
-		}
-	}
-	dispose_global_variables( inputs.next );
-	return arr;
 }
 
 static int add_constant( struct environment *env, struct global_variable *constant ) {
@@ -2104,73 +1926,81 @@ static enum result evaluate_member_expression( struct expression *this,
 
 static enum result evaluate_array_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
-	struct expression *parameter = this->parameters;
+	struct expression prev, *expr = this->parameters->next;
 	int idx, len, buf = this->index == 'B';
-	char msg[ 128 ] = "";
-	struct variable var = { 0, NULL };
 	struct global_variable inputs, *input;
-	struct structure *struc;
+	struct variable var = { 0, NULL };
+	struct structure *struc = NULL;
+	struct function *func = NULL;
+	char msg[ 128 ] = "";
 	struct array *arr;
-	enum result ret = parameter->evaluate( parameter, vars, &var );
+	enum result ret = this->parameters->evaluate( this->parameters, vars, &var );
 	if( ret ) {
-		parameter = parameter->next;
 		if( var.string_value && var.string_value->type == ELEMENT ) {
-			if( parameter == NULL ) {
-				arr = element_to_array( ( struct element * ) var.string_value, vars->func->env, buf, msg );
-				if( msg[ 0 ] == 0 ) {
-					result->string_value = &arr->str;
-				} else {
+			if( expr == NULL ) {
+				func = new_function( "", vars->func->file->string, msg );
+				if( func ) {
+					func->line = this->line;
+					func->env = vars->func->env;
+					prev.next = NULL;
+					parse_expressions( ( struct element * ) var.string_value, vars->func->env, func, 0, &prev, &len, msg );
+					expr = prev.next;
+				}
+				if( msg[ 0 ] ) {
 					ret = throw( vars, this, 0, msg );
 				}
 			} else {
-				ret = throw( vars, parameter, 0, "Unexpected expression." );
+				ret = throw( vars, expr, 0, "Unexpected expression." );
+			}
+		} else if( var.string_value && var.string_value->type == STRUCT && !buf ) {
+			struc = ( struct structure * ) var.string_value;
+			len = struc->length;
+		} else {
+			len = var.integer_value;
+		}
+	}
+	if( ret ) {
+		if( len >= 0 ) {
+			if( buf ) {
+				arr = new_buffer( len );
+			} else {
+				arr = new_array( vars->func->env, len, 0 );
+				if( arr ) {
+					arr->str.string = "[Array]";
+					arr->str.length = 7;
+				}
+			}
+			if( arr ) {
+				idx = 0;
+				while( expr && ret ) {
+					if( idx < len ) {
+						dispose_variable( &var );
+						ret = expr->evaluate( expr, vars, &var );
+						if( ret ) {
+							assign_array_variable( &var, arr, idx++ );
+						}
+					} else {
+						ret = throw( vars, this, idx, "Array index out of bounds." );
+					}
+					expr = expr->next;
+				}
+				if( ret ) {
+					arr->structure = struc;
+					result->string_value = &arr->str;
+				} else {
+					unref_string( &arr->str );
+				}
+			} else {
+				ret = throw( vars, this, 0, OUT_OF_MEMORY );
 			}
 		} else {
-			if( var.string_value && var.string_value->type == STRUCT && !buf ) {
-				struc = ( struct structure * ) var.string_value;
-				len = struc->length;
-			} else {
-				struc = NULL;
-				len = var.integer_value;
-			}
-			if( len >= 0 ) {
-				if( buf ) {
-					arr = new_buffer( len );
-				} else {
-					arr = new_array( vars->func->env, len, 0 );
-					if( arr ) {
-						arr->str.string = "[Array]";
-						arr->str.length = 7;
-					}
-				}
-				if( arr ) {
-					idx = 0;
-					while( parameter && ret ) {
-						if( idx < len ) {
-							dispose_variable( &var );
-							ret = parameter->evaluate( parameter, vars, &var );
-							if( ret ) {
-								assign_array_variable( &var, arr, idx++ );
-							}
-						} else {
-							ret = throw( vars, this, idx, "Array index out of bounds." );
-						}
-						parameter = parameter->next;
-					}
-					if( ret ) {
-						arr->structure = struc;
-						result->string_value = &arr->str;
-					} else {
-						unref_string( &arr->str );
-					}
-				} else {
-					ret = throw( vars, this, 0, OUT_OF_MEMORY );
-				}
-			} else {
-				ret = throw( vars, this, var.integer_value, "Invalid array length." );
-			}
+			ret = throw( vars, this, var.integer_value, "Invalid array length." );
 		}
-		dispose_temporary( &var );
+	}
+	dispose_temporary( &var );
+	if( func ) {
+		dispose_expressions( prev.next );
+		unref_string( &func->str );
 	}
 	return ret;
 }
@@ -4006,43 +3836,71 @@ static struct element* parse_global_expression( struct element *elem, struct env
 	return next;
 }
 
-static struct element* parse_integer_literal_expression( struct element *elem, struct environment *env,
-	struct function *func, struct expression *prev, char *message ) {
+static struct element* parse_integer_literal_expression( struct element *elem, struct expression *prev, char *message ) {
+	char *end;
 	struct variable var = { 0 };
-	struct element *next = parse_constant( elem, env, &var, message );
 	struct expression *expr = calloc( 1, sizeof( struct expression ) );
 	if( expr ) {
 		prev->next = expr;
 		expr->line = elem->line;
-		expr->index = var.integer_value;
-		expr->evaluate = evaluate_integer_literal_expression;
+		expr->index = ( int ) strtoul( elem->str.string, &end, 0 );
+		if( end[ 0 ] == 0 ) {
+			expr->evaluate = evaluate_integer_literal_expression;
+		} else {
+			sprintf( message, "Invalid integer literal '%.64s' on line %d.", elem->str.string, elem->line );
+		}
 	} else {
 		strcpy( message, OUT_OF_MEMORY );
 	}
-	return next;
+	return elem->next;
 }
 
-static struct element* parse_string_literal_expression( struct element *elem, struct environment *env,
-	struct function *func, struct expression *prev, char *message ) {
+static struct expression* new_string_literal_expression( struct string *value,
+	int line, struct function *func, char *message ) {
 	struct global_variable *literal;
 	struct expression *expr = calloc( 1, sizeof( struct global_expression ) );
 	if( expr ) {
-		prev->next = expr;
-		expr->line = elem->line;
+		expr->line = line;
 		literal = new_global_variable( "", NULL, NULL, NULL );
 		if( literal ) {
 			literal->next = func->literals;
 			func->literals = literal;
+			literal->value.string_value = value;
 			( ( struct global_expression * ) expr )->global = literal;
 			expr->evaluate = evaluate_global;
-			elem = parse_constant( elem, env, &literal->value, message );
 		} else {
 			strcpy( message, OUT_OF_MEMORY );
 		}
 	} else {
 		strcpy( message, OUT_OF_MEMORY );
 	}
-	return elem;
+	return expr;
+}
+
+static struct element* parse_string_literal_expression( struct element *elem,
+	struct function *func, struct expression *prev, char *message ) {
+	struct string *value = new_string_literal( elem->str.string );
+	if( value ) {
+		prev->next = new_string_literal_expression( value, elem->line, func, message );
+	} else {
+		strcpy( message, OUT_OF_MEMORY );
+	}
+	return elem->next;
+}
+
+static struct element* parse_element_literal_expression( struct element *elem,
+	struct function *func, struct expression *prev, char *message ) {
+	struct element *next = elem->next;
+	if( next && next->str.string[ 0 ] == '{' ) {
+		if( next->child ) {
+			next->child->str.reference_count++;
+			prev->next = new_string_literal_expression( &next->child->str, elem->line, func, message );
+		}
+		next = next->next;
+	} else {
+		sprintf( message, "Expected '{' after '$' on line %d.", elem->line );
+	}
+	return next;
 }
 
 static struct element* parse_expression( struct element *elem, struct environment *env,
@@ -4056,10 +3914,13 @@ static struct element* parse_expression( struct element *elem, struct environmen
 	if( ( value[ 0 ] >= '0' && value[ 0 ] <= '9' )
 		|| ( value[ 0 ] == '-' && ( value[ 1 ] >= '0' && value[ 1 ] <= '9' ) ) ) {
 		/* Integer literal. */
-		next = parse_integer_literal_expression( elem, env, func, prev, message );
-	} else if( value[ 0 ] == '"' || ( value[ 0 ] == '$' && value[ 1 ] == 0 ) ) {
-		/* String or element literal. */
-		next = parse_string_literal_expression( elem, env, func, prev, message );
+		next = parse_integer_literal_expression( elem, prev, message );
+	} else if( value[ 0 ] == '"' ) {
+		/* String literal. */
+		next = parse_string_literal_expression( elem, func, prev, message );
+	} else if( value[ 0 ] == '$' && value[ 1 ] == 0 ) {
+		/* Element literal. */
+		next = parse_element_literal_expression( elem, func, prev, message );
 	} else if( value[ 0 ] == '\'' ) {
 		/* Infix operator.*/
 		next = parse_infix_expression( elem, env, func, prev, message );
