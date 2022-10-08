@@ -146,7 +146,7 @@
 		$int(str)                String to integer.
 		$len(str/arr)            Length of string, array or structure.
 		$tup(str int)            String/Integer tuple.
-		$array(len)              Create array of specified length.
+		$array(len ...)          Create array of specified length and values.
 		$array(${0,"a"})         Create array with values from element.
 		$new(struct)             Create structured array, same as $array(struct).
 		$read(len)               Read string from standard input.
@@ -175,7 +175,7 @@
 		$worker(${(){stmts}})    Compile a worker function from an element.
 		$execute(worker arg ...) Begin execution of the specified worker and return it.
 		$result(worker)          Wait for the return value of a worker function.
-		$buffer(len)             Create a numerical array that may be passed to workers.
+		$buffer(len ...)         Create a numerical array that may be passed to workers.
 		$type(expr)              Return a value representing the type of the expression.
 		$field(struct idx)       Name of specified struct field.
 		$instanceof(arr struct)  Returns arr if an instance of struct, null otherwise.
@@ -2104,20 +2104,26 @@ static enum result evaluate_member_expression( struct expression *this,
 
 static enum result evaluate_array_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
+	struct expression *parameter = this->parameters;
 	int idx, len, buf = this->index == 'B';
 	char msg[ 128 ] = "";
 	struct variable var = { 0, NULL };
 	struct global_variable inputs, *input;
 	struct structure *struc;
 	struct array *arr;
-	enum result ret = this->parameters->evaluate( this->parameters, vars, &var );
+	enum result ret = parameter->evaluate( parameter, vars, &var );
 	if( ret ) {
+		parameter = parameter->next;
 		if( var.string_value && var.string_value->type == ELEMENT ) {
-			arr = element_to_array( ( struct element * ) var.string_value, vars->func->env, buf, msg );
-			if( msg[ 0 ] == 0 ) {
-				result->string_value = &arr->str;
+			if( parameter == NULL ) {
+				arr = element_to_array( ( struct element * ) var.string_value, vars->func->env, buf, msg );
+				if( msg[ 0 ] == 0 ) {
+					result->string_value = &arr->str;
+				} else {
+					ret = throw( vars, this, 0, msg );
+				}
 			} else {
-				ret = throw( vars, this, 0, msg );
+				ret = throw( vars, parameter, 0, "Unexpected expression." );
 			}
 		} else {
 			if( var.string_value && var.string_value->type == STRUCT && !buf ) {
@@ -2138,8 +2144,25 @@ static enum result evaluate_array_expression( struct expression *this,
 					}
 				}
 				if( arr ) {
-					arr->structure = struc;
-					result->string_value = &arr->str;
+					idx = 0;
+					while( parameter && ret ) {
+						if( idx < len ) {
+							dispose_variable( &var );
+							ret = parameter->evaluate( parameter, vars, &var );
+							if( ret ) {
+								assign_array_variable( &var, arr, idx++ );
+							}
+						} else {
+							ret = throw( vars, this, idx, "Array index out of bounds." );
+						}
+						parameter = parameter->next;
+					}
+					if( ret ) {
+						arr->structure = struc;
+						result->string_value = &arr->str;
+					} else {
+						unref_string( &arr->str );
+					}
 				} else {
 					ret = throw( vars, this, 0, OUT_OF_MEMORY );
 				}
@@ -5477,7 +5500,7 @@ static struct operator operators[] = {
 	{ "$int", '$', 1, evaluate_int_expression, NULL },
 	{ "$len", '$', 1, evaluate_len_expression, NULL },
 	{ "$tup", '$', 2, evaluate_tup_expression, NULL },
-	{ "$array", 'A', 1, evaluate_array_expression, NULL },
+	{ "$array", 'A', -1, evaluate_array_expression, NULL },
 	{ "$new", '$', 1, evaluate_array_expression, NULL },
 	{ "$load", '$',-1, evaluate_load_expression, NULL },
 	{ "$read", '$', 1, evaluate_read_expression, NULL },
@@ -5503,7 +5526,7 @@ static struct operator operators[] = {
 	{ "$worker", '$', 1, evaluate_worker_expression, NULL },
 	{ "$execute", '$',-1, evaluate_execute_expression, NULL },
 	{ "$result", '$', 1, evaluate_result_expression, NULL },
-	{ "$buffer", 'B', 1, evaluate_array_expression, NULL },
+	{ "$buffer", 'B', -1, evaluate_array_expression, NULL },
 	{ "$src", '$', 1, evaluate_source_expression, NULL },
 	{ "$type", '$', 1, evaluate_type_expression, NULL },
 	{ "$field", '$', 2, evaluate_field_expression, NULL },
