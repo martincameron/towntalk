@@ -1085,12 +1085,12 @@ static enum result execute_midi_statement( struct statement *this,
 	return ret;
 }
 
-static struct element* parse_display_statement( struct element *elem, struct environment *env,
+static struct element* parse_display_statement( struct element *elem,
 	struct function *func, struct statement *prev, char *message ) {
-	return parse_expr_list_statement( elem, env, func, prev, execute_display_statement, message );
+	return parse_expr_list_statement( elem, func, prev, execute_display_statement, message );
 }
 
-static struct element* parse_show_statement( struct element *elem, struct environment *env,
+static struct element* parse_show_statement( struct element *elem,
 	struct function *func, struct statement *prev, char *message ) {
 	struct element *next = elem->next;
 	struct statement *stmt = calloc( 1, sizeof( struct statement ) );
@@ -1110,58 +1110,58 @@ static struct element* parse_show_statement( struct element *elem, struct enviro
 	return next;
 }
 
-static struct element* parse_surface_statement( struct element *elem, struct environment *env,
+static struct element* parse_surface_statement( struct element *elem,
 	struct function *func, struct statement *prev, char *message ) {
-	return parse_expr_list_statement( elem, env, func, prev, execute_surface_statement, message );
+	return parse_expr_list_statement( elem, func, prev, execute_surface_statement, message );
 }
 
-static struct element* parse_blit_statement( struct element *elem, struct environment *env,
+static struct element* parse_blit_statement( struct element *elem,
 	struct function *func, struct statement *prev, char *message ) {
-	return parse_expr_list_statement( elem, env, func, prev, execute_blit_statement, message );
+	return parse_expr_list_statement( elem, func, prev, execute_blit_statement, message );
 }
 
-static struct element* parse_rect_statement( struct element *elem, struct environment *env,
+static struct element* parse_rect_statement( struct element *elem,
 	struct function *func, struct statement *prev, char *message ) {
-	return parse_expr_list_statement( elem, env, func, prev, execute_rect_statement, message );
+	return parse_expr_list_statement( elem, func, prev, execute_rect_statement, message );
 }
 
-static struct element* parse_sleep_statement( struct element *elem, struct environment *env,
+static struct element* parse_sleep_statement( struct element *elem,
 	struct function *func, struct statement *prev, char *message ) {
-	return parse_expr_list_statement( elem, env, func, prev, execute_sleep_statement, message );
+	return parse_expr_list_statement( elem, func, prev, execute_sleep_statement, message );
 }
 
-static struct element* parse_timer_statement( struct element *elem, struct environment *env,
+static struct element* parse_timer_statement( struct element *elem,
 	struct function *func, struct statement *prev, char *message ) {
-	return parse_expr_list_statement( elem, env, func, prev, execute_timer_statement, message );
+	return parse_expr_list_statement( elem, func, prev, execute_timer_statement, message );
 }
 
-static struct element* parse_audio_statement( struct element *elem, struct environment *env,
+static struct element* parse_audio_statement( struct element *elem,
 	struct function *func, struct statement *prev, char *message ) {
-	return parse_expr_list_statement( elem, env, func, prev, execute_audio_statement, message );
+	return parse_expr_list_statement( elem, func, prev, execute_audio_statement, message );
 }
 
-static struct element* parse_sample_statement( struct element *elem, struct environment *env,
+static struct element* parse_sample_statement( struct element *elem,
 	struct function *func, struct statement *prev, char *message ) {
-	return parse_expr_list_statement( elem, env, func, prev, execute_sample_statement, message );
+	return parse_expr_list_statement( elem, func, prev, execute_sample_statement, message );
 }
 
-static struct element* parse_play_statement( struct element *elem, struct environment *env,
+static struct element* parse_play_statement( struct element *elem,
 	struct function *func, struct statement *prev, char *message ) {
-	return parse_expr_list_statement( elem, env, func, prev, execute_play_statement, message );
+	return parse_expr_list_statement( elem, func, prev, execute_play_statement, message );
 }
 
-static struct element* parse_queue_statement( struct element *elem, struct environment *env,
+static struct element* parse_queue_statement( struct element *elem,
 	struct function *func, struct statement *prev, char *message ) {
-	struct element *next = parse_expr_list_statement( elem, env, func, prev, execute_play_statement, message );
+	struct element *next = parse_expr_list_statement( elem, func, prev, execute_play_statement, message );
 	if( prev->next ) {
 		prev->next->local = 1;
 	}
 	return next;
 }
 
-static struct element* parse_midi_statement( struct element *elem, struct environment *env,
+static struct element* parse_midi_statement( struct element *elem,
 	struct function *func, struct statement *prev, char *message ) {
-	return parse_expr_list_statement( elem, env, func, prev, execute_midi_statement, message );
+	return parse_expr_list_statement( elem, func, prev, execute_midi_statement, message );
 }
 
 static enum result handle_event_expression( struct expression *this, SDL_Event *event,

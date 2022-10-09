@@ -11,6 +11,7 @@ function assert_throws( expected, elem ) {
 	try {
 		call :( $function( elem ) );
 	} catch err {
+		let err = $str( err );
 		if <e( $len( expected ) $len( err ) ) {
 			let err = $sub( err 0 $len( expected ) );
 		}

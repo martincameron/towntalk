@@ -53,7 +53,6 @@ struct function {
 	struct environment *env;
 	struct local_variable *variable_decls, *variable_decls_tail;
 	struct statement *statements, *statements_tail;
-	struct global_variable *literals;
 	struct function *next;
 };
 
@@ -162,7 +161,7 @@ struct statement {
 struct keyword {
 	char *name, *syntax;
 	/* Parse the current declaration into env, or statement into prev->next. */
-	struct element* ( *parse )( struct element *elem, struct environment *env,
+	struct element* ( *parse )( struct element *elem,
 		struct function *func, struct statement *prev, char *message );
 	struct keyword *next;
 };
@@ -228,8 +227,7 @@ void dispose_variable( struct variable *var );
 void dispose_environment( struct environment *env );
 
 /* Parse a statement that expects one or more expressions after the keyword. */
-struct element* parse_expr_list_statement( struct element *elem, struct environment *env,
-	struct function *func, struct statement *prev,
+struct element* parse_expr_list_statement( struct element *elem, struct function *func, struct statement *prev,
 	enum result ( *execute )( struct statement *this, struct variables *vars, struct variable *result ),
 	char *message );
 
