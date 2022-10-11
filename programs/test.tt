@@ -767,6 +767,7 @@ function testdec() {
 }
 
 function testelem() {
+	call assert_equals( 0, ${}, ${-} );
 	call assert_equals( "1", $elem( ${ 1 }, 0, 0 ), ${-} );
 	call assert_equals( "2", $child( $elem( ${()}, ${ 2 }, 0 ) ), ${-} );
 	call assert_equals( "2", $child( $elem( ${[]}, ${ 2 }, 0 ) ), ${-} );
@@ -913,6 +914,14 @@ function testtrace() {
 	call assert_equals( "test", $str( [ trace 2 ] ), ${-} );
 }
 
+function testeval() {
+	call assert_equals( 1, $eval( ${ 1 } ), ${-} );
+	call assert_throws( "Expected", ${ () { call $eval( ${ $ } ); } } );
+	call assert_throws( "Invalid", ${ () { call $eval( ${ [] } ); } } );
+	call assert_throws( "Unhandled", ${ () { call $eval( ${ xxx } ); } } );
+	call assert_throws( "Not an element", ${ () { call $eval( ${} ); } } );
+}
+
 program test {
 	call hello();
 	call assert( =( testvoid() 0 ), ${-} );
@@ -974,5 +983,6 @@ program test {
 	call testfield();
 	call testinstanceof();
 	call testtrace();
+	call testeval();
 	print "Tests passed.";
 }

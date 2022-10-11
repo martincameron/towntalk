@@ -166,6 +166,7 @@
 		$line(elem)              Get the line number of the element.
 		$elem(elem child next)   Return a copy of elem with specified references.
 		$expr(expr)              Return an element representing the specified value.
+		$eval(elem)              Parse the specified element as an expression and evaluate.
 		$pack(int/arr)           Encode integers as big-endian byte string.
 		$unpack(str idx)         Decode the specified big-endian integer.
 		$quote(str)              Encode byte string with quotes and escapes.
@@ -2805,19 +2806,17 @@ static struct element* new_tuple_element( struct string *string_value, int integ
 		if( elem->next ) {
 			strcpy( elem->next->str.string, "()" );
 			child = value_to_element( 0, string_value, env, message );
-			elem->next->child = child;
-			while( child && child->next ) {
+			if( child ) {
+				elem->next->child = child;
+				while( child->next ) {
+					child = child->next;
+				}
+				child->next = new_integer_element( integer_value );
 				child = child->next;
 			}
-			if( child ) {
-				child->next = new_integer_element( integer_value );
-			}
 		}
-		if( !( elem->next && child && child->next ) ) {
+		if( child == NULL ) {
 			unref_string( &elem->str );
-			if( message[ 0 ] == 0 ) {
-				strcpy( message, OUT_OF_MEMORY );
-			}
 			elem = NULL;
 		}
 	}
@@ -2868,15 +2867,14 @@ static struct element* new_array_element( struct array *arr, struct environment 
 			}
 			tail = elem->next->child;
 			while( tail && idx < count ) {
+				while( tail->next ) {
+					tail = tail->next;
+				}
 				if( arr->string_values ) {
 					str = arr->string_values[ idx ];
 				}
-				tail->next = value_to_element( arr->integer_values[ idx ], str, env, message );
+				tail->next = value_to_element( arr->integer_values[ idx++ ], str, env, message );
 				tail = tail->next;
-				while( tail && tail->next ) {
-					tail = tail->next;
-				}
-				idx++;
 			}
 		}
 		if( tail == NULL ) { 
@@ -2892,7 +2890,7 @@ static struct element* new_array_element( struct array *arr, struct environment 
 
 static struct element* value_to_element( int integer_value, struct string *string_value,
 	struct environment *env, char *message ) {
-	struct element *elem = NULL, *tuple;
+	struct element *elem = NULL;
 	if( string_value ) {
 		if( integer_value ) {
 			elem = new_tuple_element( string_value, integer_value, env, message );
@@ -2950,6 +2948,30 @@ static enum result evaluate_expr_expression( struct expression *this,
 			result->string_value = &elem->str;
 		} else {
 			ret = throw( vars, this, 0, msg );
+		}
+		dispose_temporary( &var );
+	}
+	return ret;
+}
+
+static enum result evaluate_eval_expression( struct expression *this,
+	struct variables *vars, struct variable *result ) {
+	struct variable var = { 0, NULL };
+	struct expression prev;
+	char msg[ 128 ] = "";
+	enum result ret = this->parameters->evaluate( this->parameters, vars, &var );
+	if( ret ) {
+		if( var.string_value && var.string_value->type == ELEMENT ) {
+			prev.next = NULL;
+			parse_expression( ( struct element * ) var.string_value, vars->func, &prev, msg );
+			if( msg[ 0 ] == 0 ) {
+				ret = prev.next->evaluate( prev.next, vars, result );
+			} else {
+				ret = throw( vars, this, 0, msg );
+			}
+			dispose_expressions( prev.next );
+		} else {
+			ret = throw( vars, this, var.integer_value, "Not an element." );
 		}
 		dispose_temporary( &var );
 	}
@@ -3957,6 +3979,14 @@ static struct element* parse_element_literal_expression( struct element *elem,
 		if( next->child ) {
 			next->child->str.reference_count++;
 			prev->next = new_string_literal_expression( 0, &next->child->str, elem->line, message );
+		} else {
+			prev->next = calloc( 1, sizeof( struct expression ) );
+			if( prev->next ) {
+				prev->next->line = elem->line;
+				prev->next->evaluate = evaluate_integer_literal_expression;
+			} else {
+				strcpy( message, OUT_OF_MEMORY );
+			}
 		}
 		next = next->next;
 	} else {
@@ -5455,6 +5485,7 @@ static struct operator operators[] = {
 	{ "$field", '$', 2, evaluate_field_expression, NULL },
 	{ "$instanceof", '$', 2, evaluate_instanceof_expression, NULL },
 	{ "$trace", '$', 1, evaluate_trace_expression, NULL },
+	{ "$eval", '$', 1, evaluate_eval_expression, NULL },
 	{ NULL }
 };
 
