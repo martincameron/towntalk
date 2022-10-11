@@ -267,7 +267,7 @@ program raster {
 								let file = fs_okay_selected();
 								if file {
 									call fore_to_back();
-									save $str( "RM.AGA\012" $unparse( $values( background ) ) "EOF" ), file;
+									save $str( "RM.AGA\012" $unparse( $child( $next( $expr( background ) ) ) ) "EOF" ), file;
 								}
 							} else {
 								let file = fs_okay_selected();

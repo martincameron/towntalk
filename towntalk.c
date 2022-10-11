@@ -165,7 +165,7 @@
 		$child(elem)             Get the first child element or null.
 		$line(elem)              Get the line number of the element.
 		$elem(elem child next)   Return a copy of elem with specified references.
-		$values(array)           Return an element containing array values.
+		$expr(expr)              Return an element representing the specified value.
 		$pack(int/arr)           Encode integers as big-endian byte string.
 		$unpack(str idx)         Decode the specified big-endian integer.
 		$quote(str)              Encode byte string with quotes and escapes.
@@ -237,6 +237,8 @@ static struct element* parse_expressions( struct element *elem,
 	struct function *func, char terminator, struct expression *prev, int *num_exprs, char *message );
 static struct worker* parse_worker( struct element *elem, struct environment *env,
 	char *file, char *message );
+static struct element* value_to_element( int integer_value, struct string *string_value,
+	struct environment *env, char *message );
 
 /* Allocate and return a new element with the specified string length. */
 struct element* new_element( int str_len ) {
@@ -2794,22 +2796,30 @@ static struct element* new_string_element( struct string *value ) {
 	return elem;
 }
 
-static struct element* new_tuple_element( int int_value, struct string *str_value ) {
-	struct element *elem = new_element( 4 );
+static struct element* new_tuple_element( struct string *string_value, int integer_value,
+	struct environment *env, char *message ) {
+	struct element *elem = new_element( 4 ), *child = NULL;
 	if( elem ) {
 		strcpy( elem->str.string, "$tup" );
 		elem->next = new_element( 2 );
 		if( elem->next ) {
 			strcpy( elem->next->str.string, "()" );
-			elem->next->child = new_string_element( str_value );
-			if( elem->next->child ) {
-				elem->next->child->next = new_integer_element( int_value );
+			child = value_to_element( 0, string_value, env, message );
+			elem->next->child = child;
+			while( child && child->next ) {
+				child = child->next;
+			}
+			if( child ) {
+				child->next = new_integer_element( integer_value );
 			}
 		}
-	}
-	if( elem && !( elem->next && elem->next->child && elem->next->child->next ) ) {
-		unref_string( &elem->str );
-		elem = NULL;
+		if( !( elem->next && child && child->next ) ) {
+			unref_string( &elem->str );
+			if( message[ 0 ] == 0 ) {
+				strcpy( message, OUT_OF_MEMORY );
+			}
+			elem = NULL;
+		}
 	}
 	return elem;
 }
@@ -2823,71 +2833,125 @@ static struct element* new_literal_element( struct element *child ) {
 			strcpy( elem->next->str.string, "{}" );
 			child->str.reference_count++;
 			elem->next->child = child;
+		} else {
+			unref_string( &elem->str );
+			elem = NULL;
 		}
-	}
-	if( elem && !elem->next ) {
-		unref_string( &elem->str );
-		elem = NULL;
 	}
 	return elem;
 }
 
-static struct element* array_to_element( struct array *arr ) {
-	struct element *head = NULL, *tail = NULL, *elem;
+static struct element* new_array_element( struct array *arr, struct environment *env, char *message ) {
+	struct element *tail = NULL, *elem = new_element( 7 );
 	int idx = 0, count = arr->length;
-	struct variable var;
-	while( idx < count ) {
-		var.integer_value = arr->integer_values[ idx ];
-		var.string_value = arr->string_values ? arr->string_values[ idx ] : NULL;
-		if( var.string_value ) {
-			if( var.string_value->type == ELEMENT ) {
-				elem = new_literal_element( ( struct element * ) var.string_value );
-			} else if( var.integer_value ) {
-				elem = new_tuple_element( var.integer_value, var.string_value );
-			} else {
-				elem = new_string_element( var.string_value );
-			}
+	struct string *str = NULL;
+	if( elem ) {
+		if( arr->structure ) {
+			strcpy( elem->str.string, "$new" );
+			elem->str.length = 4;
+		} else if( arr->string_values ) {
+			strcpy( elem->str.string, "$array" );
+			elem->str.length = 6;
 		} else {
-			elem = new_integer_element( var.integer_value );
+			strcpy( elem->str.string, "$buffer" );
 		}
-		if( elem ) {
-			while( elem ) {
-				if( tail ) {
-					tail->next = elem;
-					tail = elem;
-				} else {
-					head = tail = elem;
+		elem->next = new_element( 2 );
+		if( elem->next ) {
+			strcpy( elem->next->str.string, "()" );
+			if( arr->structure ) {
+				elem->next->child = new_element( arr->structure->str.length );
+				if( elem->next->child ) {
+					strcpy( elem->next->child->str.string, arr->structure->str.string );
 				}
-				elem = elem->next;
+			} else {
+				elem->next->child = new_integer_element( count );
 			}
-		} else if( head ) {
-			unref_string( &head->str );
-			return NULL;
+			tail = elem->next->child;
+			while( tail && idx < count ) {
+				if( arr->string_values ) {
+					str = arr->string_values[ idx ];
+				}
+				tail->next = value_to_element( arr->integer_values[ idx ], str, env, message );
+				tail = tail->next;
+				while( tail && tail->next ) {
+					tail = tail->next;
+				}
+				idx++;
+			}
 		}
-		idx++;
+		if( tail == NULL ) { 
+			unref_string( &elem->str );
+			if( message[ 0 ] == 0 ) {
+				strcpy( message, OUT_OF_MEMORY );
+			}
+			elem = NULL;
+		}
 	}
-	return head;
+	return elem;
 }
 
-static enum result evaluate_values_expression( struct expression *this,
-	struct variables *vars, struct variable *result ) {
-	struct expression *parameter = this->parameters;
-	struct variable arr = { 0, NULL };
-	struct element *elem;
-	enum result ret = parameter->evaluate( parameter, vars, &arr );
-	if( ret ) {
-		if( arr.string_value && arr.string_value->type == ARRAY
-		&& ( ( struct array * ) arr.string_value )->length > 0 ) {
-			elem = array_to_element( ( struct array * ) arr.string_value );
-			if( elem ) {
-				result->string_value = &elem->str;
-			} else {
-				ret = throw( vars, this, 0, OUT_OF_MEMORY );
-			}
+static struct element* value_to_element( int integer_value, struct string *string_value,
+	struct environment *env, char *message ) {
+	struct element *elem = NULL, *tuple;
+	if( string_value ) {
+		if( integer_value ) {
+			elem = new_tuple_element( string_value, integer_value, env, message );
 		} else {
-			ret = throw( vars, this, arr.integer_value, "Not an array or no values." );
+			switch( string_value->type ) {
+				case STRING:
+					elem = new_string_element( string_value );
+					break;
+				case ELEMENT:
+					elem = new_literal_element( ( struct element * ) string_value );
+					break;
+				case ARRAY:
+					elem = new_array_element( ( struct array * ) string_value, env, message );
+					break;
+				case STRUCT:
+					elem = new_element( string_value->length );
+					if( elem ) {
+						strcpy( elem->str.string, string_value->string );
+					}
+					break;
+				case FUNCTION:
+					if( get_function_indexed( env->functions_index, string_value->string ) ) {
+						elem = new_element( string_value->length + 1 );
+						if( elem ) {
+							elem->str.string[ 0 ] = '@';
+							strcpy( &elem->str.string[ 1 ], string_value->string );
+						}
+					} else {
+						elem = new_string_element( string_value );
+					}
+					break;
+				default:
+					strcpy( message, "Unsupported reference type." );
+					break;
+			}
 		}
-		dispose_temporary( &arr );
+	} else {
+		elem = new_integer_element( integer_value );
+	}
+	if( elem == NULL && message[ 0 ] == 0 ) {
+		strcpy( message, OUT_OF_MEMORY );
+	}
+	return elem;
+}
+
+static enum result evaluate_expr_expression( struct expression *this,
+	struct variables *vars, struct variable *result ) {
+	struct variable var = { 0, NULL };
+	struct element *elem;
+	char msg[ 128 ] = "";
+	enum result ret = this->parameters->evaluate( this->parameters, vars, &var );
+	if( ret ) {
+		elem = value_to_element( var.integer_value, var.string_value, vars->func->env, msg );
+		if( elem ) {
+			result->string_value = &elem->str;
+		} else {
+			ret = throw( vars, this, 0, msg );
+		}
+		dispose_temporary( &var );
 	}
 	return ret;
 }
@@ -5375,7 +5439,7 @@ static struct operator operators[] = {
 	{ "$child", '$', 1, evaluate_child_expression, NULL },
 	{ "$line", '$', 1, evaluate_line_expression, NULL },
 	{ "$elem", '$', 3, evaluate_elem_expression, NULL },
-	{ "$values", '$', 1, evaluate_values_expression, NULL },
+	{ "$expr", '$', 1, evaluate_expr_expression, NULL },
 	{ "$pack", '$', 1, evaluate_pack_expression, NULL },
 	{ "$unpack", '$', 2, evaluate_unpack_expression, NULL },
 	{ "$quote", '$', 1, evaluate_quote_expression, NULL },

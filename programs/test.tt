@@ -120,18 +120,22 @@ function testarray() {
 	call assert_equals( 2, idx, ${-} );
 	call assert_equals( "a", [ $array( 2 0 "a" ) 1 ], ${-} );
 	let a = $array( ${ 0, $str( "\"one", "\"" ), $tup( "\\two\\"2 ), "\063", ${ four(4) }, 84, 84, $tup($array(${1}) 1) } );
-	let a = $array( $parse( $unparse( $values( a ) ) ) );
-	call assert_equals( 8, $len( a ), ${-} );
-	call assert_equals( 0, [ a 0 ], ${-} );
-	call assert_equals( "\"one\"", [ a 1 ], ${-} );
-	call assert_equals( "\\two\\", $str( [ a 2 ] ), ${-} );
-	call assert_equals( 2, $tup( 0, [ a 2 ] ), ${-} );
-	call assert_equals( "3", [ a 3 ], ${-} );
-	call assert_equals( "four", [ a 4 ], ${-} );
-	call assert_equals( "4", $child( $next( [ a 4 ] ) ), ${-} );
-	call assert_equals( "TT", $sub( a, 5, 2 ), ${-} );
+	call assert_equals( 1, [ [ a 7 ] 0 ], ${-} );
+	let a = $expr( a );
+	call assert_equals( "$array", a, ${-} );
+	let a = $array( $parse( $unparse( $child( $next( a ) ) ) ) );
+	call assert_equals( 9, $len( a ), ${-} );
+	call assert_equals( 8, [ a 0 ], ${-} );
+	call assert_equals( 0, [ a 1 ], ${-} );
+	call assert_equals( "\"one\"", [ a 2 ], ${-} );
+	call assert_equals( "\\two\\", $str( [ a 3 ] ), ${-} );
+	call assert_equals( 2, $tup( 0, [ a 3 ] ), ${-} );
+	call assert_equals( "3", [ a 4 ], ${-} );
+	call assert_equals( "four", [ a 5 ], ${-} );
+	call assert_equals( "4", $child( $next( [ a 5 ] ) ), ${-} );
+	call assert_equals( "TT", $sub( a, 6, 2 ), ${-} );
 	call assert_equals( "[Array]", a, ${-} );
-	call assert_equals( $tup("[Array]"1), [ a 7 ], ${-} );
+	call assert_equals( $tup("[Array]"1), [ a 8 ], ${-} );
 	call assert_equals( 1, $len( $array( 1 ) ), ${-} );
 	let b = $array( 2 );
 	let c = $array( ${ "a" 1 } );
@@ -786,16 +790,24 @@ function testelem() {
 	call assert_throws( "Expected '{' after '$'", ${ () { call $; } } );
 }
 
-function testvalues() {
-	var arr = $array( $parse( $unparse( $values( $array( ${ 0 1 "2" $tup( "Three" 3 ) ${ [4] } } ) ) ) ) );
-	call assert_equals( 0, [ arr 0 ], ${-} );
-	call assert_equals( 1, [ arr 1 ], ${-} );
-	call assert_equals( "2", [ arr 2 ], ${-} );
-	call assert_equals( $tup( "Three" 3 ), [ arr 3 ], ${-} );
-	call assert_equals( "4", $child( [ arr 4 ] ), ${-} );
-	call assert_throws( "1", ${ () { call $values( except( ${ 1 } ) ); } } );
-	call assert_throws( "Not an array or no values.", ${ () { call $values( 0 ); } } );
-	call assert_throws( "Not an array or no values.", ${ () { call $values( $array( 0 ) ); } } );
+function testexpr() {
+	var elem = ${ 0 1 "2" $tup( "Three" 3 ) ${ [4] } @testexpr $function( ${ () {} } ) struc $buffer( 0 ) $new( exten ) };
+	var expr = $parse( $unparse( $expr( $array( elem ) ) ) );
+	call assert_equals( "$array", expr, ${-} );
+	var arr = $array( $child( $next( expr ) ) );
+	call assert_equals( 10, [ arr 0 ], ${-} );
+	call assert_equals( 0, [ arr 1 ], ${-} );
+	call assert_equals( 1, [ arr 2 ], ${-} );
+	call assert_equals( "2", [ arr 3 ], ${-} );
+	call assert_equals( $tup( "Three" 3 ), [ arr 4 ], ${-} );
+	call assert_equals( "4", $child( [ arr 5 ] ), ${-} );
+	call assert_equals( "testexpr", [ arr 6 ], ${-} );
+	call assert_equals( "[Function]", [ arr 7 ], ${-} );
+	call assert_equals( struc, [ arr 8 ], ${-} );
+	call assert_equals( "[Buffer]", [ arr 9 ], ${-} );
+	call assert_equals( exten, $type( [ arr 10 ] ), ${-} );
+	call assert_throws( "1", ${ () { call $expr( except( ${ 1 } ) ); } } );
+	call assert_throws( "Unsupported", ${ () { call $expr( $worker( ${ () {} } ) ); } } );
 }
 
 function testfunction() {
@@ -953,7 +965,7 @@ program test {
 	call testinterrupted();
 	call testinc();
 	call testdec();
-	call testvalues();
+	call testexpr();
 	call testfunction();
 	call testworker();
 	call testthiscall();
