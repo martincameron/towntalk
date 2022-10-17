@@ -95,6 +95,7 @@ function testvars( x ) {
 	call assert_throws( "Undeclared variable 'xxx'", ${ () { let xxx = 0; } } );
 	call assert_throws( "Expected '=' after 'let'", ${ () { let xxx; } } );
 	call assert_throws( "Invalid local variable expression", ${ (x) { call x+; } } );
+	call assert_throws( "Invalid integer", ${ () { var x = 1$2; } } );
 	call assert_throws( "Not an integer", ${ () { var x = "x"; call x++; } } );
 	call assert_throws( "Not an integer", ${ () { var x = "x"; call x--; } } );
 	return g;
@@ -816,6 +817,13 @@ function testfunction() {
 		$function( ${ () { 
 			return :( $function( $parse( "( param ) { return param; }" ) ) ONE );
 		} } ) ), ${-} );
+	var ( struc ) local = 1;
+	call assert_equals( local, :( $function( ${ () { return local; } } ) ), ${-} );
+	let local = "a";
+	call assert_equals( local, :( $function( ${ () { return local; } } ) ), ${-} );
+	let local = $new( struc "a" );
+	call assert_equals( local.a, :( $function( ${ () { return local.a; } } ) ), ${-} );
+	call assert_equals( local.a, :( $function( ${ () { return local:geta(); } } ) ), ${-} );
 	call assert_throws( "1", ${ () { return except( ${ 1 } ); } } );
 	call assert_throws( "1", ${ () { call $function( except( ${ 1 } ) ); } } );
 	call assert_throws( "1", ${ () { call :( $function( ${ ( param ) {} } ) except( ${ 1 } ) ); } } );

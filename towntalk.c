@@ -229,13 +229,13 @@ static struct constant constants[] = {
 static int validate_name( char *name, struct environment *env );
 static int validate_decl( struct element *elem, struct environment *env, char *message );
 static void parse_keywords( struct keyword *keywords, struct element *elem,
-	struct function *func, struct statement *stmt, char *message );
+	struct function *func, struct variables *vars, struct statement *stmt, char *message );
 static void parse_keywords_indexed( struct keyword **index, struct element *elem,
-	struct function *func, struct statement *stmt, char *message );
+	struct function *func, struct variables *vars, struct statement *stmt, char *message );
 static struct element* parse_expression( struct element *elem,
-	struct function *func, struct expression *prev, char *message );
-static struct element* parse_expressions( struct element *elem,
-	struct function *func, char terminator, struct expression *prev, int *num_exprs, char *message );
+	struct function *func, struct variables *vars, struct expression *prev, char *message );
+static struct element* parse_expressions( struct element *elem, struct function *func,
+	struct variables *vars, char terminator, struct expression *prev, int *num_exprs, char *message );
 static struct worker* parse_worker( struct element *elem, struct environment *env,
 	char *file, char *message );
 static struct element* value_to_element( int integer_value, struct string *string_value,
@@ -1962,7 +1962,7 @@ static enum result evaluate_array_expression( struct expression *this,
 	if( ret ) {
 		if( var.string_value && var.string_value->type == ELEMENT ) {
 			if( expr == NULL ) {
-				parse_expressions( ( struct element * ) var.string_value, vars->func, 0, &prev, &len, msg );
+				parse_expressions( ( struct element * ) var.string_value, vars->func, NULL, 0, &prev, &len, msg );
 				expr = prev.next;
 				if( msg[ 0 ] ) {
 					ret = throw( vars, this, 0, msg );
@@ -2165,7 +2165,7 @@ static int add_local_variable( struct element *elem,
 	return message[ 0 ] == 0;
 }
 
-static struct element* parse_variable_declaration( struct element *elem, struct function *func, struct statement *prev,
+static struct element* parse_variable_declaration( struct element *elem, struct function *func, struct variables *vars, struct statement *prev,
 	int (*add)( struct element *elem, struct function *func, struct structure *type, struct expression *initializer, struct statement *prev, char *message ),
 	char *message ) {
 	struct structure *type = NULL;
@@ -2185,7 +2185,7 @@ static struct element* parse_variable_declaration( struct element *elem, struct 
 		}
 		if( message[ 0 ] == 0 ) {
 			if( elem->str.string[ 0 ] == '[' && validate_decl( elem->child, func->env, message ) ) {
-				parse_expression( elem->child->next, func, &expr, message );
+				parse_expression( elem->child->next, func, vars, &expr, message );
 				if( message[ 0 ] == 0 ) {
 					array_expr = calloc( 1, sizeof( struct expression ) );
 					if( array_expr ) {
@@ -2203,7 +2203,7 @@ static struct element* parse_variable_declaration( struct element *elem, struct 
 				}
 			} else if( validate_decl( elem, func->env, message ) ) {
 				if( elem->next->str.string[ 0 ] == '=' ) {
-					next = parse_expression( elem->next->next, func, &expr, message );
+					next = parse_expression( elem->next->next, func, vars, &expr, message );
 					if( message[ 0 ] == 0 ) {
 						if( add( elem, func, type, expr.next, prev, message ) ) {
 							elem = next;
@@ -2229,23 +2229,23 @@ static struct element* parse_variable_declaration( struct element *elem, struct 
 }
 
 static struct element* parse_comment( struct element *elem,
-	struct function *func, struct statement *prev, char *message ) {
+	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
 	return elem->next->next;
 }
 
 static struct element* parse_const_declaration( struct element *elem,
-	struct function *func, struct statement *prev, char *message ) {
-	return parse_variable_declaration( elem->next, func, prev, add_global_constant, message);
+	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
+	return parse_variable_declaration( elem->next, func, vars, prev, add_global_constant, message);
 }
 
 static struct element* parse_global_declaration( struct element *elem,
-	struct function *func, struct statement *prev, char *message ) {
-	return parse_variable_declaration( elem->next, func, prev, add_global_variable, message);
+	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
+	return parse_variable_declaration( elem->next, func, vars, prev, add_global_variable, message);
 }
 
 static struct element* parse_local_declaration( struct element *elem,
-	struct function *func, struct statement *prev, char *message ) {
-	return parse_variable_declaration( elem->next, func, prev, add_local_variable, message);
+	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
+	return parse_variable_declaration( elem->next, func, vars, prev, add_local_variable, message);
 }
 
 static enum result evaluate_bitwise_not_expression( struct expression *this,
@@ -2963,7 +2963,7 @@ static enum result evaluate_eval_expression( struct expression *this,
 	if( ret ) {
 		if( var.string_value && var.string_value->type == ELEMENT ) {
 			prev.next = NULL;
-			parse_expression( ( struct element * ) var.string_value, vars->func, &prev, msg );
+			parse_expression( ( struct element * ) var.string_value, vars->func, NULL, &prev, msg );
 			if( msg[ 0 ] == 0 ) {
 				ret = prev.next->evaluate( prev.next, vars, result );
 			} else {
@@ -3498,7 +3498,7 @@ static void optimize_expression( struct expression *expr ) {
 }
 
 static struct element* parse_infix_expression( struct element *elem,
-	struct function *func, struct expression *prev, char *message ) {
+	struct function *func, struct variables *vars, struct expression *prev, char *message ) {
 	int count;
 	struct operator *oper;
 	struct element *next = elem->next;
@@ -3508,7 +3508,7 @@ static struct element* parse_infix_expression( struct element *elem,
 		prev->next = expr;
 		expr->line = elem->line;
 		if( child ) {
-			child = parse_expression( child, func, &param, message );
+			child = parse_expression( child, func, vars, &param, message );
 			expr->parameters = param.next;
 			if( message[ 0 ] == 0 ) {
 				if( child ) {
@@ -3517,7 +3517,7 @@ static struct element* parse_infix_expression( struct element *elem,
 						expr->index = oper->oper;
 						expr->evaluate = oper->evaluate;
 						if( oper->num_operands != 0 ) {
-							parse_expressions( child->next, func, 0, expr->parameters, &count, message );
+							parse_expressions( child->next, func, vars, 0, expr->parameters, &count, message );
 							if( message[ 0 ] == 0 ) {
 								count++;
 								if( count == oper->num_operands || ( oper->num_operands < 0 && count >= -oper->num_operands ) ) {
@@ -3547,7 +3547,7 @@ static struct element* parse_infix_expression( struct element *elem,
 }
 
 static struct element* parse_operator_expression( struct element *elem,
-	struct function *func, struct expression *prev, char *message ) {
+	struct function *func, struct variables *vars, struct expression *prev, char *message ) {
 	int count;
 	struct element *next = elem->next;
 	struct operator *oper = get_operator( elem->str.string, func->env->operators_index[ hash_code( elem->str.string, 0 ) ] );
@@ -3560,7 +3560,7 @@ static struct element* parse_operator_expression( struct element *elem,
 			expr->evaluate = oper->evaluate;
 			if( oper->num_operands != 0 ) {
 				if( next && next->str.string[ 0 ] == '(' ) {
-					parse_expressions( next->child, func, 0, &param, &count, message );
+					parse_expressions( next->child, func, vars, 0, &param, &count, message );
 					expr->parameters = param.next;
 					if( message[ 0 ] == 0 ) {
 						if( count == oper->num_operands || ( oper->num_operands < 0 && count >= -oper->num_operands ) ) {
@@ -3584,7 +3584,7 @@ static struct element* parse_operator_expression( struct element *elem,
 }
 
 static struct element* parse_call_expression( struct element *elem,
-	struct function *func, struct function *decl, struct expression *prev, char *message ) {
+	struct function *func, struct variables *vars, struct function *decl, struct expression *prev, char *message ) {
 	int num_params;
 	struct element *next = elem->next;
 	struct expression param = { 0 }, *expr = calloc( 1, sizeof( struct function_expression ) );
@@ -3593,7 +3593,7 @@ static struct element* parse_call_expression( struct element *elem,
 		expr->line = elem->line;
 		( ( struct function_expression * ) expr )->function = decl;
 		if( next && next->str.string[ 0 ] == '(' ) {
-			parse_expressions( next->child, func, 0, &param, &num_params, message );
+			parse_expressions( next->child, func, vars, 0, &param, &num_params, message );
 			expr->parameters = param.next;
 			if( message[ 0 ] == 0 ) {
 				if( num_params == ( ( struct function_expression * ) expr )->function->num_parameters ) {
@@ -3632,13 +3632,13 @@ static struct element* parse_func_ref_expression( struct element *elem,
 }
 
 static struct element* parse_index_expression( struct element *elem,
-	struct function *func, struct expression *prev, char *message ) {
+	struct function *func, struct variables *vars, struct expression *prev, char *message ) {
 	int num_params;
 	struct expression param = { 0 }, *expr = calloc( 1, sizeof( struct expression ) );
 	if( expr ) {
 		prev->next = expr;
 		expr->line = elem->line;
-		parse_expressions( elem->child, func, 0, &param, &num_params, message );
+		parse_expressions( elem->child, func, vars, 0, &param, &num_params, message );
 		expr->parameters = param.next;
 		if( message[ 0 ] == 0 ) {
 			if( num_params == 2 ) {
@@ -3654,7 +3654,7 @@ static struct element* parse_index_expression( struct element *elem,
 }
 
 static struct element* parse_struct_expression( struct element *elem,
-	struct function *func, struct structure *struc, struct expression *prev, char *message ) {
+	struct function *func, struct variables *vars, struct structure *struc, struct expression *prev, char *message ) {
 	int idx, count;
 	struct element *next = elem->next;
 	char *field = strchr( elem->str.string, '.' );
@@ -3668,7 +3668,7 @@ static struct element* parse_struct_expression( struct element *elem,
 			if( idx >= 0 ) {
 				expr->index = idx;
 				if( next && next->str.string[ 0 ] == '(' ) {
-					parse_expressions( next->child, func, 0, &param, &count, message );
+					parse_expressions( next->child, func, vars, 0, &param, &count, message );
 					expr->parameters = param.next;
 					if( message[ 0 ] == 0 ) {
 						if( count == 1 ) {
@@ -3694,7 +3694,7 @@ static struct element* parse_struct_expression( struct element *elem,
 }
 
 static struct element* parse_refcall_expression( struct element *elem,
-	struct function *func, struct expression *prev, char *message ) {
+	struct function *func, struct variables *vars, struct expression *prev, char *message ) {
 	int count;
 	struct element *next = elem->next;
 	struct expression param = { 0 }, *expr = calloc( 1, sizeof( struct expression ) );
@@ -3702,7 +3702,7 @@ static struct element* parse_refcall_expression( struct element *elem,
 		prev->next = expr;
 		expr->line = elem->line;
 		if( next && next->str.string[ 0 ] == '(' ) {
-			parse_expressions( next->child, func, 0, &param, &count, message );
+			parse_expressions( next->child, func, vars, 0, &param, &count, message );
 			expr->parameters = param.next;
 			if( message[ 0 ] == 0 ) {
 				if( count > 0 ) {
@@ -3723,7 +3723,7 @@ static struct element* parse_refcall_expression( struct element *elem,
 }
 
 static struct element* parse_thiscall_expression( struct element *elem,
-	struct function *func, struct expression *prev, char *message ) {
+	struct function *func, struct variables *vars, struct expression *prev, char *message ) {
 	int idx, count;
 	struct structure *struc;
 	struct element *next = elem->next;
@@ -3746,7 +3746,7 @@ static struct element* parse_thiscall_expression( struct element *elem,
 			idx = get_string_list_index( struc->fields, &field[ 1 ] );
 			if( idx >= 0 ) {
 				if( next && next->str.string[ 0 ] == '(' ) {
-					parse_expressions( next->child, func, 0, &param, &count, message );
+					parse_expressions( next->child, func, vars, 0, &param, &count, message );
 					expr->parameters = param.next;
 					if( local || global ) {
 						this = calloc( 1, sizeof( struct global_expression ) );
@@ -3790,7 +3790,7 @@ static struct element* parse_thiscall_expression( struct element *elem,
 }
 
 static struct element* parse_member_call_expression( struct structure *struc, struct expression *this,
-	char *memb, struct element *elem, struct function *func, struct expression *prev, char *message ) {
+	char *memb, struct element *elem, struct function *func, struct variables *vars, struct expression *prev, char *message ) {
 	char *name;
 	int num_params;
 	struct expression *expr;
@@ -3813,7 +3813,7 @@ static struct element* parse_member_call_expression( struct structure *struc, st
 			expr->parameters = this;
 			( ( struct function_expression * ) expr )->function = decl;
 			if( next && next->str.string[ 0 ] == '(' ) {
-				parse_expressions( next->child, func, 0, this, &num_params, message );
+				parse_expressions( next->child, func, vars, 0, this, &num_params, message );
 				if( message[ 0 ] == 0 ) {
 					if( num_params + 1 == ( ( struct function_expression * ) expr )->function->num_parameters ) {
 						expr->evaluate = evaluate_call_expression;
@@ -3834,11 +3834,37 @@ static struct element* parse_member_call_expression( struct structure *struc, st
 	return next;
 }
 
-static struct element* parse_local_expression( struct element *elem,
-	struct function *func, struct local_variable *local, struct expression *prev, char *message ) {
-	int idx, len;
+static struct element* parse_member_expression( struct structure *struc, struct expression *this,
+	char *memb, struct element *elem, struct function *func, struct variables *vars, struct expression *prev, char *message ) {
 	struct element *next = elem->next;
-	struct structure *struc = local->type;
+	struct expression *expr;
+	int idx;
+	if( struc ) {
+		idx = get_string_list_index( struc->fields, memb );
+		if( idx >= 0 ) {
+			expr = calloc( 1, sizeof( struct structure_expression ) );
+			if( expr ) {
+				prev->next = expr;
+				( ( struct structure_expression * ) expr )->structure = struc;
+				expr->index = idx;
+				expr->line = elem->line;
+				expr->parameters = this;
+				expr->evaluate = evaluate_member_expression;
+			} else {
+				strcpy( message, OUT_OF_MEMORY );
+			}
+		} else {
+			sprintf( message, "Field not declared in expression '%.64s' on line %d.", elem->str.string, elem->line );
+		}
+	} else {
+		sprintf( message, "Expression '%.64s' has no associated structure on line %d.", elem->str.string, elem->line );
+	}
+	return next;
+}
+
+static struct element* parse_local_expression( struct element *elem,
+	struct function *func, struct variables *vars, struct local_variable *local, struct expression *prev, char *message ) {
+	struct element *next = elem->next;
 	char *field = &elem->str.string[ strlen( local->name ) ];
 	struct expression *expr = calloc( 1, sizeof( struct expression ) );
 	if( expr ) {
@@ -3846,31 +3872,10 @@ static struct element* parse_local_expression( struct element *elem,
 		expr->line = elem->line;
 		expr->index = local->index;
 		expr->evaluate = evaluate_local;
-		if( field[ 0 ] == '.' || field[ 0 ] == ':' ) {
-			if( struc ) {
-				if( field[ 0 ] == ':' ) {
-					next = parse_member_call_expression( struc, expr, &field[ 1 ], elem, func, prev, message );
-				} else {
-					idx = get_string_list_index( struc->fields, &field[ 1 ] );
-					if( idx >= 0 ) {
-						prev->next = calloc( 1, sizeof( struct structure_expression ) );
-						if( prev->next ) {
-							( ( struct structure_expression * ) prev->next )->structure = struc;
-							prev->next->index = idx;
-							prev->next->line = elem->line;
-							prev->next->parameters = expr;
-							prev->next->evaluate = evaluate_member_expression;
-						} else {
-							prev->next = expr;
-							strcpy( message, OUT_OF_MEMORY );
-						}
-					} else {
-						sprintf( message, "Field not declared in expression '%.64s' on line %d.", elem->str.string, elem->line );
-					}
-				}
-			} else {
-				sprintf( message, "Expression '%.64s' has no associated structure on line %d.", elem->str.string, elem->line );
-			}
+		if( field[ 0 ] == '.' ) {
+			next = parse_member_expression( local->type, expr, &field[ 1 ], elem, func, vars, prev, message );
+		} else if( field[ 0 ] == ':' ) {
+			next = parse_member_call_expression( local->type, expr, &field[ 1 ], elem, func, vars, prev, message );
 		} else if( !strcmp( field, "++" ) ) {
 			expr->evaluate = evaluate_local_post_inc;
 		} else if( !strcmp( field, "--" ) ) {
@@ -3884,11 +3889,38 @@ static struct element* parse_local_expression( struct element *elem,
 	return next;
 }
 
-static struct element* parse_global_expression( struct element *elem,
-	struct function *func, struct global_variable *global, struct expression *prev, char *message ) {
+static struct element* parse_capture_expression( struct element *elem,
+	struct function *func, struct variables *vars, struct local_variable *local, struct expression *prev, char *message ) {
+	struct element *next = elem->next;
+	struct variable *captured = &vars->locals[ local->index ];
+	char *field = &elem->str.string[ strlen( local->name ) ];
+	struct expression *expr = calloc( 1, sizeof( struct string_literal_expression ) );
+	if( expr ) {
+		prev->next = expr;
+		expr->line = elem->line;
+		expr->index = captured->integer_value;
+		if( captured->string_value ) {
+			captured->string_value->reference_count++;
+			( ( struct string_literal_expression * ) expr )->str = captured->string_value;
+			expr->evaluate = evaluate_string_literal_expression;
+		} else {
+			expr->evaluate = evaluate_integer_literal_expression;
+		}
+		if( field[ 0 ] == '.' ) {
+			next = parse_member_expression( local->type, expr, &field[ 1 ], elem, func, vars, prev, message );
+		} else if( field[ 0 ] == ':' ) {
+			next = parse_member_call_expression( local->type, expr, &field[ 1 ], elem, func, vars, prev, message );
+		}
+	} else {
+		strcpy( message, OUT_OF_MEMORY );
+	}
+	return next;
+}
+
+static struct element* parse_global_expression( struct element *elem, struct function *func,
+	struct variables *vars, struct global_variable *global, struct expression *prev, char *message ) {
 	int idx, count;
 	struct element *next = elem->next;
-	struct structure *struc = global->type;
 	char *field = &elem->str.string[ strlen( global->name ) ];
 	struct expression *expr = calloc( 1, sizeof( struct global_expression ) );
 	if( expr ) {
@@ -3896,31 +3928,10 @@ static struct element* parse_global_expression( struct element *elem,
 		( ( struct global_expression * ) expr )->global = global;
 		expr->line = elem->line;
 		expr->evaluate = evaluate_global;
-		if( field[ 0 ] == '.' || field[ 0 ] == ':' ) {
-			if( struc ) {
-				if( field[ 0 ] == ':' ) {
-					next = parse_member_call_expression( struc, expr, &field[ 1 ], elem, func, prev, message );
-				} else {
-					idx = get_string_list_index( struc->fields, &field[ 1 ] );
-					if( idx >= 0 ) {
-						prev->next = calloc( 1, sizeof( struct structure_expression ) );
-						if( prev->next ) {
-							( ( struct structure_expression * ) prev->next )->structure = struc;
-							prev->next->index = idx;
-							prev->next->line = elem->line;
-							prev->next->parameters = expr;
-							prev->next->evaluate = evaluate_member_expression;
-						} else {
-							prev->next = expr;
-							strcpy( message, OUT_OF_MEMORY );
-						}
-					} else {
-						sprintf( message, "Field not declared in expression '%.64s' on line %d.", elem->str.string, elem->line );
-					}
-				}
-			} else {
-				sprintf( message, "Expression '%.64s' has no associated structure on line %d.", elem->str.string, elem->line );
-			}
+		if( field[ 0 ] == '.' ) {
+			next = parse_member_expression( global->type, expr, &field[ 1 ], elem, func, vars, prev, message );
+		} else if( field[ 0 ] == ':' ) {
+			next = parse_member_call_expression( global->type, expr, &field[ 1 ], elem, func, vars, prev, message );
 		}
 	} else {
 		strcpy( message, OUT_OF_MEMORY );
@@ -3996,7 +4007,7 @@ static struct element* parse_element_literal_expression( struct element *elem,
 }
 
 static struct element* parse_expression( struct element *elem,
-	struct function *func, struct expression *prev, char *message ) {
+	struct function *func, struct variables *vars, struct expression *prev, char *message ) {
 	struct element *next = elem->next;
 	char *value = elem->str.string;
 	struct global_variable *global;
@@ -4015,47 +4026,56 @@ static struct element* parse_expression( struct element *elem,
 		next = parse_element_literal_expression( elem, prev, message );
 	} else if( value[ 0 ] == '\'' ) {
 		/* Infix operator.*/
-		next = parse_infix_expression( elem, func, prev, message );
+		next = parse_infix_expression( elem, func, vars, prev, message );
 	} else if( value[ 0 ] == '[' ) {
 		/* Array index operator. */
-		next = parse_index_expression( elem, func, prev, message );
+		next = parse_index_expression( elem, func, vars, prev, message );
 	} else if( value[ 0 ] == '@' ) {
 		/* Function reference operator. */
 		next = parse_func_ref_expression( elem, func, prev, message );
 	} else if( value[ 0 ] == ':' ) {
 		if( value[ 1 ] == 0 ) {
 			/* Function reference call. */
-			next = parse_refcall_expression( elem, func, prev, message );
+			next = parse_refcall_expression( elem, func, vars, prev, message );
 		} else {
 			/* Member function call. */
-			next = parse_thiscall_expression( elem, func, prev, message );
+			next = parse_thiscall_expression( elem, func, vars, prev, message );
 		}
 	} else {
 		local = get_local_variable( func->variable_decls, value, ".:+-" );
 		if( local ) {
 			/* Local variable reference.*/
-			next = parse_local_expression( elem, func, local, prev, message );
+			next = parse_local_expression( elem, func, vars, local, prev, message );
 		} else {
-			global = get_global_indexed( func->env->constants_index, value );
-			if( global == NULL ) {
-				global = get_global_indexed( func->env->globals_index, value );
+			local = NULL;
+			if( vars ) {
+				local = get_local_variable( vars->func->variable_decls, value, ".:" );
 			}
-			if( global ) {
-				/* Global variable reference.*/
-				next = parse_global_expression( elem, func, global, prev, message );
+			if( local ) {
+				/* Captured local variable. */
+				next = parse_capture_expression( elem, func, vars, local, prev, message );
 			} else {
-				decl = get_function_indexed( func->env->functions_index, value );
-				if( decl ) {
-					/* Function call.*/
-					next = parse_call_expression( elem, func, decl, prev, message );
+				global = get_global_indexed( func->env->constants_index, value );
+				if( global == NULL ) {
+					global = get_global_indexed( func->env->globals_index, value );
+				}
+				if( global ) {
+					/* Global variable reference.*/
+					next = parse_global_expression( elem, func, vars, global, prev, message );
 				} else {
-					struc = get_structure_indexed( func->env->structures_index, value );
-					if( struc ) {
-						/* Structure. */
-						next = parse_struct_expression( elem, func, struc, prev, message );
+					decl = get_function_indexed( func->env->functions_index, value );
+					if( decl ) {
+						/* Function call.*/
+						next = parse_call_expression( elem, func, vars, decl, prev, message );
 					} else {
-						/* Prefix Operator. */
-						next = parse_operator_expression( elem, func, prev, message );
+						struc = get_structure_indexed( func->env->structures_index, value );
+						if( struc ) {
+							/* Structure. */
+							next = parse_struct_expression( elem, func, vars, struc, prev, message );
+						} else {
+							/* Prefix Operator. */
+							next = parse_operator_expression( elem, func, vars, prev, message );
+						}
 					}
 				}
 			}
@@ -4072,17 +4092,17 @@ static struct element* parse_expression( struct element *elem,
 }
 
 static struct element* parse_expressions( struct element *elem, struct function *func,
-	char terminator, struct expression *prev, int *num_exprs, char *message ) {
+	struct variables *vars, char terminator, struct expression *prev, int *num_exprs, char *message ) {
 	int line, count = 0;
 	while( elem && elem->str.string[ 0 ] != terminator && message[ 0 ] == 0 ) {
-		elem = parse_expression( elem, func, prev, message );
+		elem = parse_expression( elem, func, vars, prev, message );
 		prev = prev->next;
 		count++;
 		while( elem && message[ 0 ] == 0 && elem->str.string[ 0 ] == ',' ) {
 			line = elem->line;
 			elem = elem->next;
 			if( elem && elem->str.string[ 0 ] != ',' ) {
-				elem = parse_expression( elem, func, prev, message );
+				elem = parse_expression( elem, func, vars, prev, message );
 				prev = prev->next;
 				count++;
 			} else {
@@ -4097,7 +4117,7 @@ static struct element* parse_expressions( struct element *elem, struct function 
 }
 
 static struct element* parse_increment_statement( struct element *elem,
-	struct function *func, struct statement *prev, char *message ) {
+	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
 	struct local_variable *local;
 	struct element *next = elem->next;
 	struct statement *stmt = calloc( 1, sizeof( struct statement ) );
@@ -4124,7 +4144,7 @@ static struct element* parse_increment_statement( struct element *elem,
 }
 
 static struct element* parse_decrement_statement( struct element *elem,
-	struct function *func, struct statement *prev, char *message ) {
+	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
 	struct local_variable *local;
 	struct element *next = elem->next;
 	struct statement *stmt = calloc( 1, sizeof( struct statement ) );
@@ -4151,13 +4171,13 @@ static struct element* parse_decrement_statement( struct element *elem,
 }
 
 static struct element* parse_save_statement( struct element *elem,
-	struct function *func, struct statement *prev, char *message ) {
-	return parse_expr_list_statement( elem, func, prev, execute_save_statement, message );
+	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
+	return parse_expr_list_statement( elem, func, vars, prev, execute_save_statement, message );
 }
 
 static struct element* parse_append_statement( struct element *elem,
-	struct function *func, struct statement *prev, char *message ) {
-	struct element *next = parse_save_statement( elem, func, prev, message );
+	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
+	struct element *next = parse_save_statement( elem, func, vars, prev, message );
 	if( prev->next && message[ 0 ] == 0 ) {
 		prev->next->local = 1;
 	}
@@ -4165,25 +4185,25 @@ static struct element* parse_append_statement( struct element *elem,
 }
 
 static struct element* parse_array_assignment( struct element *elem,
-	struct function *func, struct statement *prev, char *message ) {
+	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
 	struct expression expr;
 	struct element *next = elem->next, *child = next->child;
 	struct statement *stmt = calloc( 1, sizeof( struct statement ) );
 	if( stmt ) {
 		prev->next = stmt;
 		expr.next = NULL;
-		child = parse_expression( child, func, &expr, message );
+		child = parse_expression( child, func, vars, &expr, message );
 		if( expr.next ) {
 			stmt->source = expr.next;
 			if( child->str.string[ 0 ] == ',' ) {
 				child = child->next;
 			}
 			expr.next = NULL;
-			child = parse_expression( child, func, &expr, message );
+			child = parse_expression( child, func, vars, &expr, message );
 			if( expr.next ) {
 				stmt->source->next = expr.next;
 				expr.next = NULL;
-				next = parse_expression( next->next->next, func, &expr, message );
+				next = parse_expression( next->next->next, func, vars, &expr, message );
 				if( expr.next ) {
 					expr.next->next = stmt->source;
 					stmt->source = expr.next;
@@ -4199,7 +4219,7 @@ static struct element* parse_array_assignment( struct element *elem,
 }
 
 static struct element* parse_struct_assignment( struct element *elem,
-	struct function *func, struct statement *prev, char *message ) {
+	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
 	char *field;
 	int idx, count;
 	struct expression expr;
@@ -4217,12 +4237,12 @@ static struct element* parse_struct_assignment( struct element *elem,
 				stmt->local = idx;
 				next = next->next;
 				expr.next = NULL;
-				parse_expressions( next->child, func, 0, &expr, &count, message );
+				parse_expressions( next->child, func, vars, 0, &expr, &count, message );
 				stmt->source = expr.next;
 				if( message[ 0 ] == 0 ) {
 					if( count == 1 ) {
 						expr.next = NULL;
-						next = parse_expression( next->next->next, func, &expr, message );
+						next = parse_expression( next->next->next, func, vars, &expr, message );
 						if( expr.next ) {
 							expr.next->next = stmt->source;
 							stmt->source = expr.next;
@@ -4246,7 +4266,7 @@ static struct element* parse_struct_assignment( struct element *elem,
 }
 
 static struct element* parse_local_assignment( struct element *elem,
-	struct function *func, struct local_variable *local, struct statement *prev, char *message ) {
+	struct function *func, struct variables *vars, struct local_variable *local, struct statement *prev, char *message ) {
 	int idx;
 	struct statement *stmt;
 	struct expression expr;
@@ -4258,7 +4278,7 @@ static struct element* parse_local_assignment( struct element *elem,
 		if( stmt ) {
 			prev->next = stmt;
 			expr.next = NULL;
-			next = parse_expression( next->next->next, func, &expr, message );
+			next = parse_expression( next->next->next, func, vars, &expr, message );
 			if( expr.next ) {
 				stmt->source = expr.next;
 				( ( struct structure_statement * ) stmt )->structure = struc;
@@ -4290,7 +4310,7 @@ static struct element* parse_local_assignment( struct element *elem,
 		if( stmt ) {
 			prev->next = stmt;
 			expr.next = NULL;
-			next = parse_expression( next->next->next, func, &expr, message );
+			next = parse_expression( next->next->next, func, vars, &expr, message );
 			if( expr.next ) {
 				stmt->source = expr.next;
 				stmt->local = local->index;
@@ -4305,7 +4325,7 @@ static struct element* parse_local_assignment( struct element *elem,
 }
 
 static struct element* parse_global_assignment( struct element *elem,
-	struct function *func, struct global_variable *global, struct statement *prev, char *message ) {
+	struct function *func, struct variables *vars, struct global_variable *global, struct statement *prev, char *message ) {
 	int idx;
 	struct expression expr;
 	struct element *next = elem->next;
@@ -4317,7 +4337,7 @@ static struct element* parse_global_assignment( struct element *elem,
 		if( stmt ) {
 			prev->next = stmt;
 			expr.next = NULL;
-			next = parse_expression( next->next->next, func, &expr, message );
+			next = parse_expression( next->next->next, func, vars, &expr, message );
 			if( expr.next ) {
 				stmt->source = expr.next;
 				( ( struct structure_statement * ) stmt )->structure = struc;
@@ -4349,7 +4369,7 @@ static struct element* parse_global_assignment( struct element *elem,
 		if( stmt ) {
 			prev->next = stmt;
 			expr.next = NULL;
-			next = parse_expression( next->next->next, func, &expr, message );
+			next = parse_expression( next->next->next, func, vars, &expr, message );
 			if( expr.next ) {
 				stmt->source = expr.next;
 				( ( struct global_assignment_statement * ) stmt )->destination = &global->value;
@@ -4364,22 +4384,22 @@ static struct element* parse_global_assignment( struct element *elem,
 }
 
 static struct element* parse_assignment_statement( struct element *elem,
-	struct function *func, struct statement *prev, char *message ) {
+	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
 	struct local_variable *local;
 	struct global_variable *global;
 	struct element *next = elem->next, *child = next->child;
 	if( next->str.string[ 0 ] == '[' ) {
-		return parse_array_assignment( elem, func, prev, message );
+		return parse_array_assignment( elem, func, vars, prev, message );
 	} else if( next->next->str.string[ 0 ] == '(' ) {
-		return parse_struct_assignment( elem, func, prev, message );
+		return parse_struct_assignment( elem, func, vars, prev, message );
 	} else {
 		local = get_local_variable( func->variable_decls, next->str.string, "." );
 		if( local ) {
-			return parse_local_assignment( elem, func, local, prev, message );
+			return parse_local_assignment( elem, func, vars, local, prev, message );
 		} else {
 			global = get_global_indexed( func->env->globals_index, next->str.string );
 			if( global ) {
-				return parse_global_assignment( elem, func, global, prev, message );
+				return parse_global_assignment( elem, func, vars, global, prev, message );
 			} else {
 				sprintf( message, "Undeclared variable '%.64s' on line %d.", next->str.string, next->line );
 			}
@@ -4389,7 +4409,8 @@ static struct element* parse_assignment_statement( struct element *elem,
 }
 
 /* Parse a statement that expects one or more expressions after the keyword. */
-struct element* parse_expr_list_statement( struct element *elem, struct function *func, struct statement *prev,
+struct element* parse_expr_list_statement( struct element *elem,
+	struct function *func, struct variables *vars, struct statement *prev,
 	enum result ( *execute )( struct statement *this, struct variables *vars, struct variable *result ),
 	char *message ) {
 	struct expression head, *expr;
@@ -4398,13 +4419,13 @@ struct element* parse_expr_list_statement( struct element *elem, struct function
 	if( stmt ) {
 		prev->next = stmt;
 		head.next = NULL;
-		next = parse_expression( next, func, &head, message );
+		next = parse_expression( next, func, vars, &head, message );
 		expr = stmt->source = head.next;
 		while( expr && next->str.string[ 0 ] != ';' ) {
 			if( next->str.string[ 0 ] == ',' ) {
 				next = next->next;
 			}
-			next = parse_expression( next, func, expr, message );
+			next = parse_expression( next, func, vars, expr, message );
 			expr = expr->next;
 		}
 		if( expr ) {
@@ -4418,37 +4439,37 @@ struct element* parse_expr_list_statement( struct element *elem, struct function
 }
 
 static struct element* parse_print_statement( struct element *elem,
-	struct function *func, struct statement *prev, char *message ) {
-	return parse_expr_list_statement( elem, func, prev, execute_print_statement, message );
+	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
+	return parse_expr_list_statement( elem, func, vars, prev, execute_print_statement, message );
 }
 
 static struct element* parse_write_statement( struct element *elem,
-	struct function *func, struct statement *prev, char *message ) {
-	return parse_expr_list_statement( elem, func, prev, execute_write_statement, message );
+	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
+	return parse_expr_list_statement( elem, func, vars, prev, execute_write_statement, message );
 }
 
 static struct element* parse_error_statement( struct element *elem,
-	struct function *func, struct statement *prev, char *message ) {
-	return parse_expr_list_statement( elem, func, prev, execute_error_statement, message );
+	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
+	return parse_expr_list_statement( elem, func, vars, prev, execute_error_statement, message );
 }
 
 static struct element* parse_return_statement( struct element *elem,
-	struct function *func, struct statement *prev, char *message ) {
-	return parse_expr_list_statement( elem, func, prev, execute_return_statement, message );
+	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
+	return parse_expr_list_statement( elem, func, vars, prev, execute_return_statement, message );
 }
 
 static struct element* parse_throw_statement( struct element *elem,
-	struct function *func, struct statement *prev, char *message ) {
-	return parse_expr_list_statement( elem, func, prev, execute_throw_statement, message );
+	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
+	return parse_expr_list_statement( elem, func, vars, prev, execute_throw_statement, message );
 }
 
 static struct element* parse_exit_statement( struct element *elem,
-	struct function *func, struct statement *prev, char *message ) {
-	return parse_expr_list_statement( elem, func, prev, execute_exit_statement, message );
+	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
+	return parse_expr_list_statement( elem, func, vars, prev, execute_exit_statement, message );
 }
 
 static struct element* parse_break_statement( struct element *elem,
-	struct function *func, struct statement *prev, char *message ) {
+	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
 	struct element *next = elem->next;
 	struct statement *stmt = calloc( 1, sizeof( struct statement ) );
 	if( stmt ) {
@@ -4462,7 +4483,7 @@ static struct element* parse_break_statement( struct element *elem,
 }
 
 static struct element* parse_continue_statement( struct element *elem,
-	struct function *func, struct statement *prev, char *message ) {
+	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
 	struct element *next = elem->next;
 	struct statement *stmt = calloc( 1, sizeof( struct statement ) );
 	if( stmt ) {
@@ -4476,23 +4497,23 @@ static struct element* parse_continue_statement( struct element *elem,
 }
 
 static struct element* parse_call_statement( struct element *elem,
-	struct function *func, struct statement *prev, char *message ) {
-	return parse_expr_list_statement( elem, func, prev, execute_call_statement, message );
+	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
+	return parse_expr_list_statement( elem, func, vars, prev, execute_call_statement, message );
 }
 
 static struct element* parse_case_statement( struct element *elem,
-	struct function *func, struct statement *prev, char *message ) {
+	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
 	struct expression expr;
 	struct element *next = elem->next;
 	struct statement block, *stmt = calloc( 1, sizeof( struct block_statement ) );
 	if( stmt ) {
 		stmt->dispose = dispose_block_statement;
 		prev->next = stmt;
-		next = parse_expressions( next, func, '{', &expr, NULL, message );
+		next = parse_expressions( next, func, vars, '{', &expr, NULL, message );
 		stmt->source = expr.next;
 		if( message[ 0 ] == 0 ) {
 			block.next = NULL;
-			parse_keywords_indexed( func->env->statements_index, next->child, func, &block, message );
+			parse_keywords_indexed( func->env->statements_index, next->child, func, vars, &block, message );
 			( ( struct block_statement * ) stmt )->if_block = block.next;
 			if( message[ 0 ] == 0 ) {
 				stmt->execute = execute_case_statement;
@@ -4506,14 +4527,14 @@ static struct element* parse_case_statement( struct element *elem,
 }
 
 static struct element* parse_default_statement( struct element *elem,
-	struct function *func, struct statement *prev, char *message ) {
+	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
 	struct element *next = elem->next;
 	struct statement block, *stmt = calloc( 1, sizeof( struct block_statement ) );
 	if( stmt ) {
 		stmt->dispose = dispose_block_statement;
 		prev->next = stmt;
 		block.next = NULL;
-		parse_keywords_indexed( func->env->statements_index, next->child, func, &block, message );
+		parse_keywords_indexed( func->env->statements_index, next->child, func, vars, &block, message );
 		( ( struct block_statement * ) stmt )->if_block = block.next;
 		if( message[ 0 ] == 0 ) {
 			stmt->execute = execute_case_statement;
@@ -4532,7 +4553,7 @@ static struct keyword switch_stmts[] = {
 };
 
 static struct element* parse_switch_statement( struct element *elem,
-	struct function *func, struct statement *prev, char *message ) {
+	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
 	struct expression expr;
 	struct element *next = elem->next;
 	struct statement block, *cas, *def;
@@ -4541,11 +4562,11 @@ static struct element* parse_switch_statement( struct element *elem,
 		stmt->stmt.dispose = dispose_block_statement;
 		prev->next = &stmt->stmt;
 		expr.next = NULL;
-		next = parse_expression( next, func, &expr, message );
+		next = parse_expression( next, func, vars, &expr, message );
 		if( expr.next ) {
 			stmt->stmt.source = expr.next;
 			block.next = NULL;
-			parse_keywords( switch_stmts, next->child, func, &block, message );
+			parse_keywords( switch_stmts, next->child, func, vars, &block, message );
 			if( message[ 0 ] == 0 ) {
 				cas = def = NULL;
 				while( block.next ) {
@@ -4586,7 +4607,7 @@ static struct element* parse_switch_statement( struct element *elem,
 }
 
 static struct element* parse_lock_statement( struct element *elem,
-	struct function *func, struct statement *prev, char *message ) {
+	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
 	struct expression expr;
 	struct element *next = elem->next;
 	struct statement block, *stmt = calloc( 1, sizeof( struct block_statement ) );
@@ -4603,14 +4624,14 @@ static struct element* parse_lock_statement( struct element *elem,
 			}
 		} else {
 			expr.next = NULL;
-			next = parse_expression( next, func, &expr, message );
+			next = parse_expression( next, func, vars, &expr, message );
 		}
 		if( message[ 0 ] == 0 ) {
 			stmt->source = expr.next;
 			stmt->execute = execute_lock_statement;
 			if( next->child ) {
 				block.next = NULL;
-				parse_keywords_indexed( func->env->statements_index, next->child, func, &block, message );
+				parse_keywords_indexed( func->env->statements_index, next->child, func, vars, &block, message );
 				( ( struct block_statement * ) stmt )->if_block = block.next;
 			}
 			if( message[ 0 ] == 0 ) {
@@ -4777,14 +4798,14 @@ static struct element* validate_syntax( char *syntax, struct element *elem,
 }
 
 static void parse_keywords( struct keyword *keywords, struct element *elem,
-	struct function *func, struct statement *stmt, char *message ) {
+	struct function *func, struct variables *vars, struct statement *stmt, char *message ) {
 	struct keyword *key;
 	while( elem && message[ 0 ] == 0 ) {
 		key = get_keyword( elem->str.string, keywords );
 		if( key ) {
 			validate_syntax( key->syntax, elem->next, elem, func->env, message );
 			if( message[ 0 ] == 0 ) { 
-				elem = key->parse( elem, func, stmt, message );
+				elem = key->parse( elem, func, vars, stmt, message );
 				while( stmt && stmt->next ) {
 					stmt = stmt->next;
 				}
@@ -4796,14 +4817,14 @@ static void parse_keywords( struct keyword *keywords, struct element *elem,
 }
 
 static void parse_keywords_indexed( struct keyword **index, struct element *elem,
-	struct function *func, struct statement *stmt, char *message ) {
+	struct function *func, struct variables *vars, struct statement *stmt, char *message ) {
 	struct keyword *key;
 	while( elem && message[ 0 ] == 0 ) {
 		key = get_keyword( elem->str.string, index[ hash_code( elem->str.string, 0 ) ] );
 		if( key ) {
 			validate_syntax( key->syntax, elem->next, elem, func->env, message );
 			if( message[ 0 ] == 0 ) { 
-				elem = key->parse( elem, func, stmt, message );
+				elem = key->parse( elem, func, vars, stmt, message );
 				while( stmt && stmt->next ) {
 					stmt = stmt->next;
 				}
@@ -4815,7 +4836,7 @@ static void parse_keywords_indexed( struct keyword **index, struct element *elem
 }
 
 static struct element* parse_if_statement( struct element *elem,
-	struct function *func, struct statement *prev, char *message ) {
+	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
 	struct expression expr;
 	struct element *next = elem->next;
 	struct statement block, *stmt = calloc( 1, sizeof( struct block_statement ) );
@@ -4823,13 +4844,13 @@ static struct element* parse_if_statement( struct element *elem,
 		stmt->dispose = dispose_block_statement;
 		prev->next = stmt;
 		expr.next = NULL;
-		next = parse_expression( next, func, &expr, message );
+		next = parse_expression( next, func, vars, &expr, message );
 		if( expr.next ) {
 			stmt->source = expr.next;
 			stmt->execute = execute_if_statement;
 			if( next->child ) {
 				block.next = NULL;
-				parse_keywords_indexed( func->env->statements_index, next->child, func, &block, message );
+				parse_keywords_indexed( func->env->statements_index, next->child, func, vars, &block, message );
 				( ( struct block_statement * ) stmt )->if_block = block.next;
 			}
 			if( message[ 0 ] == 0 ) {
@@ -4839,7 +4860,7 @@ static struct element* parse_if_statement( struct element *elem,
 						next = next->next;
 						if( next->child ) {
 							block.next = NULL;
-							parse_keywords_indexed( func->env->statements_index, next->child, func, &block, message );
+							parse_keywords_indexed( func->env->statements_index, next->child, func, vars, &block, message );
 							( ( struct block_statement * ) stmt )->else_block = block.next;
 						}
 						if( message[ 0 ] == 0 ) {
@@ -4858,7 +4879,7 @@ static struct element* parse_if_statement( struct element *elem,
 }
 
 static struct element* parse_while_statement( struct element *elem,
-	struct function *func, struct statement *prev, char *message ) {
+	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
 	struct expression expr;
 	struct element *next = elem->next;
 	struct statement block, *stmt = calloc( 1, sizeof( struct block_statement ) );
@@ -4866,12 +4887,12 @@ static struct element* parse_while_statement( struct element *elem,
 		stmt->dispose = dispose_block_statement;
 		prev->next = stmt;
 		expr.next = NULL;
-		next = parse_expression( next, func, &expr, message );
+		next = parse_expression( next, func, vars, &expr, message );
 		if( expr.next ) {
 			stmt->source = expr.next;
 			if( next->child ) {
 				block.next = NULL;
-				parse_keywords_indexed( func->env->statements_index, next->child, func, &block, message );
+				parse_keywords_indexed( func->env->statements_index, next->child, func, vars, &block, message );
 				( ( struct block_statement * ) stmt )->if_block = block.next;
 			}
 			if( message[ 0 ] == 0 ) {
@@ -4892,7 +4913,7 @@ static struct element* parse_while_statement( struct element *elem,
 }
 
 static struct element* parse_try_statement( struct element *elem,
-	struct function *func, struct statement *prev, char *message ) {
+	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
 	struct local_variable *local;
 	struct element *next = elem->next;
 	struct statement block, *stmt = calloc( 1, sizeof( struct block_statement ) );
@@ -4901,7 +4922,7 @@ static struct element* parse_try_statement( struct element *elem,
 		prev->next = stmt;
 		if( next->child ) {
 			block.next = NULL;
-			parse_keywords_indexed( func->env->statements_index, next->child, func, &block, message );
+			parse_keywords_indexed( func->env->statements_index, next->child, func, vars, &block, message );
 			( ( struct block_statement * ) stmt )->if_block = block.next;
 		}
 		if( message[ 0 ] == 0 ) {
@@ -4912,7 +4933,7 @@ static struct element* parse_try_statement( struct element *elem,
 				next = next->next;
 				if( next->child ) {
 					block.next = NULL;
-					parse_keywords_indexed( func->env->statements_index, next->child, func, &block, message );
+					parse_keywords_indexed( func->env->statements_index, next->child, func, vars, &block, message );
 					( ( struct block_statement * ) stmt )->else_block = block.next;
 				}
 				if( message[ 0 ] == 0 ) {
@@ -4990,12 +5011,12 @@ static struct function* parse_function( struct element *elem, char *name, char *
 	return func;
 }
 
-static int parse_function_body( struct function *func, struct environment *env, char *message ) {
+static int parse_function_body( struct function *func, struct variables *vars, char *message ) {
 	struct statement stmt;
 	struct element *next = func->body->child;
 	if( next ) {
 		stmt.next = NULL;
-		parse_keywords_indexed( env->statements_index, next, func, &stmt, message );
+		parse_keywords_indexed( func->env->statements_index, next, func, vars, &stmt, message );
 		func->statements = stmt.next;
 	}
 	return message[ 0 ] == 0;
@@ -5017,7 +5038,7 @@ static enum result evaluate_function_expression( struct expression *this,
 			if( message[ 0 ] == 0 ) {
 				func = parse_function( elem, "[Function]", vars->func->file->string, vars->func->env, message );
 				if( func ) {
-					if( parse_function_body( func, vars->func->env, message ) ) {
+					if( parse_function_body( func, vars, message ) ) {
 						result->string_value = &func->str;
 					} else {
 						unref_string( &func->str );
@@ -5239,7 +5260,7 @@ static enum result evaluate_result_expression( struct expression *this,
 }
 
 static struct element* parse_function_declaration( struct element *elem,
-	struct function *func, struct statement *prev, char *message ) {
+	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
 	struct environment *env = func->env;
 	struct element *next = elem->next;
 	char *name;
@@ -5259,7 +5280,7 @@ static struct element* parse_function_declaration( struct element *elem,
 }
 
 static struct element* parse_program_declaration( struct element *elem,
-	struct function *func, struct statement *prev, char *message ) {
+	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
 	struct environment *env = func->env;
 	struct element *next = elem->next;
 	int idx;
@@ -5280,7 +5301,7 @@ static struct element* parse_program_declaration( struct element *elem,
 }
 
 static struct element* parse_include( struct element *elem,
-	struct function *func, struct statement *prev, char *message ) {
+	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
 	struct element *next = elem->next;
 	int path_len = str_idx( func->file->string, "/:\\", -1 ) + 1;
 	int name_len = unquote_string( next->str.string, NULL );
@@ -5326,7 +5347,7 @@ static int add_structure_field( struct structure *struc, char *name,
 }
 
 static struct element* parse_struct_declaration( struct element *elem,
-	struct function *func, struct statement *prev, char *message ) {
+	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
 	int idx;
 	char *name;
 	struct structure *struc;
@@ -5582,7 +5603,7 @@ static struct worker* parse_worker( struct element *elem, struct environment *en
 					( ( struct global_expression * ) work->parameters )[ idx ].global = &work->globals[ idx ];
 					work->parameters[ idx ].next = &work->parameters[ idx + 1 ];
 				}
-				parse_function_body( func, &work->env, message );
+				parse_function_body( func, NULL, message );
 			} else {
 				strcpy( message, OUT_OF_MEMORY );
 			}
@@ -5610,13 +5631,13 @@ int parse_tt_program( char *program, char *file_name, struct environment *env, c
 			env->functions_index[ idx ] = empty;
 			empty->env = env;
 			/* Populate execution environment. */
-			parse_keywords( declarations, elem, empty, NULL, message );
+			parse_keywords( declarations, elem, empty, NULL, NULL, message );
 			/* Parse function bodies. */
 			for( idx = 0; idx < 32; idx++ ) {
 				func = env->functions_index[ idx ];
 				while( func && message[ 0 ] == 0 ) {
 					if( func->body ) {
-						parse_function_body( func, env, message );
+						parse_function_body( func, NULL, message );
 						func->body = NULL;
 					}
 					func = func->next;

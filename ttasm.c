@@ -1078,7 +1078,7 @@ static enum result execute_asm_statement( struct statement *this,
 }
 
 struct element* parse_asm_statement( struct element *elem,
-	struct function *func, struct statement *prev, char *message ) {
+	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
 	struct element *next = elem->next;
 	struct label labels = { 0 };
 	struct asm_statement *stmt;
