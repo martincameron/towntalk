@@ -47,7 +47,7 @@ static enum result evaluate_upcase_expression( struct expression *this,
 	ret = this->parameters->evaluate( this->parameters, vars, &var );
 	if( ret ) {
 		if( var.string_value ) {
-			str = new_string_value( strlen( var.string_value->string ) );
+			str = new_string( strlen( var.string_value->string ) );
 			if( str ) {
 				for( idx = 0, len = var.string_value->length; idx < len; idx++ ) {
 					str->string[ idx ] = toupper( var.string_value->string[ idx ] );

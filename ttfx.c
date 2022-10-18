@@ -1467,9 +1467,9 @@ static enum result evaluate_path_expression( struct expression *this,
 			errno = 0;
 			path = realpath( var.string_value->string, NULL );
 			if( path ) {
-				str = new_string_value( strlen( path ) );
+				str = new_string( strlen( path ) );
 				if( str ) {
-					memcpy( str->string, path, sizeof( char ) * str->length );
+					strcpy( str->string, path );
 					result->string_value = str;
 				} else {
 					ret = throw( vars, this, 0, OUT_OF_MEMORY );
@@ -1512,7 +1512,7 @@ static enum result evaluate_extract_expression( struct expression *this,
 				bank_length = datfile_extract( datfile.string_value->string,
 					datfile.string_value->length, bank.integer_value, NULL );
 				if( bank_length >= 0 ) {
-					str = new_string_value( bank_length );
+					str = new_string( bank_length );
 					if( str ) {
 						datfile_extract( datfile.string_value->string,
 							datfile.string_value->length, bank.integer_value, str->string );
@@ -1769,14 +1769,14 @@ static int parse_ttfx_file( char *file_name, struct fxenvironment *env, char *me
 	if( file_length >= MAX_INTEGER ) {
 		strcpy( message, "File too large." );
 	} else if( file_length >= 0 ) {
-		program_buffer = new_string_value( file_length );
+		program_buffer = new_string( file_length );
 		if( program_buffer ) {
 			file_length = load_file( file_name, program_buffer->string, 0, file_length, message );
 			bank_length = datfile_extract( program_buffer->string, file_length, 0, NULL );
 			if( bank_length >= 0 ) {
 				/* Extract program from bank 0 of datfile. */
 				env->datfile.string_value = program_buffer;
-				program_buffer = new_string_value( bank_length );
+				program_buffer = new_string( bank_length );
 				if( program_buffer ) {
 					file_length = datfile_extract( env->datfile.string_value->string, 
 						env->datfile.string_value->length, 0, program_buffer->string );

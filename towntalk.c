@@ -237,7 +237,7 @@ static struct element* parse_expression( struct element *elem,
 static struct element* parse_expressions( struct element *elem, struct function *func,
 	struct variables *vars, char terminator, struct expression *prev, int *num_exprs, char *message );
 static struct worker* parse_worker( struct element *elem, struct environment *env,
-	char *file, char *message );
+	struct string *file, char *message );
 static struct element* value_to_element( int integer_value, struct string *string_value,
 	struct environment *env, char *message );
 
@@ -292,7 +292,7 @@ static struct array* new_buffer( int length ) {
 }
 
 /* Allocate and return a string of the specified length and reference count of 1. */
-struct string* new_string_value( int length ) {
+struct string* new_string( int length ) {
 	struct string *str = malloc( sizeof( struct string ) + sizeof( char ) * ( length + 1 ) );
 	if( str ) {
 		memset( str, 0, sizeof( struct string ) );
@@ -304,7 +304,15 @@ struct string* new_string_value( int length ) {
 	return str;
 }
 
-static char* new_string( char *source ) {
+static struct string* new_string_value( char *source ) {
+	struct string *str = new_string( strlen( source ) );
+	if( str ) {
+		strcpy( str->string, source );
+	}
+	return str;
+}
+
+static char* copy_string( char *source ) {
 	char *dest = malloc( sizeof( char ) * ( strlen( source ) + 1 ) );
 	if( dest ) {
 		strcpy( dest, source );
@@ -416,7 +424,7 @@ static int unquote_string( char *string, char *output ) {
 }
 
 static struct string* new_string_literal( char *source ) {
-	struct string *str = new_string_value( unquote_string( source, NULL ) );
+	struct string *str = new_string( unquote_string( source, NULL ) );
 	if( str ) {
 		str->length = unquote_string( source, str->string );
 	}
@@ -762,6 +770,9 @@ static void dispose_global_variables( struct global_variable *global ) {
 	while( global ) {
 		next = global->next;
 		dispose_temporary( &global->value );
+		if( global->init_function ) {
+			unref_string( &global->init_function->str );
+		}
 		dispose_expressions( global->initializer );
 		free( global );
 		global = next;
@@ -829,7 +840,6 @@ static void dispose_functions( struct function *func ) {
 	while( func ) {
 		str = &func->str;
 		if( str->reference_count == 1 ) {
-			free( func->str.string );
 			unref_string( func->file );
 			dispose_local_variables( func->variable_decls );
 			dispose_statements( func->statements );
@@ -1091,27 +1101,16 @@ static int write_element( struct element *elem, char *output ) {
 	return length;
 }
 
-static struct function* new_function( char *name, char *file, char *message ) {
-	struct function *func = calloc( 1, sizeof( struct function ) );
+static struct function* new_function( char *name ) {
+	int len = strlen( name );
+	struct function *func = calloc( 1, sizeof( struct function ) + sizeof( char ) * ( len + 1 ) );
 	if( func ) {
 		/*printf("Function '%s'\n", name);*/
-		func->str.string = new_string( name );
-		if( func->str.string ) {
-			func->str.length = strlen( func->str.string );
-			func->str.reference_count = 1;
-			func->str.type = FUNCTION;
-			func->file = new_string_value( strlen( file ) );
-			if( func->file ) {
-				strcpy( func->file->string, file );
-			}
-		}
-		if( !func->file ) {
-			unref_string( &func->str );
-			func = NULL;
-		}
-	}
-	if( !func ) {
-		strcpy( message, OUT_OF_MEMORY );
+		func->str.string = ( char * ) &func[ 1 ];
+		strcpy( func->str.string, name );
+		func->str.length = len;
+		func->str.reference_count = 1;
+		func->str.type = FUNCTION;
 	}
 	return func;
 }
@@ -1135,7 +1134,10 @@ static struct global_variable* new_global_variable( char *name,
 		global->name = ( char * ) &global[ 1 ];
 		strcpy( global->name, name );
 		global->type = type;
-		global->init_function = init_function;
+		if( init_function ) {
+			global->init_function = init_function;
+			init_function->str.reference_count++;
+		}
 		global->initializer = initializer;
 		global->next = NULL;
 	}
@@ -1859,10 +1861,8 @@ static enum result evaluate_field_expression( struct expression *this,
 					for( idx = 0; idx < index.integer_value; idx++ ) {
 						field = field->next;
 					}
-					result->string_value = new_string_value( strlen( field->value ) );
-					if( result->string_value ) {
-						strcpy( result->string_value->string, field->value );
-					} else {
+					result->string_value = new_string_value( field->value );
+					if( result->string_value == NULL ) {
 						ret = throw( vars, this, 0, OUT_OF_MEMORY );
 					}
 				} else {
@@ -2442,7 +2442,7 @@ static enum result evaluate_str_expression( struct expression *this,
 				val = num;
 			}
 			if( MAX_INTEGER - len > str_len ) {
-				new = new_string_value( str_len + len );
+				new = new_string( str_len + len );
 				if( new ) {
 					if( str ) {
 						memcpy( new->string, str->string, sizeof( char ) * str_len );
@@ -2475,7 +2475,7 @@ static enum result evaluate_asc_expression( struct expression *this,
 	struct variable val = { 0, NULL };
 	enum result ret = this->parameters->evaluate( this->parameters, vars, &val );
 	if( ret ) {
-		str = new_string_value( 1 );
+		str = new_string( 1 );
 		if( str ) {
 			str->string[ 0 ] = val.integer_value;
 			result->string_value = str;
@@ -2550,7 +2550,7 @@ static enum result evaluate_read_expression( struct expression *this,
 	if( ret ) {
 		if( count.integer_value >= 0 ) {
 			len = count.integer_value;
-			str = new_string_value( len );
+			str = new_string( len );
 			if( str ) {
 				clearerr( stdin );
 				if( len > 0 ) {
@@ -2605,7 +2605,7 @@ static enum result evaluate_load_expression( struct expression *this,
 						len = count.integer_value;
 					}
 					if( len < MAX_INTEGER ) {
-						str = new_string_value( len );
+						str = new_string( len );
 						if( str ) {
 							len = load_file( file.string_value->string, str->string, offset.integer_value, len, message );
 							if( len >= 0 ) {
@@ -2741,7 +2741,7 @@ static enum result evaluate_sub_expression( struct expression *this,
 					if( idx.integer_value >= 0 && len.integer_value >= 0
 					&& MAX_INTEGER - len.integer_value >= idx.integer_value
 					&& idx.integer_value + len.integer_value <= length ) {
-						str = new_string_value( len.integer_value );
+						str = new_string( len.integer_value );
 						if( str ) {
 							if( var.string_value->type == ARRAY ) {
 								data = str->string;
@@ -2995,7 +2995,7 @@ static enum result evaluate_argv_expression( struct expression *this,
 	if( ret ) {
 		if( idx.integer_value >= 0 && idx.integer_value < vars->func->env->argc ) {
 			val = vars->func->env->argv[ idx.integer_value ];
-			str = new_string_value( strlen( val ) );
+			str = new_string( strlen( val ) );
 			if( str ) {
 				memcpy( str->string, val, sizeof( char ) * str->length );
 				result->string_value = str;
@@ -3018,7 +3018,7 @@ static enum result evaluate_time_expression( struct expression *this,
 	char *time_str;
 	if( vars->func->env->worker == NULL ) {
 		time_str = ctime( &seconds );
-		str = new_string_value( strlen( time_str ) - 1 );
+		str = new_string( strlen( time_str ) - 1 );
 		if( str ) {
 			memcpy( str->string, time_str, sizeof( char ) * str->length );
 		} else {
@@ -3180,7 +3180,7 @@ static enum result evaluate_unparse_expression( struct expression *this,
 		if( elem.string_value && elem.string_value->type == ELEMENT ) {
 			len = write_element( ( struct element * ) elem.string_value, NULL );
 			if( len >= 0 ) {
-				str = new_string_value( len );
+				str = new_string( len );
 				if( str ) {
 					write_element( ( struct element * ) elem.string_value, str->string );
 					result->string_value = str;
@@ -3209,7 +3209,7 @@ static enum result evaluate_quote_expression( struct expression *this,
 		if( var.string_value ) {
 			length = write_byte_string( var.string_value->string, var.string_value->length, NULL );
 			if( length >= 0 ) {
-				str = new_string_value( length );
+				str = new_string( length );
 				if( str ) {
 					write_byte_string( var.string_value->string, var.string_value->length, str->string );
 					result->string_value = str;
@@ -3272,7 +3272,7 @@ static enum result evaluate_hex_expression( struct expression *this,
 	struct variable val = { 0, NULL };
 	enum result ret = this->parameters->evaluate( this->parameters, vars, &val );
 	if( ret ) {
-		str = new_string_value( sizeof( int ) * 2 + 2 );
+		str = new_string( sizeof( int ) * 2 + 2 );
 		if( str ) {
 			len = sprintf( str->string, "0x%08X", val.integer_value );
 			if( len > 0 ) {
@@ -3305,7 +3305,7 @@ static enum result evaluate_pack_expression( struct expression *this,
 			src = &val.integer_value;
 			len = 4;
 		}
-		str = new_string_value( len );
+		str = new_string( len );
 		if( str ) {
 			idx = 0;
 			out = str->string;
@@ -4988,12 +4988,14 @@ static struct element* add_function_parameter( struct function *func, struct ele
 	return elem;
 }
 
-static struct function* parse_function( struct element *elem, char *name, char *file,
+static struct function* parse_function( struct element *elem, char *name, struct string *file,
 	struct environment *env, char *message ) {
 	struct element *child;
-	struct function *func = new_function( name, file, message );
+	struct function *func = new_function( name );
 	if( func ) {
 		func->line = elem->line;
+		func->file = file;
+		file->reference_count++;
 		func->body = elem->next;
 		func->env = env;
 		child = elem->child;
@@ -5007,6 +5009,8 @@ static struct function* parse_function( struct element *elem, char *name, char *
 			unref_string( &func->str );
 			func = NULL;
 		}
+	} else {
+		strcpy( message, OUT_OF_MEMORY );
 	}
 	return func;
 }
@@ -5036,7 +5040,7 @@ static enum result evaluate_function_expression( struct expression *this,
 			key.line = this->line;
 			validate_syntax( "({0", elem, &key, vars->func->env, message );
 			if( message[ 0 ] == 0 ) {
-				func = parse_function( elem, "[Function]", vars->func->file->string, vars->func->env, message );
+				func = parse_function( elem, "[Function]", vars->func->file, vars->func->env, message );
 				if( func ) {
 					if( parse_function_body( func, vars, message ) ) {
 						result->string_value = &func->str;
@@ -5114,7 +5118,7 @@ static enum result evaluate_worker_expression( struct expression *this,
 				key.line = this->line;
 				validate_syntax( "({0", elem, &key, vars->func->env, message );
 				if( message[ 0 ] == 0 ) {
-					work = parse_worker( elem, vars->func->env, vars->func->file->string, message );
+					work = parse_worker( elem, vars->func->env, vars->func->file, message );
 					if( work ) {
 						result->string_value = &work->str;
 					} else {
@@ -5268,7 +5272,7 @@ static struct element* parse_function_declaration( struct element *elem,
 	if( validate_decl( next, env, message ) ) {
 		name = next->str.string;
 		next = next->next;
-		func = parse_function( next, name, func->file->string, env, message );
+		func = parse_function( next, name, func->file, env, message );
 		if( func ) {
 			idx = hash_code( name, 0 );
 			func->next = env->functions_index[ idx ];
@@ -5283,17 +5287,20 @@ static struct element* parse_program_declaration( struct element *elem,
 	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
 	struct environment *env = func->env;
 	struct element *next = elem->next;
+	struct function *prog;
 	int idx;
 	if( validate_decl( next, env, message ) ) {
-		func = new_function( next->str.string, func->file->string, message );
-		if( func ) {
+		prog = new_function( next->str.string );
+		if( prog ) {
 			idx = hash_code( next->str.string, 0 );
-			func->next = env->functions_index[ idx ];
-			env->functions_index[ idx ] = func;
-			env->entry_point = func;
-			func->line = elem->line;
-			func->body = next->next;
-			func->env = env;
+			prog->next = env->functions_index[ idx ];
+			env->functions_index[ idx ] = prog;
+			env->entry_point = prog;
+			prog->line = elem->line;
+			prog->file = func->file;
+			prog->file->reference_count++;
+			prog->body = next->next;
+			prog->env = env;
 			next = next->next->next;
 		}
 	}
@@ -5355,7 +5362,7 @@ static struct element* parse_struct_declaration( struct element *elem,
 	struct environment *env = func->env;
 	struct element *child, *next = elem->next;
 	if( validate_decl( next, env, message ) ) {
-		name = new_string( next->str.string );
+		name = copy_string( next->str.string );
 		struc = calloc( 1, sizeof( struct structure ) );
 		if( name && struc ) {
 			struc->str.reference_count = 1;
@@ -5577,36 +5584,42 @@ static struct worker* new_worker( char *message ) {
 	return work;
 }
 
-static struct worker* parse_worker( struct element *elem, struct environment *env, char *file, char *message ) {
+static struct worker* parse_worker( struct element *elem, struct environment *env, struct string *file, char *message ) {
 	int params, idx;
 	struct function *func;
 	struct worker *work = new_worker( message );
 	if( work ) {
-		func = parse_function( elem, work->str.string, file, &work->env, message );
-		if( func ) {
-			work->env.functions_index[ hash_code( work->str.string, 0 ) ] = func;
-			work->env.entry_point = func;
-			params = func->num_parameters;
-			work->args = calloc( params, sizeof( struct variable ) );
-			if( work->args ) {
-				work->strings = calloc( params, sizeof( struct array ) );
-			}
-			if( work->strings ) {
-				work->globals = calloc( params, sizeof( struct global_variable ) );
-			}
-			if( work->globals ) {
-				work->parameters = calloc( params, sizeof( struct global_expression ) );
-			}
-			if( work->parameters ) {
-				for( idx = 0; idx < params; idx++ ) {
-					work->parameters[ idx ].evaluate = evaluate_global;
-					( ( struct global_expression * ) work->parameters )[ idx ].global = &work->globals[ idx ];
-					work->parameters[ idx ].next = &work->parameters[ idx + 1 ];
+		file = new_string_value( file->string );
+		if( file ) {
+			func = parse_function( elem, work->str.string, file, &work->env, message );
+			if( func ) {
+				work->env.functions_index[ hash_code( work->str.string, 0 ) ] = func;
+				work->env.entry_point = func;
+				params = func->num_parameters;
+				work->args = calloc( params, sizeof( struct variable ) );
+				if( work->args ) {
+					work->strings = calloc( params, sizeof( struct array ) );
 				}
-				parse_function_body( func, NULL, message );
-			} else {
-				strcpy( message, OUT_OF_MEMORY );
+				if( work->strings ) {
+					work->globals = calloc( params, sizeof( struct global_variable ) );
+				}
+				if( work->globals ) {
+					work->parameters = calloc( params, sizeof( struct global_expression ) );
+				}
+				if( work->parameters ) {
+					for( idx = 0; idx < params; idx++ ) {
+						work->parameters[ idx ].evaluate = evaluate_global;
+						( ( struct global_expression * ) work->parameters )[ idx ].global = &work->globals[ idx ];
+						work->parameters[ idx ].next = &work->parameters[ idx + 1 ];
+					}
+					parse_function_body( func, NULL, message );
+				} else {
+					strcpy( message, OUT_OF_MEMORY );
+				}
 			}
+			unref_string( file );
+		} else {
+			strcpy( message, OUT_OF_MEMORY );
 		}
 		if( message[ 0 ] ) {
 			unref_string( &work->str );
@@ -5620,31 +5633,35 @@ static struct worker* parse_worker( struct element *elem, struct environment *en
 int parse_tt_program( char *program, char *file_name, struct environment *env, char *message ) {
 	int idx;
 	struct element *elem;
-	struct function *empty, *func;
-	elem = parse_element( program, message );
-	if( elem ) {
-		/* Create empty function for global evaluation. */
-		empty = new_function( "", file_name, message );
-		if( empty ) {
-			idx = hash_code( empty->str.string, 0 );
-			empty->next = env->functions_index[ idx ];
-			env->functions_index[ idx ] = empty;
-			empty->env = env;
-			/* Populate execution environment. */
-			parse_keywords( declarations, elem, empty, NULL, NULL, message );
-			/* Parse function bodies. */
-			for( idx = 0; idx < 32; idx++ ) {
-				func = env->functions_index[ idx ];
-				while( func && message[ 0 ] == 0 ) {
-					if( func->body ) {
-						parse_function_body( func, NULL, message );
-						func->body = NULL;
+	struct function *init, *func;
+	struct string *file = new_string_value( file_name );
+	if( file ) {
+		elem = parse_element( program, message );
+		if( elem ) {
+			/* Create empty function for global evaluation. */
+			init = new_function( "[Init]" );
+			if( init ) {
+				init->file = file;
+				init->env = env;
+				/* Populate execution environment. */
+				parse_keywords( declarations, elem, init, NULL, NULL, message );
+				/* Parse function bodies. */
+				for( idx = 0; idx < 32; idx++ ) {
+					func = env->functions_index[ idx ];
+					while( func && message[ 0 ] == 0 ) {
+						if( func->body ) {
+							parse_function_body( func, NULL, message );
+							func->body = NULL;
+						}
+						func = func->next;
 					}
-					func = func->next;
 				}
+				unref_string( &init->str );
 			}
+			unref_string( &elem->str );
 		}
-		unref_string( &elem->str );
+	} else {
+		strcpy( message, OUT_OF_MEMORY );
 	}
 	return message[ 0 ] == 0;
 }

@@ -233,7 +233,7 @@ struct element* parse_expr_list_statement( struct element *elem,
 	char *message );
 
 /* Allocate and return a string of the specified length and reference count of 1. */
-struct string* new_string_value( int length );
+struct string* new_string( int length );
 
 /* Allocate and return a new element with the specified string length. */
 struct element* new_element( int str_len );
