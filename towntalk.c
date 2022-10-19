@@ -5703,19 +5703,32 @@ int parse_tt_file( char *file_name, struct environment *env, char *message ) {
 	return success;
 }
 
+static enum result initialize_global( struct global_variable *global, struct variable *exception ) {
+	enum result ret = OKAY;
+	struct variables vars = { 0 };
+	struct expression *init = global->initializer;
+	vars.func = global->init_function;
+	if( vars.func ) {
+		if( init ) {
+			vars.exception = exception;
+			ret = init->evaluate( init, &vars, &global->value );
+			dispose_expressions( init );
+			global->initializer = NULL;
+		}
+		unref_string( &vars.func->str );
+		global->init_function = NULL;
+	}
+	return ret;
+}
+
 /* Evaluate the global-variable initialization expressions for env.
    Returns zero and assigns exception on failure. */
 int initialize_globals( struct environment *env, struct variable *exception ) {
-	struct variables vars = { 0 };
-	struct expression *init;
 	struct global_variable *global;
 	struct string_list *name = env->constants;
-	vars.exception = exception;
 	while( name ) {
 		global = get_global_indexed( env->constants_index, name->value );
-		vars.func = global->init_function;
-		init = global->initializer;
-		if( init && init->evaluate( init, &vars, &global->value ) == EXCEPTION ) {
+		if( initialize_global( global, exception ) == EXCEPTION ) {
 			return 0;
 		}
 		name = name->next;
@@ -5723,9 +5736,7 @@ int initialize_globals( struct environment *env, struct variable *exception ) {
 	name = env->globals;
 	while( name ) {
 		global = get_global_indexed( env->globals_index, name->value );
-		vars.func = global->init_function;
-		init = global->initializer;
-		if( init && init->evaluate( init, &vars, &global->value ) == EXCEPTION ) {
+		if( initialize_global( global, exception ) == EXCEPTION ) {
 			return 0;
 		}
 		name = name->next;
