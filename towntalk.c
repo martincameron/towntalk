@@ -49,6 +49,7 @@
 
 	Declarations:
 		rem {}                   Comment (all brackets inside must be balanced).
+		library name;            Namespace prefix for declarations in current file.
 		include "file.tt";       Include declarations from specified file.
 		const name = expr;       Global constants.
 		global a, b = expr;      Global variables.
@@ -236,8 +237,7 @@ static struct element* parse_expression( struct element *elem,
 	struct function *func, struct variables *vars, struct expression *prev, char *message );
 static struct element* parse_expressions( struct element *elem, struct function *func,
 	struct variables *vars, char terminator, struct expression *prev, int *num_exprs, char *message );
-static struct worker* parse_worker( struct element *elem, struct environment *env,
-	struct string *file, char *message );
+static struct worker* parse_worker( struct element *elem, struct string *file, char *message );
 static struct element* value_to_element( int integer_value, struct string *string_value,
 	struct environment *env, char *message );
 
@@ -310,14 +310,6 @@ static struct string* new_string_value( char *source ) {
 		strcpy( str->string, source );
 	}
 	return str;
-}
-
-static char* copy_string( char *source ) {
-	char *dest = malloc( sizeof( char ) * ( strlen( source ) + 1 ) );
-	if( dest ) {
-		strcpy( dest, source );
-	}
-	return dest;
 }
 
 /* Return a 5-bit hash-code to be used for indexing the specified string. */
@@ -841,6 +833,9 @@ static void dispose_functions( struct function *func ) {
 		str = &func->str;
 		if( str->reference_count == 1 ) {
 			unref_string( func->file );
+			if( func->library ) {
+				unref_string( func->library );
+			}
 			dispose_local_variables( func->variable_decls );
 			dispose_statements( func->statements );
 			func = func->next;
@@ -1129,10 +1124,19 @@ static struct local_variable* new_local_variable( int index, char *name, struct 
 
 static struct global_variable* new_global_variable( char *name,
 	struct structure *type, struct function *init_function, struct expression *initializer ) {
-	struct global_variable *global = calloc( 1, sizeof( struct global_variable ) + sizeof( char ) * ( strlen( name ) + 1 ) );
+	struct global_variable *global;
+	int len = 0;
+	if( init_function && init_function->library ) {
+		len = init_function->library->length + 1;
+	}
+	global = calloc( 1, sizeof( struct global_variable ) + sizeof( char ) * ( strlen( name ) + len + 1 ) );
 	if( global ) {
 		global->name = ( char * ) &global[ 1 ];
-		strcpy( global->name, name );
+		if( len > 0 ) {
+			strcpy( global->name, init_function->library->string );
+			global->name[ len - 1 ] = '_';
+		}
+		strcpy( &global->name[ len ], name );
 		global->type = type;
 		if( init_function ) {
 			global->init_function = init_function;
@@ -4950,20 +4954,19 @@ static struct element* parse_try_statement( struct element *elem,
 	return next;
 }
 
-static struct element* add_function_parameter( struct function *func, struct element *elem,
-	struct environment *env, char *message ) {
+static struct element* add_function_parameter( struct function *func, struct element *elem, char *message ) {
 	char *name;
 	struct structure *type = NULL;
 	struct local_variable *param;
 	if( elem->str.string[ 0 ] == '(' ) {
-		type = get_structure_indexed( env->structures_index, elem->child->str.string );
+		type = get_structure_indexed( func->env->structures_index, elem->child->str.string );
 		if( type != NULL ) {
 			elem = elem->next;
 		} else {
 			sprintf( message, "Structure '%.64s' not declared on line %d.", elem->child->str.string, elem->child->line );
 		}
 	}
-	if( message[ 0 ] == 0 && validate_decl( elem, env, message ) ) {
+	if( message[ 0 ] == 0 && validate_decl( elem, func->env, message ) ) {
 		name = elem->str.string;
 		param = new_local_variable( func->num_variables, name, type );
 		if( param ) {
@@ -4988,19 +4991,23 @@ static struct element* add_function_parameter( struct function *func, struct ele
 	return elem;
 }
 
-static struct function* parse_function( struct element *elem, char *name, struct string *file,
-	struct environment *env, char *message ) {
+static struct function* parse_function( struct element *elem, char *name,
+	struct function *parent, char *message ) {
 	struct element *child;
 	struct function *func = new_function( name );
 	if( func ) {
 		func->line = elem->line;
-		func->file = file;
-		file->reference_count++;
+		func->file = parent->file;
+		func->file->reference_count++;
+		if( parent->library ) {
+			func->library = parent->library;
+			func->library->reference_count++;
+		}
 		func->body = elem->next;
-		func->env = env;
+		func->env = parent->env;
 		child = elem->child;
 		while( child && message[ 0 ] == 0 ) {
-			child = add_function_parameter( func, child, env, message );
+			child = add_function_parameter( func, child, message );
 			if( child && child->str.string[ 0 ] == ',' && message[ 0 ] == 0 ) {
 				child = child->next;
 			}
@@ -5040,7 +5047,7 @@ static enum result evaluate_function_expression( struct expression *this,
 			key.line = this->line;
 			validate_syntax( "({0", elem, &key, vars->func->env, message );
 			if( message[ 0 ] == 0 ) {
-				func = parse_function( elem, "[Function]", vars->func->file, vars->func->env, message );
+				func = parse_function( elem, "[Function]", vars->func, message );
 				if( func ) {
 					if( parse_function_body( func, vars, message ) ) {
 						result->string_value = &func->str;
@@ -5118,7 +5125,7 @@ static enum result evaluate_worker_expression( struct expression *this,
 				key.line = this->line;
 				validate_syntax( "({0", elem, &key, vars->func->env, message );
 				if( message[ 0 ] == 0 ) {
-					work = parse_worker( elem, vars->func->env, vars->func->file, message );
+					work = parse_worker( elem, vars->func->file, message );
 					if( work ) {
 						result->string_value = &work->str;
 					} else {
@@ -5267,16 +5274,31 @@ static struct element* parse_function_declaration( struct element *elem,
 	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
 	struct environment *env = func->env;
 	struct element *next = elem->next;
+	struct function *decl = NULL;
 	char *name;
 	int idx;
 	if( validate_decl( next, env, message ) ) {
-		name = next->str.string;
-		next = next->next;
-		func = parse_function( next, name, func->file, env, message );
-		if( func ) {
-			idx = hash_code( name, 0 );
-			func->next = env->functions_index[ idx ];
-			env->functions_index[ idx ] = func;
+		if( func->library ) {
+			name = malloc( func->library->length + next->str.length + 2 );
+			if( name ) {
+				strcpy( name, func->library->string );
+				name[ func->library->length ] = '_';
+				strcpy( &name[ func->library->length + 1 ], next->str.string );
+				next = next->next;
+				decl = parse_function( next, name, func, message );
+				free( name );
+			} else {
+				strcpy( message, OUT_OF_MEMORY );
+			}
+		} else {
+			name = next->str.string;
+			next = next->next;
+			decl = parse_function( next, name, func, message );
+		}
+		if( decl ) {
+			idx = hash_code( decl->str.string, 0 );
+			decl->next = env->functions_index[ idx ];
+			env->functions_index[ idx ] = decl;
 			next = next->next->next;
 		}
 	}
@@ -5299,6 +5321,10 @@ static struct element* parse_program_declaration( struct element *elem,
 			prog->line = elem->line;
 			prog->file = func->file;
 			prog->file->reference_count++;
+			if( func->library ) {
+				prog->library = func->library;
+				prog->library->reference_count++;
+			}
 			prog->body = next->next;
 			prog->env = env;
 			next = next->next->next;
@@ -5362,7 +5388,19 @@ static struct element* parse_struct_declaration( struct element *elem,
 	struct environment *env = func->env;
 	struct element *child, *next = elem->next;
 	if( validate_decl( next, env, message ) ) {
-		name = copy_string( next->str.string );
+		if( func->library ) {
+			name = malloc( func->library->length + next->str.length + 2 );
+			if( name ) {
+				strcpy( name, func->library->string );
+				name[ func->library->length ] = '_';
+				strcpy( &name[ func->library->length + 1 ], next->str.string );
+			}
+		} else {
+			name = malloc( next->str.length + 1 );
+			if( name ) {
+				strcpy( name, next->str.string );
+			}
+		}
 		struc = calloc( 1, sizeof( struct structure ) );
 		if( name && struc ) {
 			struc->str.reference_count = 1;
@@ -5416,6 +5454,22 @@ static struct element* parse_struct_declaration( struct element *elem,
 			free( struc );
 			strcpy( message, OUT_OF_MEMORY );
 		}
+	}
+	return next;
+}
+
+static struct element* parse_library_declaration( struct element *elem,
+	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
+	struct element *next = elem->next;
+	struct string *library = new_string_value( next->str.string );
+	if( library ) {
+		if( func->library ) {
+			unref_string( func->library );
+		}
+		func->library = library;
+		next = next->next->next;
+	} else {
+		strcpy( message, OUT_OF_MEMORY );
 	}
 	return next;
 }
@@ -5524,7 +5578,8 @@ static struct keyword declarations[] = {
 	{ "program", "n{", parse_program_declaration, &declarations[ 4 ] },
 	{ "global", "V;", parse_global_declaration, &declarations[ 5 ] },
 	{ "const", "V;", parse_const_declaration, &declarations[ 6 ] },
-	{ "struct", "n", parse_struct_declaration, NULL }
+	{ "struct", "n", parse_struct_declaration, &declarations[ 7 ] },
+	{ "library", "n;", parse_library_declaration, NULL }
 };
 
 static int validate_name( char *name, struct environment *env ) {
@@ -5584,14 +5639,16 @@ static struct worker* new_worker( char *message ) {
 	return work;
 }
 
-static struct worker* parse_worker( struct element *elem, struct environment *env, struct string *file, char *message ) {
+static struct worker* parse_worker( struct element *elem, struct string *file, char *message ) {
 	int params, idx;
-	struct function *func;
+	struct function *func, parent;
 	struct worker *work = new_worker( message );
 	if( work ) {
-		file = new_string_value( file->string );
-		if( file ) {
-			func = parse_function( elem, work->str.string, file, &work->env, message );
+		parent.library = NULL;
+		parent.env = &work->env;
+		parent.file = new_string_value( file->string );
+		if( parent.file ) {
+			func = parse_function( elem, work->str.string, &parent, message );
 			if( func ) {
 				work->env.functions_index[ hash_code( work->str.string, 0 ) ] = func;
 				work->env.entry_point = func;
@@ -5617,7 +5674,7 @@ static struct worker* parse_worker( struct element *elem, struct environment *en
 					strcpy( message, OUT_OF_MEMORY );
 				}
 			}
-			unref_string( file );
+			unref_string( parent.file );
 		} else {
 			strcpy( message, OUT_OF_MEMORY );
 		}

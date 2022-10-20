@@ -48,7 +48,7 @@ struct array {
 struct function {
 	struct string str;
 	int line, num_parameters, num_variables;
-	struct string *file;
+	struct string *file, *library;
 	struct element *body;
 	struct environment *env;
 	struct local_variable *variable_decls, *variable_decls_tail;
