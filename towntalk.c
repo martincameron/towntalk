@@ -3825,14 +3825,26 @@ static struct element* parse_member_call_expression( struct structure *struc, st
 	struct expression *expr;
 	struct function *decl = NULL;
 	struct element *next = elem->next;
-	while( struc && decl == NULL ) {
+	while( struc ) {
 		name = malloc( struc->str.length + 1 + strlen( memb ) + 1 );
-		strcpy( name, struc->str.string );
-		name[ struc->str.length ] = '_';
-		strcpy( &name[ struc->str.length + 1 ], memb );
-		decl = get_function_indexed( func->env->functions_index, name );
-		free( name );
-		struc = struc->super;
+		if( name ) {
+			strcpy( name, struc->str.string );
+			name[ struc->str.length ] = '_';
+			strcpy( &name[ struc->str.length + 1 ], memb );
+			decl = get_function_indexed( func->env->functions_index, name );
+			if( decl ) {
+				struc = NULL;
+			} else {
+				struc = struc->super;
+				if( struc == NULL ) {
+					sprintf( message, "Member function not found for expression '%.64s' on line %d.", elem->str.string, elem->line );
+				}
+			}
+			free( name );
+		} else {
+			strcpy( message, OUT_OF_MEMORY );
+			struc = NULL;
+		}
 	}
 	if( decl ) {
 		expr = calloc( 1, sizeof( struct function_expression ) );
@@ -3857,8 +3869,6 @@ static struct element* parse_member_call_expression( struct structure *struc, st
 		} else {
 			strcpy( message, OUT_OF_MEMORY );
 		}
-	} else {
-		sprintf( message, "Member function not found for expression '%.64s' on line %d.", elem->str.string, elem->line );
 	}
 	return next;
 }
