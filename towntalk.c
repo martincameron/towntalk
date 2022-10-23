@@ -1111,14 +1111,19 @@ static struct function* new_function( char *name ) {
 	return func;
 }
 
-static struct local_variable* new_local_variable( int index, char *name, struct structure *type ) {
-	struct local_variable *local = malloc( sizeof( struct local_variable ) + sizeof( char ) * ( strlen( name ) + 1 ) );
-	if( local ) {
-		local->index = index;
-		local->name = ( char * ) &local[ 1 ];
-		strcpy( local->name, name );
-		local->type = type;
-		local->next = NULL;
+static struct local_variable* new_local_variable( struct function *func, struct element *name, struct structure *type, char *message ) {
+	struct local_variable *local = NULL;
+	if( validate_decl( name->str.string, name->line, func->env, message ) ) {
+		local = malloc( sizeof( struct local_variable ) + sizeof( char ) * ( name->str.length + 1 ) );
+		if( local ) {
+			local->index = func->num_variables;
+			local->name = ( char * ) &local[ 1 ];
+			strcpy( local->name, name->str.string );
+			local->type = type;
+			local->next = NULL;
+		} else {
+			strcpy( message, OUT_OF_MEMORY );
+		}
 	}
 	return local;
 }
@@ -1132,20 +1137,20 @@ static char* new_qualified_decl( char *name, int line, struct function *func, ch
 			strcpy( qname, func->library->string );
 			qname[ func->library->length ] = '_';
 			strcpy( &qname[ func->library->length + 1 ], name );
-			if( !validate_decl( qname, line, func->env, message ) ) {
-				free( qname );
-				qname = NULL;
-			}
-		} else {
-			strcpy( message, OUT_OF_MEMORY );
 		}
 	} else {
 		qname = malloc( len + 1 );
 		if( qname ) {
 			strcpy( qname, name );
-		} else {
-			strcpy( message, OUT_OF_MEMORY );
 		}
+	}
+	if( qname ) {
+		if( func && !validate_decl( qname, line, func->env, message ) ) {
+			free( qname );
+			qname = NULL;
+		}
+	} else {
+		strcpy( message, OUT_OF_MEMORY );
 	}
 	return qname;
 }
@@ -2161,11 +2166,10 @@ static int add_local_variable( struct element *elem,
 	struct function *func, struct structure *type, struct expression *initializer,
 	struct statement *prev, char *message ) {
 	struct statement *stmt;
-	char *name = elem->str.string;
-	struct local_variable *param = new_local_variable( func->num_variables, name, type );
+	struct local_variable *param = new_local_variable( func, elem, type, message );
 	if( param ) {
-		/*printf("Local variable '%s'\n", name);*/
-		if( get_local_variable( func->variable_decls, name, "" ) == NULL ) {
+		/*printf("Local variable '%s'\n", elem->str.string);*/
+		if( get_local_variable( func->variable_decls, elem->str.string, "" ) == NULL ) {
 			func->num_variables = func->num_variables + 1;
 			if( func->variable_decls ) {
 				func->variable_decls_tail->next = param;
@@ -2186,10 +2190,8 @@ static int add_local_variable( struct element *elem,
 			}
 		} else {
 			dispose_local_variables( param );
-			sprintf( message, "Local variable '%.64s' already defined on line %d.", name, elem->line );
+			sprintf( message, "Local variable '%.64s' already defined on line %d.", elem->str.string, elem->line );
 		}
-	} else {
-		strcpy( message, OUT_OF_MEMORY );
 	}
 	return message[ 0 ] == 0;
 }
@@ -2213,7 +2215,7 @@ static struct element* parse_variable_declaration( struct element *elem, struct 
 			}
 		}
 		if( message[ 0 ] == 0 ) {
-			if( elem->str.string[ 0 ] == '[' && validate_decl( elem->child->str.string, elem->child->line, func->env, message ) ) {
+			if( elem->str.string[ 0 ] == '[' ) {
 				parse_expression( elem->child->next, func, vars, &expr, message );
 				if( message[ 0 ] == 0 ) {
 					array_expr = calloc( 1, sizeof( struct expression ) );
@@ -2230,20 +2232,18 @@ static struct element* parse_variable_declaration( struct element *elem, struct 
 						strcpy( message, OUT_OF_MEMORY );
 					}
 				}
-			} else if( validate_decl( elem->str.string, elem->line, func->env, message ) ) {
-				if( elem->next->str.string[ 0 ] == '=' ) {
-					next = parse_expression( elem->next->next, func, vars, &expr, message );
-					if( message[ 0 ] == 0 ) {
-						if( add( elem, func, type, expr.next, prev, message ) ) {
-							elem = next;
-						} else {
-							dispose_expressions( expr.next );
-						}
+			} else if( elem->next->str.string[ 0 ] == '=' ) {
+				next = parse_expression( elem->next->next, func, vars, &expr, message );
+				if( message[ 0 ] == 0 ) {
+					if( add( elem, func, type, expr.next, prev, message ) ) {
+						elem = next;
+					} else {
+						dispose_expressions( expr.next );
 					}
-				} else {
-					if( add( elem, func, type, NULL, prev, message ) ) {
-						elem = elem->next;
-					}
+				}
+			} else {
+				if( add( elem, func, type, NULL, prev, message ) ) {
+					elem = elem->next;
 				}
 			}
 		}
@@ -4990,7 +4990,6 @@ static struct element* parse_try_statement( struct element *elem,
 }
 
 static struct element* add_function_parameter( struct function *func, struct element *elem, char *message ) {
-	char *name;
 	struct structure *type = NULL;
 	struct local_variable *param;
 	if( elem->str.string[ 0 ] == '(' ) {
@@ -5001,12 +5000,11 @@ static struct element* add_function_parameter( struct function *func, struct ele
 			sprintf( message, "Structure '%.64s' not declared on line %d.", elem->child->str.string, elem->child->line );
 		}
 	}
-	if( message[ 0 ] == 0 && validate_decl( elem->str.string, elem->line, func->env, message ) ) {
-		name = elem->str.string;
-		param = new_local_variable( func->num_variables, name, type );
+	if( message[ 0 ] == 0 ) {
+		param = new_local_variable( func, elem, type, message );
 		if( param ) {
 			/*printf("Function parameter '%s'\n", name);*/
-			if( get_local_variable( func->variable_decls, name, "" ) == NULL ) {
+			if( get_local_variable( func->variable_decls, elem->str.string, "" ) == NULL ) {
 				func->num_parameters = func->num_variables = func->num_parameters + 1;
 				if( func->variable_decls ) {
 					func->variable_decls_tail->next = param;
@@ -5017,7 +5015,7 @@ static struct element* add_function_parameter( struct function *func, struct ele
 				elem = elem->next;
 			} else {
 				dispose_local_variables( param );
-				sprintf( message, "Parameter '%.64s' already defined on line %d.", name, elem->line );
+				sprintf( message, "Parameter '%.64s' already defined on line %d.", elem->str.string, elem->line );
 			}
 		} else {
 			strcpy( message, OUT_OF_MEMORY );
@@ -5310,21 +5308,18 @@ static struct element* parse_function_declaration( struct element *elem,
 	struct environment *env = func->env;
 	struct element *next = elem->next;
 	struct function *decl;
-	char *name;
 	int idx;
-	if( validate_decl( next->str.string, next->line, env, message ) ) {
-		name = new_qualified_decl( next->str.string, next->line, func, message );
-		if( name ) {
-			next = next->next;
-			decl = parse_function( next, name, func, message );
-			if( decl ) {
-				idx = hash_code( decl->str.string, 0 );
-				decl->next = env->functions_index[ idx ];
-				env->functions_index[ idx ] = decl;
-				next = next->next->next;
-			}
-			free( name );
+	char *name = new_qualified_decl( next->str.string, next->line, func, message );
+	if( name ) {
+		next = next->next;
+		decl = parse_function( next, name, func, message );
+		if( decl ) {
+			idx = hash_code( decl->str.string, 0 );
+			decl->next = env->functions_index[ idx ];
+			env->functions_index[ idx ] = decl;
+			next = next->next->next;
 		}
+		free( name );
 	}
 	return next;
 }
@@ -5406,66 +5401,63 @@ static int add_structure_field( struct structure *struc, char *name,
 static struct element* parse_struct_declaration( struct element *elem,
 	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
 	int idx;
-	char *name;
 	struct structure *struc;
 	struct string_list *field;
 	struct environment *env = func->env;
 	struct element *child, *next = elem->next;
-	if( validate_decl( next->str.string, next->line, env, message ) ) {
-		name = new_qualified_decl( next->str.string, next->line, func, message );
-		if( name ) {
-			struc = calloc( 1, sizeof( struct structure ) );
-			if( struc ) {
-				struc->str.reference_count = 1;
-				struc->str.string = name;
-				struc->str.length = strlen( name );
-				struc->str.type = STRUCT;
-				idx = hash_code( name, 0 );
-				struc->next = env->structures_index[ idx ];
-				env->structures_index[ idx ] = struc;
-				next = next->next;
-				if( next && next->str.string[ 0 ] == '(' ) {
-					child = next->child;
-					if( child && child->next == NULL && strcmp( child->str.string, name ) ) {
-						struc->super = get_structure_indexed( env->structures_index, child->str.string );
-						if( struc->super ) {
-							field = struc->super->fields;
-							while( field && message[ 0 ] == 0 ) {
-								if( add_structure_field( struc, field->value, env, child->line, message ) ) {
-									field = field->next;
-								}
-							}
-							next = next->next;
-						} else {
-							sprintf( message, "Structure '%.64s' not declared on line %d.", child->str.string, child->line );
-						}
-					} else {
-						sprintf( message, "Invalid parent structure declaration on line %d.", next->line );
-					}
-				}
-				if( message[ 0 ] == 0 ) {
-					if( next && next->str.string[ 0 ] == '{' ) {
-						child = next->child;
-						while( child && message[ 0 ] == 0 ) {
-							if( add_structure_field( struc, child->str.string, env, child->line, message ) ) {
-								child = child->next;
-								if( child && ( child->str.string[ 0 ] == ',' || child->str.string[ 0 ] == ';' ) ) {
-									child = child->next;
-								}
+	char *name = new_qualified_decl( next->str.string, next->line, func, message );
+	if( name ) {
+		struc = calloc( 1, sizeof( struct structure ) );
+		if( struc ) {
+			struc->str.reference_count = 1;
+			struc->str.string = name;
+			struc->str.length = strlen( name );
+			struc->str.type = STRUCT;
+			idx = hash_code( name, 0 );
+			struc->next = env->structures_index[ idx ];
+			env->structures_index[ idx ] = struc;
+			next = next->next;
+			if( next && next->str.string[ 0 ] == '(' ) {
+				child = next->child;
+				if( child && child->next == NULL && strcmp( child->str.string, name ) ) {
+					struc->super = get_structure_indexed( env->structures_index, child->str.string );
+					if( struc->super ) {
+						field = struc->super->fields;
+						while( field && message[ 0 ] == 0 ) {
+							if( add_structure_field( struc, field->value, env, child->line, message ) ) {
+								field = field->next;
 							}
 						}
 						next = next->next;
-						if( next && next->str.string[ 0 ] == ';' ) {
-							next = next->next;
-						}
 					} else {
-						sprintf( message, "Expected '{' after 'struct' on line %d.", elem->line );
+						sprintf( message, "Structure '%.64s' not declared on line %d.", child->str.string, child->line );
 					}
+				} else {
+					sprintf( message, "Invalid parent structure declaration on line %d.", next->line );
 				}
-			} else {
-				strcpy( message, OUT_OF_MEMORY );
-				free( name );
 			}
+			if( message[ 0 ] == 0 ) {
+				if( next && next->str.string[ 0 ] == '{' ) {
+					child = next->child;
+					while( child && message[ 0 ] == 0 ) {
+						if( add_structure_field( struc, child->str.string, env, child->line, message ) ) {
+							child = child->next;
+							if( child && ( child->str.string[ 0 ] == ',' || child->str.string[ 0 ] == ';' ) ) {
+								child = child->next;
+							}
+						}
+					}
+					next = next->next;
+					if( next && next->str.string[ 0 ] == ';' ) {
+						next = next->next;
+					}
+				} else {
+					sprintf( message, "Expected '{' after 'struct' on line %d.", elem->line );
+				}
+			}
+		} else {
+			strcpy( message, OUT_OF_MEMORY );
+			free( name );
 		}
 	}
 	return next;
