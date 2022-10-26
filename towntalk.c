@@ -49,8 +49,8 @@
 
 	Declarations:
 		rem {}                   Comment (all brackets inside must be balanced).
-		library name;            Namespace prefix for declarations in current file.
 		include "file.tt";       Include declarations from specified file.
+		library name { decls };  Namespace prefix for specified declarations.
 		const name = expr;       Global constants.
 		global a, b = expr;      Global variables.
 		global ( struct ) a;     Global variable with associated struct.
@@ -227,7 +227,7 @@ static struct constant constants[] = {
 };
 
 /* Forward declarations. */
-static int validate_name( char *name, struct environment *env );
+static int validate_name( struct element *elem, char *message );
 static int validate_decl( char *name, int line, struct environment *env, char *message );
 static void parse_keywords( struct keyword *keywords, struct element *elem,
 	struct function *func, struct variables *vars, struct statement *stmt, char *message );
@@ -4742,9 +4742,7 @@ static struct element* validate_syntax( char *syntax, struct element *elem,
 			/* Name. */
 			if( elem == NULL || elem->str.string[ 0 ] == ';' ) {
 				sprintf( message, "Expected name after '%.64s' on line %d.", key->str.string, line );
-			} else if( !validate_name( elem->str.string, env ) ) {
-				sprintf( message, "Invalid name '%.64s' on line %d.", elem->str.string, line );
-			} else {
+			} else if( validate_name( elem, message ) ) {
 				elem = elem->next;
 			}
 		} else if( chr == 'p' ) {
@@ -5372,14 +5370,14 @@ static struct element* parse_include( struct element *elem,
 	return next;
 }
 
-static int add_structure_field( struct structure *struc, char *name,
-	struct environment *env, int line, char *message ) {
+static int add_structure_field( struct structure *struc, struct element *elem,
+	struct environment *env, char *message ) {
 	struct string_list *field;
-	if( validate_name( name, env ) ) {
-		if( struc->fields && get_string_list_index( struc->fields, name ) >= 0 ) {
-			sprintf( message, "Field '%.64s' already defined on line %d.", name, line );
+	if( validate_name( elem, message ) ) {
+		if( struc->fields && get_string_list_index( struc->fields, elem->str.string ) >= 0 ) {
+			sprintf( message, "Field '%.64s' already defined on line %d.", elem->str.string, elem->line );
 		} else {
-			field = new_string_list( name );
+			field = new_string_list( elem->str.string );
 			if( field ) {
 				if( struc->fields ) {
 					struc->fields_tail->next = field;
@@ -5392,8 +5390,6 @@ static int add_structure_field( struct structure *struc, char *name,
 				strcpy( message, OUT_OF_MEMORY );
 			}
 		}
-	} else {
-		sprintf( message, "Invalid name '%.64s' on line %d.", name, line );
 	}
 	return message[ 0 ] == 0;
 }
@@ -5403,6 +5399,7 @@ static struct element* parse_struct_declaration( struct element *elem,
 	int idx;
 	struct structure *struc;
 	struct string_list *field;
+	struct element field_name = { 0 };
 	struct environment *env = func->env;
 	struct element *child, *next = elem->next;
 	char *name = new_qualified_decl( next->str.string, next->line, func, message );
@@ -5420,11 +5417,13 @@ static struct element* parse_struct_declaration( struct element *elem,
 			if( next && next->str.string[ 0 ] == '(' ) {
 				child = next->child;
 				if( child && child->next == NULL && strcmp( child->str.string, name ) ) {
+					field_name.line = child->line;
 					struc->super = get_structure_indexed( env->structures_index, child->str.string );
 					if( struc->super ) {
 						field = struc->super->fields;
 						while( field && message[ 0 ] == 0 ) {
-							if( add_structure_field( struc, field->value, env, child->line, message ) ) {
+							field_name.str.string = field->value;
+							if( add_structure_field( struc, &field_name, env, message ) ) {
 								field = field->next;
 							}
 						}
@@ -5440,7 +5439,7 @@ static struct element* parse_struct_declaration( struct element *elem,
 				if( next && next->str.string[ 0 ] == '{' ) {
 					child = next->child;
 					while( child && message[ 0 ] == 0 ) {
-						if( add_structure_field( struc, child->str.string, env, child->line, message ) ) {
+						if( add_structure_field( struc, child, env, message ) ) {
 							child = child->next;
 							if( child && ( child->str.string[ 0 ] == ',' || child->str.string[ 0 ] == ';' ) ) {
 								child = child->next;
@@ -5459,22 +5458,6 @@ static struct element* parse_struct_declaration( struct element *elem,
 			strcpy( message, OUT_OF_MEMORY );
 			free( name );
 		}
-	}
-	return next;
-}
-
-static struct element* parse_library_declaration( struct element *elem,
-	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
-	struct element *next = elem->next;
-	struct string *library = new_string_value( next->str.string );
-	if( library ) {
-		if( func->library ) {
-			unref_string( func->library );
-		}
-		func->library = library;
-		next = next->next->next;
-	} else {
-		strcpy( message, OUT_OF_MEMORY );
 	}
 	return next;
 }
@@ -5576,33 +5559,52 @@ static struct operator operators[] = {
 	{ NULL }
 };
 
-static struct keyword declarations[] = {
-	{ "rem", "{", parse_comment, &declarations[ 1 ] },
-	{ "include", "\";", parse_include, &declarations[ 2 ] },
-	{ "function", "n({", parse_function_declaration, &declarations[ 3 ] },
-	{ "program", "n{", parse_program_declaration, &declarations[ 4 ] },
-	{ "global", "V;", parse_global_declaration, &declarations[ 5 ] },
-	{ "const", "V;", parse_const_declaration, &declarations[ 6 ] },
-	{ "struct", "n", parse_struct_declaration, &declarations[ 7 ] },
-	{ "library", "n;", parse_library_declaration, NULL }
+static struct keyword library_decls[] = {
+	{ "rem", "{", parse_comment, &library_decls[ 1 ] },
+	{ "function", "n({", parse_function_declaration, &library_decls[ 2 ] },
+	{ "global", "V;", parse_global_declaration, &library_decls[ 3 ] },
+	{ "const", "V;", parse_const_declaration, &library_decls[ 4 ] },
+	{ "struct", "n", parse_struct_declaration, NULL }
 };
 
-static int validate_name( char *name, struct environment *env ) {
-	int chr = name[ 0 ], idx = 1, result = 1;
-	if( ( chr >= 'A' && chr <= 'Z') || ( chr >= 'a' && chr <= 'z' ) ) {
-		/* First character must be alphabetical.*/
-		chr = name[ idx++ ];
-		while( chr ) {
-			if( chr == '_' || ( chr >= '0' && chr <= '9' )
-			|| ( chr >= 'A' && chr <= 'Z' ) || ( chr >= 'a' && chr <= 'z' ) ) {
-				/* Subsequent characters must be alphanumerical, or underscore. */
-				chr = name[ idx++ ];
-			} else {
-				result = chr = 0;
-			}
-		}
+static struct element* parse_library_declaration( struct element *elem,
+	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
+	struct element *next = elem->next;
+	struct string *library = new_string_value( next->str.string );
+	if( library ) {
+		next = next->next;
+		func->library = library;
+		parse_keywords( library_decls, next->child, func, NULL, NULL, message );
+		unref_string( func->library );
+		func->library = NULL;
+		next = next->next;
 	} else {
-		result = 0;
+		strcpy( message, OUT_OF_MEMORY );
+	}
+	return next;
+}
+
+static struct keyword declarations[] = {
+	{ "include", "\";", parse_include, &declarations[ 1 ] },
+	{ "library", "n{", parse_library_declaration, &declarations[ 2 ] },
+	{ "program", "n{", parse_program_declaration, library_decls }
+};
+
+static int validate_name( struct element *elem, char *message ) {
+	int chr = elem->str.string[ 0 ], idx = 1, len = elem->str.length;
+	int result = len < 65 && ( chr >= 'A' && chr <= 'Z') || ( chr >= 'a' && chr <= 'z' );
+	/* First character must be alphabetical.*/
+	while( idx < len ) {
+		chr = elem->str.string[ idx++ ];
+		if( !( chr == '_' || ( chr >= '0' && chr <= '9' )
+		|| ( chr >= 'A' && chr <= 'Z' ) || ( chr >= 'a' && chr <= 'z' ) ) ) {
+			/* Subsequent characters must be alphanumerical, or underscore. */
+			result = 0;
+			idx = len;
+		}
+	}
+	if( !result ) {
+		sprintf( message, "Invalid name '%.64s' on line %d.", elem->str.string, elem->line );
 	}
 	return result;
 }
