@@ -15,7 +15,7 @@ enum reference_type {
 
 /* String list. */
 struct string_list {
-	char *value;
+	struct string *str;
 	struct string_list *next;
 };
 

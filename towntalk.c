@@ -627,12 +627,13 @@ static int save_file( char *file_name, char *buffer, int length, int append, cha
 	return count;
 }
 
-static void dispose_string_list( struct string_list *str ) {
+static void dispose_string_list( struct string_list *list ) {
 	struct string_list *next;
-	while( str ) {
-		next = str->next;
-		free( str );
-		str = next;
+	while( list ) {
+		next = list->next;
+		unref_string( list->str );
+		free( list );
+		list = next;
 	}
 }
 
@@ -944,19 +945,22 @@ void dispose_environment( struct environment *env ) {
 	}
 }
 
-static struct string_list *new_string_list( char *value ) {
-	struct string_list *str = malloc( sizeof( struct string_list ) + sizeof( char ) * ( strlen( value ) + 1 ) );
-	if( str ) {
-		str->value = ( char * ) &str[ 1 ];
-		strcpy( str->value, value );
-		str->next = NULL;
+static struct string_list* append_string_list( struct string_list *tail, struct string *value ) {
+	struct string_list *list = malloc( sizeof( struct string_list ) );
+	if( list ) {
+		list->str = value;
+		value->reference_count++;
+		list->next = NULL;
+		if( tail ) {
+			tail->next = list;
+		}
 	}
-	return str;
+	return list;
 }
 
 static int get_string_list_index( struct string_list *list, char *value ) {
 	int idx = 0;
-	while( list && strcmp( list->value, value ) ) {
+	while( list && strcmp( list->str->string, value ) ) {
 		idx++;
 		list = list->next;
 	}
@@ -1179,17 +1183,22 @@ static struct global_variable* new_global_variable( char *name, int line,
 
 static int add_constant( struct environment *env, struct global_variable *constant, char *message ) {
 	int idx;
-	struct string_list *name = new_string_list( constant->name );
+	struct string_list *tail = env->constants_tail;
+	struct string *name = new_string_value( constant->name );
 	if( name ) {
-		if( env->constants ){
-			env->constants_tail->next = name;
+		tail = append_string_list( tail, name );
+		if( tail ) {
+			if( env->constants == NULL ) {
+				env->constants = tail;
+			}
+			env->constants_tail = tail;
+			idx = hash_code( name->string, 0 );
+			constant->next = env->constants_index[ idx ];
+			env->constants_index[ idx ] = constant;
 		} else {
-			env->constants = name;
+			strcpy( message, OUT_OF_MEMORY );
 		}
-		env->constants_tail = name;
-		idx = hash_code( name->value, 0 );
-		constant->next = env->constants_index[ idx ];
-		env->constants_index[ idx ] = constant;
+		unref_string( name );
 	} else {
 		strcpy( message, OUT_OF_MEMORY );
 	}
@@ -1198,17 +1207,22 @@ static int add_constant( struct environment *env, struct global_variable *consta
 
 static int add_global( struct environment *env, struct global_variable *global, char *message ) {
 	int idx;
-	struct string_list *name = new_string_list( global->name );
+	struct string_list *tail = env->globals_tail;
+	struct string *name = new_string_value( global->name );
 	if( name ) {
-		if( env->globals ){
-			env->globals_tail->next = name;
+		tail = append_string_list( tail, name );
+		if( tail ) {
+			if( env->globals == NULL ) {
+				env->globals = tail;
+			}
+			env->globals_tail = tail;
+			idx = hash_code( name->string, 0 );
+			global->next = env->globals_index[ idx ];
+			env->globals_index[ idx ] = global;
 		} else {
-			env->globals = name;
+			strcpy( message, OUT_OF_MEMORY );
 		}
-		env->globals_tail = name;
-		idx = hash_code( name->value, 0 );
-		global->next = env->globals_index[ idx ];
-		env->globals_index[ idx ] = global;
+		unref_string( name );
 	} else {
 		strcpy( message, OUT_OF_MEMORY );
 	}
@@ -1897,10 +1911,8 @@ static enum result evaluate_field_expression( struct expression *this,
 					for( idx = 0; idx < index.integer_value; idx++ ) {
 						field = field->next;
 					}
-					result->string_value = new_string_value( field->value );
-					if( result->string_value == NULL ) {
-						ret = throw( vars, this, 0, OUT_OF_MEMORY );
-					}
+					result->string_value = field->str;
+					result->string_value->reference_count++;
 				} else {
 					ret = throw( vars, this, index.integer_value, "Field index out of bounds." );
 				}
@@ -5372,22 +5384,25 @@ static struct element* parse_include( struct element *elem,
 
 static int add_structure_field( struct structure *struc, struct element *elem,
 	struct environment *env, char *message ) {
-	struct string_list *field;
+	struct string_list *tail;
+	struct string *field;
 	if( validate_name( elem, message ) ) {
 		if( struc->fields && get_string_list_index( struc->fields, elem->str.string ) >= 0 ) {
 			sprintf( message, "Field '%.64s' already defined on line %d.", elem->str.string, elem->line );
 		} else {
-			field = new_string_list( elem->str.string );
+			field = new_string_value( elem->str.string );
 			if( field ) {
-				if( struc->fields ) {
-					struc->fields_tail->next = field;
+				tail = append_string_list( struc->fields_tail, field );
+				if( tail ) {
+					if( struc->fields == NULL ) {
+						struc->fields = tail;
+					}
+					struc->fields_tail = tail;
+					struc->length++;
 				} else {
-					struc->fields = field;
+					strcpy( message, OUT_OF_MEMORY );
 				}
-				struc->fields_tail = field;
-				struc->length++;
-			} else {
-				strcpy( message, OUT_OF_MEMORY );
+				unref_string( field );
 			}
 		}
 	}
@@ -5398,8 +5413,7 @@ static struct element* parse_struct_declaration( struct element *elem,
 	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
 	int idx;
 	struct structure *struc;
-	struct string_list *field;
-	struct element field_name = { 0 };
+	struct string_list *field, *tail;
 	struct environment *env = func->env;
 	struct element *child, *next = elem->next;
 	char *name = new_qualified_decl( next->str.string, next->line, func, message );
@@ -5417,15 +5431,21 @@ static struct element* parse_struct_declaration( struct element *elem,
 			if( next && next->str.string[ 0 ] == '(' ) {
 				child = next->child;
 				if( child && child->next == NULL && strcmp( child->str.string, name ) ) {
-					field_name.line = child->line;
 					struc->super = get_structure_indexed( env->structures_index, child->str.string );
 					if( struc->super ) {
 						field = struc->super->fields;
 						while( field && message[ 0 ] == 0 ) {
-							field_name.str.string = field->value;
-							if( add_structure_field( struc, &field_name, env, message ) ) {
-								field = field->next;
+							tail = append_string_list( struc->fields_tail, field->str );
+							if( tail ) {
+								if( struc->fields == NULL ) {
+									struc->fields = tail;
+								}
+								struc->fields_tail = tail;
+								struc->length++;
+							} else {
+								strcpy( message, OUT_OF_MEMORY );
 							}
+							field = field->next;
 						}
 						next = next->next;
 					} else {
@@ -5790,7 +5810,7 @@ int initialize_globals( struct environment *env, struct variable *exception ) {
 	struct global_variable *global;
 	struct string_list *name = env->constants;
 	while( name ) {
-		global = get_global_indexed( env->constants_index, name->value );
+		global = get_global_indexed( env->constants_index, name->str->string );
 		if( initialize_global( global, exception ) == EXCEPTION ) {
 			return 0;
 		}
@@ -5798,7 +5818,7 @@ int initialize_globals( struct environment *env, struct variable *exception ) {
 	}
 	name = env->globals;
 	while( name ) {
-		global = get_global_indexed( env->globals_index, name->value );
+		global = get_global_indexed( env->globals_index, name->str->string );
 		if( initialize_global( global, exception ) == EXCEPTION ) {
 			return 0;
 		}
