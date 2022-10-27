@@ -70,7 +70,7 @@ struct environment {
 	struct array arrays;
 	struct keyword *statements_index[ 32 ];
 	struct operator *operators_index[ 32 ];
-	struct structure *structures_index[ 32 ];
+	struct string_list *structures_index[ 32 ];
 	struct global_variable *globals_index[ 32 ];
 	struct string_list *globals, *globals_tail;
 	struct global_variable *constants_index[ 32 ];
@@ -98,12 +98,12 @@ struct custom_type {
 	void ( *dispose )( struct string *this );
 };
 
-/* Reference-counted structure declaration list.*/
+/* Reference-counted structure declaration.*/
 struct structure {
 	struct string str;
 	int length;
 	struct string_list *fields, *fields_tail;
-	struct structure *super, *next;
+	struct structure *super;
 };
 
 /* Local variables. */

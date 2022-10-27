@@ -342,8 +342,8 @@ static int str_idx( char *str, const char *chars, int idx ) {
 }
 
 /* Return the length of str up to one the terminators. */
-static size_t field_length( char *str, char *terminators ) {
-	size_t len = 0;
+static int field_length( char *str, char *terminators ) {
+	int len = 0;
 	char chr = str[ 0 ];
 	while( chr && strchr( terminators, chr ) == NULL ) {
 		chr = str[ ++len ];
@@ -829,6 +829,12 @@ static void dispose_array( struct array *arr ) {
 	free( arr );
 }
 
+static void dispose_structure( struct structure *sct ) {
+	free( sct->str.string );
+	dispose_string_list( sct->fields );
+	free( sct );
+}
+
 static void dispose_functions( struct function *func ) {
 	struct string *str;
 	while( func ) {
@@ -881,6 +887,9 @@ void unref_string( struct string *str ) {
 			case ARRAY:
 				dispose_array( ( struct array * ) str );
 				break;
+			case STRUCT:
+				dispose_structure( ( struct structure * ) str );
+				break;
 			case FUNCTION:
 				dispose_functions( ( struct function * ) str );
 				break;
@@ -909,22 +918,6 @@ static void dispose_arrays( struct array *head ) {
 	}
 }
 
-static void dispose_structure_declarations( struct structure *sct ) {
-	struct string *str;
-	while( sct ) {
-		str = &sct->str;
-		if( str->reference_count == 1 ) {
-			free( sct->str.string );
-			dispose_string_list( sct->fields );
-			sct = sct->next;
-			free( str );
-		} else {
-			str->reference_count--;
-			sct = NULL;
-		}
-	}
-}
-
 /* Deallocate the specified environment and all types referenced by it. */
 void dispose_environment( struct environment *env ) {
 	int idx;
@@ -939,7 +932,7 @@ void dispose_environment( struct environment *env ) {
 		if( env->functions_index[ idx ] ) {
 			unref_string( &env->functions_index[ idx ]->str );
 		}
-		dispose_structure_declarations( env->structures_index[ idx ] );
+		dispose_string_list( env->structures_index[ idx ] );
 		dispose_keywords( env->statements_index[ idx ] );
 		dispose_operators( env->operators_index[ idx ] );
 	}
@@ -2112,15 +2105,19 @@ static enum result evaluate_index_expression( struct expression *this,
 	return ret;
 }
 
-static struct structure* get_structure( struct structure *struc, char *name, size_t len ) {
-	while( struc && ( strncmp( struc->str.string, name, len ) || strlen( struc->str.string ) != len ) ) {
-		struc = struc->next;
+static struct string* get_decl( struct string_list *list, char *name, int len ) {
+	while( list && ( strncmp( list->str->string, name, len ) || list->str->length != len ) ) {
+		list = list->next;
 	}
-	return struc;
+	if( list ) {
+		return list->str;
+	}
+	return NULL;
 }
 
-static struct structure* get_structure_indexed( struct structure **index, char *name ) {
-	return get_structure( index[ hash_code( name, '.' ) ], name, field_length( name, "." ) );
+static struct string* get_decl_indexed( struct string_list **index, char *name ) {
+	int len = field_length( name, ".:" );
+	return get_decl( index[ hash_code( name, name[ len ] ) ], name, len );
 }
 
 static struct function* get_function( struct function *func, char *name ) {
@@ -2211,6 +2208,7 @@ static int add_local_variable( struct element *elem,
 static struct element* parse_variable_declaration( struct element *elem, struct function *func, struct variables *vars, struct statement *prev,
 	int (*add)( struct element *elem, struct function *func, struct structure *type, struct expression *initializer, struct statement *prev, char *message ),
 	char *message ) {
+	struct string *decl;
 	struct structure *type = NULL;
 	struct expression expr = { 0 }, *array_expr;
 	struct element *next;
@@ -2219,8 +2217,9 @@ static struct element* parse_variable_declaration( struct element *elem, struct 
 			prev = prev->next;
 		}
 		if( elem->str.string[ 0 ] == '(' ) {
-			type = get_structure_indexed( func->env->structures_index, elem->child->str.string );
-			if( type != NULL ) {
+			decl = get_decl_indexed( func->env->structures_index, elem->child->str.string );
+			if( decl && decl->type == STRUCT ) {
+				type = ( struct structure * ) decl;
 				elem = elem->next;
 			} else {
 				sprintf( message, "Structure '%.64s' not declared on line %d.", elem->child->str.string, elem->child->line );
@@ -3766,7 +3765,8 @@ static struct element* parse_refcall_expression( struct element *elem,
 static struct element* parse_thiscall_expression( struct element *elem,
 	struct function *func, struct variables *vars, struct expression *prev, char *message ) {
 	int idx, count;
-	struct structure *struc;
+	struct string *decl;
+	struct structure *struc = NULL;
 	struct element *next = elem->next;
 	char *field = strchr( elem->str.string, '.' );
 	struct local_variable *local = get_local_variable( func->variable_decls, &elem->str.string[ 1 ], "." );
@@ -3780,7 +3780,10 @@ static struct element* parse_thiscall_expression( struct element *elem,
 		} else if( global ) {
 			struc = global->type;
 		} else {
-			struc = get_structure_indexed( func->env->structures_index, &elem->str.string[ 1 ] );
+			decl = get_decl_indexed( func->env->structures_index, &elem->str.string[ 1 ] );
+			if( decl && decl->type == STRUCT ) {
+				struc = ( struct structure * ) decl;
+			}
 		}
 		if( struc && field ) {
 			( ( struct structure_expression * ) expr )->structure = struc;
@@ -4119,7 +4122,7 @@ static struct element* parse_expression( struct element *elem,
 						/* Function call.*/
 						next = parse_call_expression( elem, func, vars, decl, prev, message );
 					} else {
-						struc = get_structure_indexed( func->env->structures_index, value );
+						struc = ( struct structure * ) get_decl_indexed( func->env->structures_index, value );
 						if( struc ) {
 							/* Structure. */
 							next = parse_struct_expression( elem, func, vars, struc, prev, message );
@@ -4273,13 +4276,17 @@ static struct element* parse_struct_assignment( struct element *elem,
 	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
 	char *field;
 	int idx, count;
+	struct string *decl;
 	struct expression expr;
-	struct structure *struc;
+	struct structure *struc = NULL;
 	struct element *next = elem->next, *child = next->child;
 	struct statement *stmt = calloc( 1, sizeof( struct structure_statement ) );
 	if( stmt ) {
 		prev->next = stmt;
-		struc = get_structure_indexed( func->env->structures_index, next->str.string );
+		decl = get_decl_indexed( func->env->structures_index, next->str.string );
+		if( decl && decl->type == STRUCT ) {
+			struc = ( struct structure * ) decl;
+		}
 		field = strchr( next->str.string, '.' );
 		if( struc && field ) {
 			( ( struct structure_statement * ) stmt )->structure = struc;
@@ -5000,11 +5007,13 @@ static struct element* parse_try_statement( struct element *elem,
 }
 
 static struct element* add_function_parameter( struct function *func, struct element *elem, char *message ) {
+	struct string *decl;
 	struct structure *type = NULL;
 	struct local_variable *param;
 	if( elem->str.string[ 0 ] == '(' ) {
-		type = get_structure_indexed( func->env->structures_index, elem->child->str.string );
-		if( type != NULL ) {
+		decl = get_decl_indexed( func->env->structures_index, elem->child->str.string );
+		if( decl && decl->type == STRUCT ) {
+			type = ( struct structure * ) decl;
 			elem = elem->next;
 		} else {
 			sprintf( message, "Structure '%.64s' not declared on line %d.", elem->child->str.string, elem->child->line );
@@ -5412,6 +5421,7 @@ static int add_structure_field( struct structure *struc, struct element *elem,
 static struct element* parse_struct_declaration( struct element *elem,
 	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
 	int idx;
+	struct string *decl;
 	struct structure *struc;
 	struct string_list *field, *tail;
 	struct environment *env = func->env;
@@ -5425,35 +5435,43 @@ static struct element* parse_struct_declaration( struct element *elem,
 			struc->str.length = strlen( name );
 			struc->str.type = STRUCT;
 			idx = hash_code( name, 0 );
-			struc->next = env->structures_index[ idx ];
-			env->structures_index[ idx ] = struc;
-			next = next->next;
-			if( next && next->str.string[ 0 ] == '(' ) {
-				child = next->child;
-				if( child && child->next == NULL && strcmp( child->str.string, name ) ) {
-					struc->super = get_structure_indexed( env->structures_index, child->str.string );
-					if( struc->super ) {
-						field = struc->super->fields;
-						while( field && message[ 0 ] == 0 ) {
-							tail = append_string_list( struc->fields_tail, field->str );
-							if( tail ) {
-								if( struc->fields == NULL ) {
-									struc->fields = tail;
-								}
-								struc->fields_tail = tail;
-								struc->length++;
-							} else {
-								strcpy( message, OUT_OF_MEMORY );
-							}
-							field = field->next;
+			tail = append_string_list( NULL, &struc->str );
+			if( tail ) {
+				tail->next = env->structures_index[ idx ];
+				env->structures_index[ idx ] = tail;
+				next = next->next;
+				if( next && next->str.string[ 0 ] == '(' ) {
+					child = next->child;
+					if( child && child->next == NULL && strcmp( child->str.string, name ) ) {
+						decl = get_decl_indexed( env->structures_index, child->str.string );
+						if( decl && decl->type == STRUCT ) {
+							struc->super = ( struct structure * ) decl;
 						}
-						next = next->next;
+						if( struc->super ) {
+							field = struc->super->fields;
+							while( field && message[ 0 ] == 0 ) {
+								tail = append_string_list( struc->fields_tail, field->str );
+								if( tail ) {
+									if( struc->fields == NULL ) {
+										struc->fields = tail;
+									}
+									struc->fields_tail = tail;
+									struc->length++;
+								} else {
+									strcpy( message, OUT_OF_MEMORY );
+								}
+								field = field->next;
+							}
+							next = next->next;
+						} else {
+							sprintf( message, "Structure '%.64s' not declared on line %d.", child->str.string, child->line );
+						}
 					} else {
-						sprintf( message, "Structure '%.64s' not declared on line %d.", child->str.string, child->line );
+						sprintf( message, "Invalid parent structure declaration on line %d.", next->line );
 					}
-				} else {
-					sprintf( message, "Invalid parent structure declaration on line %d.", next->line );
 				}
+			} else {
+				strcpy( message, OUT_OF_MEMORY );
 			}
 			if( message[ 0 ] == 0 ) {
 				if( next && next->str.string[ 0 ] == '{' ) {
@@ -5474,6 +5492,7 @@ static struct element* parse_struct_declaration( struct element *elem,
 					sprintf( message, "Expected '{' after 'struct' on line %d.", elem->line );
 				}
 			}
+			unref_string( &struc->str );
 		} else {
 			strcpy( message, OUT_OF_MEMORY );
 			free( name );
@@ -5641,7 +5660,7 @@ static int validate_decl( char *name, int line, struct environment *env, char *m
 	|| get_global( env->constants_index[ hash ], name, len )
 	|| get_global( env->globals_index[ hash ], name, len )
 	|| get_function( env->functions_index[ hash ], name )
-	|| get_structure( env->structures_index[ hash ], name, len ) ) {
+	|| get_decl( env->structures_index[ hash ], name, len ) ) {
 		sprintf( message, "Name '%.64s' already defined on line %d.", name, line );
 		return 0;
 	}
