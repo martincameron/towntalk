@@ -5632,7 +5632,10 @@ static int validate_name( struct element *elem, char *message ) {
 static int validate_decl( char *name, int line, struct environment *env, char *message ) {
 	int hash = hash_code( name, 0 );
 	size_t len = strlen( name );
-	if( get_keyword( name, declarations )
+	if( len > 64 ) {
+		sprintf( message, "Invalid name '%.64s' on line %d.", name, line );
+		return 0;
+	} else if( get_keyword( name, declarations )
 	|| get_keyword( name, env->statements_index[ hash ] )
 	|| get_operator( name, env->operators_index[ hash ] )
 	|| get_global( env->constants_index[ hash ], name, len )
