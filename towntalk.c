@@ -2095,10 +2095,10 @@ static enum result evaluate_index_expression( struct expression *this,
 }
 
 static struct string* get_decl( struct string_list *list, char *name, int len, enum reference_type type ) {
-	while( list && ( strncmp( list->str->string, name, len ) || list->str->length != len ) ) {
+	while( list && ( list->str->length != len || strncmp( list->str->string, name, len ) ) ) {
 		list = list->next;
 	}
-	if( list && type && ( enum reference_type ) list->str->type == type ) {
+	if( list && ( !type || ( enum reference_type ) list->str->type == type ) ) {
 		return list->str;
 	}
 	return NULL;
