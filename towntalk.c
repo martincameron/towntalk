@@ -199,11 +199,6 @@ struct structure_statement {
 	struct structure *structure;
 };
 
-struct structure_expression {
-	struct expression expr;
-	struct structure *structure;
-};
-
 struct global_expression {
 	struct expression expr;
 	struct global_variable *global;
@@ -1616,7 +1611,7 @@ static enum result execute_array_assignment( struct statement *this,
 
 static struct structure* instance_of( struct string *str, struct structure *struc ) {
 	struct structure *structure;
-	if( str->type == ARRAY ) {
+	if( str && str->type == ARRAY ) {
 		structure = ( ( struct array * ) str )->structure;
 		while( struc != structure && structure ) {
 			structure = structure->super;
@@ -1633,7 +1628,7 @@ static enum result execute_struct_assignment( struct statement *this,
 	struct variable obj = { 0, NULL }, var = { 0, NULL };
 	enum result ret = destination->evaluate( destination, vars, &obj );
 	if( ret ) {
-		if( obj.string_value && instance_of( obj.string_value, ( ( struct structure_statement * ) this )->structure ) ) {
+		if( instance_of( obj.string_value, ( ( struct structure_statement * ) this )->structure ) ) {
 			arr = ( struct array * ) obj.string_value;
 			ret = this->source->evaluate( this->source, vars, &var );
 			if( ret ) {
@@ -1828,9 +1823,10 @@ static enum result evaluate_thiscall_expression( struct expression *this,
 	struct global_variable obj = { 0 };
 	struct function_expression call_expr = { 0 };
 	struct global_expression obj_expr = { 0 };
+	struct structure *struc = ( struct structure * ) ( ( struct string_literal_expression * ) this )->str;
 	enum result ret = this->parameters->evaluate( this->parameters, vars, &obj.value );
 	if( ret ) {
-		if( obj.value.string_value && instance_of( obj.value.string_value, ( ( struct structure_expression * ) this )->structure ) ) {
+		if( instance_of( obj.value.string_value, struc ) ) {
 			arr = ( struct array * ) obj.value.string_value;
 			idx = this->index >> 8;
 			count = this->index & 0xFF;
@@ -1860,14 +1856,6 @@ static enum result evaluate_thiscall_expression( struct expression *this,
 		dispose_temporary( &obj.value );
 	}
 	return ret;
-}
-
-static enum result evaluate_struct_expression( struct expression *this,
-	struct variables *vars, struct variable *result ) {
-	result->integer_value = ARRAY + 1;
-	result->string_value = &( ( struct structure_expression * ) this )->structure->str;
-	result->string_value->reference_count++;
-	return OKAY;
 }
 
 static enum result evaluate_type_expression( struct expression *this,
@@ -1928,7 +1916,7 @@ static enum result evaluate_instanceof_expression( struct expression *this,
 		ret = parameter->next->evaluate( parameter->next, vars, &struc );
 		if( ret ) {
 			if( struc.string_value && struc.string_value->type == STRUCT ) {
-				if( arr.string_value && instance_of( arr.string_value, ( struct structure * ) struc.string_value ) ) {
+				if( instance_of( arr.string_value, ( struct structure * ) struc.string_value ) ) {
 					assign_variable( &arr, result );
 				}
 			} else {
@@ -1972,9 +1960,10 @@ static enum result evaluate_member_expression( struct expression *this,
 	struct array *arr;
 	struct variable obj = { 0, NULL };
 	struct expression *parameter = this->parameters;
+	struct structure *struc = ( struct structure * ) ( ( struct string_literal_expression * ) this )->str;
 	enum result ret = parameter->evaluate( parameter, vars, &obj );
 	if( ret ) {
-		if( obj.string_value && instance_of( obj.string_value, ( ( struct structure_expression * ) this )->structure ) ) {
+		if( instance_of( obj.string_value, struc ) ) {
 			arr = ( struct array * ) obj.string_value;
 			result->integer_value = arr->integer_values[ this->index ];
 			if( arr->string_values && arr->string_values[ this->index ] ) {
@@ -2105,19 +2094,19 @@ static enum result evaluate_index_expression( struct expression *this,
 	return ret;
 }
 
-static struct string* get_decl( struct string_list *list, char *name, int len ) {
+static struct string* get_decl( struct string_list *list, char *name, int len, enum reference_type type ) {
 	while( list && ( strncmp( list->str->string, name, len ) || list->str->length != len ) ) {
 		list = list->next;
 	}
-	if( list ) {
+	if( list && type && ( enum reference_type ) list->str->type == type ) {
 		return list->str;
 	}
 	return NULL;
 }
 
-static struct string* get_decl_indexed( struct string_list **index, char *name ) {
+static struct string* get_decl_indexed( struct string_list **index, char *name, enum reference_type type ) {
 	int len = field_length( name, ".:" );
-	return get_decl( index[ hash_code( name, name[ len ] ) ], name, len );
+	return get_decl( index[ hash_code( name, name[ len ] ) ], name, len, type );
 }
 
 static struct function* get_function( struct function *func, char *name ) {
@@ -2208,7 +2197,6 @@ static int add_local_variable( struct element *elem,
 static struct element* parse_variable_declaration( struct element *elem, struct function *func, struct variables *vars, struct statement *prev,
 	int (*add)( struct element *elem, struct function *func, struct structure *type, struct expression *initializer, struct statement *prev, char *message ),
 	char *message ) {
-	struct string *decl;
 	struct structure *type = NULL;
 	struct expression expr = { 0 }, *array_expr;
 	struct element *next;
@@ -2217,9 +2205,8 @@ static struct element* parse_variable_declaration( struct element *elem, struct 
 			prev = prev->next;
 		}
 		if( elem->str.string[ 0 ] == '(' ) {
-			decl = get_decl_indexed( func->env->structures_index, elem->child->str.string );
-			if( decl && decl->type == STRUCT ) {
-				type = ( struct structure * ) decl;
+			type = ( struct structure * ) get_decl_indexed( func->env->structures_index, elem->child->str.string, STRUCT );
+			if( type ) {
 				elem = elem->next;
 			} else {
 				sprintf( message, "Structure '%.64s' not declared on line %d.", elem->child->str.string, elem->child->line );
@@ -3698,11 +3685,11 @@ static struct element* parse_struct_expression( struct element *elem,
 	int idx, count;
 	struct element *next = elem->next;
 	char *field = strchr( elem->str.string, '.' );
-	struct expression param = { 0 }, *expr = calloc( 1, sizeof( struct structure_expression ) );
+	struct expression param = { 0 }, *expr = calloc( 1, sizeof( struct string_literal_expression ) );
 	if( expr ) {
 		prev->next = expr;
 		expr->line = elem->line;
-		( ( struct structure_expression * ) expr )->structure = struc;
+		( ( struct string_literal_expression * ) expr )->str = &struc->str;
 		if( field ) {
 			idx = get_string_list_index( struc->fields, &field[ 1 ] );
 			if( idx >= 0 ) {
@@ -3725,7 +3712,9 @@ static struct element* parse_struct_expression( struct element *elem,
 				sprintf( message, "Field '%.64s' not declared on line %d.", elem->str.string, elem->line );
 			}
 		} else {
-			expr->evaluate = evaluate_struct_expression;
+			expr->index = ARRAY + 1;
+			struc->str.reference_count++;
+			expr->evaluate = evaluate_string_literal_expression;
 		}
 	} else {
 		strcpy( message, OUT_OF_MEMORY );
@@ -3765,13 +3754,12 @@ static struct element* parse_refcall_expression( struct element *elem,
 static struct element* parse_thiscall_expression( struct element *elem,
 	struct function *func, struct variables *vars, struct expression *prev, char *message ) {
 	int idx, count;
-	struct string *decl;
-	struct structure *struc = NULL;
+	struct structure *struc;
 	struct element *next = elem->next;
 	char *field = strchr( elem->str.string, '.' );
 	struct local_variable *local = get_local_variable( func->variable_decls, &elem->str.string[ 1 ], "." );
 	struct global_variable *global = get_global_indexed( func->env->globals_index, &elem->str.string[ 1 ] );
-	struct expression param = { 0 }, *this, *expr = calloc( 1, sizeof( struct structure_expression ) );
+	struct expression param = { 0 }, *this, *expr = calloc( 1, sizeof( struct string_literal_expression ) );
 	if( expr ) {
 		prev->next = expr;
 		expr->line = elem->line;
@@ -3780,13 +3768,10 @@ static struct element* parse_thiscall_expression( struct element *elem,
 		} else if( global ) {
 			struc = global->type;
 		} else {
-			decl = get_decl_indexed( func->env->structures_index, &elem->str.string[ 1 ] );
-			if( decl && decl->type == STRUCT ) {
-				struc = ( struct structure * ) decl;
-			}
+			struc = ( struct structure * ) get_decl_indexed( func->env->structures_index, &elem->str.string[ 1 ], STRUCT );
 		}
 		if( struc && field ) {
-			( ( struct structure_expression * ) expr )->structure = struc;
+			( ( struct string_literal_expression * ) expr )->str = &struc->str;
 			idx = get_string_list_index( struc->fields, &field[ 1 ] );
 			if( idx >= 0 ) {
 				if( next && next->str.string[ 0 ] == '(' ) {
@@ -3896,10 +3881,10 @@ static struct element* parse_member_expression( struct structure *struc, struct 
 	if( struc ) {
 		idx = get_string_list_index( struc->fields, memb );
 		if( idx >= 0 ) {
-			expr = calloc( 1, sizeof( struct structure_expression ) );
+			expr = calloc( 1, sizeof( struct string_literal_expression ) );
 			if( expr ) {
 				prev->next = expr;
-				( ( struct structure_expression * ) expr )->structure = struc;
+				( ( struct string_literal_expression * ) expr )->str = &struc->str;
 				expr->index = idx;
 				expr->line = elem->line;
 				expr->parameters = this;
@@ -4122,7 +4107,7 @@ static struct element* parse_expression( struct element *elem,
 						/* Function call.*/
 						next = parse_call_expression( elem, func, vars, decl, prev, message );
 					} else {
-						struc = ( struct structure * ) get_decl_indexed( func->env->structures_index, value );
+						struc = ( struct structure * ) get_decl_indexed( func->env->structures_index, value, STRUCT );
 						if( struc ) {
 							/* Structure. */
 							next = parse_struct_expression( elem, func, vars, struc, prev, message );
@@ -4276,17 +4261,13 @@ static struct element* parse_struct_assignment( struct element *elem,
 	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
 	char *field;
 	int idx, count;
-	struct string *decl;
 	struct expression expr;
-	struct structure *struc = NULL;
+	struct structure *struc;
 	struct element *next = elem->next, *child = next->child;
 	struct statement *stmt = calloc( 1, sizeof( struct structure_statement ) );
 	if( stmt ) {
 		prev->next = stmt;
-		decl = get_decl_indexed( func->env->structures_index, next->str.string );
-		if( decl && decl->type == STRUCT ) {
-			struc = ( struct structure * ) decl;
-		}
+		struc = ( struct structure * ) get_decl_indexed( func->env->structures_index, next->str.string, STRUCT );
 		field = strchr( next->str.string, '.' );
 		if( struc && field ) {
 			( ( struct structure_statement * ) stmt )->structure = struc;
@@ -5007,13 +4988,11 @@ static struct element* parse_try_statement( struct element *elem,
 }
 
 static struct element* add_function_parameter( struct function *func, struct element *elem, char *message ) {
-	struct string *decl;
-	struct structure *type = NULL;
 	struct local_variable *param;
+	struct structure *type = NULL;
 	if( elem->str.string[ 0 ] == '(' ) {
-		decl = get_decl_indexed( func->env->structures_index, elem->child->str.string );
-		if( decl && decl->type == STRUCT ) {
-			type = ( struct structure * ) decl;
+		type = ( struct structure * ) get_decl_indexed( func->env->structures_index, elem->child->str.string, STRUCT );
+		if( type ) {
 			elem = elem->next;
 		} else {
 			sprintf( message, "Structure '%.64s' not declared on line %d.", elem->child->str.string, elem->child->line );
@@ -5443,10 +5422,7 @@ static struct element* parse_struct_declaration( struct element *elem,
 				if( next && next->str.string[ 0 ] == '(' ) {
 					child = next->child;
 					if( child && child->next == NULL && strcmp( child->str.string, name ) ) {
-						decl = get_decl_indexed( env->structures_index, child->str.string );
-						if( decl && decl->type == STRUCT ) {
-							struc->super = ( struct structure * ) decl;
-						}
+						struc->super = ( struct structure * ) get_decl_indexed( env->structures_index, child->str.string, STRUCT );
 						if( struc->super ) {
 							field = struc->super->fields;
 							while( field && message[ 0 ] == 0 ) {
@@ -5660,7 +5636,7 @@ static int validate_decl( char *name, int line, struct environment *env, char *m
 	|| get_global( env->constants_index[ hash ], name, len )
 	|| get_global( env->globals_index[ hash ], name, len )
 	|| get_function( env->functions_index[ hash ], name )
-	|| get_decl( env->structures_index[ hash ], name, len ) ) {
+	|| get_decl( env->structures_index[ hash ], name, len, STRUCT ) ) {
 		sprintf( message, "Name '%.64s' already defined on line %d.", name, line );
 		return 0;
 	}
