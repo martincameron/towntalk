@@ -50,7 +50,7 @@
 	Declarations:
 		rem {}                   Comment (all brackets inside must be balanced).
 		include "file.tt";       Include declarations from specified file.
-		library name { decls };  Namespace prefix for specified declarations.
+		library name { decls }   Namespace prefix for specified declarations.
 		const name = expr;       Global constants.
 		global a, b = expr;      Global variables.
 		global ( struct ) a;     Global variable with associated struct.
