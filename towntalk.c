@@ -199,11 +199,6 @@ struct structure_statement {
 	struct structure *structure;
 };
 
-struct global_expression {
-	struct expression expr;
-	struct global_variable *global;
-};
-
 struct string_literal_expression {
 	struct expression expr;
 	struct string *str;
@@ -1249,7 +1244,7 @@ static enum result evaluate_local_post_dec( struct expression *this,
 
 static enum result evaluate_global( struct expression *this,
 	struct variables *vars, struct variable *result ) {
-	struct variable *var = &( ( struct global_expression * ) this )->global->value;
+	struct variable *var = &( ( struct global_variable * ) ( ( struct string_literal_expression * ) this )->str )->value;
 	result->integer_value = var->integer_value;
 	if( var->string_value ) {
 		result->string_value = var->string_value;
@@ -1795,23 +1790,23 @@ static enum result evaluate_thiscall_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	int idx, count;
 	struct array *arr;
+	struct variable obj = { 0 };
 	struct string *function = NULL;
-	struct global_variable obj = { 0 };
 	struct function_expression call_expr = { 0 };
-	struct global_expression obj_expr = { 0 };
+	struct string_literal_expression obj_expr = { 0 };
 	struct structure *struc = ( struct structure * ) ( ( struct string_literal_expression * ) this )->str;
-	enum result ret = this->parameters->evaluate( this->parameters, vars, &obj.value );
+	enum result ret = this->parameters->evaluate( this->parameters, vars, &obj );
 	if( ret ) {
-		if( instance_of( obj.value.string_value, struc ) ) {
-			arr = ( struct array * ) obj.value.string_value;
+		if( instance_of( obj.string_value, struc ) ) {
+			arr = ( struct array * ) obj.string_value;
 			idx = this->index >> 8;
 			count = this->index & 0xFF;
 			if( arr->string_values ) {
 				function = arr->string_values[ idx ];
 			}
 			if( function && function->type == FUNCTION ) {
-				obj_expr.global = &obj;
-				obj_expr.expr.evaluate = evaluate_global;
+				obj_expr.str = obj.string_value;
+				obj_expr.expr.evaluate = evaluate_string_literal_expression;
 				obj_expr.expr.next = this->parameters->next;
 				call_expr.expr.line = this->line;
 				call_expr.function = ( struct function * ) function;
@@ -1827,9 +1822,9 @@ static enum result evaluate_thiscall_expression( struct expression *this,
 				ret = throw( vars, this, arr->integer_values[ idx ], "Not a function reference." );
 			}
 		} else {
-			ret = throw( vars, this, obj.value.integer_value, "Not an instance of specified structure." );
+			ret = throw( vars, this, obj.integer_value, "Not an instance of specified structure." );
 		}
-		dispose_temporary( &obj.value );
+		dispose_temporary( &obj );
 	}
 	return ret;
 }
@@ -3746,13 +3741,13 @@ static struct element* parse_thiscall_expression( struct element *elem,
 					parse_expressions( next->child, func, vars, 0, &param, &count, message );
 					expr->parameters = param.next;
 					if( local || global ) {
-						this = calloc( 1, sizeof( struct global_expression ) );
+						this = calloc( 1, sizeof( struct string_literal_expression ) );
 						if( this ) {
 							if( local ) {
 								this->index = local->index;
 								this->evaluate = evaluate_local;
 							} else {
-								( ( struct global_expression * ) this )->global = global;
+								( ( struct string_literal_expression * ) this )->str = &global->str;
 								this->evaluate = evaluate_global;
 							}
 							this->next = expr->parameters;
@@ -3929,10 +3924,10 @@ static struct element* parse_global_expression( struct element *elem, struct fun
 	int idx, count;
 	struct element *next = elem->next;
 	char *field = &elem->str.string[ global->str.length ];
-	struct expression *expr = calloc( 1, sizeof( struct global_expression ) );
+	struct expression *expr = calloc( 1, sizeof( struct string_literal_expression ) );
 	if( expr ) {
 		prev->next = expr;
-		( ( struct global_expression * ) expr )->global = global;
+		( ( struct string_literal_expression * ) expr )->str = &global->str;
 		expr->line = elem->line;
 		expr->evaluate = evaluate_global;
 		if( field[ 0 ] == '.' ) {
@@ -4351,12 +4346,12 @@ static struct element* parse_global_assignment( struct element *elem,
 				idx = get_string_list_index( struc->fields, &field[ 1 ] );
 				if( idx >= 0 ) {
 					stmt->local = idx;
-					expr.next = calloc( 1, sizeof( struct global_expression ) );
+					expr.next = calloc( 1, sizeof( struct string_literal_expression ) );
 					if( expr.next ) {
 						stmt->source->next = expr.next;
 						expr.next->line = next->line;
 						expr.next->evaluate = evaluate_global;
-						( ( struct global_expression * ) expr.next )->global = global;
+						( ( struct string_literal_expression * ) expr.next )->str = &global->str;
 						stmt->execute = execute_struct_assignment;
 						next = next->next;
 					} else {
@@ -5652,12 +5647,12 @@ static struct worker* parse_worker( struct element *elem, struct string *file, c
 					work->globals = calloc( params, sizeof( struct global_variable ) );
 				}
 				if( work->globals ) {
-					work->parameters = calloc( params, sizeof( struct global_expression ) );
+					work->parameters = calloc( params, sizeof( struct string_literal_expression ) );
 				}
 				if( work->parameters ) {
 					for( idx = 0; idx < params; idx++ ) {
 						work->parameters[ idx ].evaluate = evaluate_global;
-						( ( struct global_expression * ) work->parameters )[ idx ].global = &work->globals[ idx ];
+						( ( struct string_literal_expression * ) work->parameters )[ idx ].str = &work->globals[ idx ].str;
 						work->parameters[ idx ].next = &work->parameters[ idx + 1 ];
 					}
 					parse_function_body( func, NULL, message );
