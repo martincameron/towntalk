@@ -10,7 +10,7 @@ enum result {
 
 /* Reference type. */
 enum reference_type {
-	STRING, ELEMENT, ARRAY, STRUCT, FUNCTION, WORKER, CUSTOM, EXIT
+	STRING, ELEMENT, ARRAY, STRUCT, GLOBAL, CONST, FUNCTION, WORKER, CUSTOM, EXIT
 };
 
 /* String list. */
@@ -71,10 +71,8 @@ struct environment {
 	struct keyword *statements_index[ 32 ];
 	struct operator *operators_index[ 32 ];
 	struct string_list *structures_index[ 32 ];
-	struct global_variable *globals_index[ 32 ];
+	struct string_list *globals_index[ 32 ];
 	struct string_list *globals, *globals_tail;
-	struct global_variable *constants_index[ 32 ];
-	struct string_list *constants, *constants_tail;
 	struct function *functions_index[ 32 ], *entry_point;
 	struct worker *worker;
 };
@@ -116,12 +114,11 @@ struct local_variable {
 
 /* Global variables. */
 struct global_variable {
-	char *name;
+	struct string str;
 	struct variable value;
 	struct structure *type;
 	struct function *init_function;
 	struct expression *initializer;
-	struct global_variable *next;
 };
 
 /* Current local variable array and exception. */

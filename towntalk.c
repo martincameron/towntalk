@@ -753,19 +753,14 @@ static void dispose_local_variables( struct local_variable *local ) {
 	}
 }
 
-static void dispose_global_variables( struct global_variable *global ) {
-	struct global_variable *next;
-	while( global ) {
-		next = global->next;
-		free( global->name );
-		dispose_temporary( &global->value );
-		if( global->init_function ) {
-			unref_string( &global->init_function->str );
-		}
-		dispose_expressions( global->initializer );
-		free( global );
-		global = next;
+static void dispose_global_variable( struct global_variable *global ) {
+	free( global->str.string );
+	dispose_temporary( &global->value );
+	if( global->init_function ) {
+		unref_string( &global->init_function->str );
 	}
+	dispose_expressions( global->initializer );
+	free( global );
 }
 
 static void dispose_statements( struct statement *statements ) {
@@ -885,6 +880,9 @@ void unref_string( struct string *str ) {
 			case STRUCT:
 				dispose_structure( ( struct structure * ) str );
 				break;
+			case GLOBAL: case CONST:
+				dispose_global_variable( ( struct global_variable * ) str );
+				break;
 			case FUNCTION:
 				dispose_functions( ( struct function * ) str );
 				break;
@@ -917,10 +915,8 @@ static void dispose_arrays( struct array *head ) {
 void dispose_environment( struct environment *env ) {
 	int idx;
 	for( idx = 0; idx < 32; idx++ ) {
-		dispose_global_variables( env->constants_index[ idx ] );
-		dispose_global_variables( env->globals_index[ idx ] );
+		dispose_string_list( env->globals_index[ idx ] );
 	}
-	dispose_string_list( env->constants );
 	dispose_string_list( env->globals );
 	dispose_arrays( &env->arrays );
 	for( idx = 0; idx < 32; idx++ ) {
@@ -1149,13 +1145,18 @@ static char* new_qualified_decl( char *name, int line, struct function *func, ch
 
 static struct global_variable* new_global_variable( char *name, int line,
 	struct structure *type, struct function *init_function, struct expression *initializer, char *message ) {
-	struct global_variable *global = calloc( 1, sizeof( struct global_variable ) );
+	struct global_variable *global = malloc( sizeof( struct global_variable ) );
 	if( global ) {
-		global->name = new_qualified_decl( name, line, init_function, message );
-		if( global->name ) {
+		global->str.reference_count = 1;
+		global->str.string = new_qualified_decl( name, line, init_function, message );
+		if( global->str.string ) {
+			global->str.length = strlen( global->str.string );
+			global->str.type = GLOBAL;
+			global->value.integer_value = 0;
+			global->value.string_value = NULL;
 			global->type = type;
+			global->init_function = init_function;
 			if( init_function ) {
-				global->init_function = init_function;
 				init_function->str.reference_count++;
 			}
 			global->initializer = initializer;
@@ -1169,52 +1170,25 @@ static struct global_variable* new_global_variable( char *name, int line,
 	return global;
 }
 
-static int add_constant( struct environment *env, struct global_variable *constant, char *message ) {
+static struct string_list* add_global( struct environment *env, struct global_variable *global, char *message ) {
 	int idx;
-	struct string_list *tail = env->constants_tail;
-	struct string *name = new_string_value( constant->name );
-	if( name ) {
-		tail = append_string_list( tail, name );
-		if( tail ) {
-			if( env->constants == NULL ) {
-				env->constants = tail;
-			}
-			env->constants_tail = tail;
-			idx = hash_code( name->string, 0 );
-			constant->next = env->constants_index[ idx ];
-			env->constants_index[ idx ] = constant;
-		} else {
-			strcpy( message, OUT_OF_MEMORY );
+	struct string_list *list = append_string_list( env->globals_tail, &global->str );
+	if( list ) {
+		if( env->globals == NULL ) {
+			env->globals = list;
 		}
-		unref_string( name );
-	} else {
+		env->globals_tail = list;
+		idx = hash_code( global->str.string, 0 );
+		list = append_string_list( NULL, &global->str );
+		if( list ) {
+			list->next = env->globals_index[ idx ];
+			env->globals_index[ idx ] = list;
+		}
+	}
+	if( !list ) {
 		strcpy( message, OUT_OF_MEMORY );
 	}
-	return message[ 0 ] == 0;
-}
-
-static int add_global( struct environment *env, struct global_variable *global, char *message ) {
-	int idx;
-	struct string_list *tail = env->globals_tail;
-	struct string *name = new_string_value( global->name );
-	if( name ) {
-		tail = append_string_list( tail, name );
-		if( tail ) {
-			if( env->globals == NULL ) {
-				env->globals = tail;
-			}
-			env->globals_tail = tail;
-			idx = hash_code( name->string, 0 );
-			global->next = env->globals_index[ idx ];
-			env->globals_index[ idx ] = global;
-		} else {
-			strcpy( message, OUT_OF_MEMORY );
-		}
-		unref_string( name );
-	} else {
-		strcpy( message, OUT_OF_MEMORY );
-	}
-	return message[ 0 ] == 0;
+	return list;
 }
 
 /* Add the specified constants to env. Returns zero and writes message on failure. */
@@ -1222,16 +1196,18 @@ int add_constants( struct constant *constants, struct environment *env, char *me
 	struct global_variable *global;
 	while( constants->name && message[ 0 ] == 0 ) {
 		global = new_global_variable( constants->name, 0, NULL, NULL, NULL, message );
-		if( global && add_constant( env, global, message ) ) {
-			global->value.integer_value = constants->integer_value;
-			if( constants->string_value ) {
-				global->value.string_value = new_string_literal( constants->string_value );
-				if( global->value.string_value == NULL ) {
-					strcpy( message, OUT_OF_MEMORY );
+		if( global ) {
+			if( add_global( env, global, message ) ) {
+				global->str.type = CONST;
+				global->value.integer_value = constants->integer_value;
+				if( constants->string_value ) {
+					global->value.string_value = new_string_literal( constants->string_value );
+					if( global->value.string_value == NULL ) {
+						strcpy( message, OUT_OF_MEMORY );
+					}
 				}
 			}
-		} else {
-			dispose_global_variables( global );
+			unref_string( &global->str );
 		}
 		constants++;
 	}
@@ -2128,24 +2104,15 @@ static struct local_variable* get_local_variable( struct local_variable *locals,
 	return locals;
 }
 
-static struct global_variable* get_global( struct global_variable *global, char *name, size_t len ) {
-	while( global && ( strncmp( global->name, name, len ) || strlen( global->name ) != len ) ) {
-		global = global->next;
-	}
-	return global;
-}
-
-static struct global_variable* get_global_indexed( struct global_variable **index, char *name ) {
-	size_t len = field_length( name, ".:" );
-	return get_global( index[ hash_code( name, name[ len ] ) ], name, len );
-}
-
 static int add_global_constant( struct element *elem,
 	struct function *func, struct structure *type, struct expression *initializer,
 	struct statement *prev, char *message ) {
 	struct global_variable *global = new_global_variable( elem->str.string, elem->line, type, func, initializer, message );
-	if( global == NULL || !add_constant( func->env, global, message ) ) {
-		dispose_global_variables( global );
+	if( global ) {
+		if( add_global( func->env, global, message ) ) {
+			global->str.type = CONST;
+		}
+		unref_string( &global->str );
 	}
 	return message[ 0 ] == 0;
 }
@@ -2154,8 +2121,9 @@ static int add_global_variable( struct element *elem,
 	struct function *func, struct structure *type, struct expression *initializer,
 	struct statement *prev, char *message ) {
 	struct global_variable *global = new_global_variable( elem->str.string, elem->line, type, func, initializer, message );
-	if( global == NULL || !add_global( func->env, global, message ) ) {
-		dispose_global_variables( global );
+	if( global ) {
+		add_global( func->env, global, message );
+		unref_string( &global->str );
 	}
 	return message[ 0 ] == 0;
 }
@@ -3758,7 +3726,7 @@ static struct element* parse_thiscall_expression( struct element *elem,
 	struct element *next = elem->next;
 	char *field = strchr( elem->str.string, '.' );
 	struct local_variable *local = get_local_variable( func->variable_decls, &elem->str.string[ 1 ], "." );
-	struct global_variable *global = get_global_indexed( func->env->globals_index, &elem->str.string[ 1 ] );
+	struct global_variable *global = ( struct global_variable * ) get_decl_indexed( func->env->globals_index, &elem->str.string[ 1 ], GLOBAL );
 	struct expression param = { 0 }, *this, *expr = calloc( 1, sizeof( struct string_literal_expression ) );
 	if( expr ) {
 		prev->next = expr;
@@ -3960,7 +3928,7 @@ static struct element* parse_global_expression( struct element *elem, struct fun
 	struct variables *vars, struct global_variable *global, struct expression *prev, char *message ) {
 	int idx, count;
 	struct element *next = elem->next;
-	char *field = &elem->str.string[ strlen( global->name ) ];
+	char *field = &elem->str.string[ global->str.length ];
 	struct expression *expr = calloc( 1, sizeof( struct global_expression ) );
 	if( expr ) {
 		prev->next = expr;
@@ -4094,9 +4062,9 @@ static struct element* parse_expression( struct element *elem,
 				/* Captured local variable. */
 				next = parse_capture_expression( elem, func, vars, local, prev, message );
 			} else {
-				global = get_global_indexed( func->env->constants_index, value );
+				global = ( struct global_variable * ) get_decl_indexed( func->env->globals_index, value, CONST );
 				if( global == NULL ) {
-					global = get_global_indexed( func->env->globals_index, value );
+					global = ( struct global_variable * ) get_decl_indexed( func->env->globals_index, value, GLOBAL );
 				}
 				if( global ) {
 					/* Global variable reference.*/
@@ -4402,7 +4370,7 @@ static struct element* parse_global_assignment( struct element *elem,
 			strcpy( message, OUT_OF_MEMORY );
 		}
 	} else if( field ) {
-		sprintf( message, "Variable '%.64s' has no associated structure on line %d.", global->name, elem->line );
+		sprintf( message, "Variable '%.64s' has no associated structure on line %d.", global->str.string, elem->line );
 	} else {
 		stmt = calloc( 1, sizeof( struct global_assignment_statement ) );
 		if( stmt ) {
@@ -4436,7 +4404,7 @@ static struct element* parse_assignment_statement( struct element *elem,
 		if( local ) {
 			return parse_local_assignment( elem, func, vars, local, prev, message );
 		} else {
-			global = get_global_indexed( func->env->globals_index, next->str.string );
+			global = ( struct global_variable * ) get_decl_indexed( func->env->globals_index, next->str.string, GLOBAL );
 			if( global ) {
 				return parse_global_assignment( elem, func, vars, global, prev, message );
 			} else {
@@ -5633,8 +5601,7 @@ static int validate_decl( char *name, int line, struct environment *env, char *m
 	} else if( get_keyword( name, declarations )
 	|| get_keyword( name, env->statements_index[ hash ] )
 	|| get_operator( name, env->operators_index[ hash ] )
-	|| get_global( env->constants_index[ hash ], name, len )
-	|| get_global( env->globals_index[ hash ], name, len )
+	|| get_decl( env->globals_index[ hash ], name, len, 0 )
 	|| get_function( env->functions_index[ hash ], name )
 	|| get_decl( env->structures_index[ hash ], name, len, STRUCT ) ) {
 		sprintf( message, "Name '%.64s' already defined on line %d.", name, line );
@@ -5805,22 +5772,16 @@ static enum result initialize_global( struct global_variable *global, struct var
 /* Evaluate the global-variable initialization expressions for env.
    Returns zero and assigns exception on failure. */
 int initialize_globals( struct environment *env, struct variable *exception ) {
-	struct global_variable *global;
-	struct string_list *name = env->constants;
-	while( name ) {
-		global = get_global_indexed( env->constants_index, name->str->string );
-		if( initialize_global( global, exception ) == EXCEPTION ) {
-			return 0;
+	struct string *str;
+	struct string_list *list = env->globals;
+	while( list ) {
+		str = list->str;
+		if( str->type == GLOBAL || str->type == CONST ) {
+			if( initialize_global( ( struct global_variable * ) str, exception ) == EXCEPTION ) {
+				return 0;
+			}
 		}
-		name = name->next;
-	}
-	name = env->globals;
-	while( name ) {
-		global = get_global_indexed( env->globals_index, name->str->string );
-		if( initialize_global( global, exception ) == EXCEPTION ) {
-			return 0;
-		}
-		name = name->next;
+		list = list->next;
 	}
 	return 1;
 }
