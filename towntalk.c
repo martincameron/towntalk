@@ -1942,7 +1942,6 @@ static enum result evaluate_array_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	struct expression prev, *expr = this->parameters->next;
 	int idx, len, buf = this->index == 'B';
-	struct global_variable inputs, *input;
 	struct variable var = { 0, NULL };
 	struct structure *struc = NULL;
 	char msg[ 128 ] = "";
@@ -3899,7 +3898,6 @@ static struct element* parse_capture_expression( struct element *elem,
 
 static struct element* parse_global_expression( struct element *elem, struct function *func,
 	struct variables *vars, struct global_variable *global, struct expression *prev, char *message ) {
-	int idx, count;
 	struct element *next = elem->next;
 	char *field = &elem->str.string[ global->str.length ];
 	struct expression *expr = calloc( 1, sizeof( struct string_expression ) );
@@ -3921,7 +3919,6 @@ static struct element* parse_global_expression( struct element *elem, struct fun
 
 static struct element* parse_integer_literal_expression( struct element *elem, struct expression *prev, char *message ) {
 	char *end;
-	struct variable var = { 0 };
 	struct expression *expr = calloc( 1, sizeof( struct expression ) );
 	if( expr ) {
 		prev->next = expr;
@@ -4204,7 +4201,7 @@ static struct element* parse_struct_assignment( struct element *elem,
 	int idx, count;
 	struct expression expr;
 	struct structure *struc;
-	struct element *next = elem->next, *child = next->child;
+	struct element *next = elem->next;
 	struct statement *stmt = calloc( 1, sizeof( struct structure_statement ) );
 	if( stmt ) {
 		prev->next = stmt;
@@ -4367,7 +4364,7 @@ static struct element* parse_assignment_statement( struct element *elem,
 	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
 	struct local_variable *local;
 	struct global_variable *global;
-	struct element *next = elem->next, *child = next->child;
+	struct element *next = elem->next;
 	if( next->str.string[ 0 ] == '[' ) {
 		return parse_array_assignment( elem, func, vars, prev, message );
 	} else if( next->next->str.string[ 0 ] == '(' ) {
@@ -5254,7 +5251,6 @@ static struct element* parse_function_declaration( struct element *elem,
 	struct environment *env = func->env;
 	struct element *next = elem->next;
 	struct function *decl;
-	int idx;
 	char *name = new_qualified_decl( next->str.string, next->line, func, message );
 	if( name ) {
 		next = next->next;
@@ -5275,7 +5271,6 @@ static struct element* parse_program_declaration( struct element *elem,
 	struct environment *env = func->env;
 	struct element *next = elem->next;
 	struct function *prog;
-	int idx;
 	if( validate_decl( next->str.string, next->line, env, message ) ) {
 		prog = new_function( next->str.string );
 		if( prog ) {
@@ -5318,8 +5313,7 @@ static struct element* parse_include( struct element *elem,
 	return next;
 }
 
-static int add_structure_field( struct structure *struc, struct element *elem,
-	struct environment *env, char *message ) {
+static int add_structure_field( struct structure *struc, struct element *elem, char *message ) {
 	struct string_list *tail;
 	struct string *field;
 	if( validate_name( elem, message ) ) {
@@ -5347,8 +5341,6 @@ static int add_structure_field( struct structure *struc, struct element *elem,
 
 static struct element* parse_struct_declaration( struct element *elem,
 	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
-	int idx;
-	struct string *decl;
 	struct structure *struc;
 	struct string_list *field, *tail;
 	struct environment *env = func->env;
@@ -5396,7 +5388,7 @@ static struct element* parse_struct_declaration( struct element *elem,
 				if( next && next->str.string[ 0 ] == '{' ) {
 					child = next->child;
 					while( child && message[ 0 ] == 0 ) {
-						if( add_structure_field( struc, child, env, message ) ) {
+						if( add_structure_field( struc, child, message ) ) {
 							child = child->next;
 							if( child && ( child->str.string[ 0 ] == ',' || child->str.string[ 0 ] == ';' ) ) {
 								child = child->next;

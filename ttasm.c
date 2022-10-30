@@ -383,7 +383,6 @@ static struct element* parse_leta( struct element *elem, struct function *func, 
 	*/
 	int idx;
 	char *str;
-	struct asm_operator *oper;
 	struct element *next = elem->next, *child = next->child;
 	if( child && child->next && child->next->next == NULL ) {
 		idx = get_local_variable( func, child, "", message );
@@ -467,7 +466,6 @@ static struct element* parse_letv_a( struct element *elem, struct function *func
 		letv_ap     x y z   0 : let x = [ y z++ ];
 	*/
 	char *str;
-	struct asm_operator *oper;
 	struct element *child, *next = elem->next;
 	int idx = get_local_variable( func, next, "", message );
 	if( idx >= 0 ) {
@@ -547,7 +545,6 @@ static struct element* parse_letv_v( struct element *elem, struct function *func
 		opcode      x y z imm : mnemonic
 		letv_v      x y 0   0 : let x = y;
 	*/
-	char *end;
 	struct element *next = elem->next;
 	int idx = get_local_variable( func, next, "", message );
 	if( idx >= 0 ) {
