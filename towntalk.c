@@ -199,7 +199,8 @@ struct structure_statement {
 	struct structure *structure;
 };
 
-struct string_literal_expression {
+/* Expression with associated reference. */
+struct string_expression {
 	struct expression expr;
 	struct string *str;
 };
@@ -721,7 +722,7 @@ static enum result evaluate_integer_literal_expression( struct expression *this,
 static enum result evaluate_string_literal_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	result->integer_value = this->index;
-	result->string_value = ( ( struct string_literal_expression * ) this )->str;
+	result->string_value = ( ( struct string_expression * ) this )->str;
 	result->string_value->reference_count++;
 	return OKAY;
 }
@@ -732,7 +733,7 @@ static void dispose_expressions( struct expression *expr ) {
 		next = expr->next;
 		dispose_expressions( expr->parameters );
 		if( expr->evaluate == evaluate_string_literal_expression ) {
-			unref_string( ( ( struct string_literal_expression * ) expr )->str );
+			unref_string( ( ( struct string_expression * ) expr )->str );
 		}
 		free( expr );
 		expr = next;
@@ -1243,7 +1244,7 @@ static enum result evaluate_local_post_dec( struct expression *this,
 
 static enum result evaluate_global( struct expression *this,
 	struct variables *vars, struct variable *result ) {
-	struct variable *var = &( ( struct global_variable * ) ( ( struct string_literal_expression * ) this )->str )->value;
+	struct variable *var = &( ( struct global_variable * ) ( ( struct string_expression * ) this )->str )->value;
 	result->integer_value = var->integer_value;
 	if( var->string_value ) {
 		result->string_value = var->string_value;
@@ -1792,8 +1793,8 @@ static enum result evaluate_thiscall_expression( struct expression *this,
 	struct variable obj = { 0 };
 	struct string *function = NULL;
 	struct function_expression call_expr = { 0 };
-	struct string_literal_expression obj_expr = { 0 };
-	struct structure *struc = ( struct structure * ) ( ( struct string_literal_expression * ) this )->str;
+	struct string_expression obj_expr = { 0 };
+	struct structure *struc = ( struct structure * ) ( ( struct string_expression * ) this )->str;
 	enum result ret = this->parameters->evaluate( this->parameters, vars, &obj );
 	if( ret ) {
 		if( instance_of( obj.string_value, struc ) ) {
@@ -1930,7 +1931,7 @@ static enum result evaluate_member_expression( struct expression *this,
 	struct array *arr;
 	struct variable obj = { 0, NULL };
 	struct expression *parameter = this->parameters;
-	struct structure *struc = ( struct structure * ) ( ( struct string_literal_expression * ) this )->str;
+	struct structure *struc = ( struct structure * ) ( ( struct string_expression * ) this )->str;
 	enum result ret = parameter->evaluate( parameter, vars, &obj );
 	if( ret ) {
 		if( instance_of( obj.string_value, struc ) ) {
@@ -3647,11 +3648,11 @@ static struct element* parse_struct_expression( struct element *elem,
 	int idx, count;
 	struct element *next = elem->next;
 	char *field = strchr( elem->str.string, '.' );
-	struct expression param = { 0 }, *expr = calloc( 1, sizeof( struct string_literal_expression ) );
+	struct expression param = { 0 }, *expr = calloc( 1, sizeof( struct string_expression ) );
 	if( expr ) {
 		prev->next = expr;
 		expr->line = elem->line;
-		( ( struct string_literal_expression * ) expr )->str = &struc->str;
+		( ( struct string_expression * ) expr )->str = &struc->str;
 		if( field ) {
 			idx = get_string_list_index( struc->fields, &field[ 1 ] );
 			if( idx >= 0 ) {
@@ -3721,7 +3722,7 @@ static struct element* parse_thiscall_expression( struct element *elem,
 	char *field = strchr( elem->str.string, '.' );
 	struct local_variable *local = get_local_variable( func->variable_decls, &elem->str.string[ 1 ], "." );
 	struct global_variable *global = ( struct global_variable * ) get_decl_indexed( func->env->globals_index, &elem->str.string[ 1 ], GLOBAL );
-	struct expression param = { 0 }, *this, *expr = calloc( 1, sizeof( struct string_literal_expression ) );
+	struct expression param = { 0 }, *this, *expr = calloc( 1, sizeof( struct string_expression ) );
 	if( expr ) {
 		prev->next = expr;
 		expr->line = elem->line;
@@ -3733,20 +3734,20 @@ static struct element* parse_thiscall_expression( struct element *elem,
 			struc = ( struct structure * ) get_decl_indexed( func->env->structures_index, &elem->str.string[ 1 ], STRUCT );
 		}
 		if( struc && field ) {
-			( ( struct string_literal_expression * ) expr )->str = &struc->str;
+			( ( struct string_expression * ) expr )->str = &struc->str;
 			idx = get_string_list_index( struc->fields, &field[ 1 ] );
 			if( idx >= 0 ) {
 				if( next && next->str.string[ 0 ] == '(' ) {
 					parse_expressions( next->child, func, vars, 0, &param, &count, message );
 					expr->parameters = param.next;
 					if( local || global ) {
-						this = calloc( 1, sizeof( struct string_literal_expression ) );
+						this = calloc( 1, sizeof( struct string_expression ) );
 						if( this ) {
 							if( local ) {
 								this->index = local->index;
 								this->evaluate = evaluate_local;
 							} else {
-								( ( struct string_literal_expression * ) this )->str = &global->str;
+								( ( struct string_expression * ) this )->str = &global->str;
 								this->evaluate = evaluate_global;
 							}
 							this->next = expr->parameters;
@@ -3843,10 +3844,10 @@ static struct element* parse_member_expression( struct structure *struc, struct 
 	if( struc ) {
 		idx = get_string_list_index( struc->fields, memb );
 		if( idx >= 0 ) {
-			expr = calloc( 1, sizeof( struct string_literal_expression ) );
+			expr = calloc( 1, sizeof( struct string_expression ) );
 			if( expr ) {
 				prev->next = expr;
-				( ( struct string_literal_expression * ) expr )->str = &struc->str;
+				( ( struct string_expression * ) expr )->str = &struc->str;
 				expr->index = idx;
 				expr->line = elem->line;
 				expr->parameters = this;
@@ -3895,14 +3896,14 @@ static struct element* parse_capture_expression( struct element *elem,
 	struct element *next = elem->next;
 	struct variable *captured = &vars->locals[ local->index ];
 	char *field = &elem->str.string[ strlen( local->name ) ];
-	struct expression *expr = calloc( 1, sizeof( struct string_literal_expression ) );
+	struct expression *expr = calloc( 1, sizeof( struct string_expression ) );
 	if( expr ) {
 		prev->next = expr;
 		expr->line = elem->line;
 		expr->index = captured->integer_value;
 		if( captured->string_value ) {
 			captured->string_value->reference_count++;
-			( ( struct string_literal_expression * ) expr )->str = captured->string_value;
+			( ( struct string_expression * ) expr )->str = captured->string_value;
 			expr->evaluate = evaluate_string_literal_expression;
 		} else {
 			expr->evaluate = evaluate_integer_literal_expression;
@@ -3923,10 +3924,10 @@ static struct element* parse_global_expression( struct element *elem, struct fun
 	int idx, count;
 	struct element *next = elem->next;
 	char *field = &elem->str.string[ global->str.length ];
-	struct expression *expr = calloc( 1, sizeof( struct string_literal_expression ) );
+	struct expression *expr = calloc( 1, sizeof( struct string_expression ) );
 	if( expr ) {
 		prev->next = expr;
-		( ( struct string_literal_expression * ) expr )->str = &global->str;
+		( ( struct string_expression * ) expr )->str = &global->str;
 		expr->line = elem->line;
 		expr->evaluate = evaluate_global;
 		if( field[ 0 ] == '.' ) {
@@ -3961,11 +3962,11 @@ static struct element* parse_integer_literal_expression( struct element *elem, s
 
 static struct expression* new_string_literal_expression( int integer_value,
 	struct string *string_value, int line, char *message ) {
-	struct expression *expr = calloc( 1, sizeof( struct string_literal_expression ) );
+	struct expression *expr = calloc( 1, sizeof( struct string_expression ) );
 	if( expr ) {
 		expr->line = line;
 		expr->index = integer_value;
-		( ( struct string_literal_expression * ) expr )->str = string_value;
+		( ( struct string_expression * ) expr )->str = string_value;
 		expr->evaluate = evaluate_string_literal_expression;
 	} else {
 		strcpy( message, OUT_OF_MEMORY );
@@ -4345,12 +4346,12 @@ static struct element* parse_global_assignment( struct element *elem,
 				idx = get_string_list_index( struc->fields, &field[ 1 ] );
 				if( idx >= 0 ) {
 					stmt->local = idx;
-					expr.next = calloc( 1, sizeof( struct string_literal_expression ) );
+					expr.next = calloc( 1, sizeof( struct string_expression ) );
 					if( expr.next ) {
 						stmt->source->next = expr.next;
 						expr.next->line = next->line;
 						expr.next->evaluate = evaluate_global;
-						( ( struct string_literal_expression * ) expr.next )->str = &global->str;
+						( ( struct string_expression * ) expr.next )->str = &global->str;
 						stmt->execute = execute_struct_assignment;
 						next = next->next;
 					} else {
@@ -5177,13 +5178,13 @@ static enum result evaluate_execute_expression( struct expression *this,
 										work->strings[ idx ].integer_values = ( ( struct array * ) str )->integer_values;
 										work->strings[ idx ].length = ( ( struct array * ) str )->length;
 									}
-									( ( struct string_literal_expression * ) work->parameters )[ idx ].str = &work->strings[ idx ].str;
+									( ( struct string_expression * ) work->parameters )[ idx ].str = &work->strings[ idx ].str;
 									work->parameters[ idx ].evaluate = evaluate_string_literal_expression;
 								} else {
 									ret = throw( vars, this, 0, "Values of this type cannot be passed to workers." );
 								}
 							} else {
-								( ( struct string_literal_expression * ) work->parameters )[ idx ].str = NULL;
+								( ( struct string_expression * ) work->parameters )[ idx ].str = NULL;
 								work->parameters[ idx ].evaluate = evaluate_integer_literal_expression;
 							}
 						}
@@ -5650,7 +5651,7 @@ static struct worker* parse_worker( struct element *elem, struct string *file, c
 					work->strings = calloc( params, sizeof( struct array ) );
 				}
 				if( work->strings ) {
-					work->parameters = calloc( params, sizeof( struct string_literal_expression ) );
+					work->parameters = calloc( params, sizeof( struct string_expression ) );
 				}
 				if( work->parameters ) {
 					for( idx = 0; idx < params; idx++ ) {
