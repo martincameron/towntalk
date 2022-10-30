@@ -821,24 +821,14 @@ static void dispose_structure( struct structure *sct ) {
 	free( sct );
 }
 
-static void dispose_functions( struct function *func ) {
-	struct string *str;
-	while( func ) {
-		str = &func->str;
-		if( str->reference_count == 1 ) {
-			unref_string( func->file );
-			if( func->library ) {
-				unref_string( func->library );
-			}
-			dispose_local_variables( func->variable_decls );
-			dispose_statements( func->statements );
-			func = func->next;
-			free( str );
-		} else {
-			str->reference_count--;
-			func = NULL;
-		}
+static void dispose_function( struct function *func ) {
+	unref_string( func->file );
+	if( func->library ) {
+		unref_string( func->library );
 	}
+	dispose_local_variables( func->variable_decls );
+	dispose_statements( func->statements );
+	free( func );
 }
 
 static void dispose_worker( struct worker *work ) {
@@ -879,7 +869,7 @@ void unref_string( struct string *str ) {
 				dispose_global_variable( ( struct global_variable * ) str );
 				break;
 			case FUNCTION:
-				dispose_functions( ( struct function * ) str );
+				dispose_function( ( struct function * ) str );
 				break;
 			case WORKER:
 				await_worker( ( struct worker * ) str, 1 );
@@ -910,18 +900,12 @@ static void dispose_arrays( struct array *head ) {
 void dispose_environment( struct environment *env ) {
 	int idx;
 	for( idx = 0; idx < 32; idx++ ) {
-		dispose_string_list( env->globals_index[ idx ] );
-	}
-	dispose_string_list( env->globals );
-	dispose_arrays( &env->arrays );
-	for( idx = 0; idx < 32; idx++ ) {
-		if( env->functions_index[ idx ] ) {
-			unref_string( &env->functions_index[ idx ]->str );
-		}
-		dispose_string_list( env->structures_index[ idx ] );
+		dispose_string_list( env->decls_index[ idx ] );
 		dispose_keywords( env->statements_index[ idx ] );
 		dispose_operators( env->operators_index[ idx ] );
 	}
+	dispose_string_list( env->globals );
+	dispose_arrays( &env->arrays );
 }
 
 static struct string_list* append_string_list( struct string_list *tail, struct string *value ) {
@@ -1165,22 +1149,27 @@ static struct global_variable* new_global_variable( char *name, int line,
 	return global;
 }
 
+static struct string_list* add_decl( struct environment *env, struct string *decl, char *message ) {
+	int idx = hash_code( decl->string, 0 );
+	struct string_list *list = append_string_list( NULL, decl );
+	if( list ) {
+		list->next = env->decls_index[ idx ];
+		env->decls_index[ idx ] = list;
+	} else {
+		strcpy( message, OUT_OF_MEMORY );
+	}
+	return list;
+}
+
 static struct string_list* add_global( struct environment *env, struct global_variable *global, char *message ) {
-	int idx;
 	struct string_list *list = append_string_list( env->globals_tail, &global->str );
 	if( list ) {
 		if( env->globals == NULL ) {
 			env->globals = list;
 		}
 		env->globals_tail = list;
-		idx = hash_code( global->str.string, 0 );
-		list = append_string_list( NULL, &global->str );
-		if( list ) {
-			list->next = env->globals_index[ idx ];
-			env->globals_index[ idx ] = list;
-		}
-	}
-	if( !list ) {
+		list = add_decl( env, &global->str, message );
+	} else {
 		strcpy( message, OUT_OF_MEMORY );
 	}
 	return list;
@@ -2080,17 +2069,6 @@ static struct string* get_decl_indexed( struct string_list **index, char *name, 
 	return get_decl( index[ hash_code( name, name[ len ] ) ], name, len, type );
 }
 
-static struct function* get_function( struct function *func, char *name ) {
-	while( func && strcmp( func->str.string, name ) ) {
-		func = func->next;
-	}
-	return func;
-}
-
-static struct function* get_function_indexed( struct function **index, char *name ) {
-	return get_function( index[ hash_code( name, 0 ) ], name );
-}
-
 static struct local_variable* get_local_variable( struct local_variable *locals, char *name, char *terminators ) {
 	size_t len = field_length( name, terminators );
 	while( locals && ( strncmp( locals->name, name, len ) || strlen( locals->name ) != len ) ) {
@@ -2168,7 +2146,7 @@ static struct element* parse_variable_declaration( struct element *elem, struct 
 			prev = prev->next;
 		}
 		if( elem->str.string[ 0 ] == '(' ) {
-			type = ( struct structure * ) get_decl_indexed( func->env->structures_index, elem->child->str.string, STRUCT );
+			type = ( struct structure * ) get_decl_indexed( func->env->decls_index, elem->child->str.string, STRUCT );
 			if( type ) {
 				elem = elem->next;
 			} else {
@@ -2902,7 +2880,7 @@ static struct element* value_to_element( int integer_value, struct string *strin
 					}
 					break;
 				case FUNCTION:
-					if( get_function_indexed( env->functions_index, string_value->string ) ) {
+					if( get_decl_indexed( env->decls_index, string_value->string, FUNCTION ) ) {
 						elem = new_element( string_value->length + 1 );
 						if( elem ) {
 							elem->str.string[ 0 ] = '@';
@@ -3609,7 +3587,7 @@ static struct element* parse_func_ref_expression( struct element *elem,
 	if( expr ) {
 		prev->next = &expr->expr;
 		expr->expr.line = elem->line;
-		expr->function = get_function_indexed( func->env->functions_index, name );
+		expr->function = ( struct function * ) get_decl_indexed( func->env->decls_index, name, FUNCTION );
 		if( expr->function ) {
 			expr->expr.evaluate = evaluate_func_ref_expression;
 		} else {
@@ -3721,7 +3699,7 @@ static struct element* parse_thiscall_expression( struct element *elem,
 	struct element *next = elem->next;
 	char *field = strchr( elem->str.string, '.' );
 	struct local_variable *local = get_local_variable( func->variable_decls, &elem->str.string[ 1 ], "." );
-	struct global_variable *global = ( struct global_variable * ) get_decl_indexed( func->env->globals_index, &elem->str.string[ 1 ], GLOBAL );
+	struct global_variable *global = ( struct global_variable * ) get_decl_indexed( func->env->decls_index, &elem->str.string[ 1 ], GLOBAL );
 	struct expression param = { 0 }, *this, *expr = calloc( 1, sizeof( struct string_expression ) );
 	if( expr ) {
 		prev->next = expr;
@@ -3731,7 +3709,7 @@ static struct element* parse_thiscall_expression( struct element *elem,
 		} else if( global ) {
 			struc = global->type;
 		} else {
-			struc = ( struct structure * ) get_decl_indexed( func->env->structures_index, &elem->str.string[ 1 ], STRUCT );
+			struc = ( struct structure * ) get_decl_indexed( func->env->decls_index, &elem->str.string[ 1 ], STRUCT );
 		}
 		if( struc && field ) {
 			( ( struct string_expression * ) expr )->str = &struc->str;
@@ -3794,7 +3772,7 @@ static struct element* parse_member_call_expression( struct structure *struc, st
 			strcpy( name, struc->str.string );
 			name[ struc->str.length ] = '_';
 			strcpy( &name[ struc->str.length + 1 ], memb );
-			decl = get_function_indexed( func->env->functions_index, name );
+			decl = ( struct function * ) get_decl_indexed( func->env->decls_index, name, FUNCTION );
 			if( decl ) {
 				struc = NULL;
 			} else {
@@ -4057,20 +4035,20 @@ static struct element* parse_expression( struct element *elem,
 				/* Captured local variable. */
 				next = parse_capture_expression( elem, func, vars, local, prev, message );
 			} else {
-				global = ( struct global_variable * ) get_decl_indexed( func->env->globals_index, value, CONST );
+				global = ( struct global_variable * ) get_decl_indexed( func->env->decls_index, value, CONST );
 				if( global == NULL ) {
-					global = ( struct global_variable * ) get_decl_indexed( func->env->globals_index, value, GLOBAL );
+					global = ( struct global_variable * ) get_decl_indexed( func->env->decls_index, value, GLOBAL );
 				}
 				if( global ) {
 					/* Global variable reference.*/
 					next = parse_global_expression( elem, func, vars, global, prev, message );
 				} else {
-					decl = get_function_indexed( func->env->functions_index, value );
+					decl = ( struct function * ) get_decl_indexed( func->env->decls_index, value, FUNCTION );
 					if( decl ) {
 						/* Function call.*/
 						next = parse_call_expression( elem, func, vars, decl, prev, message );
 					} else {
-						struc = ( struct structure * ) get_decl_indexed( func->env->structures_index, value, STRUCT );
+						struc = ( struct structure * ) get_decl_indexed( func->env->decls_index, value, STRUCT );
 						if( struc ) {
 							/* Structure. */
 							next = parse_struct_expression( elem, func, vars, struc, prev, message );
@@ -4230,7 +4208,7 @@ static struct element* parse_struct_assignment( struct element *elem,
 	struct statement *stmt = calloc( 1, sizeof( struct structure_statement ) );
 	if( stmt ) {
 		prev->next = stmt;
-		struc = ( struct structure * ) get_decl_indexed( func->env->structures_index, next->str.string, STRUCT );
+		struc = ( struct structure * ) get_decl_indexed( func->env->decls_index, next->str.string, STRUCT );
 		field = strchr( next->str.string, '.' );
 		if( struc && field ) {
 			( ( struct structure_statement * ) stmt )->structure = struc;
@@ -4399,7 +4377,7 @@ static struct element* parse_assignment_statement( struct element *elem,
 		if( local ) {
 			return parse_local_assignment( elem, func, vars, local, prev, message );
 		} else {
-			global = ( struct global_variable * ) get_decl_indexed( func->env->globals_index, next->str.string, GLOBAL );
+			global = ( struct global_variable * ) get_decl_indexed( func->env->decls_index, next->str.string, GLOBAL );
 			if( global ) {
 				return parse_global_assignment( elem, func, vars, global, prev, message );
 			} else {
@@ -4954,7 +4932,7 @@ static struct element* add_function_parameter( struct function *func, struct ele
 	struct local_variable *param;
 	struct structure *type = NULL;
 	if( elem->str.string[ 0 ] == '(' ) {
-		type = ( struct structure * ) get_decl_indexed( func->env->structures_index, elem->child->str.string, STRUCT );
+		type = ( struct structure * ) get_decl_indexed( func->env->decls_index, elem->child->str.string, STRUCT );
 		if( type ) {
 			elem = elem->next;
 		} else {
@@ -5282,10 +5260,10 @@ static struct element* parse_function_declaration( struct element *elem,
 		next = next->next;
 		decl = parse_function( next, name, func, message );
 		if( decl ) {
-			idx = hash_code( decl->str.string, 0 );
-			decl->next = env->functions_index[ idx ];
-			env->functions_index[ idx ] = decl;
-			next = next->next->next;
+			if( add_decl( env, &decl->str, message ) ) {
+				next = next->next->next;
+			}
+			unref_string( &decl->str );
 		}
 		free( name );
 	}
@@ -5301,20 +5279,20 @@ static struct element* parse_program_declaration( struct element *elem,
 	if( validate_decl( next->str.string, next->line, env, message ) ) {
 		prog = new_function( next->str.string );
 		if( prog ) {
-			idx = hash_code( next->str.string, 0 );
-			prog->next = env->functions_index[ idx ];
-			env->functions_index[ idx ] = prog;
-			env->entry_point = prog;
-			prog->line = elem->line;
-			prog->file = func->file;
-			prog->file->reference_count++;
-			if( func->library ) {
-				prog->library = func->library;
-				prog->library->reference_count++;
+			if( add_decl( env, &prog->str, message ) ) {
+				env->entry_point = prog;
+				prog->line = elem->line;
+				prog->file = func->file;
+				prog->file->reference_count++;
+				if( func->library ) {
+					prog->library = func->library;
+					prog->library->reference_count++;
+				}
+				prog->body = next->next;
+				prog->env = env;
+				next = next->next->next;
 			}
-			prog->body = next->next;
-			prog->env = env;
-			next = next->next->next;
+			unref_string( &prog->str );
 		}
 	}
 	return next;
@@ -5383,16 +5361,13 @@ static struct element* parse_struct_declaration( struct element *elem,
 			struc->str.string = name;
 			struc->str.length = strlen( name );
 			struc->str.type = STRUCT;
-			idx = hash_code( name, 0 );
-			tail = append_string_list( NULL, &struc->str );
+			tail = add_decl( env, &struc->str, message );
 			if( tail ) {
-				tail->next = env->structures_index[ idx ];
-				env->structures_index[ idx ] = tail;
 				next = next->next;
 				if( next && next->str.string[ 0 ] == '(' ) {
 					child = next->child;
 					if( child && child->next == NULL && strcmp( child->str.string, name ) ) {
-						struc->super = ( struct structure * ) get_decl_indexed( env->structures_index, child->str.string, STRUCT );
+						struc->super = ( struct structure * ) get_decl_indexed( env->decls_index, child->str.string, STRUCT );
 						if( struc->super ) {
 							field = struc->super->fields;
 							while( field && message[ 0 ] == 0 ) {
@@ -5416,8 +5391,6 @@ static struct element* parse_struct_declaration( struct element *elem,
 						sprintf( message, "Invalid parent structure declaration on line %d.", next->line );
 					}
 				}
-			} else {
-				strcpy( message, OUT_OF_MEMORY );
 			}
 			if( message[ 0 ] == 0 ) {
 				if( next && next->str.string[ 0 ] == '{' ) {
@@ -5603,9 +5576,7 @@ static int validate_decl( char *name, int line, struct environment *env, char *m
 	} else if( get_keyword( name, declarations )
 	|| get_keyword( name, env->statements_index[ hash ] )
 	|| get_operator( name, env->operators_index[ hash ] )
-	|| get_decl( env->globals_index[ hash ], name, len, 0 )
-	|| get_function( env->functions_index[ hash ], name )
-	|| get_decl( env->structures_index[ hash ], name, len, STRUCT ) ) {
+	|| get_decl( env->decls_index[ hash ], name, len, 0 ) ) {
 		sprintf( message, "Name '%.64s' already defined on line %d.", name, line );
 		return 0;
 	}
@@ -5643,24 +5614,26 @@ static struct worker* parse_worker( struct element *elem, struct string *file, c
 		if( parent.file ) {
 			func = parse_function( elem, work->str.string, &parent, message );
 			if( func ) {
-				work->env.functions_index[ hash_code( work->str.string, 0 ) ] = func;
-				work->env.entry_point = func;
-				params = func->num_parameters;
-				work->args = calloc( params, sizeof( struct variable ) );
-				if( work->args ) {
-					work->strings = calloc( params, sizeof( struct array ) );
-				}
-				if( work->strings ) {
-					work->parameters = calloc( params, sizeof( struct string_expression ) );
-				}
-				if( work->parameters ) {
-					for( idx = 0; idx < params; idx++ ) {
-						work->parameters[ idx ].next = &work->parameters[ idx + 1 ];
+				if( add_decl( &work->env, &func->str, message ) ) {
+					work->env.entry_point = func;
+					params = func->num_parameters;
+					work->args = calloc( params, sizeof( struct variable ) );
+					if( work->args ) {
+						work->strings = calloc( params, sizeof( struct array ) );
 					}
-					parse_function_body( func, NULL, message );
-				} else {
-					strcpy( message, OUT_OF_MEMORY );
+					if( work->strings ) {
+						work->parameters = calloc( params, sizeof( struct string_expression ) );
+					}
+					if( work->parameters ) {
+						for( idx = 0; idx < params; idx++ ) {
+							work->parameters[ idx ].next = &work->parameters[ idx + 1 ];
+						}
+						parse_function_body( func, NULL, message );
+					} else {
+						strcpy( message, OUT_OF_MEMORY );
+					}
 				}
+				unref_string( &func->str );
 			}
 			unref_string( parent.file );
 		} else {
@@ -5678,6 +5651,7 @@ static struct worker* parse_worker( struct element *elem, struct string *file, c
 int parse_tt_program( char *program, char *file_name, struct environment *env, char *message ) {
 	int idx;
 	struct element *elem;
+	struct string_list *list;
 	struct function *init, *func;
 	struct string *file = new_string_value( file_name );
 	if( file ) {
@@ -5692,13 +5666,16 @@ int parse_tt_program( char *program, char *file_name, struct environment *env, c
 				parse_keywords( declarations, elem, init, NULL, NULL, message );
 				/* Parse function bodies. */
 				for( idx = 0; idx < 32; idx++ ) {
-					func = env->functions_index[ idx ];
-					while( func && message[ 0 ] == 0 ) {
-						if( func->body ) {
-							parse_function_body( func, NULL, message );
-							func->body = NULL;
+					list = env->decls_index[ idx ];
+					while( list && message[ 0 ] == 0 ) {
+						if( list->str->type == FUNCTION ) {
+							func = ( struct function * ) list->str;
+							if( func->body ) {
+								parse_function_body( func, NULL, message );
+								func->body = NULL;
+							}
 						}
-						func = func->next;
+						list = list->next;
 					}
 				}
 				unref_string( &init->str );

@@ -44,7 +44,7 @@ struct array {
 	int length;
 };
 
-/* Reference-counted function list. */
+/* Reference-counted function. */
 struct function {
 	struct string str;
 	int line, num_parameters, num_variables;
@@ -53,7 +53,6 @@ struct function {
 	struct environment *env;
 	struct local_variable *variable_decls, *variable_decls_tail;
 	struct statement *statements, *statements_tail;
-	struct function *next;
 };
 
 /* Variable value. */
@@ -70,10 +69,9 @@ struct environment {
 	struct array arrays;
 	struct keyword *statements_index[ 32 ];
 	struct operator *operators_index[ 32 ];
-	struct string_list *structures_index[ 32 ];
-	struct string_list *globals_index[ 32 ];
+	struct string_list *decls_index[ 32 ];
 	struct string_list *globals, *globals_tail;
-	struct function *functions_index[ 32 ], *entry_point;
+	struct function *entry_point;
 	struct worker *worker;
 };
 
