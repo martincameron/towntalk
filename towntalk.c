@@ -853,7 +853,6 @@ static void dispose_worker( struct worker *work ) {
 	}
 	free( work->args );
 	free( work->strings );
-	free( work->globals );
 	free( work->parameters );
 	free( work );
 }
@@ -5163,9 +5162,10 @@ static enum result evaluate_execute_expression( struct expression *this,
 					idx = 0;
 					parameter = this->parameters->next;
 					while( parameter && ret ) {
+						dispose_variable( &work->args[ idx ] );
 						ret = parameter->evaluate( parameter, vars, &work->args[ idx ] );
 						if( ret ) {
-							work->globals[ idx ].value.integer_value = work->args[ idx ].integer_value;
+							work->parameters[ idx ].index = work->args[ idx ].integer_value;
 							str = work->args[ idx ].string_value;
 							if( str ) {
 								if( str->type == STRING || ( str->type == ARRAY && !( ( struct array * ) str )->string_values ) ) {
@@ -5177,29 +5177,35 @@ static enum result evaluate_execute_expression( struct expression *this,
 										work->strings[ idx ].integer_values = ( ( struct array * ) str )->integer_values;
 										work->strings[ idx ].length = ( ( struct array * ) str )->length;
 									}
-									work->globals[ idx ].value.string_value = &work->strings[ idx ].str;
+									( ( struct string_literal_expression * ) work->parameters )[ idx ].str = &work->strings[ idx ].str;
+									work->parameters[ idx ].evaluate = evaluate_string_literal_expression;
 								} else {
 									ret = throw( vars, this, 0, "Values of this type cannot be passed to workers." );
 								}
+							} else {
+								( ( struct string_literal_expression * ) work->parameters )[ idx ].str = NULL;
+								work->parameters[ idx ].evaluate = evaluate_integer_literal_expression;
 							}
 						}
 						parameter = parameter->next;
 						idx++;
 					}
+					if( ret ) {
+						work->ret = OKAY;
+						dispose_variable( &work->result );
+						dispose_variable( &work->exception );
+						work->env.interrupted = vars->func->env->interrupted;
+						vars->func->env->worker = work;
+						if( start_worker( work ) ) {
+							result->string_value = var.string_value;
+							result->string_value->reference_count++;
+						} else {
+							ret = throw( vars, this, 0, "Unable to start worker." );
+						}
+						vars->func->env->worker = NULL;
+					}
 				} else {
 					ret = throw( vars, this, 0, "Worker locked." );
-				}
-				if( ret ) {
-					work->ret = OKAY;
-					work->env.interrupted = vars->func->env->interrupted;
-					vars->func->env->worker = work;
-					if( start_worker( work ) ) {
-						result->string_value = var.string_value;
-						result->string_value->reference_count++;
-					} else {
-						ret = throw( vars, this, 0, "Unable to start worker." );
-					}
-					vars->func->env->worker = NULL;
 				}
 			} else {
 				ret = throw( vars, this, count, "Incorrect number of parameters to function." );
@@ -5644,15 +5650,10 @@ static struct worker* parse_worker( struct element *elem, struct string *file, c
 					work->strings = calloc( params, sizeof( struct array ) );
 				}
 				if( work->strings ) {
-					work->globals = calloc( params, sizeof( struct global_variable ) );
-				}
-				if( work->globals ) {
 					work->parameters = calloc( params, sizeof( struct string_literal_expression ) );
 				}
 				if( work->parameters ) {
 					for( idx = 0; idx < params; idx++ ) {
-						work->parameters[ idx ].evaluate = evaluate_global;
-						( ( struct string_literal_expression * ) work->parameters )[ idx ].str = &work->globals[ idx ].str;
 						work->parameters[ idx ].next = &work->parameters[ idx + 1 ];
 					}
 					parse_function_body( func, NULL, message );

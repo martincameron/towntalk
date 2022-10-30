@@ -82,9 +82,8 @@ struct worker {
 	struct string str;
 	struct environment env;
 	struct variable *args, result, exception;
-	struct array *strings;
-	struct global_variable *globals;
 	struct expression *parameters;
+	struct array *strings;
 	void *thread, *mutex;
 	enum result ret;
 	char locked;
