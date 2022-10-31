@@ -219,7 +219,7 @@ static struct constant constants[] = {
 
 /* Forward declarations. */
 static int validate_name( struct element *elem, char *message );
-static int validate_decl( char *name, int line, struct environment *env, char *message );
+static int validate_decl( struct string *decl, int line, struct environment *env, char *message );
 static void parse_keywords( struct keyword *keywords, struct element *elem,
 	struct function *func, struct variables *vars, struct statement *stmt, char *message );
 static void parse_keywords_indexed( struct keyword **index, struct element *elem,
@@ -1080,7 +1080,7 @@ static struct function* new_function( char *name ) {
 
 static struct local_variable* new_local_variable( struct function *func, struct element *name, struct structure *type, char *message ) {
 	struct local_variable *local = NULL;
-	if( validate_decl( name->str.string, name->line, func->env, message ) ) {
+	if( validate_decl( &name->str, name->line, func->env, message ) ) {
 		local = malloc( sizeof( struct local_variable ) + sizeof( char ) * ( name->str.length + 1 ) );
 		if( local ) {
 			local->index = func->num_variables;
@@ -1095,39 +1095,33 @@ static struct local_variable* new_local_variable( struct function *func, struct 
 	return local;
 }
 
-static char* new_qualified_decl( char *name, int line, struct function *func, char *message ) {
+static char* new_qualified_name( char *name, struct function *func, char *message ) {
 	char *qname;
-	int len = strlen( name );
+	int qlen = 0, len = strlen( name );
 	if( func && func->library ) {
-		qname = malloc( func->library->length + len + 2 );
+		qlen = func->library->length;
+		qname = malloc( qlen + len + 2 );
 		if( qname ) {
 			strcpy( qname, func->library->string );
-			qname[ func->library->length ] = '_';
-			strcpy( &qname[ func->library->length + 1 ], name );
+			qname[ qlen++ ] = '_';
 		}
 	} else {
 		qname = malloc( len + 1 );
-		if( qname ) {
-			strcpy( qname, name );
-		}
 	}
 	if( qname ) {
-		if( func && !validate_decl( qname, line, func->env, message ) ) {
-			free( qname );
-			qname = NULL;
-		}
+		strcpy( &qname[ qlen ], name );
 	} else {
 		strcpy( message, OUT_OF_MEMORY );
 	}
 	return qname;
 }
 
-static struct global_variable* new_global_variable( char *name, int line,
+static struct global_variable* new_global_variable( char *name,
 	struct structure *type, struct function *init_function, struct expression *initializer, char *message ) {
 	struct global_variable *global = malloc( sizeof( struct global_variable ) );
 	if( global ) {
 		global->str.reference_count = 1;
-		global->str.string = new_qualified_decl( name, line, init_function, message );
+		global->str.string = new_qualified_name( name, init_function, message );
 		if( global->str.string ) {
 			global->str.length = strlen( global->str.string );
 			global->str.type = GLOBAL;
@@ -1149,26 +1143,29 @@ static struct global_variable* new_global_variable( char *name, int line,
 	return global;
 }
 
-static struct string_list* add_decl( struct environment *env, struct string *decl, char *message ) {
-	int idx = hash_code( decl->string, 0 );
-	struct string_list *list = append_string_list( NULL, decl );
-	if( list ) {
-		list->next = env->decls_index[ idx ];
-		env->decls_index[ idx ] = list;
-	} else {
-		strcpy( message, OUT_OF_MEMORY );
+static struct string_list* add_decl( struct string *decl, int line, struct environment *env, char *message ) {
+	struct string_list *list = NULL;
+	int hash = validate_decl( decl, line, env, message ) - 1;
+	if( message[ 0 ] == 0 ) {
+		list = append_string_list( NULL, decl );
+		if( list ) {
+			list->next = env->decls_index[ hash ];
+			env->decls_index[ hash ] = list;
+		} else {
+			strcpy( message, OUT_OF_MEMORY );
+		}
 	}
 	return list;
 }
 
-static struct string_list* add_global( struct environment *env, struct global_variable *global, char *message ) {
+static struct string_list* add_global( struct global_variable *global, int line, struct environment *env, char *message ) {
 	struct string_list *list = append_string_list( env->globals_tail, &global->str );
 	if( list ) {
 		if( env->globals == NULL ) {
 			env->globals = list;
 		}
 		env->globals_tail = list;
-		list = add_decl( env, &global->str, message );
+		list = add_decl( &global->str, line, env, message );
 	} else {
 		strcpy( message, OUT_OF_MEMORY );
 	}
@@ -1179,9 +1176,9 @@ static struct string_list* add_global( struct environment *env, struct global_va
 int add_constants( struct constant *constants, struct environment *env, char *message ) {
 	struct global_variable *global;
 	while( constants->name && message[ 0 ] == 0 ) {
-		global = new_global_variable( constants->name, 0, NULL, NULL, NULL, message );
+		global = new_global_variable( constants->name, NULL, NULL, NULL, message );
 		if( global ) {
-			if( add_global( env, global, message ) ) {
+			if( add_global( global, 0, env, message ) ) {
 				global->str.type = CONST;
 				global->value.integer_value = constants->integer_value;
 				if( constants->string_value ) {
@@ -2079,9 +2076,9 @@ static struct local_variable* get_local_variable( struct local_variable *locals,
 static int add_global_constant( struct element *elem,
 	struct function *func, struct structure *type, struct expression *initializer,
 	struct statement *prev, char *message ) {
-	struct global_variable *global = new_global_variable( elem->str.string, elem->line, type, func, initializer, message );
+	struct global_variable *global = new_global_variable( elem->str.string, type, func, initializer, message );
 	if( global ) {
-		if( add_global( func->env, global, message ) ) {
+		if( add_global( global, elem->line, func->env, message ) ) {
 			global->str.type = CONST;
 		}
 		unref_string( &global->str );
@@ -2092,9 +2089,9 @@ static int add_global_constant( struct element *elem,
 static int add_global_variable( struct element *elem,
 	struct function *func, struct structure *type, struct expression *initializer,
 	struct statement *prev, char *message ) {
-	struct global_variable *global = new_global_variable( elem->str.string, elem->line, type, func, initializer, message );
+	struct global_variable *global = new_global_variable( elem->str.string, type, func, initializer, message );
 	if( global ) {
-		add_global( func->env, global, message );
+		add_global( global, elem->line, func->env, message );
 		unref_string( &global->str );
 	}
 	return message[ 0 ] == 0;
@@ -3513,36 +3510,31 @@ static struct element* parse_infix_expression( struct element *elem,
 	return next;
 }
 
-static struct element* parse_operator_expression( struct element *elem,
+static struct element* parse_operator_expression( struct element *elem, struct operator *oper,
 	struct function *func, struct variables *vars, struct expression *prev, char *message ) {
 	int count;
 	struct element *next = elem->next;
-	struct operator *oper = get_operator( elem->str.string, func->env->operators_index[ hash_code( elem->str.string, 0 ) ] );
 	struct expression param = { 0 }, *expr = calloc( 1, sizeof( struct expression ) );
 	if( expr ) {
 		prev->next = expr;
 		expr->line = elem->line;
-		if( oper ) {
-			expr->index = oper->oper;
-			expr->evaluate = oper->evaluate;
-			if( oper->num_operands != 0 ) {
-				if( next && next->str.string[ 0 ] == '(' ) {
-					parse_expressions( next->child, func, vars, 0, &param, &count, message );
-					expr->parameters = param.next;
-					if( message[ 0 ] == 0 ) {
-						if( count == oper->num_operands || ( oper->num_operands < 0 && count >= -oper->num_operands ) ) {
-							optimize_expression( expr );
-							next = next->next;
-						} else {
-							sprintf( message, "Wrong number of arguments to '%.64s()' on line %d.", oper->name, next->line );
-						}
+		expr->index = oper->oper;
+		expr->evaluate = oper->evaluate;
+		if( oper->num_operands != 0 ) {
+			if( next && next->str.string[ 0 ] == '(' ) {
+				parse_expressions( next->child, func, vars, 0, &param, &count, message );
+				expr->parameters = param.next;
+				if( message[ 0 ] == 0 ) {
+					if( count == oper->num_operands || ( oper->num_operands < 0 && count >= -oper->num_operands ) ) {
+						optimize_expression( expr );
+						next = next->next;
+					} else {
+						sprintf( message, "Wrong number of arguments to '%.64s()' on line %d.", oper->name, next->line );
 					}
-				} else {
-					sprintf( message, "Expected '(' after '%.64s' on line %d.", oper->name, elem->line );
 				}
+			} else {
+				sprintf( message, "Expected '(' after '%.64s' on line %d.", oper->name, elem->line );
 			}
-		} else {
-			sprintf( message, "Unhandled expression '%.64s' on line %d.", elem->str.string, elem->line );
 		}
 	} else {
 		strcpy( message, OUT_OF_MEMORY );
@@ -3987,10 +3979,10 @@ static struct element* parse_expression( struct element *elem,
 	struct function *func, struct variables *vars, struct expression *prev, char *message ) {
 	struct element *next = elem->next;
 	char *value = elem->str.string;
-	struct global_variable *global;
 	struct local_variable *local;
-	struct structure *struc;
-	struct function *decl;
+	enum reference_type type = 0;
+	struct operator *oper;
+	struct string *decl;
 	if( ( value[ 0 ] >= '0' && value[ 0 ] <= '9' )
 		|| ( value[ 0 ] == '-' && ( value[ 1 ] >= '0' && value[ 1 ] <= '9' ) ) ) {
 		/* Integer literal. */
@@ -4001,12 +3993,14 @@ static struct element* parse_expression( struct element *elem,
 	} else if( value[ 0 ] == '$' && value[ 1 ] == 0 ) {
 		/* Element literal. */
 		next = parse_element_literal_expression( elem, prev, message );
-	} else if( value[ 0 ] == '\'' ) {
+	} else if( value[ 0 ] == '\'' && value[ 1 ] == 0 ) {
 		/* Infix operator.*/
 		next = parse_infix_expression( elem, func, vars, prev, message );
 	} else if( value[ 0 ] == '[' ) {
 		/* Array index operator. */
 		next = parse_index_expression( elem, func, vars, prev, message );
+	} else if( elem->str.length > 128 ) {
+		sprintf( message, "Invalid expression '%.64s' on line %d.", elem->str.string, elem->line );
 	} else if( value[ 0 ] == '@' ) {
 		/* Function reference operator. */
 		next = parse_func_ref_expression( elem, func, prev, message );
@@ -4032,27 +4026,31 @@ static struct element* parse_expression( struct element *elem,
 				/* Captured local variable. */
 				next = parse_capture_expression( elem, func, vars, local, prev, message );
 			} else {
-				global = ( struct global_variable * ) get_decl_indexed( func->env->decls_index, value, CONST );
-				if( global == NULL ) {
-					global = ( struct global_variable * ) get_decl_indexed( func->env->decls_index, value, GLOBAL );
-				}
-				if( global ) {
-					/* Global variable reference.*/
-					next = parse_global_expression( elem, func, vars, global, prev, message );
+				oper = get_operator( elem->str.string, func->env->operators_index[ hash_code( elem->str.string, 0 ) ] );
+				if( oper ) {
+					/* Operator. */
+					next = parse_operator_expression( elem, oper, func, vars, prev, message );
 				} else {
-					decl = ( struct function * ) get_decl_indexed( func->env->decls_index, value, FUNCTION );
+					decl = get_decl_indexed( func->env->decls_index, value, 0 );
 					if( decl ) {
-						/* Function call.*/
-						next = parse_call_expression( elem, func, vars, decl, prev, message );
-					} else {
-						struc = ( struct structure * ) get_decl_indexed( func->env->decls_index, value, STRUCT );
-						if( struc ) {
+						type = decl->type;
+					}
+					switch( type ) {
+						case CONST: case GLOBAL:
+							/* Global variable reference.*/
+							next = parse_global_expression( elem, func, vars, ( struct global_variable * ) decl, prev, message );
+							break;
+						case FUNCTION:
+							/* Function call.*/
+							next = parse_call_expression( elem, func, vars, ( struct function * ) decl, prev, message );
+							break;
+						case STRUCT:
 							/* Structure. */
-							next = parse_struct_expression( elem, func, vars, struc, prev, message );
-						} else {
-							/* Prefix Operator. */
-							next = parse_operator_expression( elem, func, vars, prev, message );
-						}
+							next = parse_struct_expression( elem, func, vars, ( struct structure * ) decl, prev, message );
+							break;
+						default:
+							sprintf( message, "Unhandled expression '%.64s' on line %d.", elem->str.string, elem->line );
+							break;
 					}
 				}
 			}
@@ -5251,13 +5249,12 @@ static struct element* parse_function_declaration( struct element *elem,
 	struct environment *env = func->env;
 	struct element *next = elem->next;
 	struct function *decl;
-	char *name = new_qualified_decl( next->str.string, next->line, func, message );
+	char *name = new_qualified_name( next->str.string, func, message );
 	if( name ) {
-		next = next->next;
-		decl = parse_function( next, name, func, message );
+		decl = parse_function( next->next, name, func, message );
 		if( decl ) {
-			if( add_decl( env, &decl->str, message ) ) {
-				next = next->next->next;
+			if( add_decl( &decl->str, next->line, env, message ) ) {
+				next = next->next->next->next;
 			}
 			unref_string( &decl->str );
 		}
@@ -5271,24 +5268,22 @@ static struct element* parse_program_declaration( struct element *elem,
 	struct environment *env = func->env;
 	struct element *next = elem->next;
 	struct function *prog;
-	if( validate_decl( next->str.string, next->line, env, message ) ) {
-		prog = new_function( next->str.string );
-		if( prog ) {
-			if( add_decl( env, &prog->str, message ) ) {
-				env->entry_point = prog;
-				prog->line = elem->line;
-				prog->file = func->file;
-				prog->file->reference_count++;
-				if( func->library ) {
-					prog->library = func->library;
-					prog->library->reference_count++;
-				}
-				prog->body = next->next;
-				prog->env = env;
-				next = next->next->next;
+	prog = new_function( next->str.string );
+	if( prog ) {
+		if( add_decl( &prog->str, next->line, env, message ) ) {
+			env->entry_point = prog;
+			prog->line = elem->line;
+			prog->file = func->file;
+			prog->file->reference_count++;
+			if( func->library ) {
+				prog->library = func->library;
+				prog->library->reference_count++;
 			}
-			unref_string( &prog->str );
+			prog->body = next->next;
+			prog->env = env;
+			next = next->next->next;
 		}
+		unref_string( &prog->str );
 	}
 	return next;
 }
@@ -5345,7 +5340,7 @@ static struct element* parse_struct_declaration( struct element *elem,
 	struct string_list *field, *tail;
 	struct environment *env = func->env;
 	struct element *child, *next = elem->next;
-	char *name = new_qualified_decl( next->str.string, next->line, func, message );
+	char *name = new_qualified_name( next->str.string, func, message );
 	if( name ) {
 		struc = calloc( 1, sizeof( struct structure ) );
 		if( struc ) {
@@ -5353,7 +5348,7 @@ static struct element* parse_struct_declaration( struct element *elem,
 			struc->str.string = name;
 			struc->str.length = strlen( name );
 			struc->str.type = STRUCT;
-			tail = add_decl( env, &struc->str, message );
+			tail = add_decl( &struc->str, next->line, env, message );
 			if( tail ) {
 				next = next->next;
 				if( next && next->str.string[ 0 ] == '(' ) {
@@ -5559,20 +5554,19 @@ static int validate_name( struct element *elem, char *message ) {
 	return result;
 }
 
-static int validate_decl( char *name, int line, struct environment *env, char *message ) {
-	int hash = hash_code( name, 0 );
-	size_t len = strlen( name );
-	if( len > 64 ) {
-		sprintf( message, "Invalid name '%.64s' on line %d.", name, line );
-		return 0;
-	} else if( get_keyword( name, declarations )
-	|| get_keyword( name, env->statements_index[ hash ] )
-	|| get_operator( name, env->operators_index[ hash ] )
-	|| get_decl( env->decls_index[ hash ], name, len, 0 ) ) {
-		sprintf( message, "Name '%.64s' already defined on line %d.", name, line );
-		return 0;
+static int validate_decl( struct string *decl, int line, struct environment *env, char *message ) {
+	int hash = hash_code( decl->string, 0 );
+	if( decl->length > 64 ) {
+		sprintf( message, "Invalid name '%.64s' on line %d.", decl->string, line );
+	} else if( get_keyword( decl->string, declarations )
+	|| get_keyword( decl->string, env->statements_index[ hash ] )
+	|| get_operator( decl->string, env->operators_index[ hash ] )
+	|| get_decl( env->decls_index[ hash ], decl->string, decl->length, 0 ) ) {
+		sprintf( message, "Name '%.64s' already defined on line %d.", decl->string, line );
+	} else {
+		return hash + 1;
 	}
-	return 1;
+	return 0;
 }
 
 static struct worker* new_worker( char *message ) {
@@ -5606,7 +5600,7 @@ static struct worker* parse_worker( struct element *elem, struct string *file, c
 		if( parent.file ) {
 			func = parse_function( elem, work->str.string, &parent, message );
 			if( func ) {
-				if( add_decl( &work->env, &func->str, message ) ) {
+				if( add_decl( &func->str, elem->line, &work->env, message ) ) {
 					work->env.entry_point = func;
 					params = func->num_parameters;
 					work->args = calloc( params, sizeof( struct variable ) );
