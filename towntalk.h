@@ -10,7 +10,7 @@ enum result {
 
 /* Reference type. */
 enum reference_type {
-	STRING, ELEMENT, ARRAY, STRUCT, GLOBAL, CONST, FUNCTION, WORKER, CUSTOM, EXIT
+	STRING, ELEMENT, ARRAY, STRUCT, GLOBAL, CONST, FUNCTION, WORKER, LIBRARY, CUSTOM, EXIT
 };
 
 /* String list. */

@@ -5515,16 +5515,24 @@ static struct keyword library_decls[] = {
 static struct element* parse_library_declaration( struct element *elem,
 	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
 	struct element *next = elem->next;
-	struct string *library = new_string_value( next->str.string );
-	if( library ) {
-		next = next->next;
-		func->library = library;
-		parse_keywords( library_decls, next->child, func, NULL, NULL, message );
-		unref_string( func->library );
-		func->library = NULL;
-		next = next->next;
+	struct string *library;
+	if( get_decl_indexed( func->env->decls_index, next->str.string, LIBRARY ) ) {
+		next = next->next->next;
 	} else {
-		strcpy( message, OUT_OF_MEMORY );
+		library = new_string_value( next->str.string );
+		if( library ) {
+			library->type = LIBRARY;
+			if( add_decl( library, next->line, func->env, message ) ) {
+				next = next->next;
+				func->library = library;
+				parse_keywords( library_decls, next->child, func, NULL, NULL, message );
+				func->library = NULL;
+				next = next->next;
+			}
+			unref_string( library );
+		} else {
+			strcpy( message, OUT_OF_MEMORY );
+		}
 	}
 	return next;
 }
