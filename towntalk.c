@@ -2060,9 +2060,25 @@ static struct string* get_decl( struct string_list *list, char *name, int len, e
 	return NULL;
 }
 
-static struct string* get_decl_indexed( struct string_list **index, char *name, enum reference_type type ) {
-	int len = field_length( name, ".:" );
-	return get_decl( index[ hash_code( name, name[ len ] ) ], name, len, type );
+static struct string* get_decl_indexed( struct function *func, char *name, enum reference_type type ) {
+	char qname[ 65 ];
+	struct string *str = NULL;
+	int qlen, flen = field_length( name, ".:" );
+	if( func->library ) {
+		qlen = func->library->length;
+		if( qlen + 1 + flen < 65 ) {
+			strcpy( qname, func->library->string );
+			qname[ qlen++ ] = '_';
+			strncpy( &qname[ qlen ], name, flen );
+			qlen += flen;
+			qname[ qlen ] = 0;
+			str = get_decl( func->env->decls_index[ hash_code( qname, 0 ) ], qname, qlen, type );
+		}
+	}
+	if( str == NULL ) {
+		str = get_decl( func->env->decls_index[ hash_code( name, name[ flen ] ) ], name, flen, type );
+	}
+	return str;
 }
 
 static struct local_variable* get_local_variable( struct local_variable *locals, char *name, char *terminators ) {
@@ -2142,7 +2158,7 @@ static struct element* parse_variable_declaration( struct element *elem, struct 
 			prev = prev->next;
 		}
 		if( elem->str.string[ 0 ] == '(' ) {
-			type = ( struct structure * ) get_decl_indexed( func->env->decls_index, elem->child->str.string, STRUCT );
+			type = ( struct structure * ) get_decl_indexed( func, elem->child->str.string, STRUCT );
 			if( type ) {
 				elem = elem->next;
 			} else {
@@ -2876,7 +2892,8 @@ static struct element* value_to_element( int integer_value, struct string *strin
 					}
 					break;
 				case FUNCTION:
-					if( get_decl_indexed( env->decls_index, string_value->string, FUNCTION ) ) {
+					if( get_decl( env->decls_index[ hash_code( string_value->string, 0 ) ],
+					string_value->string, string_value->length, FUNCTION ) ) {
 						elem = new_element( string_value->length + 1 );
 						if( elem ) {
 							elem->str.string[ 0 ] = '@';
@@ -3578,7 +3595,7 @@ static struct element* parse_func_ref_expression( struct element *elem,
 	if( expr ) {
 		prev->next = &expr->expr;
 		expr->expr.line = elem->line;
-		expr->function = ( struct function * ) get_decl_indexed( func->env->decls_index, name, FUNCTION );
+		expr->function = ( struct function * ) get_decl_indexed( func, name, FUNCTION );
 		if( expr->function ) {
 			expr->expr.evaluate = evaluate_func_ref_expression;
 		} else {
@@ -3690,7 +3707,7 @@ static struct element* parse_thiscall_expression( struct element *elem,
 	struct element *next = elem->next;
 	char *field = strchr( elem->str.string, '.' );
 	struct local_variable *local = get_local_variable( func->variable_decls, &elem->str.string[ 1 ], "." );
-	struct global_variable *global = ( struct global_variable * ) get_decl_indexed( func->env->decls_index, &elem->str.string[ 1 ], GLOBAL );
+	struct global_variable *global = ( struct global_variable * ) get_decl_indexed( func, &elem->str.string[ 1 ], GLOBAL );
 	struct expression param = { 0 }, *this, *expr = calloc( 1, sizeof( struct string_expression ) );
 	if( expr ) {
 		prev->next = expr;
@@ -3700,7 +3717,7 @@ static struct element* parse_thiscall_expression( struct element *elem,
 		} else if( global ) {
 			struc = global->type;
 		} else {
-			struc = ( struct structure * ) get_decl_indexed( func->env->decls_index, &elem->str.string[ 1 ], STRUCT );
+			struc = ( struct structure * ) get_decl_indexed( func, &elem->str.string[ 1 ], STRUCT );
 		}
 		if( struc && field ) {
 			( ( struct string_expression * ) expr )->str = &struc->str;
@@ -3763,7 +3780,7 @@ static struct element* parse_member_call_expression( struct structure *struc, st
 			strcpy( name, struc->str.string );
 			name[ struc->str.length ] = '_';
 			strcpy( &name[ struc->str.length + 1 ], memb );
-			decl = ( struct function * ) get_decl_indexed( func->env->decls_index, name, FUNCTION );
+			decl = ( struct function * ) get_decl_indexed( func, name, FUNCTION );
 			if( decl ) {
 				struc = NULL;
 			} else {
@@ -3891,7 +3908,7 @@ static struct element* parse_capture_expression( struct element *elem,
 static struct element* parse_global_expression( struct element *elem, struct function *func,
 	struct variables *vars, struct global_variable *global, struct expression *prev, char *message ) {
 	struct element *next = elem->next;
-	char *field = &elem->str.string[ global->str.length ];
+	char *field = &elem->str.string[ field_length( elem->str.string, ".:" ) ];
 	struct expression *expr = calloc( 1, sizeof( struct string_expression ) );
 	if( expr ) {
 		prev->next = expr;
@@ -4031,7 +4048,7 @@ static struct element* parse_expression( struct element *elem,
 					/* Operator. */
 					next = parse_operator_expression( elem, oper, func, vars, prev, message );
 				} else {
-					decl = get_decl_indexed( func->env->decls_index, value, 0 );
+					decl = get_decl_indexed( func, value, 0 );
 					if( decl ) {
 						type = decl->type;
 					}
@@ -4203,7 +4220,7 @@ static struct element* parse_struct_assignment( struct element *elem,
 	struct statement *stmt = calloc( 1, sizeof( struct structure_statement ) );
 	if( stmt ) {
 		prev->next = stmt;
-		struc = ( struct structure * ) get_decl_indexed( func->env->decls_index, next->str.string, STRUCT );
+		struc = ( struct structure * ) get_decl_indexed( func, next->str.string, STRUCT );
 		field = strchr( next->str.string, '.' );
 		if( struc && field ) {
 			( ( struct structure_statement * ) stmt )->structure = struc;
@@ -4372,7 +4389,7 @@ static struct element* parse_assignment_statement( struct element *elem,
 		if( local ) {
 			return parse_local_assignment( elem, func, vars, local, prev, message );
 		} else {
-			global = ( struct global_variable * ) get_decl_indexed( func->env->decls_index, next->str.string, GLOBAL );
+			global = ( struct global_variable * ) get_decl_indexed( func, next->str.string, GLOBAL );
 			if( global ) {
 				return parse_global_assignment( elem, func, vars, global, prev, message );
 			} else {
@@ -4927,7 +4944,7 @@ static struct element* add_function_parameter( struct function *func, struct ele
 	struct local_variable *param;
 	struct structure *type = NULL;
 	if( elem->str.string[ 0 ] == '(' ) {
-		type = ( struct structure * ) get_decl_indexed( func->env->decls_index, elem->child->str.string, STRUCT );
+		type = ( struct structure * ) get_decl_indexed( func, elem->child->str.string, STRUCT );
 		if( type ) {
 			elem = elem->next;
 		} else {
@@ -5354,7 +5371,7 @@ static struct element* parse_struct_declaration( struct element *elem,
 				if( next && next->str.string[ 0 ] == '(' ) {
 					child = next->child;
 					if( child && child->next == NULL && strcmp( child->str.string, name ) ) {
-						struc->super = ( struct structure * ) get_decl_indexed( env->decls_index, child->str.string, STRUCT );
+						struc->super = ( struct structure * ) get_decl_indexed( func, child->str.string, STRUCT );
 						if( struc->super ) {
 							field = struc->super->fields;
 							while( field && message[ 0 ] == 0 ) {
@@ -5516,18 +5533,28 @@ static struct element* parse_library_declaration( struct element *elem,
 	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
 	struct element *next = elem->next;
 	struct string *library;
-	if( get_decl_indexed( func->env->decls_index, next->str.string, LIBRARY ) ) {
+	struct function *init;
+	if( get_decl_indexed( func, next->str.string, LIBRARY ) ) {
 		next = next->next->next;
 	} else {
 		library = new_string_value( next->str.string );
 		if( library ) {
 			library->type = LIBRARY;
-			if( add_decl( library, next->line, func->env, message ) ) {
-				next = next->next;
-				func->library = library;
-				parse_keywords( library_decls, next->child, func, NULL, NULL, message );
-				func->library = NULL;
-				next = next->next;
+			init = new_function( "[Init]" );
+			if( init ) {
+				init->file = func->file;
+				init->file->reference_count++;
+				init->library = library;
+				library->reference_count++;
+				init->env = func->env;
+				if( add_decl( library, next->line, func->env, message ) ) {
+					next = next->next;
+					parse_keywords( library_decls, next->child, init, NULL, NULL, message );
+					next = next->next;
+				}
+				unref_string( &init->str );
+			} else {
+				strcpy( message, OUT_OF_MEMORY );
 			}
 			unref_string( library );
 		} else {
