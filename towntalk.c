@@ -4000,7 +4000,7 @@ static struct element* parse_expression( struct element *elem,
 		/* Array index operator. */
 		next = parse_index_expression( elem, func, vars, prev, message );
 	} else if( elem->str.length > 128 ) {
-		sprintf( message, "Invalid expression '%.64s' on line %d.", elem->str.string, elem->line );
+		sprintf( message, "Invalid expression '%.64s' on line %d.", value, elem->line );
 	} else if( value[ 0 ] == '@' ) {
 		/* Function reference operator. */
 		next = parse_func_ref_expression( elem, func, prev, message );
@@ -4026,7 +4026,7 @@ static struct element* parse_expression( struct element *elem,
 				/* Captured local variable. */
 				next = parse_capture_expression( elem, func, vars, local, prev, message );
 			} else {
-				oper = get_operator( elem->str.string, func->env->operators_index[ hash_code( elem->str.string, 0 ) ] );
+				oper = get_operator( value, func->env->operators_index[ hash_code( value, 0 ) ] );
 				if( oper ) {
 					/* Operator. */
 					next = parse_operator_expression( elem, oper, func, vars, prev, message );
@@ -4049,7 +4049,7 @@ static struct element* parse_expression( struct element *elem,
 							next = parse_struct_expression( elem, func, vars, ( struct structure * ) decl, prev, message );
 							break;
 						default:
-							sprintf( message, "Unhandled expression '%.64s' on line %d.", elem->str.string, elem->line );
+							sprintf( message, "Unhandled expression '%.64s' on line %d.", value, elem->line );
 							break;
 					}
 				}
