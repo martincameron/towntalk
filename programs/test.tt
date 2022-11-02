@@ -690,7 +690,7 @@ function testfuncref() {
 	call assert_throws( "Expected expression after '('", ${ () { call :(); } } );
 	call assert_throws( "Not a function reference.", ${ () { call :( $tup( "a" 1 ) ); } } );
 	call assert_throws( "Incorrect number of parameters", ${ () { call :( @setg 1 2 ); } } );
-	call assert_throws( "Function 'xxx' not defined", ${ () { call @xxx; } } );
+	call assert_throws( "Function 'xxx' not declared", ${ () { call @xxx; } } );
 }
 
 function testsame() {

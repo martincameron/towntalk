@@ -750,7 +750,6 @@ static void dispose_local_variables( struct local_variable *local ) {
 }
 
 static void dispose_global_variable( struct global_variable *global ) {
-	free( global->str.string );
 	dispose_temporary( &global->value );
 	if( global->init_function ) {
 		unref_string( &global->init_function->str );
@@ -816,7 +815,6 @@ static void dispose_array( struct array *arr ) {
 }
 
 static void dispose_structure( struct structure *sct ) {
-	free( sct->str.string );
 	dispose_string_list( sct->fields );
 	free( sct );
 }
@@ -1064,14 +1062,32 @@ static int write_element( struct element *elem, char *output ) {
 	return length;
 }
 
-static struct function* new_function( char *name ) {
-	int len = strlen( name );
-	struct function *func = calloc( 1, sizeof( struct function ) + sizeof( char ) * ( len + 1 ) );
+static int qualify_name( struct function *func, char *name, int len, char *output ) {
+	int llen = 0, qlen = len;
+	if( func && func->library ) {
+		llen = func->library->length;
+		qlen = llen + 1 + len;
+	}
+	if( output ) {
+		if( llen ) {
+			strncpy( output, func->library->string, llen );
+			output[ llen++ ] = '_';
+		}
+		strncpy( &output[ llen ], name, len );
+		output[ qlen ] = 0;
+	}
+	return qlen;
+}
+
+static struct function* new_function( char *name, struct function *parent ) {
+	int nlen = strlen( name );
+	int qlen = qualify_name( parent, name, nlen, NULL );
+	struct function *func = calloc( 1, sizeof( struct function ) + sizeof( char ) * ( qlen + 1 ) );
 	if( func ) {
 		/*printf("Function '%s'\n", name);*/
 		func->str.string = ( char * ) &func[ 1 ];
-		strcpy( func->str.string, name );
-		func->str.length = len;
+		qualify_name( parent, name, nlen, func->str.string );
+		func->str.length = qlen;
 		func->str.reference_count = 1;
 		func->str.type = FUNCTION;
 	}
@@ -1095,48 +1111,25 @@ static struct local_variable* new_local_variable( struct function *func, struct 
 	return local;
 }
 
-static char* new_qualified_name( char *name, struct function *func, char *message ) {
-	char *qname;
-	int qlen = 0, len = strlen( name );
-	if( func && func->library ) {
-		qlen = func->library->length;
-		qname = malloc( qlen + len + 2 );
-		if( qname ) {
-			strcpy( qname, func->library->string );
-			qname[ qlen++ ] = '_';
-		}
-	} else {
-		qname = malloc( len + 1 );
-	}
-	if( qname ) {
-		strcpy( &qname[ qlen ], name );
-	} else {
-		strcpy( message, OUT_OF_MEMORY );
-	}
-	return qname;
-}
-
 static struct global_variable* new_global_variable( char *name,
 	struct structure *type, struct function *init_function, struct expression *initializer, char *message ) {
-	struct global_variable *global = malloc( sizeof( struct global_variable ) );
+	int nlen = strlen( name );
+	int qlen = qualify_name( init_function, name, nlen, NULL );
+	struct global_variable *global = malloc( sizeof( struct global_variable ) + sizeof( char ) * ( qlen + 1 ) );
 	if( global ) {
 		global->str.reference_count = 1;
-		global->str.string = new_qualified_name( name, init_function, message );
-		if( global->str.string ) {
-			global->str.length = strlen( global->str.string );
-			global->str.type = GLOBAL;
-			global->value.integer_value = 0;
-			global->value.string_value = NULL;
-			global->type = type;
-			global->init_function = init_function;
-			if( init_function ) {
-				init_function->str.reference_count++;
-			}
-			global->initializer = initializer;
-		} else {
-			free( global );
-			global = NULL;
+		global->str.string = ( char * ) &global[ 1 ];
+		qualify_name( init_function, name, nlen, global->str.string );
+		global->str.length = qlen;
+		global->str.type = GLOBAL;
+		global->value.integer_value = 0;
+		global->value.string_value = NULL;
+		global->type = type;
+		global->init_function = init_function;
+		if( init_function ) {
+			init_function->str.reference_count++;
 		}
+		global->initializer = initializer;
 	} else {
 		strcpy( message, OUT_OF_MEMORY );
 	}
@@ -3599,7 +3592,7 @@ static struct element* parse_func_ref_expression( struct element *elem,
 		if( expr->function ) {
 			expr->expr.evaluate = evaluate_func_ref_expression;
 		} else {
-			sprintf( message, "Function '%.64s' not defined on line %d.", name, elem->line );
+			sprintf( message, "Function '%.64s' not declared on line %d.", name, elem->line );
 		}
 	} else {
 		strcpy( message, OUT_OF_MEMORY );
@@ -4978,7 +4971,12 @@ static struct element* add_function_parameter( struct function *func, struct ele
 static struct function* parse_function( struct element *elem, char *name,
 	struct function *parent, char *message ) {
 	struct element *child;
-	struct function *func = new_function( name );
+	struct function *func;
+	if( name ) {
+		func = new_function( name, parent );
+	} else {
+		func = new_function( "[Function]", NULL );
+	}
 	if( func ) {
 		func->line = elem->line;
 		func->file = parent->file;
@@ -5031,7 +5029,7 @@ static enum result evaluate_function_expression( struct expression *this,
 			key.line = this->line;
 			validate_syntax( "({0", elem, &key, vars->func->env, message );
 			if( message[ 0 ] == 0 ) {
-				func = parse_function( elem, "[Function]", vars->func, message );
+				func = parse_function( elem, NULL, vars->func, message );
 				if( func ) {
 					if( parse_function_body( func, vars, message ) ) {
 						result->string_value = &func->str;
@@ -5263,19 +5261,13 @@ static enum result evaluate_result_expression( struct expression *this,
 
 static struct element* parse_function_declaration( struct element *elem,
 	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
-	struct environment *env = func->env;
 	struct element *next = elem->next;
-	struct function *decl;
-	char *name = new_qualified_name( next->str.string, func, message );
-	if( name ) {
-		decl = parse_function( next->next, name, func, message );
-		if( decl ) {
-			if( add_decl( &decl->str, next->line, env, message ) ) {
-				next = next->next->next->next;
-			}
-			unref_string( &decl->str );
+	struct function *decl = parse_function( next->next, next->str.string, func, message );
+	if( decl ) {
+		if( add_decl( &decl->str, next->line, func->env, message ) ) {
+			next = next->next->next->next;
 		}
-		free( name );
+		unref_string( &decl->str );
 	}
 	return next;
 }
@@ -5285,7 +5277,7 @@ static struct element* parse_program_declaration( struct element *elem,
 	struct environment *env = func->env;
 	struct element *next = elem->next;
 	struct function *prog;
-	prog = new_function( next->str.string );
+	prog = new_function( next->str.string, NULL );
 	if( prog ) {
 		if( add_decl( &prog->str, next->line, env, message ) ) {
 			env->entry_point = prog;
@@ -5353,73 +5345,68 @@ static int add_structure_field( struct structure *struc, struct element *elem, c
 
 static struct element* parse_struct_declaration( struct element *elem,
 	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
-	struct structure *struc;
 	struct string_list *field, *tail;
 	struct environment *env = func->env;
 	struct element *child, *next = elem->next;
-	char *name = new_qualified_name( next->str.string, func, message );
-	if( name ) {
-		struc = calloc( 1, sizeof( struct structure ) );
-		if( struc ) {
-			struc->str.reference_count = 1;
-			struc->str.string = name;
-			struc->str.length = strlen( name );
-			struc->str.type = STRUCT;
-			tail = add_decl( &struc->str, next->line, env, message );
-			if( tail ) {
-				next = next->next;
-				if( next && next->str.string[ 0 ] == '(' ) {
-					child = next->child;
-					if( child && child->next == NULL && strcmp( child->str.string, name ) ) {
-						struc->super = ( struct structure * ) get_decl_indexed( func, child->str.string, STRUCT );
-						if( struc->super ) {
-							field = struc->super->fields;
-							while( field && message[ 0 ] == 0 ) {
-								tail = append_string_list( struc->fields_tail, field->str );
-								if( tail ) {
-									if( struc->fields == NULL ) {
-										struc->fields = tail;
-									}
-									struc->fields_tail = tail;
-									struc->length++;
-								} else {
-									strcpy( message, OUT_OF_MEMORY );
-								}
-								field = field->next;
-							}
-							next = next->next;
-						} else {
-							sprintf( message, "Structure '%.64s' not declared on line %d.", child->str.string, child->line );
-						}
-					} else {
-						sprintf( message, "Invalid parent structure declaration on line %d.", next->line );
-					}
+	int qlen = qualify_name( func, next->str.string, next->str.length, NULL );
+	struct structure *struc = calloc( 1, sizeof( struct structure ) + sizeof( char ) * ( qlen + 1 ) );
+	if( struc ) {
+		struc->str.reference_count = 1;
+		struc->str.string = ( char * ) &struc[ 1 ];
+		qualify_name( func, next->str.string, next->str.length, struc->str.string );
+		struc->str.length = qlen;
+		struc->str.type = STRUCT;
+		tail = add_decl( &struc->str, next->line, env, message );
+		if( tail ) {
+			next = next->next;
+			if( next && next->str.string[ 0 ] == '(' ) {
+				child = next->child;
+				if( child && child->next == NULL ) {
+					struc->super = ( struct structure * ) get_decl_indexed( func, child->str.string, STRUCT );
 				}
-			}
-			if( message[ 0 ] == 0 ) {
-				if( next && next->str.string[ 0 ] == '{' ) {
-					child = next->child;
-					while( child && message[ 0 ] == 0 ) {
-						if( add_structure_field( struc, child, message ) ) {
-							child = child->next;
-							if( child && ( child->str.string[ 0 ] == ',' || child->str.string[ 0 ] == ';' ) ) {
-								child = child->next;
+				if( struc->super ) {
+					field = struc->super->fields;
+					while( field && message[ 0 ] == 0 ) {
+						tail = append_string_list( struc->fields_tail, field->str );
+						if( tail ) {
+							if( struc->fields == NULL ) {
+								struc->fields = tail;
 							}
+							struc->fields_tail = tail;
+							struc->length++;
+						} else {
+							strcpy( message, OUT_OF_MEMORY );
 						}
+						field = field->next;
 					}
 					next = next->next;
-					if( next && next->str.string[ 0 ] == ';' ) {
-						next = next->next;
-					}
 				} else {
-					sprintf( message, "Expected '{' after 'struct' on line %d.", elem->line );
+					sprintf( message, "Invalid parent structure on line %d.", next->line );
 				}
 			}
-			unref_string( &struc->str );
-		} else {
-			strcpy( message, OUT_OF_MEMORY );
-			free( name );
 		}
+		if( message[ 0 ] == 0 ) {
+			if( next && next->str.string[ 0 ] == '{' ) {
+				child = next->child;
+				while( child && message[ 0 ] == 0 ) {
+					if( add_structure_field( struc, child, message ) ) {
+						child = child->next;
+						if( child && ( child->str.string[ 0 ] == ',' || child->str.string[ 0 ] == ';' ) ) {
+							child = child->next;
+						}
+					}
+				}
+				next = next->next;
+				if( next && next->str.string[ 0 ] == ';' ) {
+					next = next->next;
+				}
+			} else {
+				sprintf( message, "Expected '{' after 'struct' on line %d.", elem->line );
+			}
+		}
+		unref_string( &struc->str );
+	} else {
+		strcpy( message, OUT_OF_MEMORY );
 	}
 	return next;
 }
@@ -5540,7 +5527,7 @@ static struct element* parse_library_declaration( struct element *elem,
 		library = new_string_value( next->str.string );
 		if( library ) {
 			library->type = LIBRARY;
-			init = new_function( "[Init]" );
+			init = new_function( "[Init]", NULL );
 			if( init ) {
 				init->file = func->file;
 				init->file->reference_count++;
@@ -5679,7 +5666,7 @@ int parse_tt_program( char *program, char *file_name, struct environment *env, c
 		elem = parse_element( program, message );
 		if( elem ) {
 			/* Create empty function for global evaluation. */
-			init = new_function( "[Init]" );
+			init = new_function( "[Init]", NULL );
 			if( init ) {
 				init->file = file;
 				init->env = env;
