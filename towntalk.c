@@ -1826,7 +1826,7 @@ static enum result evaluate_type_expression( struct expression *this,
 			struc = ( ( struct array * ) var.string_value )->structure;
 			if( struc ) {
 				result->string_value = &struc->str;
-				result->string_value->reference_count++;
+				struc->str.reference_count++;
 			}
 		}
 		dispose_temporary( &var );
