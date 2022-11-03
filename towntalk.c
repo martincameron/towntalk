@@ -5671,6 +5671,7 @@ int parse_tt_program( char *program, char *file_name, struct environment *env, c
 			init = new_function( "[Init]", NULL );
 			if( init ) {
 				init->file = file;
+				file->reference_count++;
 				init->env = env;
 				/* Populate execution environment. */
 				parse_keywords( declarations, elem, init, NULL, NULL, message );
@@ -5692,6 +5693,7 @@ int parse_tt_program( char *program, char *file_name, struct environment *env, c
 			}
 			unref_string( &elem->str );
 		}
+		unref_string( file );
 	} else {
 		strcpy( message, OUT_OF_MEMORY );
 	}
