@@ -1080,14 +1080,21 @@ static int qualify_name( struct function *func, char *name, int len, char *outpu
 }
 
 static struct function* new_function( char *name, struct function *parent ) {
-	int nlen = strlen( name );
-	int qlen = qualify_name( parent, name, nlen, NULL );
-	struct function *func = calloc( 1, sizeof( struct function ) + sizeof( char ) * ( qlen + 1 ) );
+	int nlen, qlen = 0;
+	struct function *func;
+	if( name ) {
+		nlen = strlen( name );
+		qlen = qualify_name( parent, name, nlen, NULL ) + 1;
+	}
+	func = calloc( 1, sizeof( struct function ) + sizeof( char ) * qlen );
 	if( func ) {
-		/*printf("Function '%s'\n", name);*/
 		func->str.string = ( char * ) &func[ 1 ];
-		qualify_name( parent, name, nlen, func->str.string );
-		func->str.length = qlen;
+		if( name ) {
+			func->str.length = qualify_name( parent, name, nlen, func->str.string );
+		} else {
+			func->str.string = "[Function]";
+			func->str.length = 10;
+		}
 		func->str.reference_count = 1;
 		func->str.type = FUNCTION;
 	}
@@ -4971,12 +4978,7 @@ static struct element* add_function_parameter( struct function *func, struct ele
 static struct function* parse_function( struct element *elem, char *name,
 	struct function *parent, char *message ) {
 	struct element *child;
-	struct function *func;
-	if( name ) {
-		func = new_function( name, parent );
-	} else {
-		func = new_function( "[Function]", NULL );
-	}
+	struct function *func = new_function( name, parent );
 	if( func ) {
 		func->line = elem->line;
 		func->file = parent->file;
