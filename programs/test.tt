@@ -15,6 +15,20 @@ struct exten( struc ) {
 	f,g;
 };
 
+library lib {
+	struct struct( exten ) {
+		h;
+	}
+	global global = :( $function( ${ () { return $len( struct ); } } ) );
+	function function() {
+		return global;
+	}
+}
+
+library lib {
+	*** ignored ***
+}
+
 global g, g1 = 1, g2 = +( g1 1 );
 global [ a 3 ], a1 = $array( 1 ), [ a2 g2 ] [ a3 ${ 1, 2, 3 } ], ( exten ) ext = $new( exten );
 
@@ -930,6 +944,10 @@ function testeval() {
 	call assert_throws( "Not an element", ${ () { call $eval( ${} ); } } );
 }
 
+function testlibrary() {
+	call assert_equals( 8, lib_function(), ${-} );
+}
+
 program test {
 	call hello();
 	call assert( =( testvoid() 0 ), ${-} );
@@ -992,5 +1010,6 @@ program test {
 	call testinstanceof();
 	call testtrace();
 	call testeval();
+	call testlibrary();
 	print "Tests passed.";
 }
