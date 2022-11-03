@@ -5364,7 +5364,7 @@ static struct element* parse_struct_declaration( struct element *elem,
 				if( child && child->next == NULL ) {
 					struc->super = ( struct structure * ) get_decl_indexed( func, child->str.string, STRUCT );
 				}
-				if( struc->super ) {
+				if( struc->super && struc->super != struc ) {
 					field = struc->super->fields;
 					while( field && message[ 0 ] == 0 ) {
 						tail = append_string_list( struc->fields_tail, field->str );
