@@ -1817,13 +1817,15 @@ static enum result evaluate_thiscall_expression( struct expression *this,
 
 static enum result evaluate_type_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
+	struct structure *struc;
 	struct variable var = { 0, NULL };
 	enum result ret = this->parameters->evaluate( this->parameters, vars, &var );
 	if( ret && var.string_value ) {
 		result->integer_value = var.string_value->type + 1;
 		if( var.string_value->type == ARRAY ) {
-			result->string_value = &( ( struct array * ) var.string_value )->structure->str;
-			if( result->string_value ) {
+			struc = ( ( struct array * ) var.string_value )->structure;
+			if( struc ) {
+				result->string_value = &struc->str;
 				result->string_value->reference_count++;
 			}
 		}
@@ -3023,9 +3025,9 @@ static enum result evaluate_next_expression( struct expression *this,
 		if( prev.string_value && prev.string_value->type == ELEMENT ) {
 			next = ( ( struct element * ) prev.string_value )->next;
 			if( next ) {
+				result->string_value = &next->str;
 				next->str.reference_count++;
 			}
-			result->string_value = &next->str;
 		} else {
 			ret = throw( vars, this, 0, "Not an element." );
 		}
@@ -3044,9 +3046,9 @@ static enum result evaluate_child_expression( struct expression *this,
 		if( parent.string_value && parent.string_value->type == ELEMENT ) {
 			child = ( ( struct element * ) parent.string_value )->child;
 			if( child ) {
+				result->string_value = &child->str;
 				child->str.reference_count++;
 			}
-			result->string_value = &child->str;
 		} else {
 			ret = throw( vars, this, 0, "Not an element." );
 		}
