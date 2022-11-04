@@ -1422,18 +1422,18 @@ static enum result execute_lock_statement( struct statement *this,
 	struct statement *stmt = ( ( struct block_statement * ) this )->if_block;
 	struct variable var = { 0, NULL };
 	struct worker *work;
-	char lock;
+	char *locked;
 	enum result ret = this->source->evaluate( this->source, vars, &var );
 	if( ret ) {
 		if( var.string_value && var.string_value->type == WORKER ) {
 			work = ( struct worker * ) var.string_value;
-			lock = 1;
+			locked = &work->locked;
 		} else {
 			work = vars->func->env->worker;
-			lock = 2;
+			locked = &work->worker_locked;
 		}
-		if( work->locked != lock && lock_worker( work ) ) {
-			work->locked = lock;
+		if( locked[ 0 ] == 0 && lock_worker( work ) ) {
+			locked[ 0 ] = 1;
 			while( stmt ) {
 				ret = stmt->execute( stmt, vars, result );
 				if( ret == OKAY ) {
@@ -1442,9 +1442,9 @@ static enum result execute_lock_statement( struct statement *this,
 					break;
 				}
 			}
-			work->locked = 0;
+			locked[ 0 ] = 0;
 			if( unlock_worker( work ) == 0 ) {
-				work->locked = lock;
+				locked[ 0 ] = 1;
 				ret = throw( vars, this->source, 0, "Unable to unlock worker.");
 			}
 		} else {
@@ -3972,12 +3972,22 @@ static struct element* parse_string_literal_expression( struct element *elem,
 }
 
 static struct element* parse_element_literal_expression( struct element *elem,
-	struct expression *prev, char *message ) {
-	struct element *next = elem->next;
+	struct environment *env, struct expression *prev, char *message ) {
+	struct element *child, *next = elem->next;
 	if( next && next->str.string[ 0 ] == '{' ) {
-		if( next->child ) {
-			next->child->str.reference_count++;
-			prev->next = new_string_literal_expression( 0, &next->child->str, elem->line, message );
+		child = next->child;
+		if( child ) {
+			if( env->worker ) {
+				child = copy_element( child );
+				if( child == NULL ) {
+					strcpy( message, OUT_OF_MEMORY );
+				}
+			} else {
+				child->str.reference_count++;
+			}
+			if( child ) {
+				prev->next = new_string_literal_expression( 0, &child->str, elem->line, message );
+			}
 		} else {
 			prev->next = calloc( 1, sizeof( struct expression ) );
 			if( prev->next ) {
@@ -4011,7 +4021,7 @@ static struct element* parse_expression( struct element *elem,
 		next = parse_string_literal_expression( elem, prev, message );
 	} else if( value[ 0 ] == '$' && value[ 1 ] == 0 ) {
 		/* Element literal. */
-		next = parse_element_literal_expression( elem, prev, message );
+		next = parse_element_literal_expression( elem, func->env, prev, message );
 	} else if( value[ 0 ] == '\'' && value[ 1 ] == 0 ) {
 		/* Infix operator.*/
 		next = parse_infix_expression( elem, func, vars, prev, message );
@@ -5105,24 +5115,18 @@ static enum result evaluate_worker_expression( struct expression *this,
 	}
 	if( ret ) {
 		if( var.string_value && var.string_value->type == ELEMENT ) {
-			/* Copy source to avoid sharing element-literals. */
-			elem = copy_element( ( struct element * ) var.string_value );
-			if( elem ) {
-				key.line = this->line;
-				validate_syntax( "({0", elem, &key, vars->func->env, message );
-				if( message[ 0 ] == 0 ) {
-					work = parse_worker( elem, vars->func->file, message );
-					if( work ) {
-						result->string_value = &work->str;
-					} else {
-						ret = throw( vars, this, 0, message );
-					}
+			elem = ( struct element * ) var.string_value;
+			key.line = this->line;
+			validate_syntax( "({0", elem, &key, vars->func->env, message );
+			if( message[ 0 ] == 0 ) {
+				work = parse_worker( elem, vars->func->file, message );
+				if( work ) {
+					result->string_value = &work->str;
 				} else {
 					ret = throw( vars, this, 0, message );
 				}
-				unref_string( &elem->str );
 			} else {
-				ret = throw( vars, this, 0, OUT_OF_MEMORY );
+				ret = throw( vars, this, 0, message );
 			}
 		} else {
 			ret = throw( vars, this, 0, "Not an element." );
@@ -5150,7 +5154,7 @@ static enum result evaluate_execute_expression( struct expression *this,
 				parameter = parameter->next;
 			}
 			if( work->env.entry_point->num_parameters == count ) {
-				if( work->locked != 1 ) {
+				if( work->locked == 0 ) {
 					await_worker( work, 1 );
 					idx = 0;
 					parameter = this->parameters->next;
@@ -5222,7 +5226,7 @@ static enum result evaluate_result_expression( struct expression *this,
 	if( ret ) {
 		if( var.string_value && var.string_value->type == WORKER ) {
 			work = ( struct worker * ) var.string_value;
-			if( work->locked != 1 ) {
+			if( work->locked == 0 ) {
 				vars->func->env->worker = work;
 				await_worker( work, 0 );
 				vars->func->env->worker = NULL;

@@ -81,10 +81,10 @@ struct worker {
 	struct environment env;
 	struct variable *args, result, exception;
 	struct expression *parameters;
+	char locked, worker_locked;
 	struct array *strings;
 	void *thread, *mutex;
 	enum result ret;
-	char locked;
 };
 
 /* Reference-counted custom type. */
