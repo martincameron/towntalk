@@ -49,25 +49,22 @@ int initialize_worker( struct worker *work, char *message ) {
 
 /* Begin execution of the specified worker. Returns 0 on failure. */
 int start_worker( struct worker *work ) {
-	int success = 0;
 	pthread_t *thread = calloc( 1, sizeof( pthread_t ) );
 	pthread_mutex_t *mutex = calloc( 1, sizeof( pthread_mutex_t ) );
+	work->mutex = mutex;
+	work->thread = thread;
 	if( mutex && pthread_mutex_init( mutex, NULL ) == 0 ) {
-		work->mutex = mutex;
 		if( thread && pthread_create( thread, NULL, worker_thread, work ) == 0 ) {
-			work->thread = thread;
-			success = 1;
+			return 1;
 		} else {
 			pthread_mutex_destroy( mutex );
-			work->mutex = NULL;
-			free( thread );
-			free( mutex );
 		}
-	} else {
-		free( thread );
-		free( mutex );
 	}
-	return success;
+	free( thread );
+	work->thread = NULL;
+	free( mutex );
+	work->mutex = NULL;
+	return 0;
 }
 
 /* Lock the specified worker mutex. Returns 0 on failure. */

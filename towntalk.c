@@ -5191,8 +5191,8 @@ static enum result evaluate_execute_expression( struct expression *this,
 						work->ret = OKAY;
 						dispose_variable( &work->result );
 						dispose_variable( &work->exception );
-						work->env.interrupted = vars->func->env->interrupted;
 						vars->func->env->worker = work;
+						work->env.interrupted = vars->func->env->interrupted;
 						if( start_worker( work ) ) {
 							result->string_value = var.string_value;
 							result->string_value->reference_count++;
@@ -5228,7 +5228,7 @@ static enum result evaluate_result_expression( struct expression *this,
 			work = ( struct worker * ) var.string_value;
 			if( work->locked == 0 ) {
 				vars->func->env->worker = work;
-				await_worker( work, 0 );
+				await_worker( work, vars->func->env->interrupted );
 				vars->func->env->worker = NULL;
 				count = work->env.entry_point->num_parameters;
 				for( idx = 0; idx < count; idx++ ) {
