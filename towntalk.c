@@ -2824,7 +2824,7 @@ static struct element* new_literal_element( struct element *child ) {
 
 static struct element* new_array_element( struct array *arr, struct environment *env, char *message ) {
 	struct element *tail = NULL, *elem = new_element( 7 );
-	int idx = 0, count = arr->length;
+	int idx = 0, count = 0;
 	struct string *str = NULL;
 	if( elem ) {
 		if( arr->structure ) {
@@ -2845,8 +2845,15 @@ static struct element* new_array_element( struct array *arr, struct environment 
 					strcpy( elem->next->child->str.string, arr->structure->str.string );
 				}
 			} else {
-				elem->next->child = new_integer_element( count );
+				elem->next->child = new_integer_element( arr->length );
 			}
+			while( idx < arr->length ) {
+				if( arr->integer_values[ idx ] || ( arr->string_values && arr->string_values[ idx ] ) ) {
+					count = idx + 1;
+				}
+				idx++;
+			}
+			idx = 0;
 			tail = elem->next->child;
 			while( tail && idx < count ) {
 				while( tail->next ) {
@@ -2948,6 +2955,7 @@ static enum result evaluate_eval_expression( struct expression *this,
 			prev.next = NULL;
 			parse_expression( ( struct element * ) var.string_value, vars->func, NULL, &prev, msg );
 			if( msg[ 0 ] == 0 ) {
+				prev.next->line = this->line;
 				ret = prev.next->evaluate( prev.next, vars, result );
 			} else {
 				ret = throw( vars, this, 0, msg );
