@@ -99,6 +99,8 @@ int main( int argc, char **argv ) {
 	struct variable result = { 0 }, except = { 0 };
 	struct function_expression expr = { 0 };
 	struct variables vars = { 0 };
+	struct function *func = NULL;
+	struct array *arr;
 	vars.exception = &except;
 	/* Handle command-line.*/
 	if( argc < 2 ) {
@@ -130,7 +132,18 @@ int main( int argc, char **argv ) {
 				} else {
 					fprintf( stderr, "Unhandled exception %d.\n", except.integer_value );
 					if( except.string_value && except.string_value->string ) {
-						fprintf( stderr, "%s\n", except.string_value->string );
+						if( except.string_value->type == ARRAY ) {
+							arr = ( struct array * ) except.string_value;
+							if( arr->length > 0 && arr->string_values && arr->string_values[ 0 ]->type == FUNCTION ) {
+								/* Stack-trace. */
+								func = ( struct function * ) arr->string_values[ 0 ];
+							}
+						}
+						if( func ) {
+							fprintf( stderr, "%s (on line %d of '%s')\n", arr->str.string, arr->integer_values[ 0 ], func->file->string );
+						} else {
+							fprintf( stderr, "%s\n", except.string_value->string );
+						}
 					}
 				}
 				dispose_variable( &result );

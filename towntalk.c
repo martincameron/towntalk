@@ -963,15 +963,11 @@ static struct array* stack_trace( struct expression *expr, struct variables *var
 /* Assign an exception with the specified error code and message to vars and return EXCEPTION. */
 enum result throw( struct variables *vars, struct expression *source, int integer, const char *string ) {
 	struct variable *exception = vars->exception;
-	struct string *file = vars->func->file;
 	struct array *arr = NULL;
 	if( string ) {
-		arr = stack_trace( source, vars, strlen( string ) + 64, 16 );
+		arr = stack_trace( source, vars, strlen( string ), 16 );
 		if( arr ) {
-			if( sprintf( arr->str.string, "%s (on line %d of '%.32s')", string, source->line, file->string ) < 0 ) {
-				strcpy( arr->str.string, string );
-			}
-			arr->str.length = strlen( arr->str.string );
+			strcpy( arr->str.string, string );
 		} else {
 			return throw_exit( vars, 1, OUT_OF_MEMORY );
 		}
@@ -1984,6 +1980,8 @@ static enum result evaluate_array_expression( struct expression *this,
 						ret = expr->evaluate( expr, vars, &var );
 						if( ret ) {
 							assign_array_variable( &var, arr, idx++ );
+						} else if( vars->exception->string_value ) {
+							ret = throw( vars, this, vars->exception->integer_value, vars->exception->string_value->string );
 						}
 					} else {
 						ret = throw( vars, this, idx, "Array index out of bounds." );
@@ -2955,8 +2953,10 @@ static enum result evaluate_eval_expression( struct expression *this,
 			prev.next = NULL;
 			parse_expression( ( struct element * ) var.string_value, vars->func, NULL, &prev, msg );
 			if( msg[ 0 ] == 0 ) {
-				prev.next->line = this->line;
 				ret = prev.next->evaluate( prev.next, vars, result );
+				if( ret == EXCEPTION && vars->exception->string_value ) {
+					ret = throw( vars, this, vars->exception->integer_value, vars->exception->string_value->string );
+				}
 			} else {
 				ret = throw( vars, this, 0, msg );
 			}
