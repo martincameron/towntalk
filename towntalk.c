@@ -820,7 +820,9 @@ static void dispose_structure( struct structure *sct ) {
 }
 
 static void dispose_function( struct function *func ) {
-	unref_string( func->file );
+	if( func->file ) {
+		unref_string( func->file );
+	}
 	if( func->library ) {
 		unref_string( func->library );
 	}
@@ -1933,6 +1935,14 @@ static enum result evaluate_member_expression( struct expression *this,
 	return ret;
 }
 
+static void expr_set_line( struct expression *expr, int line ) {
+	while( expr ) {
+		expr->line = line;
+		expr_set_line( expr->parameters, line );
+		expr = expr->next;
+	}
+}
+
 static enum result evaluate_array_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	struct expression prev, *expr = this->parameters->next;
@@ -1947,8 +1957,12 @@ static enum result evaluate_array_expression( struct expression *this,
 		if( var.string_value && var.string_value->type == ELEMENT ) {
 			if( expr == NULL ) {
 				parse_expressions( ( struct element * ) var.string_value, vars->func, NULL, 0, &prev, &len, msg );
-				expr = prev.next;
-				if( msg[ 0 ] ) {
+				if( msg[ 0 ] == 0 ) {
+					expr = prev.next;
+					if( this->parameters->evaluate != evaluate_string_literal_expression ) {
+						expr_set_line( expr, this->line );
+					}
+				} else {
 					ret = throw( vars, this, 0, msg );
 				}
 			} else {
@@ -1980,8 +1994,6 @@ static enum result evaluate_array_expression( struct expression *this,
 						ret = expr->evaluate( expr, vars, &var );
 						if( ret ) {
 							assign_array_variable( &var, arr, idx++ );
-						} else if( vars->exception->string_value ) {
-							ret = throw( vars, this, vars->exception->integer_value, vars->exception->string_value->string );
 						}
 					} else {
 						ret = throw( vars, this, idx, "Array index out of bounds." );
@@ -2953,10 +2965,8 @@ static enum result evaluate_eval_expression( struct expression *this,
 			prev.next = NULL;
 			parse_expression( ( struct element * ) var.string_value, vars->func, NULL, &prev, msg );
 			if( msg[ 0 ] == 0 ) {
+				expr_set_line( prev.next, this->line );
 				ret = prev.next->evaluate( prev.next, vars, result );
-				if( ret == EXCEPTION && vars->exception->string_value ) {
-					ret = throw( vars, this, vars->exception->integer_value, vars->exception->string_value->string );
-				}
 			} else {
 				ret = throw( vars, this, 0, msg );
 			}
@@ -5053,7 +5063,14 @@ static enum result evaluate_function_expression( struct expression *this,
 			if( message[ 0 ] == 0 ) {
 				func = parse_function( elem, NULL, vars->func, message );
 				if( func ) {
-					if( parse_function_body( func, vars, message ) ) {
+					if( parameter->evaluate != evaluate_string_literal_expression ) {
+						unref_string( func->file );
+						func->file = new_string_value( "[Element]" );
+						if( func->file == NULL ) {
+							strcpy( message, OUT_OF_MEMORY );
+						}
+					}
+					if( message[ 0 ] == 0 && parse_function_body( func, vars, message ) ) {
 						result->string_value = &func->str;
 					} else {
 						unref_string( &func->str );
