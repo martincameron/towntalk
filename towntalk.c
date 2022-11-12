@@ -820,7 +820,7 @@ static void dispose_structure( struct structure *sct ) {
 }
 
 static void dispose_function( struct function *func ) {
-	if( func->file ) {
+	if( func->file != &func->str ) {
 		unref_string( func->file );
 	}
 	if( func->library ) {
@@ -5065,12 +5065,9 @@ static enum result evaluate_function_expression( struct expression *this,
 				if( func ) {
 					if( parameter->evaluate != evaluate_string_literal_expression ) {
 						unref_string( func->file );
-						func->file = new_string_value( "[Element]" );
-						if( func->file == NULL ) {
-							strcpy( message, OUT_OF_MEMORY );
-						}
+						func->file = &func->str;
 					}
-					if( message[ 0 ] == 0 && parse_function_body( func, vars, message ) ) {
+					if( parse_function_body( func, vars, message ) ) {
 						result->string_value = &func->str;
 					} else {
 						unref_string( &func->str );
