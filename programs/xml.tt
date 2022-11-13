@@ -3,581 +3,586 @@ rem {
 	Simple XML parser and object-model.
 }
 
-struct ascii {
-	# Enumerated ASCII character codes.
-	nul soh stx etx eot enq ack bel bs  tab lf  vt  ff cr so si
-	dle dc1 dc2 dc3 dc4 nak syn etb can em  sub esc fs gs rs us
-	space exclam quote hash dollar percent amp squote
-	lparen rparen star plus comma minus dot slash
-	d0 d1 d2 d3 d4 d5 d6 d7 d8 d9 colon semicolon lt equals gt question at
-	A B C D E F G H I J K L M N O P Q R S T U V W X Y Z
-	lbracket backslash rbracket caret underscore backquote
-	a b c d e f g h i j k l m n o p q r s t u v w x y z
-	lbrace pipe rbrace tilde del
-}
+library xml {
+	struct ascii {
+		# Enumerated ASCII character codes.
+		nul soh stx etx eot enq ack bel bs  tab lf  vt  ff cr so si
+		dle dc1 dc2 dc3 dc4 nak syn etb can em  sub esc fs gs rs us
+		space exclam quote hash dollar percent amp squote
+		lparen rparen star plus comma minus dot slash
+		d0 d1 d2 d3 d4 d5 d6 d7 d8 d9 colon semicolon lt equals gt question at
+		A B C D E F G H I J K L M N O P Q R S T U V W X Y Z
+		lbracket backslash rbracket caret underscore backquote
+		a b c d e f g h i j k l m n o p q r s t u v w x y z
+		lbrace pipe rbrace tilde del
+	}
 
-struct tuple {
-	# Value with associated key, such as a named attribute.
-	key, value
-}
+	struct tuple {
+		# Value with associated key, such as a named attribute.
+		key, value
+	}
 
-struct list {
-	# Array-backed list.
-	array, len
-}
+	struct list {
+		# Array-backed list.
+		array, len
+	}
 
-struct parser {
-	# Supplies characters from a string and tracks line numbers.
-	source, idx, current, line
-}
+	struct parser {
+		# Supplies characters from a string and tracks line numbers.
+		source, idx, current, line
+	}
 
-struct writer {
-	# Provides function to write output.
-	write
-}
+	struct writer {
+		# Provides function to write output.
+		write
+	}
 
-struct xml_node {
-	# Common node properties and functions.
-	write
-}
+	struct node {
+		# Common node properties and functions.
+		write
+	}
 
-struct xml_pi( xml_node ) {
-	# Processing-instruction node.
-	target, value
-}
+	struct pi( node ) {
+		# Processing-instruction node.
+		target, value
+	}
 
-struct xml_text( xml_node ) {
-	# Text node.
-	text
-}
+	struct text( node ) {
+		# Text node.
+		text
+	}
 
-struct xml_entity( xml_node ) {
-	# Entity-reference node.
-	name
-}
+	struct entity( node ) {
+		# Entity-reference node.
+		name
+	}
 
-struct xml_comment( xml_node ) {
-	# Comment node.
-	comment
-}
+	struct comment( node ) {
+		# Comment node.
+		comment
+	}
 
-struct xml_element( xml_node ) {
-	# Element node, short-tags are enabled for output template has no children.
-	name, attributes, children, template, create_element
-}
+	struct element( node ) {
+		# Element node, short-tags are enabled for output template has no children.
+		name, attributes, children, template, create_element
+	}
 
-# Return a new tuple, initialized with the specified values.
-function new_tuple( key value ) { 
-	var ( tuple ) tup = $new( tuple );
-	let tup.key = key;
-	let tup.value = value;
-	return tup;
-}
+	# Add the specified value to the specified list, increasing the capacity if necessary.
+	function list_add( ( list ) this, value ) {
+		if >e( this.len $len( this.array ) ) {
+			var arr = $array( *( this.len 2 ) );
+			var idx;
+			while <( idx this.len ) {
+				let [ arr idx ] = [ this.array idx ];
+				inc idx;
+			}
+			let this.array = arr;
+		}
+		let [ this.array this.len ] = value;
+		let this.len = +( this.len 1 );
+	}
 
-# Return a new empty list with the specified initial capacity.
-function new_list( capacity ) {
-	var ( list ) this = $new( list );
-	let this.array = $array( capacity );
-	return this;
-}
-
-# Add the specified value to the specified list, increasing the capacity if necessary.
-function list_add( ( list ) this, value ) {
-	if >e( this.len $len( this.array ) ) {
-		var arr = $array( *( this.len 2 ) );
-		var idx;
+	# Insert the specified value into the specified list at the specified index.
+	function list_insert( ( list ) this, value, idx ) {
+		call list_add( this, 0 );
 		while <( idx this.len ) {
-			let [ arr idx ] = [ this.array idx ];
+			var tmp = [ this.array idx ];
+			let [ this.array idx++ ] = value;
+			let value = tmp;
+		}
+	}
+
+	# Return the next character from the specified parser, or -1 if no more are available.
+	function parser_next_char( ( parser ) this ) {
+		let this.idx = +( this.idx 1 );
+		if <( this.idx $len( this.source ) ) {
+			let this.current = &( $chr( this.source this.idx ) 0xFF );
+			if =( this.current ascii.lf ) {
+				let this.line = +( this.line 1 );
+			}
+		} else {
+			let this.current = -1;
+		}
+		return this.current;
+	}
+
+	# Return a string from the specified parser, up to the end or one of the characters in the specified string.
+	function parser_parse_string( ( parser ) this, terminators ) {
+		if <( this.current 0 ) {
+			return "";
+		}
+		var end = $stridx( this.source, terminators, this.idx );
+		if <( end 0 ) {
+			let end = $len( this.source );
+			let this.current = -1;
+		} else {
+			let this.current = &( $chr( this.source end ) 0xFF );
+			if =( this.current ascii.lf ) {
+				let this.line = +( this.line 1 );
+			}
+		}
+		var str = $sub( this.source, this.idx, -( end this.idx ) );
+		let this.idx = end;
+		var idx = ?( $len( str ) $stridx( str, "\12", 0 ) -1 );
+		while >e( idx 0 ) {
+			let this.line = +( this.line 1 );
 			inc idx;
+			let idx = ?( <( idx $len( str ) ) $stridx( str, "\12", idx ) -1 );
 		}
-		let this.array = arr;
+		return str;
 	}
-	let [ this.array this.len ] = value;
-	let this.len = +( this.len 1 );
-}
 
-# Insert the specified value into the specified list at the specified index.
-function list_insert( ( list ) this, value, idx ) {
-	call list_add( this, 0 );
-	while <( idx this.len ) {
-		var tmp = [ this.array idx ];
-		let [ this.array idx++ ] = value;
-		let value = tmp;
-	}
-}
-
-# Return a new parser for the specified source string.
-function new_parser( source ) {
-	var ( parser ) this = $new( parser );
-	let this.source = source;
-	let this.idx = -1;
-	let this.current = this:next_char();
-	let this.line = 1;
-	return this;
-}
-
-# Return the next character from the specified parser, or -1 if no more are available.
-function parser_next_char( ( parser ) this ) {
-	let this.idx = +( this.idx 1 );
-	if <( this.idx $len( this.source ) ) {
-		let this.current = &( $chr( this.source this.idx ) 0xFF );
-		if =( this.current ascii.lf ) {
-			let this.line = +( this.line 1 );
+	# Return the content of a quoted string from the specified parser.
+	function parse_qname( ( parser ) p ) {
+		var quote = p.current;
+		if &&( <>( quote ascii.quote ) <>( quote ascii.squote ) ) {
+			throw $cat( "Expected quote character on line " p.line "."  );
 		}
-	} else {
-		let this.current = -1;
+		call p:next_char();
+		var str = p:parse_string( $asc( quote ) );
+		call p:expect( quote );
+		call p:next_char();
+		return str;
 	}
-	return this.current;
-}
 
-# Return a string from the specified parser, up to the end or one of the characters in the specified string.
-function parser_parse_string( ( parser ) this, terminators ) {
-	if <( this.current 0 ) {
-		return "";
+	# Skip over space and control-characters from the specified parser.
+	function parser_skip_space( ( parser ) this ) {
+		while &&( >e( this.current 0 ) <e( this.current 32 ) ) {
+			call this:next_char();
+		}
+		return this.current;
 	}
-	var end = $stridx( this.source, terminators, this.idx );
-	if <( end 0 ) {
-		let end = $len( this.source );
-		let this.current = -1;
-	} else {
-		let this.current = &( $chr( this.source end ) 0xFF );
-		if =( this.current ascii.lf ) {
-			let this.line = +( this.line 1 );
+
+	# Throw an exception if the current character of the specified parser is not the specified code-point.
+	function parser_expect( ( parser ) this, chr ) {
+		if <>( this.current chr ) {
+			throw $cat( "Expected '" $asc( chr ) "' on line " this.line "."  );
 		}
 	}
-	var str = $sub( this.source, this.idx, -( end this.idx ) );
-	let this.idx = end;
-	var idx = ?( $len( str ) $stridx( str, "\12", 0 ) -1 );
-	while >e( idx 0 ) {
-		let this.line = +( this.line 1 );
-		inc idx;
-		let idx = ?( <( idx $len( str ) ) $stridx( str, "\12", idx ) -1 );
+
+	# Member function for writing processing-instruction nodes.
+	function write_pi( ( pi ) this, ( writer ) output ) {
+		call :output.write( "<?" );
+		call :output.write( this.target );
+		call :output.write( " " );
+		call :output.write( this.value );
+		call :output.write( "?>" );
 	}
-	return str;
-}
 
-# Return the content of a quoted string from the specified parser.
-function parse_xml_qname( ( parser ) p ) {
-	var quote = p.current;
-	if &&( <>( quote ascii.quote ) <>( quote ascii.squote ) ) {
-		throw $cat( "Expected quote character on line " p.line "."  );
-	}
-	call p:next_char();
-	var str = p:parse_string( $asc( quote ) );
-	call p:expect( quote );
-	call p:next_char();
-	return str;
-}
-
-# Skip over space and control-characters from the specified parser.
-function parser_skip_space( ( parser ) this ) {
-	while &&( >e( this.current 0 ) <e( this.current 32 ) ) {
-		call this:next_char();
-	}
-	return this.current;
-}
-
-# Throw an exception if the current character of the specified parser is not the specified code-point.
-function parser_expect( ( parser ) this, chr ) {
-	if <>( this.current chr ) {
-		throw $cat( "Expected '" $asc( chr ) "' on line " this.line "."  );
-	}
-}
-
-# Member function for writing processing-instruction nodes.
-function write_xml_pi( ( xml_pi ) this, ( writer ) output ) {
-	call :output.write( "<?" );
-	call :output.write( this.target );
-	call :output.write( " " );
-	call :output.write( this.value );
-	call :output.write( "?>" );
-}
-
-# Return a new processing-instruction node.
-function new_xml_pi( target, value ) {
-	var ( xml_pi ) p = $new( xml_pi );
-	let p.target = target;
-	let p.value = value;
-	let p.write = @write_xml_pi;
-	return p;
-}
-
-# Parse a processing-instruction node from the specified parser positioned at the first question-mark.
-function parse_xml_pi( ( parser ) p ) {
-	call p:expect( ascii.question );
-	call p:next_char();
-	var target = p:parse_string( "\11\12\15 " );
-	call p:skip_space();
-	var value = p:parse_string( "?" );
-	call p:expect( ascii.question );
-	call p:next_char();
-	while <>( p.current ascii.gt ) {
-		let value = $cat( value "?" p:parse_string( "?" ) );
+	# Parse a processing-instruction node from the specified parser positioned at the first question-mark.
+	function parse_pi( ( parser ) p ) {
 		call p:expect( ascii.question );
 		call p:next_char();
-	}
-	call p:next_char();
-	return new_xml_pi( target value );
-}
-
-# Member function for writing element nodes and their children.
-function write_xml_element( ( xml_element ) this, ( writer ) output ) {
-	call :output.write( "<" );
-	call :output.write( this.name );
-	var idx;
-	var ( list ) atts = this.attributes;
-	while <( idx atts.len ) {
-		var ( tuple ) att = [ atts.array idx++ ];
-		call :output.write( " " );
-		call :output.write( att.key );
-		call :output.write( "=\"" );
-		call :output.write( att.value );
-		call :output.write( "\"" );
-	}
-	var ( list ) children = this.children;
-	if &&( this.template <e( list.len( xml_element.children( this.template ) ) 0 ) <e( children.len 0 ) ) {
-		call :output.write( "/>" );
-	} else {
-		call :output.write( ">" );
-		let idx = 0;
-		while <( idx children.len ) {
-			call :xml_node.write( [ children.array idx++ ], output );
+		var target = p:parse_string( "\11\12\15 " );
+		call p:skip_space();
+		var value = p:parse_string( "?" );
+		call p:expect( ascii.question );
+		call p:next_char();
+		while <>( p.current ascii.gt ) {
+			let value = $cat( value "?" p:parse_string( "?" ) );
+			call p:expect( ascii.question );
+			call p:next_char();
 		}
-		call :output.write( "</" );
+		call p:next_char();
+		return new_xml_pi( target value );
+	}
+
+	# Member function for writing element nodes and their children.
+	function write_element( ( element ) this, ( writer ) output ) {
+		call :output.write( "<" );
 		call :output.write( this.name );
+		var idx;
+		var ( list ) atts = this.attributes;
+		while <( idx atts.len ) {
+			var ( tuple ) att = [ atts.array idx++ ];
+			call :output.write( " " );
+			call :output.write( att.key );
+			call :output.write( "=\"" );
+			call :output.write( att.value );
+			call :output.write( "\"" );
+		}
+		var ( list ) children = this.children;
+		if &&( this.template <e( list.len( element.children( this.template ) ) 0 ) <e( children.len 0 ) ) {
+			call :output.write( "/>" );
+		} else {
+			call :output.write( ">" );
+			let idx = 0;
+			while <( idx children.len ) {
+				call :node.write( [ children.array idx++ ], output );
+			}
+			call :output.write( "</" );
+			call :output.write( this.name );
+			call :output.write( ">" );
+		}
+	}
+
+	# Member function to create a new element, this may be replaced to create custom elements.
+	function create_element( ( element ) this, name ) {
+		if this.template {
+			var ( list ) children = element.children( this.template );
+			var idx;
+			while <( idx children.len ) {
+				var child = [ children.array idx++ ];
+				if $instanceof( child element ) {
+					if $eq( element.name( child ) name ) {
+						var ( element ) elem = new_xml_element( name );
+						let elem.template = child;
+						return elem;
+					}
+				}
+			}
+			throw $cat( "Element '" name "' not permitted as child of '" this.name "'." );
+		}
+		return new_xml_element( name );
+	}
+
+	# Parse an appropriately-typed node using the specified parser and parent element.
+	function parse_node( ( parser ) p, ( element ) parent ) {
+		switch p.current {
+			case ascii.lt {
+				switch p:next_char() {
+					case ascii.exclam {
+						return parse_decl( p );
+					}
+					case ascii.question {
+						return parse_pi( p );
+					}
+					case ascii.slash {
+						return 0;
+					}
+				}
+			}
+			case ascii.amp {
+				return parse_entity( p );
+			}
+			default {
+				return new_xml_text( p:parse_string( "&<" ) );
+			}
+		}
+		var ( element ) elem = :parent.create_element( p:parse_string( "\11\12\15 />" ) );
+		call p:skip_space();
+		while &&( <>( p.current ascii.slash ) <>( p.current ascii.gt ) ) {
+			var name = p:parse_string( "\11\12\15 =" );
+			call p:skip_space();
+			call p:expect( ascii.equals );
+			call p:next_char();
+			call p:skip_space();
+			call list_add( elem.attributes new_xml_tuple( name parse_qname( p ) ) );
+			call p:skip_space();
+		}
+		switch p.current {
+			case ascii.slash {
+				call p:next_char();
+			}
+			case ascii.gt {
+				call p:next_char();
+				var child = parse_node( p, elem );
+				while child {
+					call list_add( elem.children child );
+					let child = parse_node( p, elem );
+				}
+				call p:expect( ascii.slash );
+				call p:next_char();
+				let name = p:parse_string( "\11\12\15 >" );
+				if $cmp( elem.name name ) {
+					throw $cat( "Unexpected close tag '</" name ">' on line " p.line "." );
+				}
+			}
+		}
+		call p:skip_space();
+		call p:expect( ascii.gt );
+		call p:next_char();
+		return elem;
+	}
+
+	# Member function for writing text-nodes.
+	function write_text( ( text ) this, ( writer ) output ) {
+		call :output.write( this.text );
+	}
+
+	# Member function for writing text-nodes within cdata sections.
+	function write_cdata( ( text ) this, ( writer ) output ) {
+		call :output.write( "<![CDATA[" );
+		call :output.write( this.text );
+		call :output.write( "]]>" );
+	}
+
+	# Parse a cdata node from the specified parser positioned at "CDATA[".
+	function parse_cdata( ( parser ) p ) {
+		call p:expect( ascii.lbracket );
+		call p:next_char();
+		if $cmp( "CDATA" p:parse_string( "[" ) ) {
+			throw $cat( "Expected 'CDATA' on line " p.line "." );
+		}
+		call p:next_char();
+		var str = p:parse_string( "]" );
+		while TRUE {
+			call p:expect( ascii.rbracket );
+			if =( p:next_char() ascii.rbracket ) {
+				call p:next_char();
+				call p:expect( ascii.gt );
+				call p:next_char();
+				return new_xml_cdata( str );
+			} else {
+				let str = $cat( str "]" p:parse_string( "]" ) );
+			}
+		}
+	}
+
+	# Member function for writing entity-references.
+	function write_entity( ( entity ) this, ( writer ) output ) {
+		call :output.write( "&" );
+		call :output.write( this.name );
+		call :output.write( ";" );
+	}
+
+	# Parse an entity-reference node from the specified parser.
+	function parse_entity( ( parser ) p ) {
+		call p:expect( ascii.amp );
+		call p:next_char();
+		var ent = new_xml_entity( p:parse_string( ";" ) );
+		call p:expect( ascii.semicolon );
+		call p:next_char();
+		return ent;
+	}
+
+	# Member function for writing comment-nodes.
+	function write_comment( ( comment ) this, ( writer ) output ) {
+		call :output.write( "<!--" );
+		call :output.write( this.comment );
+		call :output.write( "-->" );
+	}
+
+	# Parse a comment-node from the specified parser positioned at the first hyphen.
+	function parse_comment( ( parser ) p ) {
+		call p:expect( ascii.minus );
+		call p:next_char();
+		call p:expect( ascii.minus );
+		call p:next_char();
+		var str = p:parse_string( "-" );
+		while TRUE {
+			call p:expect( ascii.minus );
+			if =( p:next_char() ascii.minus ) {
+				call p:next_char();
+				call p:skip_space();
+				call p:expect( ascii.gt );
+				call p:next_char();
+				return new_xml_comment( str );
+			} else {
+				let str = $cat( str "-" p:parse_string( "-" ) );
+			}
+		}
+	}
+
+	# Member function for writing doctype-nodes.
+	function write_doctype( ( element ) this, ( writer ) output ) {
+		call :output.write( "<!" );
+		call :output.write( this.name );
+		call :output.write( " " );
+		var idx;
+		var ( list ) atts = this.attributes;
+		while <( idx atts.len ) {
+			var ( tuple ) att = [ atts.array idx++ ];
+			switch idx {
+				case 1 {
+					call :output.write( att.value );
+					continue;
+				}
+				case 2 {
+					call :output.write( " " );
+					call :output.write( att.key );
+				}
+			}
+			call :output.write( " \"" );
+			call :output.write( att.value );
+			call :output.write( "\"" );
+		}
 		call :output.write( ">" );
 	}
-}
 
-# Member function to create a new element, this may be replaced to create custom elements.
-function create_xml_element( ( xml_element ) this, name ) {
-	if this.template {
-		var ( list ) children = xml_element.children( this.template );
-		var idx;
-		while <( idx children.len ) {
-			var child = [ children.array idx++ ];
-			if $instanceof( child xml_element ) {
-				if $eq( xml_element.name( child ) name ) {
-					var ( xml_element ) elem = new_xml_element( name );
-					let elem.template = child;
-					return elem;
-				}
-			}
+	# Parse a doctype-declaration element from the specified parser positioned at 'DOCTYPE'.
+	function parse_doctype( ( parser ) p ) {
+		if $cmp( "DOCTYPE" p:parse_string( "\11\12\15 " ) ) {
+			throw $cat( "Expected 'DOCTYPE' on line " p.line "." );
 		}
-		throw $cat( "Element '" name "' not permitted as child of '" this.name "'." );
-	}
-	return new_xml_element( name );
-}
-
-# Return a new element with the specified name.
-function new_xml_element( name ) {
-	var ( xml_element ) elem = $new( xml_element );
-	let elem.name = name;
-	let elem.write = @write_xml_element;
-	let elem.attributes = new_list( 4 );
-	let elem.children = new_list( 4 );
-	let elem.create_element = @create_xml_element;
-	return elem;
-}
-
-# Parse an appropriately-typed node using the specified parser and parent element.
-function parse_xml_node( ( parser ) p, ( xml_element ) parent ) {
-	switch p.current {
-		case ascii.lt {
-			switch p:next_char() {
-				case ascii.exclam {
-					return parse_xml_decl( p );
-				}
-				case ascii.question {
-					return parse_xml_pi( p );
-				}
-				case ascii.slash {
-					return 0;
-				}
-			}
-		}
-		case ascii.amp {
-			return parse_xml_entity( p );
-		}
-		default {
-			return new_xml_text( p:parse_string( "&<" ) );
-		}
-	}
-	var ( xml_element ) elem = :parent.create_element( p:parse_string( "\11\12\15 />" ) );
-	call p:skip_space();
-	while &&( <>( p.current ascii.slash ) <>( p.current ascii.gt ) ) {
-		var name = p:parse_string( "\11\12\15 =" );
 		call p:skip_space();
-		call p:expect( ascii.equals );
+		var ( element ) elem = new_xml_element( "DOCTYPE" );
+		let elem.write = @write_doctype;
+		call list_add( elem.attributes new_xml_tuple( "name" p:parse_string( "\11\12\15 " ) ) );
+		call p:skip_space();
+		switch p:parse_string( "\11\12\15 [>" ) {
+			case "PUBLIC" {
+				call p:skip_space();
+				call list_add( elem.attributes new_xml_tuple( "PUBLIC" parse_qname( p ) ) );
+				call p:skip_space();
+				call list_add( elem.attributes new_xml_tuple( "SYSTEM" parse_qname( p ) ) );
+			}
+			case "SYSTEM" {
+				call p:skip_space();
+				call list_add( elem.attributes new_xml_tuple( "SYSTEM" parse_qname( p ) ) );
+			}
+		}
+		call p:skip_space();
+		if =( p.current ascii.lbracket ) {
+			call p:parse_string( "]" );
+			call p:expect( ascii.rbracket );
+			call p:next_char();
+			call p:skip_space();
+		}
+		call p:expect( ascii.gt );
 		call p:next_char();
-		call p:skip_space();
-		call list_add( elem.attributes new_tuple( name parse_xml_qname( p ) ) );
-		call p:skip_space();
+		return elem;
 	}
-	switch p.current {
-		case ascii.slash {
-			call p:next_char();
-		}
-		case ascii.gt {
-			call p:next_char();
-			var child = parse_xml_node( p, elem );
-			while child {
-				call list_add( elem.children child );
-				let child = parse_xml_node( p, elem );
+
+	# Parse a declaration-node from the specified parser positioned at the exclamation-mark.
+	function parse_decl( ( parser ) p ) {
+		call p:expect( ascii.exclam );
+		switch p:next_char() {
+			case ascii.minus {
+				return parse_comment( p );
 			}
-			call p:expect( ascii.slash );
-			call p:next_char();
-			let name = p:parse_string( "\11\12\15 >" );
-			if $cmp( elem.name name ) {
-				throw $cat( "Unexpected close tag '</" name ">' on line " p.line "." );
+			case ascii.D {
+				return parse_doctype( p );
+			}
+			case ascii.lbracket {
+				return parse_cdata( p );
 			}
 		}
+		throw $cat( "Unsupported declaration on line " p.line "." );
 	}
-	call p:skip_space();
-	call p:expect( ascii.gt );
-	call p:next_char();
-	return elem;
-}
 
-# Member function for writing text-nodes.
-function write_xml_text( ( xml_text ) this, ( writer ) output ) {
-	call :output.write( this.text );
-}
-
-# Return a new text-node with the specified value.
-function new_xml_text( text ) {
-	var ( xml_text ) this = $new( xml_text );
-	let this.text = text;
-	let this.write = @write_xml_text;
-	return this;
-}
-
-# Member function for writing text-nodes within cdata sections.
-function write_xml_cdata( ( xml_text ) this, ( writer ) output ) {
-	call :output.write( "<![CDATA[" );
-	call :output.write( this.text );
-	call :output.write( "]]>" );
-}
-
-# Return a new text-node which writes content in a cdata section.
-function new_xml_cdata( cdata ) {
-	var ( xml_text ) this = $new( xml_text );
-	let this.text = cdata;
-	let this.write = @write_xml_cdata;
-	return this;
-}
-
-# Parse a cdata node from the specified parser positioned at "CDATA[".
-function parse_xml_cdata( ( parser ) p ) {
-	call p:expect( ascii.lbracket );
-	call p:next_char();
-	if $cmp( "CDATA" p:parse_string( "[" ) ) {
-		throw $cat( "Expected 'CDATA' on line " p.line "." );
-	}
-	call p:next_char();
-	var str = p:parse_string( "]" );
-	while TRUE {
-		call p:expect( ascii.rbracket );
-		if =( p:next_char() ascii.rbracket ) {
-			call p:next_char();
-			call p:expect( ascii.gt );
-			call p:next_char();
-			return new_xml_cdata( str );
-		} else {
-			let str = $cat( str "]" p:parse_string( "]" ) );
+	# Return a list of nodes from the specified parser.
+	function parse_node_list( ( parser ) p, template ) {
+		var ( element ) parent = new_xml_element( "doc" );
+		var ( list ) nodes = new_xml_list( 16 );
+		if template {
+			call list_add( parent.children parse_node( new_xml_parser( template ) parent ) );
+			let parent.template = parent;
 		}
-	}
-}
-
-# Member function for writing entity-references.
-function write_xml_entity( ( xml_entity ) this, ( writer ) output ) {
-	call :output.write( "&" );
-	call :output.write( this.name );
-	call :output.write( ";" );
-}
-
-# Return a new entity-reference node with the specified value.
-function new_xml_entity( name ) {
-	var ( xml_entity ) this = $new( xml_entity );
-	let this.name = name;
-	let this.write = @write_xml_entity;
-	return this;
-}
-
-# Parse an entity-reference node from the specified parser.
-function parse_xml_entity( ( parser ) p ) {
-	call p:expect( ascii.amp );
-	call p:next_char();
-	var ent = new_xml_entity( p:parse_string( ";" ) );
-	call p:expect( ascii.semicolon );
-	call p:next_char();
-	return ent;
-}
-
-# Member function for writing comment-nodes.
-function write_xml_comment( ( xml_comment ) this, ( writer ) output ) {
-	call :output.write( "<!--" );
-	call :output.write( this.comment );
-	call :output.write( "-->" );
-}
-
-# Return a new comment-node with the specified value.
-function new_xml_comment( comment ) {
-	var ( xml_comment ) this = $new( xml_comment );
-	let this.comment = comment;
-	let this.write = @write_xml_comment;
-	return this;
-}
-
-# Parse a comment-node from the specified parser positioned at the first hyphen.
-function parse_xml_comment( ( parser ) p ) {
-	call p:expect( ascii.minus );
-	call p:next_char();
-	call p:expect( ascii.minus );
-	call p:next_char();
-	var str = p:parse_string( "-" );
-	while TRUE {
-		call p:expect( ascii.minus );
-		if =( p:next_char() ascii.minus ) {
-			call p:next_char();
-			call p:skip_space();
-			call p:expect( ascii.gt );
-			call p:next_char();
-			return new_xml_comment( str );
-		} else {
-			let str = $cat( str "-" p:parse_string( "-" ) );
+		while >e( p.current 0 ) {
+			call nodes:add( parse_node( p parent ) );
 		}
+		return nodes;
 	}
-}
 
-# Member function for writing doctype-nodes.
-function write_xml_doctype( ( xml_element ) this, ( writer ) output ) {
-	call :output.write( "<!" );
-	call :output.write( this.name );
-	call :output.write( " " );
-	var idx;
-	var ( list ) atts = this.attributes;
-	while <( idx atts.len ) {
-		var ( tuple ) att = [ atts.array idx++ ];
-		switch idx {
-			case 1 {
-				call :output.write( att.value );
-				continue;
+	# Insert text nodes to indent output.
+	function indent_node_list( ( list ) nodes, linefeed ) {
+		var indented, idx;
+		while <( idx nodes.len ) {
+			var n = [ nodes.array idx ];
+			if $instanceof( n element ) {
+				let indented = TRUE;
+				call nodes:insert( new_xml_text( linefeed ) idx++ );
+				if indent_node_list( element.children( n ), $cat( linefeed "  " ) ) {
+					call list_add( element.children( n ) new_xml_text( linefeed ) ) ;
+				}
 			}
-			case 2 {
-				call :output.write( " " );
-				call :output.write( att.key );
-			}
+			inc idx;
 		}
-		call :output.write( " \"" );
-		call :output.write( att.value );
-		call :output.write( "\"" );
+		return indented;
 	}
-	call :output.write( ">" );
 }
 
-# Parse a doctype-declaration element from the specified parser positioned at 'DOCTYPE'.
-function parse_xml_doctype( ( parser ) p ) {
-	if $cmp( "DOCTYPE" p:parse_string( "\11\12\15 " ) ) {
-		throw $cat( "Expected 'DOCTYPE' on line " p.line "." );
+library new_xml {
+	# Return a new tuple, initialized with the specified values.
+	function tuple( key value ) { 
+		var ( xml_tuple ) tup = $new( xml_tuple );
+		let tup.key = key;
+		let tup.value = value;
+		return tup;
 	}
-	call p:skip_space();
-	var ( xml_element ) elem = new_xml_element( "DOCTYPE" );
-	let elem.write = @write_xml_doctype;
-	call list_add( elem.attributes new_tuple( "name" p:parse_string( "\11\12\15 " ) ) );
-	call p:skip_space();
-	switch p:parse_string( "\11\12\15 [>" ) {
-		case "PUBLIC" {
-			call p:skip_space();
-			call list_add( elem.attributes new_tuple( "PUBLIC" parse_xml_qname( p ) ) );
-			call p:skip_space();
-			call list_add( elem.attributes new_tuple( "SYSTEM" parse_xml_qname( p ) ) );
-		}
-		case "SYSTEM" {
-			call p:skip_space();
-			call list_add( elem.attributes new_tuple( "SYSTEM" parse_xml_qname( p ) ) );
-		}
+
+	# Return a new empty list with the specified initial capacity.
+	function list( capacity ) {
+		var ( xml_list ) this = $new( xml_list );
+		let this.array = $array( capacity );
+		return this;
 	}
-	call p:skip_space();
-	if =( p.current ascii.lbracket ) {
-		call p:parse_string( "]" );
-		call p:expect( ascii.rbracket );
-		call p:next_char();
-		call p:skip_space();
+
+	# Return a new parser for the specified source string.
+	function parser( source ) {
+		var ( xml_parser ) this = $new( xml_parser );
+		let this.source = source;
+		let this.idx = -1;
+		let this.current = this:next_char();
+		let this.line = 1;
+		return this;
 	}
-	call p:expect( ascii.gt );
-	call p:next_char();
-	return elem;
+
+	# Return a new processing-instruction node.
+	function pi( target, value ) {
+		var ( xml_pi ) p = $new( xml_pi );
+		let p.target = target;
+		let p.value = value;
+		let p.write = @xml_write_pi;
+		return p;
+	}
+
+	# Return a new element with the specified name.
+	function element( name ) {
+		var ( xml_element ) elem = $new( xml_element );
+		let elem.name = name;
+		let elem.write = @xml_write_element;
+		let elem.attributes = list( 4 );
+		let elem.children = list( 4 );
+		let elem.create_element = @xml_create_element;
+		return elem;
+	}
+
+	# Return a new comment-node with the specified value.
+	function comment( comment ) {
+		var ( xml_comment ) this = $new( xml_comment );
+		let this.comment = comment;
+		let this.write = @xml_write_comment;
+		return this;
+	}
+
+	# Return a new text-node with the specified value.
+	function text( text ) {
+		var ( xml_text ) this = $new( xml_text );
+		let this.text = text;
+		let this.write = @xml_write_text;
+		return this;
+	}
+
+	# Return a new text-node which writes content in a cdata section.
+	function cdata( cdata ) {
+		var ( xml_text ) this = $new( xml_text );
+		let this.text = cdata;
+		let this.write = @xml_write_cdata;
+		return this;
+	}
+
+	# Return a new entity-reference node with the specified value.
+	function entity( name ) {
+		var ( xml_entity ) this = $new( xml_entity );
+		let this.name = name;
+		let this.write = @xml_write_entity;
+		return this;
+	}
+
+	# Return a simple writer that writes to standard-output.
+	function writer() {
+		var ( xml_writer ) w = $new( xml_writer );
+		let w.write = $function( ${ ( this, str ) { write str; } } );
+		return w;
+	}
 }
 
-# Parse a declaration-node from the specified parser positioned at the exclamation-mark.
-function parse_xml_decl( ( parser ) p ) {
-	call p:expect( ascii.exclam );
-	switch p:next_char() {
-		case ascii.minus {
-			return parse_xml_comment( p );
-		}
-		case ascii.D {
-			return parse_xml_doctype( p );
-		}
-		case ascii.lbracket {
-			return parse_xml_cdata( p );
-		}
-	}
-	throw $cat( "Unsupported declaration on line " p.line "." );
-}
-
-# Return a list of nodes from the specified parser.
-function parse_xml_node_list( ( parser ) p, template ) {
-	var ( xml_element ) parent = new_xml_element( "doc" );
-	var ( list ) nodes = new_list( 16 );
-	if template {
-		call list_add( parent.children parse_xml_node( new_parser( template ) parent ) );
-		let parent.template = parent;
-	}
-	while >e( p.current 0 ) {
-		call nodes:add( parse_xml_node( p parent ) );
-	}
-	return nodes;
-}
-
-# Insert text nodes to indent output.
-function indent_xml_node_list( ( list ) nodes, linefeed ) {
-	var indented, idx;
-	while <( idx nodes.len ) {
-		var n = [ nodes.array idx ];
-		if $instanceof( n xml_element ) {
-			let indented = TRUE;
-			call nodes:insert( new_xml_text( linefeed ) idx++ );
-			if indent_xml_node_list( xml_element.children( n ), $cat( linefeed "  " ) ) {
-				call list_add( xml_element.children( n ) new_xml_text( linefeed ) ) ;
-			}
-		}
-		inc idx;
-	}
-	return indented;
-}
-
-# Return a simple writer that writes to standard-output.
-function new_writer() {
-	var ( writer ) w = $new( writer );
-	let w.write = $function( ${ ( this, str ) { write str; } } );
-	return w;
-}
-
-program xml {
-	var ( list ) nodes;
+program xml_test {
+	var ( xml_list ) nodes;
 	if <( $argc 2 ) {
 		# Document template used to specify permitted element names.
 		var template = "<elem><child><x>cdata</x><y/></child></elem>";
 		# Parse document against template.
-		let nodes = parse_xml_node_list( new_parser( "<?xml version=\"?\"?><!---test--><!DOCTYPE elem PUBLIC \"a\" 'b'[]><elem>text<child x=\"y\"><![CDATA[]txt]]><x/><x>x</x><y/></child>&ent;</elem>\12" ), template );
+		let nodes = xml_parse_node_list( new_xml_parser( "<?xml version=\"?\"?><!---test--><!DOCTYPE elem PUBLIC \"a\" 'b'[]><elem>text<child x=\"y\"><![CDATA[]txt]]><x/><x>x</x><y/></child>&ent;</elem>\12" ), template );
 	} else {
-		let nodes = parse_xml_node_list( new_parser( $load( $argv( 1 ) ) ) 0 );
+		let nodes = xml_parse_node_list( new_xml_parser( $load( $argv( 1 ) ) ) 0 );
 	}
+
 	# Format and output.
-	call indent_xml_node_list( nodes "\12" );
-	var ( writer ) out = new_writer();
+	call xml_indent_node_list( nodes "\12" );
+	var ( xml_writer ) out = new_xml_writer();
 	var idx;
 	while <( idx nodes.len ) {
 		call :xml_node.write( [ nodes.array idx++ ] out );
