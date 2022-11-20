@@ -4983,7 +4983,7 @@ static struct element* add_function_parameter( struct function *func, struct ele
 	}
 	if( message[ 0 ] == 0 ) {
 		param = new_local_variable( func, elem, type, message );
-		if( param ) {
+		if( message[ 0 ] == 0 ) {
 			/*printf("Function parameter '%s'\n", name);*/
 			if( get_local_variable( func->variable_decls, elem->str.string, "" ) == NULL ) {
 				func->num_parameters = func->num_variables = func->num_parameters + 1;
@@ -4998,8 +4998,6 @@ static struct element* add_function_parameter( struct function *func, struct ele
 				dispose_local_variables( param );
 				sprintf( message, "Parameter '%.64s' already defined on line %d.", elem->str.string, elem->line );
 			}
-		} else {
-			strcpy( message, OUT_OF_MEMORY );
 		}
 	}
 	return elem;
