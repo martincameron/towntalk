@@ -4,7 +4,7 @@
 #include "stdlib.h"
 #include "string.h"
 
-static const char *VERSION = "MOD/S3M/XM to TMF converter (c)2019 mumart@gmail.com";
+static const char *VERSION = "MOD/S3M/XM to TMF converter (c)2022 mumart@gmail.com";
 
 static const int FP_SHIFT = 15, FP_ONE = 32768, FP_MASK = 32767;
 
@@ -2232,17 +2232,18 @@ static int xm_to_tmf( struct module *module, char *tmf ) {
 		struct replay *replay = new_replay( module, 24000, 0 );
 		if( replay ) {
 			length = 32 * 64;
-			seqlen = write_sequence( replay, NULL );
 			if( tmf ) {
+				seqlen = write_sequence( replay, &tmf[ length ] );
 				printf( "Sequence length: %d bytes.\n", seqlen );
 				memset( tmf, 0, length );
 				strcpy( tmf, "TMF0" );
 				write_int32be( seqlen, &tmf[ 4 ] );
 				memcpy( &tmf[ 8 ], module->name, 24 );
-				write_sequence( replay, &tmf[ length ] );
+				length = length + seqlen;
+			} else {
+				length = length + write_sequence( replay, NULL );
 			}
 			idx = 1;
-			length = length + seqlen;
 			for( ins = 1; ins <= module->num_instruments; ins++ ) {
 				instrument = &module->instruments[ ins ];
 				for( sam = 0; sam < instrument->num_samples; sam++ ) {
