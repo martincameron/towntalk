@@ -1,0 +1,807 @@
+
+rem {
+	Protracker MOD to TMF converter.
+}
+
+const FINE_TUNING = $pack( $array( ${
+	4340, 4308, 4277, 4247, 4216, 4186, 4156, 4126,
+	4096, 4067, 4037, 4008, 3979, 3951, 3922, 3894 } ) );
+
+const ARP_TUNING = $pack( $array( ${
+	4096, 3866, 3649, 3444, 3251, 3069, 2896, 2734,
+	2580, 2435, 2299, 2170, 2048, 1933, 1825, 1722 } ) );
+
+const SINE_TABLE = $pack( $array( ${
+	  0,  24,  49,  74,  97, 120, 141, 161, 180, 197, 212, 224, 235, 244, 250, 253,
+	255, 253, 250, 244, 235, 224, 212, 197, 180, 161, 141, 120,  97,  74,  49,  24 } ) );
+
+const FREQ_TABLE = $pack( $array( ${
+	16744, 16865, 16988, 17111, 17235, 17360, 17485, 17612,
+	17740, 17868, 17998, 18128, 18260, 18392, 18525, 18659,
+	18795, 18931, 19068, 19206, 19345, 19485, 19627, 19769,
+	19912, 20056, 20202, 20348, 20496, 20644, 20794, 20944,
+	21096, 21249, 21403, 21558, 21714, 21872, 22030, 22190,
+	22351, 22513, 22676, 22840, 23006, 23172, 23340, 23509,
+	23680, 23851, 24024, 24198, 24374, 24550, 24728, 24907,
+	25088, 25270, 25453, 25637, 25823, 26010, 26198, 26388,
+	26580, 26772, 26966, 27162, 27358, 27557, 27756, 27957,
+	28160, 28364, 28570, 28777, 28985, 29195, 29407, 29620,
+	29834, 30051, 30268, 30488, 30709, 30931, 31155, 31381,
+	31609, 31838, 32068, 32301, 32535, 32770, 33008, 33247,
+	33488 } ) );
+
+struct module {
+	name, num_channels, c2_rate, sequence, pattern_data, instruments
+}
+
+struct note {
+	key, instrument, effect, param
+}
+
+struct instrument {
+	name, fine_tune, volume, loop_start, loop_length, sample_data
+}
+
+struct channel {
+	id, note, period, porta_period, sample_offset,
+	freq, volume, panning, fine_tune, ampl, mute,
+	instrument, assigned, porta_speed, pl_row, fx_count,
+	vibrato_type, vibrato_phase, vibrato_speed, vibrato_depth,
+	tremolo_type, tremolo_phase, tremolo_speed, tremolo_depth,
+	tremolo_add, vibrato_add, arpeggio_add, random_seed,
+	trig_inst, swap_inst, prev_freq, prev_ampl, prev_panning
+}
+
+struct replay {
+	module, pattern, break_pattern, row, next_row,
+	tempo, tick, speed, pl_count, pl_channel, channels
+}
+
+function trim( str ) {
+	var offset, end;
+	let end = -( $len( str ) 1 );
+	while &&( >e( end 0 ) <( $chr( str, end ) 33 ) ) {
+		let end = -( end 1 );
+	}
+	return $sub( str, offset, +( end 1 ) );
+}
+
+function u16be( str, idx ) {
+	return +( *( &( $chr( str idx ) 0xFF ) 256 ) &( $chr( str +( idx 1 ) ) 0xFF ) );
+}
+
+function new_module( modfile ) {
+	var ( module ) mod = $new( module );
+	var offset, patterns, length, idx, fine, vol, loopidx, looplen;
+	switch $sub( modfile, 1082, 2 ) {
+		case "K.", "K!", "T4" {
+			let mod.num_channels = 4;
+			let mod.c2_rate = 8287;
+		}
+		case "HN" {
+			let mod.num_channels = $int( $sub( modfile, 1080, 1 ) );
+			let mod.c2_rate = 8363;
+		}
+		case "CH" {
+			let mod.num_channels = $int( $sub( modfile, 1080, 2 ) );
+			let mod.c2_rate = 8363;
+		}
+		default {
+			throw "Not a MOD file.";
+		}
+	}
+	let mod.name = trim( $sub( modfile, 0, 20 ) );
+	let mod.sequence = $sub( modfile, 952 &( $chr( modfile 950 ) 0x7F ) );
+	let offset = 952;
+	while <( offset 1080 ) {
+		if <e( patterns &( $chr( modfile offset ) 0x7F ) ) {
+			let patterns = +( &( $chr( modfile offset ) 0x7F ) 1 );
+		}
+		inc offset;
+	}
+	let length = *( patterns *( mod.num_channels 256 ) );
+	let mod.pattern_data = $sub( modfile 1084 length );
+	let mod.instruments = $array( 32 );
+	let offset = +( 1084 length );
+	let idx = 1;
+	while <( idx 32 ) {
+		var ( instrument ) inst = $new( instrument );
+		let inst.name = trim( $sub( modfile -( *( idx 30 ) 10 ) 22 ) );
+		let length = *( u16be( modfile, +( *( idx 30 ) 12 ) ) 2 );
+		if >e( +( offset length ) $len( modfile ) ) {
+			let length = -( $len( modfile ) offset );
+		}
+		let fine = &( $chr( modfile +( *( idx 30 ) 14 ) ) 0xF );
+		let inst.fine_tune = +( -( &( fine 0x7 ) &( fine 0x8 ) ) 8 );
+		let vol = &( $chr( modfile +( *( idx 30 ) 15 ) ) 0x7F );
+		let inst.volume = ?( >( vol 64 ) 64 vol );
+		let loopidx = *( u16be( modfile, +( *( idx 30 ) 16 ) ) 2 );
+		let looplen = *( u16be( modfile, +( *( idx 30 ) 18 ) ) 2 );
+		if >( +( loopidx looplen ) length ) {
+			if <e( +( /( loopidx 2 ) looplen ) length ) {
+				# Some old modules have loop start in bytes.
+				let loopidx = /( loopidx 2 );
+			} else {
+				let looplen = -( length loopidx );
+			}
+		}
+		if <( looplen 4 ) {
+			let loopidx = length;
+			let looplen = 0;
+		}
+		let inst.loop_start = loopidx;
+		let inst.loop_length = looplen;
+		let inst.sample_data = $sub( modfile offset length );
+		let offset = +( offset length );
+		let [ mod.instruments idx ] = inst;
+		inc idx;
+	}
+	return mod;
+}
+
+function new_channel( id ) {
+	var ( channel ) this = $new( channel );
+	let this.id = id;
+	let this.note = $new( note );
+	let this.random_seed = id;
+	switch &( id 0x3 ) {
+		case 0, 3 {
+			let this.panning = 25;
+		}
+		case 1, 2 {
+			let this.panning = 102;
+		}
+	}
+	return this;
+}
+
+function new_replay( ( module ) mod ) {
+	var ( replay ) this = $new( replay );
+	let this.module = mod;
+	let this.channels = $array( mod.num_channels );
+	call replay_set_position( this, 0 );
+	return this;
+}
+
+function channel_update_freq( ( channel ) this, ( module ) mod ) {
+	var period = +( this.period this.vibrato_add );
+	let period = >>( *( period $unpack( ARP_TUNING this.arpeggio_add ) ) 11 );
+	let period = +( >>( period 1 ) &( period 1 ) );
+	if <( period 14 ) {
+		let period = 6848;
+	}
+	let this.freq = /( *( mod.c2_rate 428 ) period );
+	var volume = +( this.volume this.tremolo_add );
+	if >( volume 64 ) {
+		let volume = 64;
+	}
+	if <( volume 0 ) {
+		let volume = 0;
+	}
+	let this.ampl = volume;
+}
+
+function channel_tone_porta( ( channel ) this ) {
+	var source = this.period;
+	var dest = this.porta_period;
+	if <( source dest ) {
+		let source = +( source this.porta_speed );
+		if >( source dest ) {
+			let source = dest;
+		}
+	}
+	if >( source dest ) {
+		let source = -( source this.porta_speed );
+		if <( source dest ) {
+			let source = dest;
+		}
+	}
+	let this.period = source;
+}
+
+function channel_vol_slide( ( channel ) this, param ) {
+	var volume = +( this.volume -( >>( param 4 ) &( param 0xF ) ) );
+	if <( volume 0 ) {
+		let volume = 0;
+	}
+	if >( volume 64 ) {
+		let volume = 64;
+	}
+	let this.volume = volume;
+}
+
+function channel_waveform( ( channel ) this, phase, type ) {
+	var amplitude;
+	switch &( type 0x3 ) {
+		case 0 { # Sine.
+			let amplitude = $unpack( SINE_TABLE &( phase 0x1F ) );
+			if &( phase 0x20 ) {
+				let amplitude = -( 0 amplitude );
+			}
+		}
+		case 1 { # Saw Down.
+			let amplitude = -( 255 <<( &( +( phase 0x20 ) 0x3F ) 3 ) );
+		}
+		case 2 { # Square.
+			let amplitude = -( 255 <<( &( phase 0x20 ) 4 ) );
+		}
+		case 3 { # Random.
+			let amplitude = -( >>( this.random_seed 20 ) 255 );
+			let this.random_seed = &( +( *( this.random_seed 65 ) 17 ) 0x1FFFFFFF );
+		}
+	}
+	return amplitude;
+}
+
+function channel_vibrato( ( channel ) this ) {
+	let this.vibrato_add = >>( *( channel_waveform( this, this.vibrato_phase, this.vibrato_type ) this.vibrato_depth ) 7 );
+}
+
+function channel_tremolo( ( channel ) this ) {
+	let this.tremolo_add = >>( *( channel_waveform( this, this.tremolo_phase, this.tremolo_type ) this.tremolo_depth ) 6 );
+}
+
+function channel_trigger( ( channel ) this, ( module ) mod ) {
+	var ins = note.instrument( this.note );
+	if &&( >( ins 0 ) <( ins 32 ) ) {
+		let this.assigned = ins;
+		let this.sample_offset = 0;
+		let this.fine_tune = instrument.fine_tune( [ mod.instruments ins ] );
+		let this.volume = instrument.volume( [ mod.instruments ins ] );
+		if &&( >( instrument.loop_length( [ mod.instruments ins ] ) 0 )
+			>( this.instrument 0 ) <>( this.instrument ins ) ) {
+			let this.instrument = ins;
+			let this.swap_inst = ins;
+		}
+	}
+	if =( note.effect( this.note ) 0x09 ) {
+		let this.sample_offset = <<( &( note.param( this.note ) 0xFF ) 8 );
+	}
+	if =( note.effect( this.note ) 0x15 ) {
+		let this.fine_tune = note.param( this.note );
+	}
+	if >( note.key( this.note ) 0 ) {
+		var period = >>( *( note.key( this.note ) $unpack( FINE_TUNING &( this.fine_tune 0xF ) ) ) 11 );
+		let this.porta_period = +( >>( period 1 ) &( period 1 ) );
+		if &&( <>( note.effect( this.note ) 0x3 ) <>( note.effect( this.note ) 0x5 ) ) {
+			let this.instrument = this.assigned;
+			let this.period = this.porta_period;
+			if <( this.vibrato_type 4 ) {
+				let this.vibrato_phase = 0;
+			}
+			if <( this.tremolo_type 4 ) {
+				let this.tremolo_phase = 0;
+			}
+			let this.trig_inst = this.instrument;
+		}
+	}
+}
+
+function channel_row( ( channel ) this, ( replay ) repl ) {
+	var effect = note.effect( this.note );
+	var param = note.param( this.note );
+	let this.trig_inst = 0;
+	let this.swap_inst = 0;
+	let this.prev_freq = this.freq;
+	let this.prev_ampl = this.ampl;
+	let this.prev_panning = this.panning;
+	let this.vibrato_add = 0;
+	let this.tremolo_add = 0;
+	let this.arpeggio_add = 0;
+	let this.fx_count = 0;
+	if !( &&( =( effect 0x1D ) >( param 0 ) ) ) {
+		# Not note delay.
+		call this:trigger( repl.module );
+	}
+	switch effect {
+		case 0x3 { # Tone Portamento.
+			if param {
+				let this.porta_speed = param;
+			}
+		}
+		case 0x4 { # Vibrato.
+			if &( param 0xF0 ) {
+				let this.vibrato_speed = >>( param 4 );
+			}
+			if &( param 0xF ) {
+				let this.vibrato_depth = &( param 0xF );
+			}
+			call this:vibrato();
+		}
+		case 0x6 { # Vibrato + Volume Slide.
+			call this:vibrato();
+		}
+		case 0x7 { # Tremolo.
+			if &( param 0xF0 ) {
+				let this.tremolo_speed = >>( param 4 );
+			}
+			if &( param 0xF ) {
+				let this.tremolo_depth = &( param 0xF );
+			}
+			call this:tremolo();
+		}
+		case 0x8 { # Set Panning (0-127). Not for 4-channel Protracker.
+			if <>( module.num_channels( repl.module ) 4 ) {
+				let this.panning = ?( <( param 128 ) param 127 );
+			}
+		}
+		case 0xB { # Pattern Jump.
+			if <( repl.pl_count 0 ) {
+				let repl.break_pattern = param;
+				let repl.next_row = 0;
+			}
+		}
+		case 0xC { # Set Volume.
+			let this.volume = ?( <( param 64 ) param 64 );
+		}
+		case 0xD { # Pattern Break.
+			if <( repl.pl_count 0 ) {
+				if <( repl.break_pattern 0 ) {
+					let repl.break_pattern = +( repl.pattern 1 );
+				}
+				let repl.next_row = +( *( >>( param 4 ) 10 ) &( param 0xF ) );
+				if >e( repl.next_row 64 ) {
+					let repl.next_row = 0;
+				}
+			}
+		}
+		case 0xF { # Set Speed.
+			if param {
+				if <( param 32 ) {
+					let repl.tick = param;
+					let repl.speed = param;
+				} else {
+					let repl.tempo = param;
+				}
+			}
+		}
+		case 0x11 { # Fine Portamento Up.
+			let this.period = ?( <( param this.period ) -( this.period param ) 0 );
+		}
+		case 0x12 { # Fine Portamento Down.
+			let this.period = ?( <( +( this.period param ) 0xFFFF ) +( this.period param ) 0xFFFF );
+		}
+		case 0x14 { # Set Vibrato Waveform.
+			if <( param 8 ) {
+				let this.vibrato_type = param;
+			}
+		}
+		case 0x16 { # Pattern Loop.
+			if =( param 0 ) { # Set loop marker on this channel.
+				let this.pl_row = repl.row;
+			}
+			if &&( <( this.pl_row repl.row ) <( repl.break_pattern 0 ) ) { # Marker valid.
+				if <( repl.pl_count 0 ) { # Not already looping, begin.
+					let repl.pl_count = param;
+					let repl.pl_channel = this.id;
+				}
+				if =( repl.pl_channel this.id ) {
+					if <e( repl.pl_count 0 ) { # Finished, invalidate current marker.
+						let this.pl_row = +( repl.row 1 );
+					} else {
+						let repl.next_row = this.pl_row;
+					}
+					let repl.pl_count = -( repl.pl_count 1 );
+				}
+			}
+		}
+		case 0x17 { # Set Tremolo Waveform.
+			if <( param 8 ) {
+				let this.tremolo_type = param;
+			}
+		}
+		case 0x1A { # Fine Volume Up.
+			let this.volume = ?( <( +( this.volume param ) 64 ) +( this.volume param ) 64 );
+		}
+		case 0x1B { # Fine Volume Down.
+			let this.volume = ?( <( param this.volume ) -( this.volume param ) 0 );
+		}
+		case 0x1C { # Note Cut.
+			if <e( param 0 ) {
+				let this.volume = 0;
+			}
+		}
+		case 0x1E { # Pattern Delay.
+			let repl.tick = *( repl.speed +( param 1 ) );
+		}
+	}
+	call this:update_freq( repl.module );
+}
+
+function channel_tick( ( channel ) this, ( module ) mod ) {
+	var effect = note.effect( this.note );
+	var param = note.param( this.note );
+	let this.trig_inst = 0;
+	let this.swap_inst = 0;
+	let this.prev_freq = this.freq;
+	let this.prev_ampl = this.ampl;
+	let this.prev_panning = this.panning;
+	let this.fx_count = +( this.fx_count 1 );
+	switch effect {
+		case 0x1 { # Portamento Up.
+			let this.period = ?( <( this.period param ) 0 -( this.period param ) );
+		}
+		case 0x2 { # Portamento Down.
+			let this.period = ?( <( +( this.period param ) 0xFFFF ) +( this.period param ) 0xFFFF );
+		}
+		case 0x3 { # Tone Portamento.
+			call this:tone_porta();
+		}
+		case 0x4 { # Vibrato.
+			let this.vibrato_phase = +( this.vibrato_phase this.vibrato_speed );
+			call this:vibrato();
+		}
+		case 0x5 { # Tone Porta + Volume Slide.
+			call channel_tone_porta( this );
+			call this:vol_slide( param );
+		}
+		case 0x6 { # Vibrato + Volume Slide.
+			let this.vibrato_phase = +( this.vibrato_phase this.vibrato_speed );
+			call this:vibrato();
+			call this:vol_slide( param );
+		}
+		case 0x7 { # Tremolo.
+			let this.tremolo_phase = +( this.tremolo_phase this.tremolo_speed );
+			call this:tremolo();
+		}
+		case 0xA { # Volume Slide.
+			call this:vol_slide( param );
+		}
+		case 0xE { # Arpeggio.
+			switch this.fx_count {
+				case 1 {
+					let this.arpeggio_add = >>( param 4 );
+				}
+				case 2 {
+					let this.arpeggio_add = &( param 0xF );
+				}
+				default {
+					let this.arpeggio_add = 0;
+					let this.fx_count = 0;
+				}
+			}
+		}
+		case 0x19 { # Retrig.
+			if >e( this.fx_count param ) {
+				let this.fx_count = 0;
+				let this.sample_offset = 0;
+				let this.trig_inst = this.instrument;
+			}
+		}
+		case 0x1C { # Note Cut.
+			if =( param this.fx_count ) {
+				let this.volume = 0;
+			}
+		}
+		case 0x1D { # Note Delay.
+			if =( param this.fx_count ) {
+				call this:trigger( mod );
+			}
+		}
+	}
+	if >( effect 0 ) {
+		call this:update_freq( mod );
+	}
+}
+
+function replay_row( ( replay ) this ) {
+	var song_end, idx, num_channels = $len( this.channels );
+	var sequence = module.sequence( this.module );
+	if <( this.next_row 0 ) {
+		let this.break_pattern = +( this.pattern 1 );
+		let this.next_row = 0;
+	}
+	if >e( this.break_pattern 0 ) {
+		if >e( this.break_pattern $len( sequence ) ) {
+			let this.break_pattern = 0;
+			let this.next_row = 0;
+		}
+		if <e( this.break_pattern this.pattern ) {
+			let song_end = TRUE;
+		}
+		let this.pattern = this.break_pattern;
+		while <( idx num_channels ) {
+			let channel.pl_row( [ this.channels idx ] ) = 0;
+			inc idx;
+		}
+		let this.break_pattern = -1;
+	}
+	let this.row = this.next_row;
+	let this.next_row = +( this.row 1 );
+	if >e( this.next_row 64 ) {
+		let this.next_row = -1;
+	}
+	let idx = 0;
+	var pattern = &( $chr( sequence this.pattern ) 0xFF );
+	var data = module.pattern_data( this.module );
+	var offset = *( *( +( *( pattern 64 ) this.row ) num_channels ) 4 );
+	while <( idx num_channels ) {
+		var inst = &( $chr( data offset ) 0x10 );
+		var key = <<( &( $chr( data offset ) 0xF ) 8 );
+		inc offset;
+		let key = |( key &( $chr( data offset ) 0xFF ) );
+		inc offset;
+		let inst = |( inst &( >>( $chr( data offset ) 4 ) 0xF ) );
+		var effect = &( $chr( data offset ) 0xF );
+		inc offset;
+		var param = &( $chr( data offset ) 0xFF );
+		inc offset;
+		if =( effect 0xE ) {
+			let effect = |( 0x10 >>( param 4 ) );
+			let param = &( param 0xF );
+		}
+		if &&( =( effect 0 ) >( param 0 ) ) {
+			let effect = 0xE;
+		}
+		var ( channel ) chan = [ this.channels idx ];
+		let note.key( chan.note ) = key;
+		let note.instrument( chan.note ) = inst;
+		let note.effect( chan.note ) = effect;
+		let note.param( chan.note ) = param;
+		call chan:row( this );
+		inc idx;
+	}
+	return song_end;
+}
+
+function replay_tick( ( replay ) this ) {
+	var song_end, idx, len;
+	if <e( this.tick 1 ) {
+		let this.tick = this.speed;
+		let song_end = replay_row( this );
+	} else {
+		let this.tick = -( this.tick 1 );
+		let len = $len( this.channels );
+		while <( idx len ) {
+			call channel_tick( [ this.channels idx++ ], this.module );
+		}
+	}
+	return song_end;
+}
+
+function replay_set_position( ( replay ) this, pos ) {
+	if >e( pos $len( module.sequence( this.module ) ) ) {
+		let pos = 0;
+	}
+	let this.break_pattern = pos;
+	let this.next_row = 0;
+	let this.tick = 1;
+	let this.speed = 6;
+	let this.tempo = 125;
+	let this.pl_count = -1;
+	let this.pl_channel = -1;
+	var idx;
+	var channels = this.channels;
+	while <( idx $len( channels ) ) {
+		let [ channels idx ] = new_channel( idx );
+		inc idx;
+	}
+	call this:tick();
+}
+
+function freq_to_key( freq ) {
+	var octave, tone;
+	let freq = <<( freq 5 );
+	while >e( freq $unpack( FREQ_TABLE 96 ) ) {
+		inc octave;
+		let freq = >>( freq 1 );
+	}
+	while <( $unpack( FREQ_TABLE +( tone 1 ) ) freq ) {
+		inc tone;
+	}
+	if <e( -( $unpack( FREQ_TABLE +( tone 1 ) ) freq ) -( freq $unpack( FREQ_TABLE tone ) ) ) {
+		inc tone;
+	}
+	return +( *( octave 96 ) tone );
+}
+
+function sqr_rt( y ) {
+	var n, x = 256;
+	while <( n++ 8 ) { 
+		let x = +( x /( y x ) );
+		let x = +( >>( x 1 ) &( x 1 ) );
+	}
+	return x;
+}
+
+function replay_write_seq( ( replay ) this, output, offset ) {
+	var ( module ) mod = this.module;
+	call this:set_position( 0 );
+	var idx = 0;
+	while <( idx mod.num_channels ) {
+		var ( channel ) chn = [ this.channels idx++ ];
+		let chn.prev_panning = -1;
+	}
+	var song_end, tempo, wait, short;
+	while !( song_end ) {
+		if <>( tempo this.tempo ) {
+			let tempo = this.tempo;
+			if output {
+				let [ output offset ] = |( 0xE000 &( /( *( 12000 5 ) tempo ) 0xFFF ) );
+			}
+			let short = 1;
+			inc offset;
+		}
+		let idx = 0;
+		while <( idx mod.num_channels ) {
+			let chn = [ this.channels idx ];
+			var d_freq = -( chn.freq chn.prev_freq );
+			var ampl = sqr_rt( <<( chn.ampl 5 ) );
+			var d_ampl = -( ampl sqr_rt( <<( chn.prev_ampl 5 ) ) );
+			var d_pann = -( chn.panning chn.prev_panning );
+			if ||( chn.trig_inst chn.swap_inst d_freq d_ampl d_pann ) {
+				if wait {
+					if short { # Combine with previous.
+						dec offset;
+					}
+					if output {
+						let [ output offset ] = |( <<( [ output offset ] 16 ) 0xF000 ?( <( wait 0xFFF ) wait 0xFFF ) );
+					}
+					let short = !( short );
+					let wait = 0;
+					inc offset;
+				}
+				if chn.trig_inst {
+					# Trigger instrument.
+					if output {
+						let [ output offset ] = |( 0x10000000 <<( freq_to_key( chn.freq ) 16 ) <<( chn.trig_inst 8 ) idx );
+					}
+					let short = 0;
+					inc offset;
+					if chn.sample_offset {
+						# Set sample-offset.
+						if output {
+							let [ output offset ] = |( 0x30000000 <<( chn.sample_offset 8 ) idx );
+						}
+						inc offset;
+					}
+				} else {
+					if chn.swap_inst {
+						# Switch instrument.
+						if output {
+							let [ output offset ] = |( 0x20000000 <<( freq_to_key( chn.freq ) 16 ) <<( chn.swap_inst 8 ) idx );
+						}
+						let short = 0;
+						inc offset;
+					} else {
+						if d_freq {
+							# Modulate pitch.
+							if output {
+								if d_ampl {
+									let d_ampl = +( 0x40 ampl );
+								}
+								let [ output offset ] = |( 0x20000000 <<( freq_to_key( chn.freq ) 16 ) <<( d_ampl 8 ) idx );
+							}
+							let d_ampl = 0;
+							let short = 0;
+							inc offset;
+						}
+					}
+				}
+				if d_ampl {
+					# Modulate volume.
+					if short { # Combine with previous.
+						dec offset;
+					}
+					if output {
+						let [ output offset ] = |( <<( [ output offset ] 16 ) <<( +( 0x40 ampl ) 8 ) idx );
+					}
+					let short = !( short );
+					inc offset;
+				}
+				if d_pann {
+					# Modulate panning.
+					if output {
+						let [ output offset ] = |( <<( +( 0x80 ?( >( chn.panning 2 ) >>( chn.panning 1 ) 1 ) ) 8 ) idx );
+					}
+					let short = 1;
+					inc offset;
+				}
+			}
+			inc idx;
+		}
+		inc wait;
+		let song_end = this:tick();
+	}
+	if wait {
+		if output {
+			let [ output offset ] = ?( <( wait 0xFFF ) +( 0xF000 wait ) 0xFFFF );
+		}
+		inc offset;
+	}
+	return offset;
+}
+
+function module_write_tmf_string( ( module ) this, idx, output, offset, count ) {
+	var str = $str( ?( idx instrument.name( [ this.instruments idx ] ) this.name ) "\0\0\0" );
+	let idx = 0;
+	var end = +( offset >>( $len( str ) 2 ) );
+	if >( end +( offset count ) ) {
+		let end = +( offset count );
+	}
+	while <( offset end ) {
+		let [ output offset++ ] = $unpack( str idx++ );
+	}
+	return offset;
+}
+
+# Extends loop to word boundary.
+function module_write_tmf_sample( ( module ) this, idx, output, offset ) {
+	var ( instrument ) ins = [ this.instruments idx ];
+	var length = ins.loop_start;
+	if >( ins.loop_length 3 ) {
+		let length = +( length ins.loop_length );
+	}
+	var end = +( offset >>( +( length 3 ) 2 ) );
+	if output {
+		var sam = $sub( ins.sample_data 0 ins.loop_start );
+		if >( ins.loop_length 3 ) {
+			let sam = $str( sam $sub( ins.sample_data ins.loop_start ins.loop_length ) $sub( ins.sample_data ins.loop_start 3 ) );
+		} else {
+			let sam = $str( sam "\0\0\0" );
+		}
+		let idx = 0;
+		while <( offset end ) {
+			let [ output offset++ ] = $unpack( sam idx++ );
+		}
+	}
+	return end;
+}
+
+function replay_write_tmf( ( replay ) this, output ) {
+	var ( module ) mod = this.module;
+	var length, offset = *( 8 64 );
+	if output {
+		let length = -( this:write_seq( output, offset ) offset );
+		let [ output 0 ] = $unpack( "TMF0" 0 );
+		let [ output 1 ] = <<( length 2 );
+		call mod:write_tmf_string( 0, output, 2, 6 );
+		let offset = +( offset length );
+	} else {
+		let offset = this:write_seq( 0, offset );
+	}
+	var idx = 1;
+	while <( idx 32 ) {
+		var ( instrument ) ins = [ mod.instruments idx ];
+		if output {
+			let length = -( mod:write_tmf_sample( idx, output, offset ) offset );
+			let [ output *( idx 8 ) ] = -( <<( length 2 ) ins.loop_length );
+			let [ output +( *( idx 8 ) 1 ) ] = ins.loop_length;
+			call mod:write_tmf_string( idx, output, +( *( idx 8 ) 2 ), 6 );
+			let offset = +( offset length );
+		} else {
+			let offset = mod:write_tmf_sample( idx, 0, offset );
+		}
+		inc idx;
+	}
+	return offset;
+}
+
+program mod2tmf {
+	if <( $argc 2 ) {
+		error $str( "Usage " $argv( 0 ) " input.mod [output.tmf]" );
+	} else {
+		var ( module ) mod = new_module( $load( $argv( 1 ) ) );
+		print $str( "Module name: " mod.name );
+		print $str( "Num channels: " mod.num_channels );
+		print $str( "Sequence length: " $len( mod.sequence ) );
+		print $str( "Num patterns: " /( $len( mod.pattern_data ) *( mod.num_channels 256 ) ) );
+		var idx = 1;
+		while <( idx $len( mod.instruments ) ) {
+			var ( instrument ) ins = [ mod.instruments idx ];
+			if $len( ins.name ) {
+				print $str( "Instrument " idx ": '" ins.name "' finetune " ins.fine_tune " volume " ins.volume );
+			}
+			inc idx;
+		}
+		var ( replay ) repl = new_replay( mod );
+		var length = repl:write_tmf( 0 );
+		print $str( "TMF file length: " <<( length 2 ) " bytes." );
+		if >( $argc 2 ) {
+			var buf = $buffer( length );
+			call repl:write_tmf( buf );
+			print $str( "TMF sequence length: " [ buf 1 ] " bytes." );
+			save $pack( buf ) $argv( 2 );
+		}
+	}
+}
