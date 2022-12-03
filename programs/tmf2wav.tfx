@@ -1,4 +1,8 @@
 
+rem {
+	TMF to WAV converter using TTFX audio sequencer.
+}
+
 rem { Trim trailing control-characters from the specified string. }
 function trim( str ) {
 	var offset, end;

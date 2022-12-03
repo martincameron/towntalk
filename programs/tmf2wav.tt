@@ -1,0 +1,323 @@
+
+rem {
+	TMF to WAV converter.
+}
+
+const SAMPLE_RATE = 48000;
+
+const FREQ_TABLE = $pack( $array( ${
+	16744, 16865, 16988, 17111, 17235, 17360, 17485, 17612,
+	17740, 17868, 17998, 18128, 18260, 18392, 18525, 18659,
+	18795, 18931, 19068, 19206, 19345, 19485, 19627, 19769,
+	19912, 20056, 20202, 20348, 20496, 20644, 20794, 20944,
+	21096, 21249, 21403, 21558, 21714, 21872, 22030, 22190,
+	22351, 22513, 22676, 22840, 23006, 23172, 23340, 23509,
+	23680, 23851, 24024, 24198, 24374, 24550, 24728, 24907,
+	25088, 25270, 25453, 25637, 25823, 26010, 26198, 26388,
+	26580, 26772, 26966, 27162, 27358, 27557, 27756, 27957,
+	28160, 28364, 28570, 28777, 28985, 29195, 29407, 29620,
+	29834, 30051, 30268, 30488, 30709, 30931, 31155, 31381,
+	31609, 31838, 32068, 32301, 32535, 32770, 33008, 33247 } ) );
+
+struct sample {
+	name, loop_start, loop_length, data
+}
+
+struct channel {
+	sample, sam_idx, sam_fra, freq, vol, pan
+}
+
+struct replay {
+	song_name, sequence, samples, channels, ramp_buf, seq_idx, tempo, wait
+}
+
+function trim( str ) {
+	var end = -( $len( str ) 1 );
+	while &&( >e( end 0 ) <( $chr( str, end ) 33 ) ) {
+		let end = -( end 1 );
+	}
+	return $sub( str, 0, +( end 1 ) );
+}
+
+function key_to_freq( key ) {
+	return >>( <<( $unpack( FREQ_TABLE %( key 96 ) ) 4 ) -( 9 /( key 96 ) ) );
+}
+
+function volume_ramp( mix_buf, ramp_buf, tick_len ) {
+	var idx, a1, mix_end = *( tick_len 2 );
+	while <( a1 32 ) {
+		var a2 = -( 32 a1 );
+		let [ mix_buf idx ] = >>( +( *( [ mix_buf idx ] a1 ) *( [ ramp_buf idx ] a2 ) ) 5 );
+		let [ ramp_buf idx++ ] = [ mix_buf mix_end++ ];
+		let [ mix_buf idx ] = >>( +( *( [ mix_buf idx ] a1 ) *( [ ramp_buf idx ] a2 ) ) 5 );
+		let [ ramp_buf idx++ ] = [ mix_buf mix_end++ ];
+		inc a1;
+	}
+}
+
+function downsample( buf, count ) {
+	var idx, out_idx, out_len = *( count 2 );
+	while <( out_idx out_len ) {
+		let [ buf out_idx++ ] = +( >>( [ buf idx ] 2 ) >>( [ buf +( idx 2 ) ] 1 ) >>( [ buf +( idx 4 ) ] 2 ) );
+		inc idx;
+		let [ buf out_idx++ ] = +( >>( [ buf idx ] 2 ) >>( [ buf +( idx 2 ) ] 1 ) >>( [ buf +( idx 4 ) ] 2 ) );
+		let idx = +( idx 3 );
+	}
+}
+
+function channel_mix( ( channel ) this, output, count ) {
+	var ( sample ) sam = this.sample;
+	if &&( this.vol sam ) {
+		var loop = sam.loop_start;
+		var llen = sam.loop_length;
+		var lend = +( loop llen );
+		var sidx = this.sam_idx;
+		var sfra = this.sam_fra;
+		if ||( <( sidx lend ) >( llen 1 ) ) {
+			var lvol = *( this.vol -( 32 this.pan ) );
+			var rvol = *( this.vol +( 32 this.pan ) );
+			var step = /( <<( this.freq 12 ) >>( SAMPLE_RATE 2 ) );
+			var data = sam.data;
+			var idx;
+			var end = *( count 2 );
+			while <( idx end ) {
+				if >e( sidx lend ) {
+					if >( llen 1 ) {
+						let sidx = +( loop %( -( sidx loop ) llen ) );
+					} else {
+						let sidx = lend;
+						break;
+					}
+				}
+				var ampl = $chr( data sidx );
+				let [ output idx ] = +( [ output idx ] >>( *( ampl lvol ) 11 ) );
+				inc idx;
+				let [ output idx ] = +( [ output idx ] >>( *( ampl rvol ) 11 ) );
+				inc idx;
+				let sfra = +( sfra step );
+				let sidx = +( sidx >>( sfra 15 ) );
+				let sfra = &( sfra 0x7FFF );
+			}
+		}
+	}
+}
+
+function channel_update( ( channel ) this, count ) {
+	var ( sample ) sam = this.sample;
+	if sam {
+		var step = /( <<( this.freq 12 ) >>( SAMPLE_RATE 2 ) );
+		var sfra = +( this.sam_fra *( step count ) );
+		var sidx = +( this.sam_idx >>( sfra 15 ) );
+		if >( sidx sam.loop_start ) {
+			if >( sam.loop_length 1 ) {
+				let sidx = +( sam.loop_start %( -( sidx sam.loop_start ) sam.loop_length ) );
+			} else {
+				let sidx = sam.loop_start;
+			}
+		}
+		let this.sam_idx = sidx;
+		let this.sam_fra = &( sfra 0x7FFF );
+	}
+}
+
+rem { Advance the sequence and output audio if mix_buf is not null.
+	The number of stereo samples produced is returned, or zero if the sequence has finished. }
+function replay_tick( ( replay ) this, mix_buf ) {
+	var sequence = this.sequence, seq_idx = this.seq_idx, seq_len = $len( this.sequence );
+	var ( channel ) chn, wait = -( this.wait 1 );
+	while &&( <( wait 1 ) <( seq_idx seq_len ) ) {
+		var cmd = &( $chr( sequence seq_idx++ ) 0xFF );
+		if &&( >e( cmd 0x08 ) <( cmd 0x40 ) <( +( seq_idx 2 ) seq_len ) ) {
+			# 4 byte
+			let cmd = |( <<( cmd 8 ) &( $chr( sequence seq_idx++ ) 0xFF ) );
+			let cmd = |( <<( cmd 8 ) &( $chr( sequence seq_idx++ ) 0xFF ) );
+			let cmd = |( <<( cmd 8 ) &( $chr( sequence seq_idx++ ) 0xFF ) );
+			let this.seq_idx = seq_idx;
+			switch &( cmd 0xF0000000 ) {
+				case 0x10000000 0x20000000 {
+					let chn = [ this.channels &( cmd 0x1F ) ];
+					var key = &( >>( cmd 16 ) 0xFFF );
+					if &&( >( key 0 ) <( key 957 ) ) {
+						let chn.freq = key_to_freq( key );
+					}
+					var ins = &( >>( cmd 8 ) 0xFF );
+					if &&( >( ins 0 ) <( ins 0xC0 ) ) {
+						if >e( ins 0x81 ) {
+							let chn.pan = -( ins 0x80 32 );
+						} else {
+							if >e( ins 0x40 ) {
+								let ins = -( ins 0x40 );
+								let chn.vol = *( ins ins );
+							} else {
+								let chn.sample = [ this.samples ins ];
+							}
+						}
+					}
+					if <( cmd 0x20000000 ) {
+						let chn.sam_idx = 0;
+						let chn.sam_fra = 0;
+					}
+				}
+				case 0x30000000 {
+					let chn = [ this.channels &( cmd 0x1F ) ];
+					let chn.sam_idx = &( >>( cmd 8 ) 0xFFFFF );
+					let chn.sam_fra = 0;
+				}
+			}
+		} else {
+			# 2 byte
+			if <( seq_idx seq_len ) {
+				let cmd = |( <<( cmd 8 ) &( $chr( sequence seq_idx++ ) 0xFF ) );
+				let this.seq_idx = seq_idx;
+			} else {
+				let cmd = 0;
+			}
+			switch &( cmd 0xF000 ) {
+				case 0x4000 0x5000 0x6000 0x7000 0x8000 0x9000 0xA000 0xB000 {
+					let chn = [ this.channels &( cmd 0x1F ) ];
+					if <( cmd 0x8100 ) {
+						var vol = -( >>( cmd 8 ) 0x40 );
+						let chn.vol = *( vol vol );
+					} else {
+						let chn.pan = -( >>( cmd 8 ) 0x80 32 );
+					}
+				}
+				case 0xC000 {
+					# Gain.
+				}
+				case 0xD000 {
+					# Transpose.
+				}
+				case 0xE000 {
+					if >( cmd 0xE0FF ) {
+						let this.tempo = &( cmd 0xFFF );
+					}
+				}
+				case 0xF000 {
+					let wait = &( cmd 0xFFF );
+				}
+			}
+		}
+	}
+	var tick_len;
+	if >( wait 0 ) {
+		let this.wait = wait;
+		let tick_len = /( *( this.tempo SAMPLE_RATE ) 24000 );
+		if mix_buf {
+			var idx, end = *( +( tick_len 33 ) 4 );
+			while <( idx end ) {
+				let [ mix_buf idx++ ] = 0;
+			}
+			let idx = 0;
+			let end = $len( this.channels );
+			while <( idx end ) {
+				let chn = [ this.channels idx++ ];
+				call chn:mix( mix_buf, *( +( tick_len 33 ) 2 ) );
+				call chn:update( *( tick_len 2 ) );
+			}
+			call downsample( mix_buf, +( tick_len 32 ) );
+			call volume_ramp( mix_buf, this.ramp_buf, tick_len );
+		}
+	}
+	return tick_len;
+}
+
+function replay_convert( ( replay ) this, output, offset ) {
+	var mix_buf;
+	if output {
+		let mix_buf = $buffer( /( *( +( 4095 33 ) SAMPLE_RATE 4 ) 24000 ) );
+	}
+	call this:reset();
+	var tick_len = this:tick( mix_buf );
+	while tick_len {
+		var end = +( offset tick_len );
+		if output {
+			var idx = 0;
+			while <( offset end ) {
+				var a = [ mix_buf idx++ ];
+				let a = |( <<( a 16 ) &( [ mix_buf idx++ ] 0xFFFF ) );
+				let a = |( &( <<( a 8 ) 0xFF00FF00 ) &( >>( a 8 ) 0xFF00FF ) );
+				set [ output offset++ ] = a;
+			}
+		} else {
+			let offset = end;
+		}
+		let tick_len = this:tick( mix_buf );
+	}
+	return offset;
+}
+
+function replay_reset( ( replay ) this ) {
+	var idx;
+	let this.tempo = 480;
+	let this.ramp_buf = $buffer( 64 );
+	let this.seq_idx = 0;
+	while <( idx $len( this.channels ) ) {
+		let [ this.channels idx++ ] = $new( channel );
+	}
+}
+
+function new_replay( tmf ) {
+	var idx, ( replay ) this = $new( replay );
+	if $cmp( $sub( tmf, 0, 4 ) "TMF0" ) {
+		throw "Not a TMF file.";
+	}
+	let this.channels = $array( 32 );
+	let this.song_name = trim( $sub( tmf 8 32 ) );
+	var offset = *( 32 64 );
+	var length = $unpack( tmf, 1 );
+	let this.sequence = $sub( tmf, offset, length );
+	let offset = +( offset length );
+	let this.samples = $array( 64 );
+	let idx = 1;
+	while <( idx 64 ) {
+		var ( sample ) sam = $new( sample );
+		let sam.loop_start = $unpack( tmf, *( idx 8 ) );
+		let sam.loop_length = $unpack( tmf, +( *( idx 8 ) 1 ) );
+		let sam.name = trim( $sub( tmf +( *( idx 32 ) 8 ) 24 ) );
+		let length = +( sam.loop_start sam.loop_length );
+		let sam.data = $sub( tmf offset length );
+		let offset = +( offset length );
+		let [ this.samples idx++ ] = sam;
+	}
+	call this:reset();
+	return this;
+}
+
+function swab( x ) {
+	let x = |( <<( x 16 ) &( >>( x 16 ) 0xFFFF ) );
+	return |( &( <<( x 8 ) 0xFF00FF00 ) &( >>( x 8 ) 0xFF00FF ) );
+}
+
+function wav_header( sample_rate, num_samples, output ) {
+	if output {
+		let [ output 0 ] = $unpack( "RIFF" 0 );
+		let [ output 1 ] = swab( +( *( num_samples 4 ) 36 ) );
+		let [ output 2 ] = $unpack( "WAVE" 0 );
+		let [ output 3 ] = $unpack( "fmt " 0 );
+		let [ output 4 ] = swab( 16 );
+		let [ output 5 ] = swab( 0x00020001 );
+		let [ output 6 ] = swab( sample_rate );
+		let [ output 7 ] = swab( *( sample_rate 4 ) );
+		let [ output 8 ] = swab( 0x00100004 );
+		let [ output 9 ] = $unpack( "data" 0 );
+		let [ output 10 ] = swab( *( num_samples 4 ) );
+	}
+	return 11;
+}
+
+program tmf2wav {
+	if <( $argc 2 ) {
+		error $str( "Usage: " $argv( 0 ) " input.tmf [output.wav]" );
+	} else {
+		var ( replay ) repl = new_replay( $load( $argv( 1 ) ) );
+		print $str( "Song Name: " repl.song_name );
+		var samples = repl:convert( 0 0 );
+		print $str( "Output file length: " *( samples 4 ) " bytes." );
+		if >( $argc 2 ) {
+			var wav = $buffer( +( wav_header( SAMPLE_RATE, samples, 0 ) samples ) );
+			call repl:convert( wav, wav_header( SAMPLE_RATE, samples, wav ) );
+			save $pack( wav ) $argv( 2 );
+		}
+	}
+}
