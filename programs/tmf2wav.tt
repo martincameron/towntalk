@@ -222,6 +222,20 @@ function replay_tick( ( replay ) this, mix_buf ) {
 	return tick_len;
 }
 
+function clip( buffer, offset, count ) {
+	var end = +( offset count );
+	while <( offset end ) {
+		var a = [ buffer offset ];
+		if <( a -32768 ) {
+			let [ buffer offset ] = -32768;
+		}
+		if >( a 32767 ) {
+			let [ buffer offset ] = 32767;
+		}
+		inc offset;
+	}
+}
+
 function replay_convert( ( replay ) this, output, offset ) {
 	var mix_buf;
 	if output {
@@ -232,6 +246,7 @@ function replay_convert( ( replay ) this, output, offset ) {
 	while tick_len {
 		var end = +( offset tick_len );
 		if output {
+			call clip( mix_buf, 0, *( tick_len 2 ) );
 			var idx = 0;
 			while <( offset end ) {
 				var a = [ mix_buf idx++ ];
