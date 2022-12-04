@@ -596,8 +596,8 @@ function freq_to_key( freq ) {
 }
 
 function sqr_rt( y ) {
-	var n, x = 256;
-	while <( n++ 8 ) { 
+	var n = 1, x = y;
+	while >>( y n++ ) {
 		let x = +( x /( y x ) );
 		let x = +( >>( x 1 ) &( x 1 ) );
 	}

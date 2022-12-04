@@ -2074,8 +2074,8 @@ static int get_tmf_key( int freq ) {
 }
 
 static int sqr_rt( int y ) {
-	int n, x = 256;
-	for( n = 0; n < 8; n++ ) {
+	int n = 1, x = y;
+	while( y >> n++ ) {
 		x = ( x + y / x );
 		x = ( x >> 1 ) + ( x & 1 );
 	}
