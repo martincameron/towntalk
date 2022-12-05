@@ -24,11 +24,11 @@ struct sample {
 }
 
 struct channel {
-	sample, sam_idx, sam_fra, freq, vol, pan
+	sample, sam_idx, sam_fra, freq, vol, pan, mix
 }
 
 struct replay {
-	song_name, sequence, samples, channels, ramp_buf, seq_idx, tempo, wait
+	song_name, sequence, samples, channels, ramp_buf, seq_idx, tempo, wait, reset, downsample
 }
 
 function trim( str ) {
@@ -85,7 +85,6 @@ function channel_mix( ( channel ) this, output, count ) {
 					if >( llen 1 ) {
 						let sidx = +( loop %( -( sidx loop ) llen ) );
 					} else {
-						let sidx = lend;
 						break;
 					}
 				}
@@ -212,10 +211,10 @@ function replay_tick( ( replay ) this, mix_buf ) {
 			let end = $len( this.channels );
 			while <( idx end ) {
 				let chn = [ this.channels idx++ ];
-				call chn:mix( mix_buf, *( +( tick_len 33 ) 2 ) );
+				call :chn.mix( mix_buf, *( +( tick_len 33 ) 2 ) );
 				call chn:update( *( tick_len 2 ) );
 			}
-			call downsample( mix_buf, +( tick_len 32 ) );
+			call :( this.downsample, mix_buf, +( tick_len 32 ) );
 			call volume_ramp( mix_buf, this.ramp_buf, tick_len );
 		}
 	}
@@ -241,7 +240,7 @@ function replay_convert( ( replay ) this, output, offset ) {
 	if output {
 		let mix_buf = $buffer( /( *( +( 4095 33 ) SAMPLE_RATE 4 ) 24000 ) );
 	}
-	call this:reset();
+	call :this.reset();
 	var tick_len = this:tick( mix_buf );
 	while tick_len {
 		var end = +( offset tick_len );
@@ -268,7 +267,9 @@ function replay_reset( ( replay ) this ) {
 	let this.ramp_buf = $buffer( 64 );
 	let this.seq_idx = 0;
 	while <( idx $len( this.channels ) ) {
-		let [ this.channels idx++ ] = $new( channel );
+		var ( channel ) chn = $new( channel );
+		let chn.mix = @channel_mix;
+		let [ this.channels idx++ ] = chn;
 	}
 }
 
@@ -295,6 +296,8 @@ function new_replay( tmf ) {
 		let offset = +( offset length );
 		let [ this.samples idx++ ] = sam;
 	}
+	let this.reset = @replay_reset;
+	let this.downsample = @downsample;
 	call this:reset();
 	return this;
 }
