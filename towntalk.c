@@ -5304,20 +5304,19 @@ static struct element* parse_program_declaration( struct element *elem,
 	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
 	struct environment *env = func->env;
 	struct element *next = elem->next;
-	struct function *prog;
-	prog = new_function( next->str.string, NULL );
+	struct function *prog = new_function( next->str.string, NULL );
 	if( prog ) {
+		prog->line = elem->line;
+		prog->file = func->file;
+		prog->file->reference_count++;
+		if( func->library ) {
+			prog->library = func->library;
+			prog->library->reference_count++;
+		}
+		prog->body = next->next;
+		prog->env = env;
 		if( add_decl( &prog->str, next->line, env, message ) ) {
 			env->entry_point = prog;
-			prog->line = elem->line;
-			prog->file = func->file;
-			prog->file->reference_count++;
-			if( func->library ) {
-				prog->library = func->library;
-				prog->library->reference_count++;
-			}
-			prog->body = next->next;
-			prog->env = env;
 			next = next->next->next;
 		}
 		unref_string( &prog->str );
