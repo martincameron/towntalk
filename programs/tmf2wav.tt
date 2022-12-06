@@ -28,7 +28,8 @@ struct channel {
 }
 
 struct replay {
-	song_name, sequence, samples, channels, ramp_buf, seq_idx, tempo, wait, reset, downsample
+	song_name, sequence, samples, channels, ramp_buf,
+	seq_idx, tempo, gain, transpose, wait, reset, downsample
 }
 
 function trim( str ) {
@@ -123,11 +124,10 @@ rem { Advance the sequence and output audio if mix_buf is not null.
 	The number of stereo samples produced is returned, or zero if the sequence has finished. }
 function replay_tick( ( replay ) this, mix_buf ) {
 	var sequence = this.sequence, seq_idx = this.seq_idx, seq_len = $len( this.sequence );
-	var ( channel ) chn, wait = -( this.wait 1 );
+	var ( channel ) chn, vol, wait = -( this.wait 1 );
 	while &&( <( wait 1 ) <( seq_idx seq_len ) ) {
 		var cmd = &( $chr( sequence seq_idx++ ) 0xFF );
-		if &&( >e( cmd 0x08 ) <( cmd 0x40 ) <( +( seq_idx 2 ) seq_len ) ) {
-			# 4 byte
+		if &&( >e( cmd 0x08 ) <( cmd 0x40 ) <( +( seq_idx 2 ) seq_len ) ) { # 4-byte.
 			let cmd = |( <<( cmd 8 ) &( $chr( sequence seq_idx++ ) 0xFF ) );
 			let cmd = |( <<( cmd 8 ) &( $chr( sequence seq_idx++ ) 0xFF ) );
 			let cmd = |( <<( cmd 8 ) &( $chr( sequence seq_idx++ ) 0xFF ) );
@@ -135,7 +135,7 @@ function replay_tick( ( replay ) this, mix_buf ) {
 			switch &( cmd 0xF0000000 ) {
 				case 0x10000000 0x20000000 {
 					let chn = [ this.channels &( cmd 0x1F ) ];
-					var key = &( >>( cmd 16 ) 0xFFF );
+					var key = +( &( >>( cmd 16 ) 0xFFF ) this.transpose );
 					if &&( >( key 0 ) <( key 957 ) ) {
 						let chn.freq = key_to_freq( key );
 					}
@@ -145,8 +145,8 @@ function replay_tick( ( replay ) this, mix_buf ) {
 							let chn.pan = -( ins 0x80 32 );
 						} else {
 							if >e( ins 0x40 ) {
-								let ins = -( ins 0x40 );
-								let chn.vol = *( ins ins );
+								let vol = -( ins 0x40 );
+								let chn.vol = >>( *( this.gain vol vol ) 12 );
 							} else {
 								let chn.sample = [ this.samples ins ];
 							}
@@ -163,8 +163,7 @@ function replay_tick( ( replay ) this, mix_buf ) {
 					let chn.sam_fra = 0;
 				}
 			}
-		} else {
-			# 2 byte
+		} else { # 2-byte.
 			if <( seq_idx seq_len ) {
 				let cmd = |( <<( cmd 8 ) &( $chr( sequence seq_idx++ ) 0xFF ) );
 				let this.seq_idx = seq_idx;
@@ -175,17 +174,18 @@ function replay_tick( ( replay ) this, mix_buf ) {
 				case 0x4000 0x5000 0x6000 0x7000 0x8000 0x9000 0xA000 0xB000 {
 					let chn = [ this.channels &( cmd 0x1F ) ];
 					if <( cmd 0x8100 ) {
-						var vol = -( >>( cmd 8 ) 0x40 );
-						let chn.vol = *( vol vol );
+						let vol = -( >>( cmd 8 ) 0x40 );
+						let chn.vol = >>( *( this.gain vol vol ) 12 );
 					} else {
 						let chn.pan = -( >>( cmd 8 ) 0x80 32 );
 					}
 				}
 				case 0xC000 {
-					# Gain.
+					let vol = &( cmd 0x7F );
+					let this.gain = *( vol vol );
 				}
 				case 0xD000 {
-					# Transpose.
+					let this.transpose = -( &( cmd 0xFFF ) 0x800 );
 				}
 				case 0xE000 {
 					if >( cmd 0xE0FF ) {
@@ -263,9 +263,12 @@ function replay_convert( ( replay ) this, output, offset ) {
 
 function replay_reset( ( replay ) this ) {
 	var idx;
-	let this.tempo = 480;
-	let this.ramp_buf = $buffer( 64 );
 	let this.seq_idx = 0;
+	let this.tempo = 480;
+	let this.gain = 4096;
+	let this.transpose = 0;
+	let this.wait = 0;
+	let this.ramp_buf = $buffer( 64 );
 	while <( idx $len( this.channels ) ) {
 		var ( channel ) chn = $new( channel );
 		let chn.mix = @channel_mix;
