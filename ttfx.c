@@ -413,7 +413,7 @@ static void process_sequence( struct fxenvironment *fxenv, int channel_idx ) {
 				}
 			} else if( oper == 0xC ) {
 				/* 0xCxxx set gain. */
-				gain = cmd & 0xFFF;
+				gain = cmd & 0x7F;
 				fxenv->channels[ channel_idx ].gain = gain * gain;
 			} else if( oper == 0xD ) {
 				/* 0xDxxx set transpose. */
