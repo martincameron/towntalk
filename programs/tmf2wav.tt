@@ -75,8 +75,8 @@ function channel_mix( ( channel ) this, output, count ) {
 		var sidx = this.sam_idx;
 		var sfra = this.sam_fra;
 		if ||( <( sidx lend ) >( llen 1 ) ) {
-			var lvol = *( this.vol -( 32 this.pan ) );
-			var rvol = *( this.vol +( 32 this.pan ) );
+			var lvol = *( -( 32 this.pan ) this.vol );
+			var rvol = *( +( 32 this.pan ) this.vol );
 			var step = /( <<( this.freq 12 ) >>( SAMPLE_RATE 2 ) );
 			var data = sam.data;
 			var idx;
@@ -84,18 +84,16 @@ function channel_mix( ( channel ) this, output, count ) {
 			while <( idx end ) {
 				if >e( sidx lend ) {
 					if >( llen 1 ) {
-						let sidx = +( loop %( -( sidx loop ) llen ) );
+						let sidx = +( %( -( sidx loop ) llen ) loop );
 					} else {
 						break;
 					}
 				}
 				var ampl = $chr( data sidx );
-				let [ output idx ] = +( [ output idx ] >>( *( ampl lvol ) 11 ) );
-				inc idx;
-				let [ output idx ] = +( [ output idx ] >>( *( ampl rvol ) 11 ) );
-				inc idx;
+				let [ output idx ] = +( >>( *( ampl lvol ) 11 ) [ output idx++ ] );
+				let [ output idx ] = +( >>( *( ampl rvol ) 11 ) [ output idx++ ] );
 				let sfra = +( sfra step );
-				let sidx = +( sidx >>( sfra 15 ) );
+				let sidx = +( >>( sfra 15 ) sidx );
 				let sfra = &( sfra 0x7FFF );
 			}
 		}
