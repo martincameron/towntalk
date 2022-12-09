@@ -1,11 +1,15 @@
 
 rem {
-	Faster TMF to WAV converter using asm statement.
+	Faster TMF to WAV converter with linear-interpolation using asm statement.
 }
 
 include "tmf2wav.tt";
 
-function channel_mix_fast( ( channel ) this, output, count ) {
+struct fast_channel( channel ) {
+	interpolate
+}
+
+function fast_channel_mix( ( fast_channel ) this, output, count ) {
 	var ( sample ) sam = this.sample;
 	if &&( this.vol sam ) {
 		var loop = sam.loop_start;
@@ -19,16 +23,25 @@ function channel_mix_fast( ( channel ) this, output, count ) {
 			var step = /( <<( this.freq 12 ) >>( SAMPLE_RATE 2 ) );
 			var data = sam.data;
 			var end = *( count 2 );
-			var idx, acc, amp, out, two = 2;
+			var idx, acc, amp, out, interpolate = this.interpolate, one = 1;
 			asm {
 				loop:
-					jump <( sidx lend ) mix;
-					jump <( llen two ) end;
+					jump <( sidx lend ) resample;
+					jump <e( llen one ) end;
 					let acc = -( sidx loop );
 					let acc = %( acc llen );
 					let sidx = +( loop acc );
-				mix:
+				resample:
 					let amp = $chr( data sidx );
+					jump <( interpolate one ) mix;
+					let sidx = +( sidx 1 );
+					let acc = $chr( data sidx );
+					let sidx = -( sidx 1 );
+					let acc = -( acc amp );
+					let acc = *( acc sfra );
+					let acc = >>( acc 15 );
+					let amp = +( acc amp );
+				mix:
 					let acc = *( amp lvol );
 					let acc = >>( acc 11 );
 					let out = [ output idx ];
@@ -50,7 +63,7 @@ function channel_mix_fast( ( channel ) this, output, count ) {
 	}
 }
 
-function downsample_fast( buf, count ) {
+function fast_downsample( buf, count ) {
 	var idx, out_idx, out_len = *( count 2 );
 	var lamp, ramp, acc;
 	asm {
@@ -78,25 +91,35 @@ function downsample_fast( buf, count ) {
 	}
 }
 
-function new_fast_replay( tmf ) {
-	var ( replay ) this = new_replay( tmf );
+function new_fast_replay( tmf, interpolate ) {
+	var idx, ( replay ) this = new_replay( tmf );
+	if interpolate { # Extend loop for linear-interpolation.
+		let idx = 1;
+		while <( idx $len( this.samples ) ) {
+			var ( sample ) sam = [ this.samples idx++ ];
+			let sam.data = $cat( sam.data $asc( ?( sam.loop_length $chr( sam.data sam.loop_start ) 0 ) ) );
+		}
+	}
 	let this.reset = $function( ${ ( ( replay ) this ) {
 		call replay_reset( this );
 		var idx;
 		while <( idx $len( this.channels ) ) {
-			var ( channel ) chn = [ this.channels idx++ ];
-			let chn.mix = @channel_mix_fast;
+			var ( fast_channel ) chn = $new( fast_channel );
+			let chn.interpolate = interpolate;
+			let chn.mix = @fast_channel_mix;
+			let [ this.channels idx++ ] = chn;
 		}
 	} } );
-	let this.downsample = @downsample_fast;
+	let this.downsample = @fast_downsample;
+	call :this.reset();
 	return this;
 }
 
 program tmf2wav_fast {
 	if <( $argc 2 ) {
-		error $str( "Usage: " $argv( 0 ) " input.tmf [output.wav]" );
+		error $str( "Usage: " $argv( 0 ) " input.tmf [output.wav] [-hq]" );
 	} else {
-		var ( replay ) repl = new_fast_replay( $load( $argv( 1 ) ) );
+		var ( replay ) repl = new_fast_replay( $load( $argv( 1 ) ), $eq( $argv( -( $argc 1 ) ) "-hq" ) );
 		print $str( "Song Name: " repl.song_name );
 		var samples = repl:convert( 0 0 );
 		print $str( "Output file length: " *( samples 4 ) " bytes." );
