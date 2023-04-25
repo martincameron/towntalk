@@ -63,7 +63,7 @@ library xml {
 	}
 
 	struct element( node ) {
-		# Element node, short-tags are enabled for output template has no children.
+		# Element node, short-tags are enabled for output if template has no children.
 		name, attributes, children, template, create_element
 	}
 
@@ -112,8 +112,8 @@ library xml {
 		var ( parser ) this = $new( parser );
 		let this.source = source;
 		let this.idx = -1;
-		let this.current = this:next_char();
 		let this.line = 1;
+		call this:next_char();
 		return this;
 	}
 
