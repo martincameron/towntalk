@@ -270,19 +270,24 @@ function testwhile() {
 }
 
 function testtry() {
-	var e;
+	var e, ( struc ) s, ( exten ) x;
 	try {} catch e { call assert( FALSE, ${-} ); }
 	try {
 		try {
-			call 0;
-			throw 1;
-		} catch e {
-			call assert_equals( 1, e, ${-} );
-			throw 2;
+			try {
+				call 0;
+				throw 1;
+				call assert( FALSE, ${-} );
+			} catch e {
+				call assert_equals( 1, e, ${-} );
+				throw $new( struc 2 );
+			}
+		} catch x {
+			call assert( FALSE, ${-} );
 		}
-	} catch e {
+	} catch s {
 	}
-	call assert_equals( 2, e, ${-} );
+	call assert_equals( 2, s.a, ${-} );
 	call assert_throws( "Undeclared local variable 'a'", ${ () { try {} catch a {} } } );
 	call assert_throws( "Expected 'catch'", ${ () { try {} } } );
 	try { try { return 0; } catch e {} } catch e {}

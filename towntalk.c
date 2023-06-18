@@ -31,6 +31,7 @@
 	Elements may contain spaces and separators by enclosing them in quotes.
 	Child elements are enclosed in parentheses, square brackets or braces.
 	If the program has been interrupted, while loops will throw an exception.
+	Try statements only catch instances of the associated struct of the destination.
 
 	Example:
 		rem { Test }
@@ -1356,10 +1357,24 @@ static void dispose_block_statement( struct statement *this ) {
 	free( this );
 }
 
+static struct structure* instance_of( struct string *str, struct structure *struc ) {
+	struct structure *structure;
+	if( str && str->type == ARRAY ) {
+		structure = ( ( struct array * ) str )->structure;
+		while( struc != structure && structure ) {
+			structure = structure->super;
+		}
+		return structure;
+	}
+	return NULL;
+}
+
 static enum result execute_try_statement( struct statement *this,
 	struct variables *vars, struct variable *result ) {
 	enum result ret = OKAY;
+	int idx;
 	struct variables try_vars;
+	struct local_variable *exception_var;
 	struct statement *stmt = ( ( struct block_statement * ) this )->if_block;
 	try_vars.parent = vars->parent;
 	try_vars.exception = &vars->locals[ this->local ];
@@ -1375,7 +1390,13 @@ static enum result execute_try_statement( struct statement *this,
 		}
 	}
 	if( ret == EXCEPTION ) {
-		if( try_vars.exception->string_value && try_vars.exception->string_value->type == EXIT ) {
+		exception_var = vars->func->variable_decls;
+		for( idx = this->local; idx > 0; idx-- )
+		{
+			exception_var = exception_var->next;
+		}
+		if( ( try_vars.exception->string_value && try_vars.exception->string_value->type == EXIT )
+		|| ( exception_var->type && !instance_of( try_vars.exception->string_value, exception_var->type ) ) ) {
 			assign_variable( try_vars.exception, vars->exception );
 		} else {
 			ret = OKAY;
@@ -1562,18 +1583,6 @@ static enum result execute_array_assignment( struct statement *this,
 		dispose_temporary( &dest );
 	}
 	return ret;
-}
-
-static struct structure* instance_of( struct string *str, struct structure *struc ) {
-	struct structure *structure;
-	if( str && str->type == ARRAY ) {
-		structure = ( ( struct array * ) str )->structure;
-		while( struc != structure && structure ) {
-			structure = structure->super;
-		}
-		return structure;
-	}
-	return NULL;
 }
 
 static enum result execute_struct_assignment( struct statement *this,
