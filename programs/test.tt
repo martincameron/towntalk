@@ -288,6 +288,21 @@ function testtry() {
 	} catch s {
 	}
 	call assert_equals( 2, s.a, ${-} );
+	try {
+		let s = 1;
+	} finally {
+		let e = 2;
+	}
+	call assert_equals( 1, s, ${-} );
+	call assert_equals( 2, e, ${-} );
+	call assert_equals( "a", :( $function( ${ ( s ) { try { return s; } finally {} } } ) "a" ) ${-} );
+	call assert_equals( "a", :( $function( ${ ( s ) { try {} finally { return s; } } } ) "a" ) ${-} );
+	call assert_equals( "a", :( $function( ${ ( s ) { try { return "x"; } finally { return s; } } } ) "a" ) ${-} );
+	call assert_throws( "a", ${ () { try { throw "a"; } finally {} } } );
+	call assert_throws( "a", ${ () { try {} finally { throw "a"; } } });
+	call assert_throws( "a", ${ () { try { return "x"; } finally { throw "a"; } } });
+	call assert_throws( "a", ${ () { try { throw "a"; } finally { return "x"; } } });
+	call assert_throws( "a", ${ () { try { throw "a"; } finally { throw "x"; } } } );
 	call assert_throws( "Undeclared local variable 'a'", ${ () { try {} catch a {} } } );
 	call assert_throws( "Expected 'catch'", ${ () { try {} } } );
 	try { try { return 0; } catch e {} } catch e {}

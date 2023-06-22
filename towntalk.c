@@ -12,7 +12,7 @@
 #include "towntalk.h"
 
 /*
-	Towntalk (c)2022 Martin Cameron.
+	Towntalk (c)2023 Martin Cameron.
 
 	A program file consists of a list of declarations.
 	When a '#' character is encountered, the rest of the line is ignored.
@@ -86,6 +86,7 @@
 		   default {statements}} Execute statements if no valid cases.
 		try {statements}         Execute statements unless exception thrown.
 		   catch a {statements}  Assign exception to local var and execute.
+		   finally {statements}  Always execute even if exception thrown.
 		call expr;               Evaluate expression and discard result.
 		set [ arr idx ] = expr;  Variable/Array assignment (same as let).
 		inc a;                   Increment local variable.
@@ -1324,6 +1325,7 @@ static enum result execute_exit_statement( struct statement *this,
 	char *message = NULL;
 	enum result ret = this->source->evaluate( this->source, vars, &exit_code );
 	if( ret ) {
+		vars->func->env->interrupted = 1;
 		if( vars->func->env->worker ) {
 			message = "Worker exited.";
 		}
@@ -1369,46 +1371,105 @@ static struct structure* instance_of( struct string *str, struct structure *stru
 	return NULL;
 }
 
-static enum result execute_try_statement( struct statement *this,
-	struct variables *vars, struct variable *result ) {
+static enum result execute_statements( struct statement *stmt, struct variables *vars, struct variable *result ) {
 	enum result ret = OKAY;
-	int idx;
-	struct variables try_vars;
-	struct local_variable *exception_var;
-	struct statement *stmt = ( ( struct block_statement * ) this )->if_block;
-	try_vars.parent = vars->parent;
-	try_vars.exception = &vars->locals[ this->local ];
-	try_vars.locals = vars->locals;
-	try_vars.func = vars->func;
-	try_vars.line = vars->line;
 	while( stmt ) {
-		ret = stmt->execute( stmt, &try_vars, result );
+		ret = stmt->execute( stmt, vars, result );
 		if( ret == OKAY ) {
 			stmt = stmt->next;
 		} else {
-			break;
+			return ret;
 		}
 	}
+	return ret;
+}
+
+static int is_exit( struct variable *exception ) {
+	return exception->string_value && exception->string_value->type == EXIT;
+}
+
+static enum result execute_try_finally_statement( struct statement *this,
+	struct variables *vars, struct variable *result ) {
+	enum result try_ret, fin_ret;
+	struct variables try_vars, fin_vars;
+	struct variable try_exc = { 0 }, try_res = { 0 };
+	struct variable fin_exc = { 0 }, fin_res = { 0 };
+	try_vars.parent = fin_vars.parent = vars->parent;
+	try_vars.exception = &try_exc;
+	fin_vars.exception = &fin_exc;
+	try_vars.locals = fin_vars.locals = vars->locals;
+	try_vars.func = fin_vars.func = vars->func;
+	try_vars.line = fin_vars.line = vars->line;
+	try_ret = execute_statements( ( ( struct block_statement * ) this )->if_block, &try_vars, &try_res );
+	fin_ret = execute_statements( ( ( struct block_statement * ) this )->else_block, &fin_vars, &fin_res );
+	if( try_ret == OKAY ) {
+		if( fin_ret == OKAY ) {
+			return OKAY;
+		} else if( fin_ret == RETURN ) {
+			assign_variable( &fin_res, result );
+			dispose_temporary( &fin_res );
+		} else if( fin_ret == EXCEPTION ) {
+			assign_variable( fin_vars.exception, vars->exception );
+			dispose_temporary( fin_vars.exception );
+		}
+		return fin_ret;
+	}
+	if( try_ret == RETURN ) {
+		if( fin_ret == OKAY ) {
+			assign_variable( &try_res, result );
+			dispose_temporary( &try_res );
+			return RETURN;
+		} else if( fin_ret == EXCEPTION ) {
+			assign_variable( fin_vars.exception, vars->exception );
+			dispose_temporary( fin_vars.exception );
+		} else if( fin_ret == RETURN ) {
+			assign_variable( &fin_res, result );
+			dispose_temporary( &fin_res );
+		}
+		dispose_temporary( &try_res );
+		return fin_ret;
+	}
+	if( try_ret == EXCEPTION ) {
+		if( fin_ret == EXCEPTION ) {
+			if( is_exit( fin_vars.exception ) ) {
+				assign_variable( fin_vars.exception, vars->exception );
+				dispose_temporary( try_vars.exception );
+				dispose_temporary( fin_vars.exception );
+				return EXCEPTION;
+			}
+			dispose_temporary( fin_vars.exception );
+		} else if( fin_ret == RETURN ) {
+			dispose_temporary( &fin_res );
+		}
+		assign_variable( try_vars.exception, vars->exception );
+		dispose_temporary( try_vars.exception );
+	}
+	return try_ret;
+}
+
+static enum result execute_try_catch_statement( struct statement *this,
+	struct variables *vars, struct variable *result ) {
+	enum result ret = OKAY;
+	int idx = this->local;
+	struct variables try_vars;
+	struct local_variable *exception_var;
+	try_vars.parent = vars->parent;
+	try_vars.exception = &vars->locals[ idx ];
+	try_vars.locals = vars->locals;
+	try_vars.func = vars->func;
+	try_vars.line = vars->line;
+	ret = execute_statements( ( ( struct block_statement * ) this )->if_block, &try_vars, result );
 	if( ret == EXCEPTION ) {
 		exception_var = vars->func->variable_decls;
-		for( idx = this->local; idx > 0; idx-- )
+		while( idx-- > 0 )
 		{
 			exception_var = exception_var->next;
 		}
-		if( ( try_vars.exception->string_value && try_vars.exception->string_value->type == EXIT )
+		if( is_exit( try_vars.exception )
 		|| ( exception_var->type && !instance_of( try_vars.exception->string_value, exception_var->type ) ) ) {
 			assign_variable( try_vars.exception, vars->exception );
 		} else {
-			ret = OKAY;
-			stmt = ( ( struct block_statement * ) this )->else_block;
-			while( stmt ) {
-				ret = stmt->execute( stmt, vars, result );
-				if( ret == OKAY ) {
-					stmt = stmt->next;
-				} else {
-					break;
-				}
-			}
+			return execute_statements( ( ( struct block_statement * ) this )->else_block, vars, result );
 		}
 	}
 	return ret;
@@ -4724,11 +4785,16 @@ static struct element* validate_syntax( char *syntax, struct element *elem,
 				sprintf( message, "Expected '[' after '%.64s' on line %d.", key->str.string, line );
 			}
 		} else if( chr == 'c' ) {
-			/* Catch */
-			if( elem == NULL || strcmp( elem->str.string, "catch" ) ) {
-				sprintf( message, "Expected 'catch' after '%.64s' on line %d.", key->str.string, line );
-			} else {
+			/* Catch or finally. */
+			if( elem != NULL && strcmp( elem->str.string, "catch" ) == 0 ) {
 				elem = elem->next;
+				if( validate_name( elem, message ) ) {
+					elem = elem->next;
+				}
+			} else if( elem != NULL && strcmp( elem->str.string, "finally" ) == 0 ) {
+				elem = elem->next;
+			} else {
+				sprintf( message, "Expected 'catch' or 'finally' after '%.64s' on line %d.", key->str.string, line );
 			}
 		} else if( chr == 'n' ) {
 			/* Name. */
@@ -4955,10 +5021,20 @@ static struct element* parse_try_statement( struct element *elem,
 			( ( struct block_statement * ) stmt )->if_block = block.next;
 		}
 		if( message[ 0 ] == 0 ) {
-			next = next->next->next;
-			local = get_local_variable( func->variable_decls, next->str.string, "" );
-			if( local ) {
-				stmt->local = local->index;
+			next = next->next;
+			if( next->str.string[ 0 ] == 'c' ) {
+				next = next->next;
+				local = get_local_variable( func->variable_decls, next->str.string, "" );
+				if( local ) {
+					stmt->local = local->index;
+					stmt->execute = execute_try_catch_statement;
+				} else {
+					sprintf( message, "Undeclared local variable '%.64s' on line %d.", next->str.string, next->line );
+				}
+			} else {
+				stmt->execute = execute_try_finally_statement;
+			}
+			if( message[ 0 ] == 0 ) {
 				next = next->next;
 				if( next->child ) {
 					block.next = NULL;
@@ -4968,9 +5044,6 @@ static struct element* parse_try_statement( struct element *elem,
 				if( message[ 0 ] == 0 ) {
 					next = next->next;
 				}
-				stmt->execute = execute_try_statement;
-			} else {
-				sprintf( message, "Undeclared local variable '%.64s' on line %d.", next->str.string, next->line );
 			}
 		}
 	} else {
@@ -5462,7 +5535,7 @@ static struct keyword statements[] = {
 	{ "if", "x{", parse_if_statement, NULL },
 	{ "while", "x{", parse_while_statement, NULL },
 	{ "call", "x;", parse_call_statement, NULL },
-	{ "try", "{cn{", parse_try_statement, NULL },
+	{ "try", "{c{", parse_try_statement, NULL },
 	{ "set", "x=x;", parse_assignment_statement, NULL },
 	{ "switch", "x{", parse_switch_statement, NULL },
 	{ "inc", "n;", parse_increment_statement, NULL },
