@@ -270,7 +270,7 @@ function testwhile() {
 }
 
 function testtry() {
-	var e, ( struc ) s, ( exten ) x;
+	var e, ( struc ) s;
 	try {} catch e { call assert( FALSE, ${-} ); }
 	try {
 		try {
@@ -282,7 +282,7 @@ function testtry() {
 				call assert_equals( 1, e, ${-} );
 				throw $new( struc 2 );
 			}
-		} catch x {
+		} catch ( exten ) x {
 			call assert( FALSE, ${-} );
 		}
 	} catch s {

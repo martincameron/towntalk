@@ -85,7 +85,8 @@
 		   case "a" {statements} Execute statements if expr equals "a".
 		   default {statements}} Execute statements if no valid cases.
 		try {statements}         Execute statements unless exception thrown.
-		   catch a {statements}  Assign exception to local var and execute.
+		   catch a {statements}  Assign exception to declared local var and execute.
+		   catch (exc) e {stmts} Catch with inline structured local variable declaration.
 		   finally {statements}  Always execute even if exception thrown.
 		call expr;               Evaluate expression and discard result.
 		set [ arr idx ] = expr;  Variable/Array assignment (same as let).
@@ -2223,7 +2224,7 @@ static int add_local_variable( struct element *elem,
 			}
 		} else {
 			dispose_local_variables( param );
-			sprintf( message, "Local variable '%.64s' already defined on line %d.", elem->str.string, elem->line );
+			sprintf( message, "Local variable '%.64s' already declared on line %d.", elem->str.string, elem->line );
 		}
 	}
 	return message[ 0 ] == 0;
@@ -2235,7 +2236,7 @@ static struct element* parse_variable_declaration( struct element *elem, struct 
 	struct structure *type = NULL;
 	struct expression expr = { 0 }, *array_expr;
 	struct element *next;
-	while( elem && elem->str.string[ 0 ] != ';' && message[ 0 ] == 0 ) {
+	while( elem && elem->str.string[ 0 ] != ';' && elem->str.string[ 0 ] != '{' && message[ 0 ] == 0 ) {
 		if( prev && prev->next ) {
 			prev = prev->next;
 		}
@@ -4788,8 +4789,14 @@ static struct element* validate_syntax( char *syntax, struct element *elem,
 			/* Catch or finally. */
 			if( elem != NULL && strcmp( elem->str.string, "catch" ) == 0 ) {
 				elem = elem->next;
-				if( validate_name( elem, message ) ) {
-					elem = elem->next;
+				if( elem && elem->str.string[ 0 ] == '(' ) {
+					validate_syntax( "n0", elem->child, elem, env, message );
+					if( message[ 0 ] == 0 ) {
+						elem = elem->next;
+					}
+				}
+				if( message[ 0 ] == 0 ) {
+					elem = validate_syntax( "n", elem, key, env, message );
 				}
 			} else if( elem != NULL && strcmp( elem->str.string, "finally" ) == 0 ) {
 				elem = elem->next;
@@ -5024,12 +5031,18 @@ static struct element* parse_try_statement( struct element *elem,
 			next = next->next;
 			if( next->str.string[ 0 ] == 'c' ) {
 				next = next->next;
-				local = get_local_variable( func->variable_decls, next->str.string, "" );
-				if( local ) {
-					stmt->local = local->index;
-					stmt->execute = execute_try_catch_statement;
-				} else {
-					sprintf( message, "Undeclared local variable '%.64s' on line %d.", next->str.string, next->line );
+				if( next->str.string[ 0 ] == '(' ) {
+					parse_variable_declaration( next, func, vars, NULL, add_local_variable, message );
+					next = next->next;
+				}
+				if( message[ 0 ] == 0 ) {
+					local = get_local_variable( func->variable_decls, next->str.string, "" );
+					if( local ) {
+						stmt->local = local->index;
+						stmt->execute = execute_try_catch_statement;
+					} else {
+						sprintf( message, "Undeclared local variable '%.64s' on line %d.", next->str.string, next->line );
+					}
 				}
 			} else {
 				stmt->execute = execute_try_finally_statement;
