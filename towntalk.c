@@ -4787,19 +4787,27 @@ static struct element* validate_syntax( char *syntax, struct element *elem,
 			}
 		} else if( chr == 'c' ) {
 			/* Catch or finally. */
-			if( elem != NULL && strcmp( elem->str.string, "catch" ) == 0 ) {
+			if( elem && ( strcmp( elem->str.string, "catch" ) == 0 || strcmp( elem->str.string, "finally" ) == 0 ) ) {
+				chr = elem->str.string[ 0 ];
 				elem = elem->next;
-				if( elem && elem->str.string[ 0 ] == '(' ) {
-					validate_syntax( "n0", elem->child, elem, env, message );
+				if( chr == 'c' ) {
+					if( elem && elem->str.string[ 0 ] == '(' ) {
+						validate_syntax( "n0", elem->child, elem, env, message );
+						if( message[ 0 ] == 0 ) {
+							elem = elem->next;
+						}
+					}
 					if( message[ 0 ] == 0 ) {
-						elem = elem->next;
+						elem = validate_syntax( "n", elem, key, env, message );
 					}
 				}
 				if( message[ 0 ] == 0 ) {
-					elem = validate_syntax( "n", elem, key, env, message );
+					elem = validate_syntax( "{", elem, key, env, message );
+					while( message[ 0 ] == 0 && elem
+						&& ( strcmp( elem->str.string, "catch" ) == 0 || strcmp( elem->str.string, "finally" ) == 0 ) ) {
+						elem = validate_syntax( "c", elem, key, env, message );
+					}
 				}
-			} else if( elem != NULL && strcmp( elem->str.string, "finally" ) == 0 ) {
-				elem = elem->next;
 			} else {
 				sprintf( message, "Expected 'catch' or 'finally' after '%.64s' on line %d.", key->str.string, line );
 			}
@@ -5014,55 +5022,76 @@ static struct element* parse_while_statement( struct element *elem,
 	return next;
 }
 
-static struct element* parse_try_statement( struct element *elem,
-	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
+static struct element* parse_catch_block( struct element *elem,
+	struct function *func, struct variables *vars, struct block_statement *try_stmt, char *message ) {
 	struct local_variable *local;
-	struct element *next = elem->next;
-	struct statement block, *stmt = calloc( 1, sizeof( struct block_statement ) );
-	if( stmt ) {
-		stmt->dispose = dispose_block_statement;
-		prev->next = stmt;
-		if( next->child ) {
-			block.next = NULL;
-			parse_keywords_indexed( func->env->statements_index, next->child, func, vars, &block, message );
-			( ( struct block_statement * ) stmt )->if_block = block.next;
+	struct statement block;
+	if( elem->str.string[ 0 ] == 'c' ) {
+		elem = elem->next;
+		if( elem->str.string[ 0 ] == '(' ) {
+			parse_variable_declaration( elem, func, vars, NULL, add_local_variable, message );
+			if( message[ 0 ] == 0 ) {
+				elem = elem->next;
+			}
 		}
 		if( message[ 0 ] == 0 ) {
-			next = next->next;
-			if( next->str.string[ 0 ] == 'c' ) {
-				next = next->next;
-				if( next->str.string[ 0 ] == '(' ) {
-					parse_variable_declaration( next, func, vars, NULL, add_local_variable, message );
-					next = next->next;
-				}
-				if( message[ 0 ] == 0 ) {
-					local = get_local_variable( func->variable_decls, next->str.string, "" );
-					if( local ) {
-						stmt->local = local->index;
-						stmt->execute = execute_try_catch_statement;
-					} else {
-						sprintf( message, "Undeclared local variable '%.64s' on line %d.", next->str.string, next->line );
-					}
-				}
+			local = get_local_variable( func->variable_decls, elem->str.string, "" );
+			if( local ) {
+				try_stmt->stmt.local = local->index;
+				try_stmt->stmt.execute = execute_try_catch_statement;
 			} else {
-				stmt->execute = execute_try_finally_statement;
+				sprintf( message, "Undeclared local variable '%.64s' on line %d.", elem->str.string, elem->line );
 			}
-			if( message[ 0 ] == 0 ) {
-				next = next->next;
-				if( next->child ) {
-					block.next = NULL;
-					parse_keywords_indexed( func->env->statements_index, next->child, func, vars, &block, message );
-					( ( struct block_statement * ) stmt )->else_block = block.next;
-				}
-				if( message[ 0 ] == 0 ) {
-					next = next->next;
+		}
+	} else {
+		try_stmt->stmt.execute = execute_try_finally_statement;
+	}
+	if( message[ 0 ] == 0 ) {
+		elem = elem->next;
+		if( elem->child ) {
+			block.next = NULL;
+			parse_keywords_indexed( func->env->statements_index, elem->child, func, vars, &block, message );
+			try_stmt->else_block = block.next;
+		}
+		if( message[ 0 ] == 0 ) {
+			elem = elem->next;
+		}
+	}
+	return elem;
+}
+
+static struct element* parse_try_statement( struct element *elem,
+	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
+	struct statement try_block;
+	struct block_statement *try_stmt = calloc( 1, sizeof( struct block_statement ) );
+	if( try_stmt ) {
+		try_stmt->stmt.dispose = dispose_block_statement;
+		prev->next = &try_stmt->stmt;
+		elem = elem->next;
+		if( elem->child ) {
+			try_block.next = NULL;
+			parse_keywords_indexed( func->env->statements_index, elem->child, func, vars, &try_block, message );
+			try_stmt->if_block = try_block.next;
+		}
+		if( message[ 0 ] == 0 ) {
+			elem = parse_catch_block( elem->next, func, vars, try_stmt, message );
+			while( message[ 0 ] == 0 && elem
+			&& ( strcmp( elem->str.string, "catch" ) == 0 || strcmp( elem->str.string, "finally" ) == 0 ) ) {
+				try_stmt = calloc( 1, sizeof( struct block_statement ) );
+				if( try_stmt ) {
+					try_stmt->stmt.dispose = dispose_block_statement;
+					try_stmt->if_block = prev->next;
+					prev->next = &try_stmt->stmt;
+					elem = parse_catch_block( elem, func, vars, try_stmt, message );
+				} else {
+					strcpy( message, OUT_OF_MEMORY );
 				}
 			}
 		}
 	} else {
 		strcpy( message, OUT_OF_MEMORY );
 	}
-	return next;
+	return elem;
 }
 
 static struct element* add_function_parameter( struct function *func, struct element *elem, char *message ) {
@@ -5548,7 +5577,7 @@ static struct keyword statements[] = {
 	{ "if", "x{", parse_if_statement, NULL },
 	{ "while", "x{", parse_while_statement, NULL },
 	{ "call", "x;", parse_call_statement, NULL },
-	{ "try", "{c{", parse_try_statement, NULL },
+	{ "try", "{c", parse_try_statement, NULL },
 	{ "set", "x=x;", parse_assignment_statement, NULL },
 	{ "switch", "x{", parse_switch_statement, NULL },
 	{ "inc", "n;", parse_increment_statement, NULL },

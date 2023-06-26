@@ -273,18 +273,14 @@ function testtry() {
 	var e, ( struc ) s;
 	try {} catch e { call assert( FALSE, ${-} ); }
 	try {
-		try {
-			try {
-				call 0;
-				throw 1;
-				call assert( FALSE, ${-} );
-			} catch e {
-				call assert_equals( 1, e, ${-} );
-				throw $new( struc 2 );
-			}
-		} catch ( exten ) x {
-			call assert( FALSE, ${-} );
-		}
+		call 0;
+		throw 1;
+		call assert( FALSE, ${-} );
+	} catch e {
+		call assert_equals( 1, e, ${-} );
+		throw $new( struc 2 );
+	} catch ( exten ) x {
+		call assert( FALSE, ${-} );
 	} catch s {
 	}
 	call assert_equals( 2, s.a, ${-} );
