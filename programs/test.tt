@@ -222,7 +222,7 @@ function testswitch() {
 function testif() {
 	var x;
 	if FALSE { call assert( FALSE, ${-} ); }
-	if TRUE { let x = 1; } else { call assert( FALSE, ${-} ); }
+	if TRUE { let x = 1; } else if FALSE { let x = 2; } else { call assert( FALSE, ${-} ); }
 	call assert_equals( 1, x, ${-} );
 	if "" { let x = 2; }
 	call assert_equals( 2, x, ${-} );

@@ -79,6 +79,7 @@
 		break;                   Exit current while statement.
 		continue;                Stop current iteration of while statement.
 		if expr {statements}     Execute statements if expr is non-null.
+		   else if expr {stmts}  Equivalent to 'else { if expr { stmts } }'.
 		   else {statements}     Optional, execute if expr is null.
 		switch expr {            Selection statement for integers or strings.
 		   case 1,2 {statements} Execute statements if expr equals 1 or 2.
@@ -4803,8 +4804,8 @@ static struct element* validate_syntax( char *syntax, struct element *elem,
 				}
 				if( message[ 0 ] == 0 ) {
 					elem = validate_syntax( "{", elem, key, env, message );
-					while( message[ 0 ] == 0 && elem
-						&& ( strcmp( elem->str.string, "catch" ) == 0 || strcmp( elem->str.string, "finally" ) == 0 ) ) {
+					if( message[ 0 ] == 0 && elem
+					&& ( strcmp( elem->str.string, "catch" ) == 0 || strcmp( elem->str.string, "finally" ) == 0 ) ) {
 						elem = validate_syntax( "c", elem, key, env, message );
 					}
 				}
@@ -4966,18 +4967,23 @@ static struct element* parse_if_statement( struct element *elem,
 			if( message[ 0 ] == 0 ) {
 				next = next->next;
 				if( next && strcmp( next->str.string, "else" ) == 0 ) {
-					if( next->next && next->next->str.string[ 0 ] == '{' ) {
+					if( next->next && ( next->next->str.string[ 0 ] == '{' || strcmp( next->next->str.string, "if" ) == 0 ) ) {
 						next = next->next;
+						block.next = NULL;
 						if( next->child ) {
-							block.next = NULL;
 							parse_keywords_indexed( func->env->statements_index, next->child, func, vars, &block, message );
-							( ( struct block_statement * ) stmt )->else_block = block.next;
+							if( message[ 0 ] == 0 ) {
+								next = next->next;
+							}
+						} else {
+							validate_syntax( "x{", next->next, next, func->env, message );
+							if( message[ 0 ] == 0 ) {
+								next = parse_if_statement( next, func, vars, &block, message );
+							}
 						}
-						if( message[ 0 ] == 0 ) {
-							next = next->next;
-						}
+						( ( struct block_statement * ) stmt )->else_block = block.next;
 					} else {
-						sprintf( message, "Expected '{' after 'else' on line %d.", next->line );
+						sprintf( message, "Expected '{' or 'if' after 'else' on line %d.", next->line );
 					}
 				}
 			}
