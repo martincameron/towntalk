@@ -1,7 +1,7 @@
 
 #include "stdlib.h"
 
-/* Towntalk (c)2022 Martin Cameron. */
+/* Towntalk (c)2023 Martin Cameron. */
 
 /* Return value of execute/evaluate functions. */
 enum result {
@@ -10,7 +10,7 @@ enum result {
 
 /* Reference type. */
 enum reference_type {
-	STRING, ELEMENT, ARRAY, STRUCT, GLOBAL, CONST, FUNCTION, WORKER, LIBRARY, CUSTOM, EXIT
+	STRING, ELEMENT, ARRAY, STRUCT, GLOBAL, CONST, FUNCTION, LIBRARY, CUSTOM, EXIT
 };
 
 /* String list. */
@@ -75,9 +75,15 @@ struct environment {
 	struct worker *worker;
 };
 
+/* Reference-counted custom type. */
+struct custom_type {
+	struct string str;
+	void ( *dispose )( struct string *this );
+};
+
 /* Reference-counted worker function. */
 struct worker {
-	struct string str;
+	struct custom_type custom;
 	struct environment env;
 	struct variable *args, result, exception;
 	struct expression *parameters;
@@ -85,12 +91,6 @@ struct worker {
 	struct array *strings;
 	void *thread, *mutex;
 	enum result ret;
-};
-
-/* Reference-counted custom type. */
-struct custom_type {
-	struct string str;
-	void ( *dispose )( struct string *this );
 };
 
 /* Reference-counted structure declaration.*/

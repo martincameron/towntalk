@@ -223,7 +223,7 @@ int start_worker( struct worker *work ) {
 	int success = 0;
 	work->mutex = SDL_CreateMutex();
 	if( work->mutex ) {
-		work->thread = SDL_CreateThread( worker_thread, work->str.string, work );
+		work->thread = SDL_CreateThread( worker_thread, work->custom.str.string, work );
 		if( work->thread ) {
 			success = 1;
 		} else {

@@ -835,8 +835,44 @@ static void dispose_function( struct function *func ) {
 	free( func );
 }
 
-static void dispose_worker( struct worker *work ) {
+#if !defined( MULTI_THREAD )
+/* Add thread-safe custom statements and operators to the specified worker.
+   Returns 0 and assigns message on failure. */
+int initialize_worker( struct worker *work, char *message ) {
+	return 1;
+}
+
+/* Begin execution of the specified worker. Returns 0 on failure. */
+int start_worker( struct worker *work ) {
+	struct variables vars = { 0 };
+	struct function_expression expr = { 0 };
+	vars.exception = &work->exception;
+	initialize_call_expr( &expr, work->env.entry_point );
+	expr.expr.parameters = work->parameters;
+	work->ret = expr.expr.evaluate( &expr.expr, &vars, &work->result );
+	return 1;
+}
+
+/* Lock the specified worker mutex. Returns 0 on failure. */
+int lock_worker( struct worker *work ) {
+	return 1;
+}
+
+/* Unlock the specified worker mutex. Returns 0 on failure. */
+int unlock_worker( struct worker *work ) {
+	return 1;
+}
+
+/* Wait for the completion of the specified worker.
+   If cancel is non-zero, the worker should be interrupted. */
+void await_worker( struct worker *work, int cancel ) {
+}
+#endif
+
+static void dispose_worker( struct string *str ) {
 	int idx, len = 0;
+	struct worker *work = ( struct worker * ) str;
+	await_worker( work, 1 );
 	if( work->env.entry_point ) {
 		len = work->env.entry_point->num_parameters;
 	}
@@ -874,10 +910,6 @@ void unref_string( struct string *str ) {
 				break;
 			case FUNCTION:
 				dispose_function( ( struct function * ) str );
-				break;
-			case WORKER:
-				await_worker( ( struct worker * ) str, 1 );
-				dispose_worker( ( struct worker * ) str );
 				break;
 			case CUSTOM:
 				( ( struct custom_type * ) str )->dispose( str );
@@ -1499,6 +1531,10 @@ static enum result execute_if_statement( struct statement *this,
 	return ret;
 }
 
+static int is_worker( struct string *str ) {
+	return str && str->type == CUSTOM && ( ( struct custom_type * ) str )->dispose == dispose_worker;
+}
+
 static enum result execute_lock_statement( struct statement *this,
 	struct variables *vars, struct variable *result ) {
 	struct statement *stmt = ( ( struct block_statement * ) this )->if_block;
@@ -1507,7 +1543,7 @@ static enum result execute_lock_statement( struct statement *this,
 	char *locked;
 	enum result ret = this->source->evaluate( this->source, vars, &var );
 	if( ret ) {
-		if( var.string_value && var.string_value->type == WORKER ) {
+		if( is_worker( var.string_value ) ) {
 			work = ( struct worker * ) var.string_value;
 			locked = &work->locked;
 		} else {
@@ -5215,41 +5251,6 @@ static enum result evaluate_function_expression( struct expression *this,
 	return ret;
 }
 
-#if !defined( MULTI_THREAD )
-/* Add thread-safe custom statements and operators to the specified worker.
-   Returns 0 and assigns message on failure. */
-int initialize_worker( struct worker *work, char *message ) {
-	return 1;
-}
-
-/* Begin execution of the specified worker. Returns 0 on failure. */
-int start_worker( struct worker *work ) {
-	struct variables vars = { 0 };
-	struct function_expression expr = { 0 };
-	vars.exception = &work->exception;
-	expr.expr.line = work->env.entry_point->line;
-	expr.expr.parameters = work->parameters;
-	expr.function = work->env.entry_point;
-	work->ret = evaluate_call_expression( &expr.expr, &vars, &work->result );
-	return 1;
-}
-
-/* Lock the specified worker mutex. Returns 0 on failure. */
-int lock_worker( struct worker *work ) {
-	return 1;
-}
-
-/* Unlock the specified worker mutex. Returns 0 on failure. */
-int unlock_worker( struct worker *work ) {
-	return 1;
-}
-
-/* Wait for the completion of the specified worker.
-   If cancel is non-zero, the worker should be interrupted. */
-void await_worker( struct worker *work, int cancel ) {
-}
-#endif
-
 static enum result evaluate_worker_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	struct expression *parameter = this->parameters;
@@ -5271,7 +5272,7 @@ static enum result evaluate_worker_expression( struct expression *this,
 			if( message[ 0 ] == 0 ) {
 				work = parse_worker( elem, vars->func->file, message );
 				if( work ) {
-					result->string_value = &work->str;
+					result->string_value = &work->custom.str;
 				} else {
 					ret = throw( vars, this, 0, message );
 				}
@@ -5295,7 +5296,7 @@ static enum result evaluate_execute_expression( struct expression *this,
 	int count, idx;
 	enum result ret = parameter->evaluate( parameter, vars, &var );
 	if( ret ) {
-		if( var.string_value && var.string_value->type == WORKER ) {
+		if( is_worker( var.string_value ) ) {
 			work = ( struct worker * ) var.string_value;
 			parameter = parameter->next;
 			count = 0;
@@ -5374,7 +5375,7 @@ static enum result evaluate_result_expression( struct expression *this,
 	char *str;
 	enum result ret = parameter->evaluate( parameter, vars, &var );
 	if( ret ) {
-		if( var.string_value && var.string_value->type == WORKER ) {
+		if( is_worker( var.string_value ) ) {
 			work = ( struct worker * ) var.string_value;
 			if( work->locked == 0 ) {
 				vars->func->env->worker = work;
@@ -5751,15 +5752,16 @@ static int validate_decl( struct string *decl, int line, struct environment *env
 static struct worker* new_worker( char *message ) {
 	struct worker *work = calloc( 1, sizeof( struct worker ) );
 	if( work ) {
-		work->str.string = "[Worker]";
-		work->str.length = strlen( work->str.string );
-		work->str.reference_count = 1;
-		work->str.type = WORKER;
+		work->custom.dispose = dispose_worker;
+		work->custom.str.string = "[Worker]";
+		work->custom.str.length = strlen( work->custom.str.string );
+		work->custom.str.reference_count = 1;
+		work->custom.str.type = CUSTOM;
 		if( add_operators( operators, &work->env, message )
 		&& add_statements( statements, &work->env, message ) && initialize_worker( work, message ) ) {
 			work->env.worker = work;
 		} else {
-			unref_string( &work->str );
+			unref_string( &work->custom.str );
 			work = NULL;
 		}
 	} else {
@@ -5777,7 +5779,7 @@ static struct worker* parse_worker( struct element *elem, struct string *file, c
 		parent.env = &work->env;
 		parent.file = new_string_value( file->string );
 		if( parent.file ) {
-			func = parse_function( elem, work->str.string, &parent, message );
+			func = parse_function( elem, work->custom.str.string, &parent, message );
 			if( func ) {
 				if( add_decl( &func->str, elem->line, &work->env, message ) ) {
 					work->env.entry_point = func;
@@ -5805,7 +5807,7 @@ static struct worker* parse_worker( struct element *elem, struct string *file, c
 			strcpy( message, OUT_OF_MEMORY );
 		}
 		if( message[ 0 ] ) {
-			unref_string( &work->str );
+			unref_string( &work->custom.str );
 			work = NULL;
 		}
 	}
