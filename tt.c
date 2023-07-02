@@ -8,7 +8,7 @@
 #include "pthread.h"
 #endif
 
-#include "towntalk.h"
+#include "worker.h"
 
 #if defined( ASM_STATEMENT )
 #include "ttasm.h"
@@ -21,7 +21,7 @@ static void interrupt_handler( int signum ) {
 	env.interrupted = 1;
 	if( env.worker ) {
 		/* Terminate current worker. */
-		env.worker->env.interrupted = 1;
+		( ( struct worker * ) env.worker )->env.interrupted = 1;
 	}
 }
 
@@ -110,6 +110,7 @@ int main( int argc, char **argv ) {
 	file_name = argv[ 1 ];
 	/* Parse program file. */
 	if( initialize_environment( &env, message )
+	&& initialize_worker_extension( &env, message )
 #if defined( ASM_STATEMENT )
 	&& add_statements( asm_keyword, &env, message )
 #endif

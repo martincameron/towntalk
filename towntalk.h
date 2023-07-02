@@ -1,4 +1,7 @@
 
+#ifndef _TOWNTALK_H
+#define _TOWNTALK_H 1
+
 #include "stdlib.h"
 
 /* Towntalk (c)2023 Martin Cameron. */
@@ -72,25 +75,13 @@ struct environment {
 	struct string_list *decls_index[ 32 ];
 	struct string_list *globals, *globals_tail;
 	struct function *entry_point;
-	struct worker *worker;
+	struct custom_type *worker;
 };
 
 /* Reference-counted custom type. */
 struct custom_type {
 	struct string str;
 	void ( *dispose )( struct string *this );
-};
-
-/* Reference-counted worker function. */
-struct worker {
-	struct custom_type custom;
-	struct environment env;
-	struct variable *args, result, exception;
-	struct expression *parameters;
-	char locked, worker_locked;
-	struct array *strings;
-	void *thread, *mutex;
-	enum result ret;
 };
 
 /* Reference-counted structure declaration.*/
@@ -135,6 +126,12 @@ struct expression {
 		struct variables *vars, struct variable *result );
 };
 
+/* Expression with associated reference. */
+struct string_expression {
+	struct expression expr;
+	struct string *str;
+};
+
 /* Expression with associated function. */
 struct function_expression {
 	struct expression expr;
@@ -149,6 +146,12 @@ struct statement {
 		struct variables *vars, struct variable *result );
 	void ( *dispose )( struct statement *this );
 	struct statement *next;
+};
+
+/* Statement with associated statement lists. */
+struct block_statement {
+	struct statement stmt;
+	struct statement *if_block, *else_block;
 };
 
 /* Parser keyword. */
@@ -217,6 +220,13 @@ int initialize_globals( struct environment *env, struct variable *exception );
    This must be called for all variables assigned during program execution. */
 void dispose_variable( struct variable *var );
 
+/* As dispose_variable(), but do not assign null for performance reasons.
+   The resulting variable may contain an invalid pointer and should not be re-used. */
+void dispose_temporary( struct variable *var );
+
+/* Dispose a block statement. */
+void dispose_block_statement( struct statement *this );
+
 /* Deallocate the specified environment and all types referenced by it. */
 void dispose_environment( struct environment *env );
 
@@ -225,6 +235,33 @@ struct element* parse_expr_list_statement( struct element *elem,
 	struct function *func, struct variables *vars, struct statement *prev,
 	enum result ( *execute )( struct statement *this, struct variables *vars, struct variable *result ),
 	char *message );
+
+/* Parse statements from the specified element using the specified keyword index.
+   Writes up to 128 bytes to message on failure. */
+void parse_keywords_indexed( struct keyword **index, struct element *elem,
+	struct function *func, struct variables *vars, struct statement *stmt, char *message );
+
+/* Validate the specified element against the specified syntax string.
+   Returns the next element and writes up to 128 bytes to message on failure. */
+struct element* validate_syntax( char *syntax, struct element *elem,
+	struct element *key, struct environment *env, char *message );
+
+/* Add the specified global declaration to the specified environment. */
+struct string_list* add_decl( struct string *decl, int line, struct environment *env, char *message );
+
+/* Parse a single expression and append it to prev.
+   Returns the next element to be parsed and writes up to 128 bytes to message on failure. */
+struct element* parse_expression( struct element *elem,
+	struct function *func, struct variables *vars, struct expression *prev, char *message );
+
+/* Parse and return a new function reference with the specified name from the specified element.
+   The function body is not parsed by this function to allow for forward declarations.
+   Returns NULL and writes up to 128 bytes to message on failure. */
+struct function* parse_function( struct element *elem, char *name,
+	struct function *parent, char *message );
+	
+/* Parse the body of a function returned by parse_function(). */
+int parse_function_body( struct function *func, struct variables *vars, char *message );
 
 /* Allocate and return a string of the specified length and reference count of 1. */
 struct string* new_string( int length );
@@ -254,6 +291,17 @@ enum result throw_exit( struct variables *vars, int exit_code, const char *messa
    The encoded length is returned. */
 int write_byte_string( char *bytes, int count, char *output );
 
+/* Evaluate an integer value using the index field of the specified expression. */
+enum result evaluate_integer_literal_expression( struct expression *this,
+	struct variables *vars, struct variable *result );
+
+/* Evaluate a string reference associated with a string expression. */
+enum result evaluate_string_literal_expression( struct expression *this,
+	struct variables *vars, struct variable *result );
+
+/* Return a new string reference from the specified null-terminated character array. */
+struct string* new_string_value( char *source );
+
 /* Load the specified portion of a file into buffer (if not null).
    Returns the number of bytes available or read from offset.
    Returns -1 and writes message on failure. */
@@ -262,21 +310,4 @@ long load_file( char *file_name, char *buffer, long offset, long count, char *me
 /* Unpack a 32-bit big-endian integer from str at the specified index. */
 int unpack( char *str, int idx );
 
-/* Add thread-safe custom statements and operators to the specified worker.
-   Returns 0 and assigns message on failure. */
-int initialize_worker( struct worker *work, char *message );
-
-/* Begin execution of the specified worker. Returns 0 on failure. */
-int start_worker( struct worker *work );
-
-/* Lock the specified worker mutex. Returns 0 on failure. */
-int lock_worker( struct worker *work );
-
-/* Unlock the specified worker mutex. Returns 0 on failure. */
-int unlock_worker( struct worker *work );
-
-/* Wait for the completion of the specified worker.
-   If cancel is non-zero, the worker should be interrupted. */
-void await_worker( struct worker *work, int cancel );
-
-/* --- */
+#endif /* _TOWNTALK_H */

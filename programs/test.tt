@@ -884,7 +884,7 @@ function testworker() {
 	call assert_throws( "Worker locked", ${ () { var w = $worker( ${ () {} } ); lock w { call $result( w ); } } } );
 	call assert_throws( "Worker exited", ${ () { call $result( $execute( $worker( ${ () { exit 0; } } ) ) ); } } );
 	call assert_throws( "Values of this type", ${ () { call $result( $execute( $worker( ${ () { return $array( 0 ); } } ) ) ); } } );
-	call assert_throws( "Operation", ${ () { call $result( $execute( $worker( ${ () { call $worker( 0 ); } } ) ) ); } } );
+	call assert_throws( "Unhandled", ${ () { call $result( $execute( $worker( ${ () { call $worker( 0 ); } } ) ) ); } } );
 }
 
 function testthiscall() {

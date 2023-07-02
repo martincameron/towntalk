@@ -11,7 +11,7 @@
 #include "alsa/asoundlib.h"
 #endif
 
-#include "towntalk.h"
+#include "worker.h"
 
 #if defined( ASM_STATEMENT )
 #include "ttasm.h"
@@ -263,7 +263,7 @@ static void signal_handler( int signum ) {
 	fxenv.env.interrupted = 1;
 	if( fxenv.env.worker ) {
 		/* Terminate current worker. */
-		fxenv.env.worker->env.interrupted = 1;
+		( ( struct worker * ) fxenv.env.worker )->env.interrupted = 1;
 	}
 	if( signum == SIGINT && interrupt_handler ) {
 		interrupt_handler( SIGINT );
@@ -1750,6 +1750,7 @@ static int initialize_fxenvironment( struct fxenvironment *fxenv, char *message 
 	&& add_constants( fxconstants, &fxenv->env, message )
 	&& add_event_constants( fxenv, message )
 	&& add_statements( fxstatements, &fxenv->env, message )
+	&& initialize_worker_extension( &fxenv->env, message )
 #if defined( ASM_STATEMENT )
 	&& add_statements( asm_keyword, &fxenv->env, message )
 #endif
