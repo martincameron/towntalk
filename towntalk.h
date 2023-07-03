@@ -310,4 +310,16 @@ long load_file( char *file_name, char *buffer, long offset, long count, char *me
 /* Unpack a 32-bit big-endian integer from str at the specified index. */
 int unpack( char *str, int idx );
 
+/* Return OKAY if var contains an instance of the specified structure.
+   If vars is non-null a suitable exception is thrown for the specified source expression. */
+enum result is_instance( struct variable *var, struct structure *type, struct variables *vars, struct expression *source );
+
+/* Evaluate the specified expression into the specified result variable.
+   Throws an exception if the value is not a reference. */
+enum result evaluate_string( struct expression *expr, struct variables *vars, struct variable *result );
+
+/* Evaluate the specified expression into the specified result variable.
+   Throws an exception if the value is not an element reference or null (if allowed). */
+enum result evaluate_element( struct expression *expr, struct variables *vars, struct variable *result, int allownull );
+
 #endif /* _TOWNTALK_H */

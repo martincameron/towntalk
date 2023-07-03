@@ -1320,16 +1320,52 @@ void dispose_block_statement( struct statement *this ) {
 	free( this );
 }
 
-static struct structure* instance_of( struct string *str, struct structure *struc ) {
-	struct structure *structure;
-	if( str && str->type == ARRAY ) {
-		structure = ( ( struct array * ) str )->structure;
-		while( struc != structure && structure ) {
-			structure = structure->super;
+/* Return OKAY if var contains an instance of the specified structure.
+   If vars is non-null a suitable exception is thrown for the specified source expression. */
+enum result is_instance( struct variable *var, struct structure *type, struct variables *vars, struct expression *source ) {
+	char msg[ 128 ];
+	struct structure *struc;
+	if( var->string_value && var->string_value->type == ARRAY ) {
+		struc = ( ( struct array * ) var->string_value )->structure;
+		while( struc ) {
+			if( type == struc ) {
+				return OKAY;
+			}
+			struc = struc->super;
 		}
-		return structure;
 	}
-	return NULL;
+	if( vars ) {
+		sprintf( msg, "Not an instance of '%.64s'.", type->str.string );
+		return throw( vars, source, var->integer_value, msg );
+	}
+	return EXCEPTION;
+}
+
+/* Evaluate the specified expression into the specified result variable.
+   Throws an exception if the value is not a reference. */
+enum result evaluate_string( struct expression *expr, struct variables *vars, struct variable *result ) {
+	enum result ret = expr->evaluate( expr, vars, result );
+	if( ret && result->string_value == NULL ) {
+		ret = throw( vars, expr, 0, "Not a string." );
+	}
+	return ret;
+}
+
+/* Evaluate the specified expression into the specified result variable.
+   Throws an exception if the value is not an element reference or null (if allowed). */
+enum result evaluate_element( struct expression *expr, struct variables *vars, struct variable *result, int allow_null ) {
+	enum result ret = expr->evaluate( expr, vars, result );
+	if( ret ) {
+		if( result->string_value ) {
+			if( result->string_value->type == ELEMENT ) {
+				return ret;
+			}
+		} else if( allow_null && !result->integer_value ) {
+			return ret;
+		}
+		ret = throw( vars, expr, 0, "Not an element." );
+	}
+	return ret;
 }
 
 static enum result execute_statements( struct statement *stmt, struct variables *vars, struct variable *result ) {
@@ -1427,7 +1463,7 @@ static enum result execute_try_catch_statement( struct statement *this,
 			exception_var = exception_var->next;
 		}
 		if( is_exit( try_vars.exception )
-		|| ( exception_var->type && !instance_of( try_vars.exception->string_value, exception_var->type ) ) ) {
+		|| ( exception_var->type && !is_instance( try_vars.exception, exception_var->type, NULL, NULL ) ) ) {
 			assign_variable( try_vars.exception, vars->exception );
 		} else {
 			return execute_statements( ( ( struct block_statement * ) this )->else_block, vars, result );
@@ -1576,7 +1612,8 @@ static enum result execute_struct_assignment( struct statement *this,
 	struct variable obj = { 0, NULL }, var = { 0, NULL };
 	enum result ret = destination->evaluate( destination, vars, &obj );
 	if( ret ) {
-		if( instance_of( obj.string_value, ( ( struct structure_statement * ) this )->structure ) ) {
+		ret = is_instance( &obj, ( ( struct structure_statement * ) this )->structure, vars, destination );
+		if( ret ) {
 			arr = ( struct array * ) obj.string_value;
 			ret = this->source->evaluate( this->source, vars, &var );
 			if( ret ) {
@@ -1590,8 +1627,6 @@ static enum result execute_struct_assignment( struct statement *this,
 					dispose_temporary( &var );
 				}
 			}
-		} else {
-			ret = throw( vars, destination, obj.integer_value, "Not an instance of specified structure." );
 		}
 		dispose_temporary( &obj );
 	}
@@ -1669,21 +1704,15 @@ static enum result execute_save_statement( struct statement *this,
 	struct variables *vars, struct variable *result ) {
 	int count;
 	char message[ 64 ];
-	struct string *sval, *fval;
 	struct variable str = { 0, NULL }, file = { 0, NULL };
-	enum result ret = this->source->evaluate( this->source, vars, &str );
+	enum result ret = evaluate_string( this->source, vars, &str );
 	if( ret ) {
-		ret = this->source->next->evaluate( this->source->next, vars, &file );
+		ret = evaluate_string( this->source->next, vars, &file );
 		if( ret ) {
-			sval = str.string_value;
-			fval = file.string_value;
-			if( sval && sval->string && fval && fval->string ) {
-				count = save_file( fval->string, sval->string, sval->length, this->local, message );
-				if( count != sval->length ) {
-					ret = throw( vars, this->source, 0, message );
-				}
-			} else {
-				ret = throw( vars, this->source, 0, "Not a string." );
+			count = save_file( file.string_value->string,
+				str.string_value->string, str.string_value->length, this->local, message );
+			if( count != str.string_value->length ) {
+				ret = throw( vars, this->source, 0, message );
 			}
 			dispose_temporary( &file );
 		}
@@ -1774,7 +1803,8 @@ static enum result evaluate_thiscall_expression( struct expression *this,
 	struct structure *struc = ( struct structure * ) ( ( struct string_expression * ) this )->str;
 	enum result ret = this->parameters->evaluate( this->parameters, vars, &obj );
 	if( ret ) {
-		if( instance_of( obj.string_value, struc ) ) {
+		ret = is_instance( &obj, struc, vars, this );
+		if( ret ) {
 			arr = ( struct array * ) obj.string_value;
 			idx = this->index >> 8;
 			count = this->index & 0xFF;
@@ -1798,8 +1828,6 @@ static enum result evaluate_thiscall_expression( struct expression *this,
 			} else {
 				ret = throw( vars, this, arr->integer_values[ idx ], "Not a function reference." );
 			}
-		} else {
-			ret = throw( vars, this, obj.integer_value, "Not an instance of specified structure." );
 		}
 		dispose_temporary( &obj );
 	}
@@ -1866,7 +1894,7 @@ static enum result evaluate_instanceof_expression( struct expression *this,
 		ret = parameter->next->evaluate( parameter->next, vars, &struc );
 		if( ret ) {
 			if( struc.string_value && struc.string_value->type == STRUCT ) {
-				if( instance_of( arr.string_value, ( struct structure * ) struc.string_value ) ) {
+				if( is_instance( &arr, ( struct structure * ) struc.string_value, NULL, NULL ) ) {
 					assign_variable( &arr, result );
 				}
 			} else {
@@ -1913,15 +1941,14 @@ static enum result evaluate_member_expression( struct expression *this,
 	struct structure *struc = ( struct structure * ) ( ( struct string_expression * ) this )->str;
 	enum result ret = parameter->evaluate( parameter, vars, &obj );
 	if( ret ) {
-		if( instance_of( obj.string_value, struc ) ) {
+		ret = is_instance( &obj, struc, vars, this );
+		if( ret ) {
 			arr = ( struct array * ) obj.string_value;
 			result->integer_value = arr->integer_values[ this->index ];
 			if( arr->string_values && arr->string_values[ this->index ] ) {
 				result->string_value = arr->string_values[ this->index ];
 				result->string_value->reference_count++;
 			}
-		} else {
-			ret = throw( vars, this, obj.integer_value, "Not an instance of specified structure." );
 		}
 		dispose_temporary( &obj );
 	}
@@ -2389,18 +2416,14 @@ static enum result evaluate_int_expression( struct expression *this,
 	int val;
 	char *end;
 	struct variable str = { 0, NULL };
-	enum result ret = this->parameters->evaluate( this->parameters, vars, &str );
+	enum result ret = evaluate_string( this->parameters, vars, &str );
 	if( ret ) {
-		if( str.string_value ) {
-			errno = 0;
-			val = ( int ) strtoul( str.string_value->string, &end, 0 );
-			if( end[ 0 ] || errno ) {
-				ret = throw( vars, this, 0, "Unable to convert string to integer." );
-			} else {
-				result->integer_value = val;
-			}
+		errno = 0;
+		val = ( int ) strtoul( str.string_value->string, &end, 0 );
+		if( end[ 0 ] || errno ) {
+			ret = throw( vars, this, 0, "Unable to convert string to integer." );
 		} else {
-			ret = throw( vars, this, 0, "Not a string." );
+			result->integer_value = val;
 		}
 		dispose_temporary( &str );
 	}
@@ -2569,50 +2592,46 @@ static enum result evaluate_load_expression( struct expression *this,
 	struct string *str;
 	struct expression *parameter = this->parameters;
 	struct variable file = { 0, NULL }, offset = { 0, NULL }, count = { -1, NULL };
-	enum result ret = parameter->evaluate( parameter, vars, &file );
+	enum result ret = evaluate_string( parameter, vars, &file );
 	if( ret ) {
-		if( file.string_value ) {
+		parameter = parameter->next;
+		if( parameter ) {
+			ret = parameter->evaluate( parameter, vars, &offset );
 			parameter = parameter->next;
-			if( parameter ) {
-				ret = parameter->evaluate( parameter, vars, &offset );
-				parameter = parameter->next;
+		}
+		if( ret && parameter ) {
+			ret = parameter->evaluate( parameter, vars, &count );
+			if( ret && parameter->next ) {
+				ret = throw( vars, this, 0, "Too many parameters." );
 			}
-			if( ret && parameter ) {
-				ret = parameter->evaluate( parameter, vars, &count );
-				if( ret && parameter->next ) {
-					ret = throw( vars, this, 0, "Too many parameters." );
+		}
+		if( ret ) {
+			len = load_file( file.string_value->string, NULL, offset.integer_value, 0, message );
+			if( len >= 0 ) {
+				if( count.integer_value >= 0 && count.integer_value < len ) {
+					len = count.integer_value;
 				}
-			}
-			if( ret ) {
-				len = load_file( file.string_value->string, NULL, offset.integer_value, 0, message );
-				if( len >= 0 ) {
-					if( count.integer_value >= 0 && count.integer_value < len ) {
-						len = count.integer_value;
-					}
-					if( len < MAX_INTEGER ) {
-						str = new_string( len );
-						if( str ) {
-							len = load_file( file.string_value->string, str->string, offset.integer_value, len, message );
-							if( len >= 0 ) {
-								str->length = len;
-								str->string[ len ] = 0;
-								result->string_value = str;
-							} else {
-								free( str );
-								ret = throw( vars, this, 0, message );
-							}
+				if( len < MAX_INTEGER ) {
+					str = new_string( len );
+					if( str ) {
+						len = load_file( file.string_value->string, str->string, offset.integer_value, len, message );
+						if( len >= 0 ) {
+							str->length = len;
+							str->string[ len ] = 0;
+							result->string_value = str;
 						} else {
-							ret = throw( vars, this, 0, OUT_OF_MEMORY );
+							free( str );
+							ret = throw( vars, this, 0, message );
 						}
 					} else {
-						ret = throw( vars, this, 0, "File too large." );
+						ret = throw( vars, this, 0, OUT_OF_MEMORY );
 					}
 				} else {
-					ret = throw( vars, this, 0, message );
+					ret = throw( vars, this, 0, "File too large." );
 				}
+			} else {
+				ret = throw( vars, this, 0, message );
 			}
-		} else {
-			ret = throw( vars, this, 0, "Not a string." );
 		}
 		dispose_temporary( &file );
 		dispose_temporary( &offset );
@@ -2626,21 +2645,17 @@ static enum result evaluate_flen_expression( struct expression *this,
 	long len;
 	char message[ 64 ];
 	struct variable file = { 0, NULL };
-	enum result ret = this->parameters->evaluate( this->parameters, vars, &file );
+	enum result ret = evaluate_string( this->parameters, vars, &file );
 	if( ret ) {
-		if( file.string_value ) {
-			len = load_file( file.string_value->string, NULL, 0, 0, message );
-			if( len >= 0 ) {
-				if( len < MAX_INTEGER ) {
-					result->integer_value = len;
-				} else {
-					ret = throw( vars, this, 0, "File too large." );
-				}
+		len = load_file( file.string_value->string, NULL, 0, 0, message );
+		if( len >= 0 ) {
+			if( len < MAX_INTEGER ) {
+				result->integer_value = len;
 			} else {
-				ret = throw( vars, this, 0, message );
+				ret = throw( vars, this, 0, "File too large." );
 			}
 		} else {
-			ret = throw( vars, this, 0, "Not a string." );
+			ret = throw( vars, this, 0, message );
 		}
 		dispose_temporary( &file );
 	}
@@ -2952,21 +2967,17 @@ static enum result evaluate_eval_expression( struct expression *this,
 	struct variable var = { 0, NULL };
 	struct expression prev;
 	char msg[ 128 ] = "";
-	enum result ret = this->parameters->evaluate( this->parameters, vars, &var );
+	enum result ret = evaluate_element( this->parameters, vars, &var, 0 );
 	if( ret ) {
-		if( var.string_value && var.string_value->type == ELEMENT ) {
-			prev.next = NULL;
-			parse_expression( ( struct element * ) var.string_value, vars->func, NULL, &prev, msg );
-			if( msg[ 0 ] == 0 ) {
-				expr_set_line( prev.next, this->line );
-				ret = prev.next->evaluate( prev.next, vars, result );
-			} else {
-				ret = throw( vars, this, 0, msg );
-			}
-			dispose_expressions( prev.next );
+		prev.next = NULL;
+		parse_expression( ( struct element * ) var.string_value, vars->func, NULL, &prev, msg );
+		if( msg[ 0 ] == 0 ) {
+			expr_set_line( prev.next, this->line );
+			ret = prev.next->evaluate( prev.next, vars, result );
 		} else {
-			ret = throw( vars, this, var.integer_value, "Not an element." );
+			ret = throw( vars, this, 0, msg );
 		}
+		dispose_expressions( prev.next );
 		dispose_temporary( &var );
 	}
 	return ret;
@@ -3031,16 +3042,12 @@ static enum result evaluate_next_expression( struct expression *this,
 	struct expression *parameter = this->parameters;
 	struct variable prev = { 0, NULL };
 	struct element *next;
-	enum result ret = parameter->evaluate( parameter, vars, &prev );
+	enum result ret = evaluate_element( parameter, vars, &prev, 0 );
 	if( ret ) {
-		if( prev.string_value && prev.string_value->type == ELEMENT ) {
-			next = ( ( struct element * ) prev.string_value )->next;
-			if( next ) {
-				result->string_value = &next->str;
-				next->str.reference_count++;
-			}
-		} else {
-			ret = throw( vars, this, 0, "Not an element." );
+		next = ( ( struct element * ) prev.string_value )->next;
+		if( next ) {
+			result->string_value = &next->str;
+			next->str.reference_count++;
 		}
 		dispose_temporary( &prev );
 	}
@@ -3052,16 +3059,12 @@ static enum result evaluate_child_expression( struct expression *this,
 	struct expression *parameter = this->parameters;
 	struct variable parent = { 0, NULL };
 	struct element *child;
-	enum result ret = parameter->evaluate( parameter, vars, &parent );
+	enum result ret = evaluate_element( parameter, vars, &parent, 0 );
 	if( ret ) {
-		if( parent.string_value && parent.string_value->type == ELEMENT ) {
-			child = ( ( struct element * ) parent.string_value )->child;
-			if( child ) {
-				result->string_value = &child->str;
-				child->str.reference_count++;
-			}
-		} else {
-			ret = throw( vars, this, 0, "Not an element." );
+		child = ( ( struct element * ) parent.string_value )->child;
+		if( child ) {
+			result->string_value = &child->str;
+			child->str.reference_count++;
 		}
 		dispose_temporary( &parent );
 	}
@@ -3073,67 +3076,53 @@ static enum result evaluate_elem_expression( struct expression *this,
 	struct expression *parameter = this->parameters;
 	struct variable elem = { 0, NULL }, child = { 0, NULL }, next = { 0, NULL };
 	struct element *value;
-	enum result ret = parameter->evaluate( parameter, vars, &elem );
+	enum result ret = evaluate_element( parameter, vars, &elem, 0 );
 	if( ret ) {
-		if( elem.string_value && elem.string_value->type == ELEMENT ) {
-			parameter = parameter->next;
-			ret = parameter->evaluate( parameter, vars, &child );
-			if( ret ) {
-				if( ( child.string_value && child.string_value->type == ELEMENT )
-				|| !( child.string_value || child.integer_value ) ) {
-					if( !child.string_value || strchr( "([{", elem.string_value->string[ 0 ] ) ) {
-						parameter = parameter->next;
-						ret = parameter->evaluate( parameter, vars, &next );
-						if( ret ) {
-							if( ( next.string_value && next.string_value->type == ELEMENT )
-							|| !( next.string_value || next.integer_value ) ) {
-								if( elem.string_value->reference_count > 1 ) {
-									value = new_element( elem.string_value->length );
-									if( value ) {
-										value->line = ( ( struct element * ) elem.string_value )->line;
-										memcpy( value->str.string, elem.string_value->string,
-											sizeof( char ) * elem.string_value->length );
-									} else {
-										ret = throw( vars, this, 0, OUT_OF_MEMORY );
-									}
-								} else { /* Re-use element. */
-									value = ( struct element * ) elem.string_value;
-									if( value->child ) {
-										unref_string( &value->child->str );
-										value->child = NULL;
-									}
-									if( value->next ) {
-										unref_string( &value->next->str );
-										value->next = NULL;
-									}
-									value->str.reference_count++;
-								}
-								if( ret ) {
-									if( child.string_value ) {
-										value->child = ( struct element * ) child.string_value;
-										child.string_value->reference_count++;
-									}
-									if( next.string_value ) {
-										value->next = ( struct element * ) next.string_value;
-										next.string_value->reference_count++;
-									}
-									result->string_value = &value->str;
-								}
-							} else {
-								ret = throw( vars, this, next.integer_value, "Not an element." );
-							}
-							dispose_temporary( &next );
+		parameter = parameter->next;
+		ret = evaluate_element( parameter, vars, &child, 1 );
+		if( ret ) {
+			if( !child.string_value || strchr( "([{", elem.string_value->string[ 0 ] ) ) {
+				parameter = parameter->next;
+				ret = evaluate_element( parameter, vars, &next, 1 );
+				if( ret ) {
+					if( elem.string_value->reference_count > 1 ) {
+						value = new_element( elem.string_value->length );
+						if( value ) {
+							value->line = ( ( struct element * ) elem.string_value )->line;
+							memcpy( value->str.string, elem.string_value->string,
+								sizeof( char ) * elem.string_value->length );
+						} else {
+							ret = throw( vars, this, 0, OUT_OF_MEMORY );
 						}
-					} else {
-						ret = throw( vars, this, 0, "Parent elements must have value '()', '[]' or '{}'." );
+					} else { /* Re-use element. */
+						value = ( struct element * ) elem.string_value;
+						if( value->child ) {
+							unref_string( &value->child->str );
+							value->child = NULL;
+						}
+						if( value->next ) {
+							unref_string( &value->next->str );
+							value->next = NULL;
+						}
+						value->str.reference_count++;
 					}
-				} else {
-					ret = throw( vars, this, child.integer_value, "Not an element." );
+					if( ret ) {
+						if( child.string_value ) {
+							value->child = ( struct element * ) child.string_value;
+							child.string_value->reference_count++;
+						}
+						if( next.string_value ) {
+							value->next = ( struct element * ) next.string_value;
+							next.string_value->reference_count++;
+						}
+						result->string_value = &value->str;
+					}
+					dispose_temporary( &next );
 				}
-				dispose_temporary( &child );
+			} else {
+				ret = throw( vars, this, 0, "Parent elements must have value '()', '[]' or '{}'." );
 			}
-		} else {
-			ret = throw( vars, this, elem.integer_value, "Not an element." );
+			dispose_temporary( &child );
 		}
 		dispose_temporary( &elem );
 	}
@@ -3146,17 +3135,13 @@ static enum result evaluate_parse_expression( struct expression *this,
 	struct variable str = { 0, NULL };
 	struct element *elem;
 	char message[ 128 ] = "";
-	enum result ret = parameter->evaluate( parameter, vars, &str );
+	enum result ret = evaluate_string( parameter, vars, &str );
 	if( ret ) {
-		if( str.string_value ) {
-			elem = parse_element( str.string_value->string, message );
-			if( message[ 0 ] == 0 ) {
-				result->string_value = &elem->str;
-			} else {
-				ret = throw( vars, this, 0, message );
-			}
+		elem = parse_element( str.string_value->string, message );
+		if( message[ 0 ] == 0 ) {
+			result->string_value = &elem->str;
 		} else {
-			ret = throw( vars, this, 0, "Not a string." );
+			ret = throw( vars, this, 0, message );
 		}
 		dispose_temporary( &str );
 	}
@@ -3169,23 +3154,19 @@ static enum result evaluate_unparse_expression( struct expression *this,
 	struct string *str;
 	struct expression *parameter = this->parameters;
 	struct variable elem = { 0, NULL };
-	enum result ret = parameter->evaluate( parameter, vars, &elem );
+	enum result ret = evaluate_element( parameter, vars, &elem, 0 );
 	if( ret ) {
-		if( elem.string_value && elem.string_value->type == ELEMENT ) {
-			len = write_element( ( struct element * ) elem.string_value, NULL );
-			if( len >= 0 ) {
-				str = new_string( len );
-				if( str ) {
-					write_element( ( struct element * ) elem.string_value, str->string );
-					result->string_value = str;
-				} else {
-					ret = throw( vars, this, 0, OUT_OF_MEMORY );
-				}
+		len = write_element( ( struct element * ) elem.string_value, NULL );
+		if( len >= 0 ) {
+			str = new_string( len );
+			if( str ) {
+				write_element( ( struct element * ) elem.string_value, str->string );
+				result->string_value = str;
 			} else {
-				ret = throw( vars, this, 0, "String too large." );
+				ret = throw( vars, this, 0, OUT_OF_MEMORY );
 			}
 		} else {
-			ret = throw( vars, this, 0, "Not an element." );
+			ret = throw( vars, this, 0, "String too large." );
 		}
 		dispose_temporary( &elem );
 	}
@@ -3198,23 +3179,19 @@ static enum result evaluate_quote_expression( struct expression *this,
 	struct expression *parameter = this->parameters;
 	struct variable var = { 0, NULL };
 	struct string *str;
-	enum result ret = parameter->evaluate( parameter, vars, &var );
+	enum result ret = evaluate_string( parameter, vars, &var );
 	if( ret ) {
-		if( var.string_value ) {
-			length = write_byte_string( var.string_value->string, var.string_value->length, NULL );
-			if( length >= 0 ) {
-				str = new_string( length );
-				if( str ) {
-					write_byte_string( var.string_value->string, var.string_value->length, str->string );
-					result->string_value = str;
-				} else {
-					ret = throw( vars, this, 0, OUT_OF_MEMORY );
-				}
+		length = write_byte_string( var.string_value->string, var.string_value->length, NULL );
+		if( length >= 0 ) {
+			str = new_string( length );
+			if( str ) {
+				write_byte_string( var.string_value->string, var.string_value->length, str->string );
+				result->string_value = str;
 			} else {
-				ret = throw( vars, this, 0, "String too large." );
+				ret = throw( vars, this, 0, OUT_OF_MEMORY );
 			}
 		} else {
-			ret = throw( vars, this, 0, "Not a string." );
+			ret = throw( vars, this, 0, "String too large." );
 		}
 		dispose_temporary( &var );
 	}
@@ -3226,17 +3203,13 @@ static enum result evaluate_unquote_expression( struct expression *this,
 	struct expression *parameter = this->parameters;
 	struct variable var = { 0, NULL };
 	struct string *str;
-	enum result ret = parameter->evaluate( parameter, vars, &var );
+	enum result ret = evaluate_string( parameter, vars, &var );
 	if( ret ) {
-		if( var.string_value ) {
-			str = new_string_literal( var.string_value->string );
-			if( str ) {
-				result->string_value = str;
-			} else {
-				ret = throw( vars, this, 0, OUT_OF_MEMORY );
-			}
+		str = new_string_literal( var.string_value->string );
+		if( str ) {
+			result->string_value = str;
 		} else {
-			ret = throw( vars, this, 0, "Not a string." );
+			ret = throw( vars, this, 0, OUT_OF_MEMORY );
 		}
 		dispose_temporary( &var );
 	}
@@ -3247,13 +3220,9 @@ static enum result evaluate_line_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	struct expression *parameter = this->parameters;
 	struct variable elem = { 0, NULL };
-	enum result ret = parameter->evaluate( parameter, vars, &elem );
+	enum result ret = evaluate_element( parameter, vars, &elem, 0 );
 	if( ret ) {
-		if( elem.string_value && elem.string_value->type == ELEMENT ) {
-			result->integer_value = ( ( struct element * ) elem.string_value )->line;
-		} else {
-			ret = throw( vars, this, 0, "Not an element." );
-		}
+		result->integer_value = ( ( struct element * ) elem.string_value )->line;
 		dispose_temporary( &elem );
 	}
 	return ret;
@@ -3332,25 +3301,21 @@ static enum result evaluate_unpack_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	struct expression *parameter = this->parameters;
 	struct variable str = { 0, NULL }, idx = { 0, NULL };
-	enum result ret = parameter->evaluate( parameter, vars, &str );
+	enum result ret = evaluate_string( parameter, vars, &str );
 	if( ret ) {
-		if( str.string_value ) {
-			parameter = parameter->next;
-			if( parameter->evaluate == evaluate_local ) {
-				idx.integer_value = vars->locals[ parameter->index ].integer_value;
-			} else {
-				ret = parameter->evaluate( parameter, vars, &idx );
-			}
-			if( ret ) {
-				if( idx.integer_value >= 0 && idx.integer_value * 4 < str.string_value->length - 3 ) {
-					result->integer_value = unpack( str.string_value->string, idx.integer_value );
-				} else {
-					ret = throw( vars, this, idx.integer_value, "String index out of bounds." );
-				}
-				dispose_temporary( &idx );
-			}
+		parameter = parameter->next;
+		if( parameter->evaluate == evaluate_local ) {
+			idx.integer_value = vars->locals[ parameter->index ].integer_value;
 		} else {
-			ret = throw( vars, this, 0, "Not a string." );
+			ret = parameter->evaluate( parameter, vars, &idx );
+		}
+		if( ret ) {
+			if( idx.integer_value >= 0 && idx.integer_value * 4 < str.string_value->length - 3 ) {
+				result->integer_value = unpack( str.string_value->string, idx.integer_value );
+			} else {
+				ret = throw( vars, this, idx.integer_value, "String index out of bounds." );
+			}
+			dispose_temporary( &idx );
 		}
 		dispose_temporary( &str );
 	}
@@ -3403,28 +3368,24 @@ static enum result evaluate_stridx_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	struct expression *parameter = this->parameters;
 	struct variable str = { 0, NULL }, sep = { 0, NULL }, idx = { 0, NULL };
-	enum result ret = parameter->evaluate( parameter, vars, &str );
+	enum result ret = evaluate_string( parameter, vars, &str );
 	if( ret ) {
 		parameter = parameter->next;
-		ret = parameter->evaluate( parameter, vars, &sep );
+		ret = evaluate_string( parameter, vars, &sep );
 		if( ret ) {
-			if( str.string_value && sep.string_value ) {
-				if( parameter->next ) {
-					parameter = parameter->next;
-					ret = parameter->evaluate( parameter, vars, &idx );
-				} else {
-					idx.integer_value = -1;
-				}
-				if( ret ) {
-					if( str.string_value->length > 0 && str.string_value->length > idx.integer_value ) {
-						result->integer_value = str_idx( str.string_value->string, sep.string_value->string, idx.integer_value );
-					} else {
-						ret = throw( vars, this, idx.integer_value, "String index out of bounds." );
-					}
-					dispose_temporary( &idx );
-				}
+			parameter = parameter->next;
+			if( parameter ) {
+				ret = parameter->evaluate( parameter, vars, &idx );
 			} else {
-				ret = throw( vars, this, 0, "Not a string." );
+				idx.integer_value = -1;
+			}
+			if( ret ) {
+				if( str.string_value->length > 0 && str.string_value->length > idx.integer_value ) {
+					result->integer_value = str_idx( str.string_value->string, sep.string_value->string, idx.integer_value );
+				} else {
+					ret = throw( vars, this, idx.integer_value, "String index out of bounds." );
+				}
+				dispose_temporary( &idx );
 			}
 			dispose_temporary( &sep );
 		}
@@ -5065,33 +5026,29 @@ static enum result evaluate_function_expression( struct expression *this,
 	struct function *func;
 	struct element *elem, key = { { 1, "$function", 9, ELEMENT }, NULL, NULL, 0 };
 	char message[ 128 ] = "";
-	enum result ret = parameter->evaluate( parameter, vars, &var );
+	enum result ret = evaluate_element( parameter, vars, &var, 0 );
 	if( ret ) {
-		if( var.string_value && var.string_value->type == ELEMENT ) {
-			elem = ( struct element * ) var.string_value;
-			key.line = this->line;
-			validate_syntax( "({0", elem, &key, vars->func->env, message );
-			if( message[ 0 ] == 0 ) {
-				func = parse_function( elem, NULL, vars->func, message );
-				if( func ) {
-					if( parameter->evaluate != evaluate_string_literal_expression ) {
-						unref_string( func->file );
-						func->file = &func->str;
-					}
-					if( parse_function_body( func, vars, message ) ) {
-						result->string_value = &func->str;
-					} else {
-						unref_string( &func->str );
-						ret = throw( vars, this, 0, message );
-					}
+		elem = ( struct element * ) var.string_value;
+		key.line = this->line;
+		validate_syntax( "({0", elem, &key, vars->func->env, message );
+		if( message[ 0 ] == 0 ) {
+			func = parse_function( elem, NULL, vars->func, message );
+			if( func ) {
+				if( parameter->evaluate != evaluate_string_literal_expression ) {
+					unref_string( func->file );
+					func->file = &func->str;
+				}
+				if( parse_function_body( func, vars, message ) ) {
+					result->string_value = &func->str;
 				} else {
+					unref_string( &func->str );
 					ret = throw( vars, this, 0, message );
 				}
 			} else {
 				ret = throw( vars, this, 0, message );
 			}
 		} else {
-			ret = throw( vars, this, 0, "Not an element." );
+			ret = throw( vars, this, 0, message );
 		}
 		dispose_temporary( &var );
 	}
