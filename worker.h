@@ -10,7 +10,7 @@
 
 /* Reference-counted worker function. */
 struct worker {
-	struct custom_type custom;
+	struct custom custom;
 	struct environment env;
 	struct variable *args, result, exception;
 	struct expression *parameters;

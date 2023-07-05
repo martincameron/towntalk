@@ -72,9 +72,9 @@ static void dispose_worker( struct string *str ) {
 	free( work );
 }
 
-static int is_worker( struct string *str ) {
-	return str && str->type == CUSTOM && ( ( struct custom_type * ) str )->dispose == dispose_worker;
-}
+static struct custom_type worker_type = {
+	"Worker", NULL, NULL, dispose_worker
+};
 
 static enum result execute_lock_statement( struct statement *this,
 	struct variables *vars, struct variable *result ) {
@@ -84,7 +84,7 @@ static enum result execute_lock_statement( struct statement *this,
 	char *locked = NULL;
 	enum result ret = this->source->evaluate( this->source, vars, &var );
 	if( ret ) {
-		if( is_worker( var.string_value ) ) {
+		if( is_custom_instance( var.string_value, &worker_type ) ) {
 			work = ( struct worker * ) var.string_value;
 			locked = &work->locked;
 		} else if( work ) {
@@ -242,72 +242,68 @@ enum result evaluate_execute_expression( struct expression *this,
 	struct worker *work;
 	struct string *str;
 	int count, idx;
-	enum result ret = parameter->evaluate( parameter, vars, &var );
+	enum result ret = evaluate_custom( parameter, &worker_type, vars, &var );
 	if( ret ) {
-		if( is_worker( var.string_value ) ) {
-			work = ( struct worker * ) var.string_value;
+		work = ( struct worker * ) var.string_value;
+		parameter = parameter->next;
+		count = 0;
+		while( parameter ) {
+			count++;
 			parameter = parameter->next;
-			count = 0;
-			while( parameter ) {
-				count++;
-				parameter = parameter->next;
-			}
-			if( work->env.entry_point->num_parameters == count ) {
-				if( work->locked == 0 ) {
-					await_worker( work, 1 );
-					idx = 0;
-					parameter = this->parameters->next;
-					while( parameter && ret ) {
-						dispose_variable( &work->args[ idx ] );
-						ret = parameter->evaluate( parameter, vars, &work->args[ idx ] );
-						if( ret ) {
-							work->parameters[ idx ].index = work->args[ idx ].integer_value;
-							str = work->args[ idx ].string_value;
-							if( str ) {
-								if( str->type == STRING || ( str->type == ARRAY && !( ( struct array * ) str )->string_values ) ) {
-									work->strings[ idx ].str.reference_count = 1;
-									work->strings[ idx ].str.type = str->type;
-									work->strings[ idx ].str.string = str->string;
-									work->strings[ idx ].str.length = str->length;
-									if( str->type == ARRAY ) {
-										work->strings[ idx ].integer_values = ( ( struct array * ) str )->integer_values;
-										work->strings[ idx ].length = ( ( struct array * ) str )->length;
-									}
-									( ( struct string_expression * ) work->parameters )[ idx ].str = &work->strings[ idx ].str;
-									work->parameters[ idx ].evaluate = evaluate_string_literal_expression;
-								} else {
-									ret = throw( vars, this, 0, "Values of this type cannot be passed to workers." );
-								}
-							} else {
-								( ( struct string_expression * ) work->parameters )[ idx ].str = NULL;
-								work->parameters[ idx ].evaluate = evaluate_integer_literal_expression;
-							}
-						}
-						parameter = parameter->next;
-						idx++;
-					}
+		}
+		if( work->env.entry_point->num_parameters == count ) {
+			if( work->locked == 0 ) {
+				await_worker( work, 1 );
+				idx = 0;
+				parameter = this->parameters->next;
+				while( parameter && ret ) {
+					dispose_variable( &work->args[ idx ] );
+					ret = parameter->evaluate( parameter, vars, &work->args[ idx ] );
 					if( ret ) {
-						work->ret = OKAY;
-						dispose_variable( &work->result );
-						dispose_variable( &work->exception );
-						vars->func->env->worker = &work->custom;
-						work->env.interrupted = vars->func->env->interrupted;
-						if( start_worker( work ) ) {
-							result->string_value = var.string_value;
-							result->string_value->reference_count++;
+						work->parameters[ idx ].index = work->args[ idx ].integer_value;
+						str = work->args[ idx ].string_value;
+						if( str ) {
+							if( str->type == STRING || ( str->type == ARRAY && !( ( struct array * ) str )->string_values ) ) {
+								work->strings[ idx ].str.reference_count = 1;
+								work->strings[ idx ].str.type = str->type;
+								work->strings[ idx ].str.string = str->string;
+								work->strings[ idx ].str.length = str->length;
+								if( str->type == ARRAY ) {
+									work->strings[ idx ].integer_values = ( ( struct array * ) str )->integer_values;
+									work->strings[ idx ].length = ( ( struct array * ) str )->length;
+								}
+								( ( struct string_expression * ) work->parameters )[ idx ].str = &work->strings[ idx ].str;
+								work->parameters[ idx ].evaluate = evaluate_string_literal_expression;
+							} else {
+								ret = throw( vars, this, 0, "Values of this type cannot be passed to workers." );
+							}
 						} else {
-							ret = throw( vars, this, 0, "Unable to start worker." );
+							( ( struct string_expression * ) work->parameters )[ idx ].str = NULL;
+							work->parameters[ idx ].evaluate = evaluate_integer_literal_expression;
 						}
-						vars->func->env->worker = NULL;
 					}
-				} else {
-					ret = throw( vars, this, 0, "Worker locked." );
+					parameter = parameter->next;
+					idx++;
+				}
+				if( ret ) {
+					work->ret = OKAY;
+					dispose_variable( &work->result );
+					dispose_variable( &work->exception );
+					vars->func->env->worker = &work->custom;
+					work->env.interrupted = vars->func->env->interrupted;
+					if( start_worker( work ) ) {
+						result->string_value = var.string_value;
+						result->string_value->reference_count++;
+					} else {
+						ret = throw( vars, this, 0, "Unable to start worker." );
+					}
+					vars->func->env->worker = NULL;
 				}
 			} else {
-				ret = throw( vars, this, count, "Incorrect number of parameters to function." );
+				ret = throw( vars, this, 0, "Worker locked." );
 			}
 		} else {
-			ret = throw( vars, this, 0, "Not a worker." );
+			ret = throw( vars, this, count, "Incorrect number of parameters to function." );
 		}
 		dispose_temporary( &var );
 	}
@@ -321,45 +317,41 @@ enum result evaluate_result_expression( struct expression *this,
 	struct worker *work;
 	int count, idx;
 	char *str;
-	enum result ret = parameter->evaluate( parameter, vars, &var );
+	enum result ret = evaluate_custom( parameter, &worker_type, vars, &var );
 	if( ret ) {
-		if( is_worker( var.string_value ) ) {
-			work = ( struct worker * ) var.string_value;
-			if( work->locked == 0 ) {
-				vars->func->env->worker = &work->custom;
-				await_worker( work, vars->func->env->interrupted );
-				vars->func->env->worker = NULL;
-				count = work->env.entry_point->num_parameters;
-				for( idx = 0; idx < count; idx++ ) {
-					if( work->args[ idx ].string_value ) {
-						/* Reassociate parameter strings if necessary. */
-						str = work->args[ idx ].string_value->string;
-						if( work->result.string_value && work->result.string_value->string == str ) {
-							assign_variable( &work->args[ idx ], &work->result );
-						}
-						if( work->exception.string_value && work->exception.string_value->string == str ) {
-							assign_variable( &work->args[ idx ], &work->exception );
-						}
+		work = ( struct worker * ) var.string_value;
+		if( work->locked == 0 ) {
+			vars->func->env->worker = &work->custom;
+			await_worker( work, vars->func->env->interrupted );
+			vars->func->env->worker = NULL;
+			count = work->env.entry_point->num_parameters;
+			for( idx = 0; idx < count; idx++ ) {
+				if( work->args[ idx ].string_value ) {
+					/* Reassociate parameter strings if necessary. */
+					str = work->args[ idx ].string_value->string;
+					if( work->result.string_value && work->result.string_value->string == str ) {
+						assign_variable( &work->args[ idx ], &work->result );
+					}
+					if( work->exception.string_value && work->exception.string_value->string == str ) {
+						assign_variable( &work->args[ idx ], &work->exception );
 					}
 				}
-				if( work->ret == OKAY ) {
-					if( work->result.string_value && work->result.string_value->type > ELEMENT ) {
-						/* Only strings and elements can safely be assigned from another environment. */
-						ret = throw( vars, this, 0, "Values of this type cannot be returned from workers." );
-					} else {
-						assign_variable( &work->result, result );
-					}
-				} else if( work->exception.string_value && work->exception.string_value->type > ELEMENT ) {
-					ret = throw( vars, this, work->exception.integer_value, work->exception.string_value->string );
+			}
+			if( work->ret == OKAY ) {
+				if( work->result.string_value && work->result.string_value->type > ELEMENT ) {
+					/* Only strings and elements can safely be assigned from another environment. */
+					ret = throw( vars, this, 0, "Values of this type cannot be returned from workers." );
 				} else {
-					assign_variable( &work->exception, vars->exception );
-					ret = EXCEPTION;
+					assign_variable( &work->result, result );
 				}
+			} else if( work->exception.string_value && work->exception.string_value->type > ELEMENT ) {
+				ret = throw( vars, this, work->exception.integer_value, work->exception.string_value->string );
 			} else {
-				ret = throw( vars, this, 0, "Worker locked." );
+				assign_variable( &work->exception, vars->exception );
+				ret = EXCEPTION;
 			}
 		} else {
-			ret = throw( vars, this, 0, "Not a worker." );
+			ret = throw( vars, this, 0, "Worker locked." );
 		}
 		dispose_temporary( &var );
 	}
@@ -390,9 +382,9 @@ int initialize_worker_extension( struct environment *env, char *message ) {
 static struct worker* new_worker( char *message ) {
 	struct worker *work = calloc( 1, sizeof( struct worker ) );
 	if( work ) {
-		work->custom.dispose = dispose_worker;
-		work->custom.str.string = "[Worker]";
-		work->custom.str.length = strlen( work->custom.str.string );
+		work->custom.type = &worker_type;
+		work->custom.str.string = worker_type.name;
+		work->custom.str.length = strlen( worker_type.name );
 		work->custom.str.reference_count = 1;
 		work->custom.str.type = CUSTOM;
 		if( initialize_environment( &work->env, message )

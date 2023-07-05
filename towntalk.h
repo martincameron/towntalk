@@ -75,13 +75,21 @@ struct environment {
 	struct string_list *decls_index[ 32 ];
 	struct string_list *globals, *globals_tail;
 	struct function *entry_point;
-	struct custom_type *worker;
+	struct custom *worker;
 };
 
-/* Reference-counted custom type. */
+/* Custom type. */
 struct custom_type {
-	struct string str;
+	char *name;
+	int ( *to_int )( struct variable *var );
+	struct string* ( *to_string )( struct variable *var );
 	void ( *dispose )( struct string *this );
+};
+
+/* Reference-counted custom type instance. */
+struct custom {
+	struct string str;
+	struct custom_type *type;
 };
 
 /* Reference-counted structure declaration.*/
@@ -314,6 +322,9 @@ int unpack( char *str, int idx );
    If vars is non-null a suitable exception is thrown for the specified source expression. */
 enum result is_instance( struct variable *var, struct structure *type, struct variables *vars, struct expression *source );
 
+/* Return 1 if the specified reference is an instance of the specified custom type. */
+int is_custom_instance( struct string *str, struct custom_type *type );
+
 /* Evaluate the specified expression into the specified result variable.
    Throws an exception if the value is not a reference. */
 enum result evaluate_string( struct expression *expr, struct variables *vars, struct variable *result );
@@ -324,5 +335,9 @@ enum result evaluate_element( struct expression *expr, struct variables *vars, s
 
 /* Evaluate the specified expression into the specified integer result. */
 enum result evaluate_integer( struct expression *expr, struct variables *vars, int *result );
+
+/* Evaluate the specified expression into the specified result variable.
+   Throws an exception if the value is not an instance of the specified custom type. */
+enum result evaluate_custom( struct expression *expr, struct custom_type *type, struct variables *vars, struct variable *result );
 
 #endif /* _TOWNTALK_H */

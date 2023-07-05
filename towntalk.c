@@ -56,7 +56,7 @@
 		global a, b = expr;      Global variables.
 		global ( struct ) a;     Global variable with associated struct.
 		global [ a expr ];       Global variable initialized with array of specified length.
-		struct s { a,b,c }       Layout for formatting arrays.
+		struct s { a,b,c }       Enumeration or layout for typed arrays.
 		struct t( s ) { d,e,f }  Struct with fields inherited from s.
 		function f(param){stmts} Function declaration.
 		program name{statements} Entry point function (no arguments).
@@ -839,7 +839,7 @@ void unref_string( struct string *str ) {
 				dispose_function( ( struct function * ) str );
 				break;
 			case CUSTOM:
-				( ( struct custom_type * ) str )->dispose( str );
+				( ( struct custom * ) str )->type->dispose( str );
 				break;
 		}
 	} else {
@@ -1364,6 +1364,7 @@ enum result evaluate_element( struct expression *expr, struct variables *vars, s
 			return ret;
 		}
 		ret = throw( vars, expr, 0, "Not an element." );
+		dispose_variable( result );
 	}
 	return ret;
 }
@@ -1385,6 +1386,27 @@ enum result evaluate_integer( struct expression *expr, struct variables *vars, i
 	ret = expr->evaluate( expr, vars, &var );
 	result[ 0 ] = var.integer_value;
 	dispose_temporary( &var );
+	return ret;
+}
+
+/* Return 1 if the specified reference is an instance of the specified custom type. */
+int is_custom_instance( struct string *str, struct custom_type *type ) {
+	return str && str->type == CUSTOM && ( ( struct custom * ) str )->type == type;
+}
+
+/* Evaluate the specified expression into the specified result variable.
+   Throws an exception if the value is not an instance of the specified custom type. */
+enum result evaluate_custom( struct expression *expr, struct custom_type *type, struct variables *vars, struct variable *result ) {
+	char msg[ 128 ];
+	enum result ret = expr->evaluate( expr, vars, result );
+	if( ret ) {
+		if( is_custom_instance( result->string_value, type ) ) {
+			return ret;
+		}
+		sprintf( msg, "Not an instance of '%.64s'.", type->name );
+		ret = throw( vars, expr, 0, msg );
+		dispose_variable( result );
+	}
 	return ret;
 }
 
