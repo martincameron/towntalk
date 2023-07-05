@@ -365,8 +365,12 @@ enum result evaluate_result_expression( struct expression *this,
 	}
 	return ret;
 }
-struct keyword worker_statements[] = {
+struct keyword lock_statement[] = {
 	{ "lock", "x{", parse_lock_statement, NULL },
+	{ NULL }
+};
+
+struct keyword locked_statement[] = {
 	{ "locked", "{", parse_lock_statement, NULL },
 	{ NULL }
 };
@@ -379,7 +383,7 @@ struct operator worker_operators[] = {
 };
 
 int initialize_worker_extension( struct environment *env, char *message ) {
-	return add_statements( worker_statements, env, message )
+	return add_statements( lock_statement, env, message )
 		&& add_operators( worker_operators, env, message );
 }
 
@@ -392,7 +396,7 @@ static struct worker* new_worker( char *message ) {
 		work->custom.str.reference_count = 1;
 		work->custom.str.type = CUSTOM;
 		if( initialize_environment( &work->env, message )
-		&& add_statements( worker_statements, &work->env, message )
+		&& add_statements( locked_statement, &work->env, message )
 		&& initialize_worker( work, message ) ) {
 			work->env.worker = &work->custom;
 		} else {

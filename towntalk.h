@@ -320,7 +320,7 @@ enum result evaluate_string( struct expression *expr, struct variables *vars, st
 
 /* Evaluate the specified expression into the specified result variable.
    Throws an exception if the value is not an element reference or null (if allowed). */
-enum result evaluate_element( struct expression *expr, struct variables *vars, struct variable *result, int allownull );
+enum result evaluate_element( struct expression *expr, struct variables *vars, struct variable *result, int allow_null );
 
 /* Evaluate the specified expression into the specified integer result. */
 enum result evaluate_integer( struct expression *expr, struct variables *vars, int *result );
