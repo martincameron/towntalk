@@ -1372,20 +1372,15 @@ enum result evaluate_element( struct expression *expr, struct variables *vars, s
 /* Evaluate the specified expression into the specified integer result. */
 enum result evaluate_integer( struct expression *expr, struct variables *vars, int *result ) {
 	enum result ret;
-	struct variable var;
-	if( expr->evaluate == evaluate_local ) {
-		result[ 0 ] = vars->locals[ expr->index ].integer_value;
-		return OKAY;
-	}
-	if( expr->evaluate == evaluate_local_post_inc ) {
-		result[ 0 ] = vars->locals[ expr->index ].integer_value++;
-		return OKAY;
-	}
-	var.integer_value = 0;
-	var.string_value = NULL;
+	struct variable var = { 0 };
 	ret = expr->evaluate( expr, vars, &var );
 	result[ 0 ] = var.integer_value;
-	dispose_temporary( &var );
+	if( var.string_value ) {
+		if( var.string_value->type == CUSTOM && ( ( struct custom * ) var.string_value )->type->to_int ) {
+			result[ 0 ] = ( ( struct custom * ) var.string_value )->type->to_int( &var );
+		}
+		dispose_temporary( &var );
+	}
 	return ret;
 }
 
@@ -2365,19 +2360,13 @@ static enum result evaluate_ternary_expression( struct expression *this,
 static enum result evaluate_arithmetic_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	struct expression *parameter = this->parameters;
-	struct variable var;
-	enum result ret;
 	int lhs, rhs, oper = this->index;
-	if( parameter->evaluate == evaluate_local ) {
+	enum result ret;
+	if( parameter->evaluate == evaluate_local && !vars->locals[ parameter->index ].string_value ) {
 		lhs = vars->locals[ parameter->index ].integer_value;
 	} else {
-		var.integer_value = 0;
-		var.string_value = NULL;
-		ret = parameter->evaluate( parameter, vars, &var );
-		if( ret ) {
-			lhs = var.integer_value;
-			dispose_temporary( &var );
-		} else {
+		ret = evaluate_integer( parameter, vars, &lhs );
+		if( !ret ) {
 			return ret;
 		}
 	}
@@ -2385,16 +2374,11 @@ static enum result evaluate_arithmetic_expression( struct expression *this,
 		parameter = parameter->next;
 		if( parameter->evaluate == evaluate_integer_literal_expression ) {
 			rhs = parameter->index;
-		} else if( parameter->evaluate == evaluate_local ) {
+		} else if( parameter->evaluate == evaluate_local && !vars->locals[ parameter->index ].string_value ) {
 			rhs = vars->locals[ parameter->index ].integer_value;
 		} else {
-			var.integer_value = 0;
-			var.string_value = NULL;
-			ret = parameter->evaluate( parameter, vars, &var );
-			if( ret ) {
-				rhs = var.integer_value;
-				dispose_temporary( &var );
-			} else {
+			ret = evaluate_integer( parameter, vars, &rhs );
+			if( !ret ) {
 				return ret;
 			}
 		}
@@ -2471,6 +2455,11 @@ static enum result evaluate_str_expression( struct expression *this,
 		ret = parameter->evaluate( parameter, vars, &var );
 		if( ret ) {
 			if( var.string_value ) {
+				if( var.string_value->type == CUSTOM && ( ( struct custom * ) var.string_value )->type->to_int ) {
+					new = ( ( struct custom * ) var.string_value )->type->to_string( &var );
+					dispose_temporary( &var );
+					var.string_value = new;
+				}
 				len = var.string_value->length;
 				val = var.string_value->string;
 			} else {
