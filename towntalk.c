@@ -1224,14 +1224,22 @@ static enum result execute_local_assignment( struct statement *this,
 	return ret;
 }
 
-static enum result execute_print_statement( struct statement *this,
-	struct variables *vars, struct variable *result ) {
+static enum result write_string_expression( struct expression *expr, struct variables *vars, int lf, FILE *output ) {
 	struct variable value = { 0, NULL };
-	if( this->source->evaluate( this->source, vars, &value ) ) {
+	struct string *str;
+	if( expr->evaluate( expr, vars, &value ) ) {
 		if( value.string_value ) {
-			puts( value.string_value->string );
+			if( value.string_value->type == CUSTOM && ( ( struct custom * ) value.string_value )->type->to_string ) {
+				str = ( ( struct custom * ) value.string_value )->type->to_string( &value );
+				dispose_temporary( &value );
+				value.string_value = str;
+			}
+			fwrite( value.string_value->string, 1, value.string_value->length, output );
 		} else {
-			printf( "%d\n", value.integer_value );
+			fprintf( output, "%d", value.integer_value );
+		}
+		if( lf ) {
+			fputc( '\n', output );
 		}
 		dispose_temporary( &value );
 		return OKAY;
@@ -1239,35 +1247,19 @@ static enum result execute_print_statement( struct statement *this,
 	return EXCEPTION;
 }
 
-static enum result execute_error_statement( struct statement *this,
+static enum result execute_print_statement( struct statement *this,
 	struct variables *vars, struct variable *result ) {
-	struct variable value = { 0, NULL };
-	if( this->source->evaluate( this->source, vars, &value ) ) {
-		if( value.string_value ) {
-			fputs( value.string_value->string, stderr );
-			fputc( '\n', stderr );
-		} else {
-			fprintf( stderr, "%d\n", value.integer_value );
-		}
-		dispose_temporary( &value );
-		return OKAY;
-	}
-	return EXCEPTION;
+	return write_string_expression( this->source, vars, 1, stdout );
 }
 
 static enum result execute_write_statement( struct statement *this,
 	struct variables *vars, struct variable *result ) {
-	struct variable value = { 0, NULL };
-	if( this->source->evaluate( this->source, vars, &value ) ) {
-		if( value.string_value ) {
-			fwrite( value.string_value->string, 1, value.string_value->length, stdout );
-		} else {
-			printf( "%d", value.integer_value );
-		}
-		dispose_temporary( &value );
-		return OKAY;
-	}
-	return EXCEPTION;
+	return write_string_expression( this->source, vars, 0, stdout );
+}
+
+static enum result execute_error_statement( struct statement *this,
+	struct variables *vars, struct variable *result ) {
+	return write_string_expression( this->source, vars, 1, stderr );
 }
 
 static enum result execute_throw_statement( struct statement *this,
@@ -2455,7 +2447,7 @@ static enum result evaluate_str_expression( struct expression *this,
 		ret = parameter->evaluate( parameter, vars, &var );
 		if( ret ) {
 			if( var.string_value ) {
-				if( var.string_value->type == CUSTOM && ( ( struct custom * ) var.string_value )->type->to_int ) {
+				if( var.string_value->type == CUSTOM && ( ( struct custom * ) var.string_value )->type->to_string ) {
 					new = ( ( struct custom * ) var.string_value )->type->to_string( &var );
 					dispose_temporary( &var );
 					var.string_value = new;
