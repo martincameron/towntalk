@@ -1364,14 +1364,22 @@ enum result evaluate_element( struct expression *expr, struct variables *vars, s
 /* Evaluate the specified expression into the specified integer result. */
 enum result evaluate_integer( struct expression *expr, struct variables *vars, int *result ) {
 	enum result ret;
-	struct variable var = { 0 };
+	struct variable var;
+	if( expr->evaluate == evaluate_local && !vars->locals[ expr->index ].string_value ) {
+		result[ 0 ] = vars->locals[ expr->index ].integer_value;
+		return OKAY;
+	} 
+	var.integer_value = 0;
+	var.string_value = NULL;
 	ret = expr->evaluate( expr, vars, &var );
-	result[ 0 ] = var.integer_value;
-	if( var.string_value ) {
-		if( var.string_value->type == CUSTOM && ( ( struct custom * ) var.string_value )->type->to_int ) {
-			result[ 0 ] = ( ( struct custom * ) var.string_value )->type->to_int( &var );
+	if( ret ) {
+		result[ 0 ] = var.integer_value;
+		if( var.string_value ) {
+			if( var.string_value->type == CUSTOM && ( ( struct custom * ) var.string_value )->type->to_int ) {
+				result[ 0 ] = ( ( struct custom * ) var.string_value )->type->to_int( &var );
+			}
+			dispose_temporary( &var );
 		}
-		dispose_temporary( &var );
 	}
 	return ret;
 }
@@ -1526,17 +1534,11 @@ static enum result execute_if_statement( struct statement *this,
 static enum result execute_while_statement( struct statement *this,
 	struct variables *vars, struct variable *result ) {
 	struct environment *env = vars->func->env;
-	struct variable condition = { 0, NULL }, *lhs = NULL, *rhs = NULL;
+	struct variable condition = { 0, NULL };
 	struct statement *stmt;
 	enum result ret;
-	if( this->local ) {
-		lhs = &vars->locals[ this->source->parameters->index ];
-		rhs = &vars->locals[ this->source->parameters->next->index ];
-	}
 	while( 1 ) {
-		if( this->local == '<' ) {
-			condition.integer_value = lhs->integer_value < rhs->integer_value;
-		} else if( this->source->evaluate( this->source, vars, &condition ) ) {
+		if( this->source->evaluate( this->source, vars, &condition ) ) {
 			if( condition.string_value ) {
 				dispose_temporary( &condition );
 				condition.integer_value = 1;
@@ -2353,21 +2355,14 @@ static enum result evaluate_arithmetic_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	struct expression *parameter = this->parameters;
 	int lhs, rhs, oper = this->index;
-	enum result ret;
-	if( parameter->evaluate == evaluate_local && !vars->locals[ parameter->index ].string_value ) {
-		lhs = vars->locals[ parameter->index ].integer_value;
-	} else {
-		ret = evaluate_integer( parameter, vars, &lhs );
-		if( !ret ) {
-			return ret;
-		}
+	enum result ret = evaluate_integer( parameter, vars, &lhs );
+	if( !ret ) {
+		return ret;
 	}
 	while( parameter->next ) {
 		parameter = parameter->next;
 		if( parameter->evaluate == evaluate_integer_literal_expression ) {
 			rhs = parameter->index;
-		} else if( parameter->evaluate == evaluate_local && !vars->locals[ parameter->index ].string_value ) {
-			rhs = vars->locals[ parameter->index ].integer_value;
 		} else {
 			ret = evaluate_integer( parameter, vars, &rhs );
 			if( !ret ) {
@@ -4845,12 +4840,6 @@ static struct element* parse_while_statement( struct element *elem,
 				( ( struct block_statement * ) stmt )->if_block = block.next;
 			}
 			if( message[ 0 ] == 0 ) {
-				if( stmt->source->evaluate == evaluate_arithmetic_expression
-				&& stmt->source->parameters->evaluate == evaluate_local
-				&& stmt->source->parameters->next->evaluate == evaluate_local
-				&& stmt->source->parameters->next->next == NULL ) {
-					stmt->local = stmt->source->index;
-				}
 				stmt->execute = execute_while_statement;
 				next = next->next;
 			}
