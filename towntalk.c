@@ -1361,27 +1361,33 @@ enum result evaluate_element( struct expression *expr, struct variables *vars, s
 	return ret;
 }
 
+static int to_int( struct variable *var ) {
+	if( var->string_value && var->string_value->type == CUSTOM
+	&& ( ( struct custom * ) var->string_value )->type->to_int ) {
+		return ( ( struct custom * ) var->string_value )->type->to_int( var );
+	}
+	return var->integer_value;
+}
+
 /* Evaluate the specified expression into the specified integer result. */
 enum result evaluate_integer( struct expression *expr, struct variables *vars, int *result ) {
-	enum result ret;
 	struct variable var;
 	if( expr->evaluate == evaluate_local && !vars->locals[ expr->index ].string_value ) {
 		result[ 0 ] = vars->locals[ expr->index ].integer_value;
 		return OKAY;
-	} 
+	}
 	var.integer_value = 0;
 	var.string_value = NULL;
-	ret = expr->evaluate( expr, vars, &var );
-	if( ret ) {
-		result[ 0 ] = var.integer_value;
+	if( expr->evaluate( expr, vars, &var ) ) {
 		if( var.string_value ) {
-			if( var.string_value->type == CUSTOM && ( ( struct custom * ) var.string_value )->type->to_int ) {
-				result[ 0 ] = ( ( struct custom * ) var.string_value )->type->to_int( &var );
-			}
+			result[ 0 ] = to_int( &var );
 			dispose_temporary( &var );
+		} else {
+			result[ 0 ] = var.integer_value;
 		}
+		return OKAY;
 	}
-	return ret;
+	return EXCEPTION;
 }
 
 /* Return 1 if the specified reference is an instance of the specified custom type. */
@@ -2364,19 +2370,19 @@ static enum result evaluate_arithmetic_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	struct expression *parameter = this->parameters;
 	int lhs, rhs, oper = this->index;
-	enum result ret = evaluate_integer( parameter, vars, &lhs );
-	if( !ret ) {
-		return ret;
+	if( parameter->evaluate == evaluate_local && !vars->locals[ parameter->index ].string_value ) {
+		lhs = vars->locals[ parameter->index ].integer_value;
+	} else if( !evaluate_integer( parameter, vars, &lhs ) ) {
+		return EXCEPTION;
 	}
 	while( parameter->next ) {
 		parameter = parameter->next;
 		if( parameter->evaluate == evaluate_integer_literal_expression ) {
 			rhs = parameter->index;
-		} else {
-			ret = evaluate_integer( parameter, vars, &rhs );
-			if( !ret ) {
-				return ret;
-			}
+		} else if( parameter->evaluate == evaluate_local && !vars->locals[ parameter->index ].string_value ) {
+			rhs = vars->locals[ parameter->index ].integer_value;
+		} else if( !evaluate_integer( parameter, vars, &rhs ) ) {
+			return EXCEPTION;
 		}
 		evaluate:
 		switch( oper & 0xFF ) {
