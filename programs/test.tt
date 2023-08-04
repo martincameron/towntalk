@@ -1,6 +1,7 @@
 
 rem { Test }
 
+const NUL;
 const ONE = $len( $array( 1 ) );
 const TWO = +( ONE 1 );
 const STR = "*";
@@ -220,18 +221,25 @@ function testswitch() {
 }
 
 function testif() {
-	var x;
+	var x, y, z = 1, s = "";
 	if FALSE { call assert( FALSE, ${-} ); }
 	if TRUE { let x = 1; } else if FALSE { let x = 2; } else { call assert( FALSE, ${-} ); }
 	call assert_equals( 1, x, ${-} );
 	if "" { let x = 2; }
 	call assert_equals( 2, x, ${-} );
+	if <( y z ) {} else { call assert( FALSE, ${-} ); }
+	if <e( y z ) {} else { call assert( FALSE, ${-} ); }
+	if >( y z ) { call assert( FALSE, ${-} ); }
+	if >e( y z ) { call assert( FALSE, ${-} ); }
+	if =( y z ) { call assert( FALSE, ${-} ); }
+	if <>( y z ) {} else { call assert( FALSE, ${-} ); }
+	if <>( y s ) { call assert( FALSE, ${-} ); }
 	call assert_throws( "1", ${ () { if except( ${ 1 } ) { call except( ${ 2 } ); } } } );
 	call assert_throws( "Expected '{'", ${ () { if 0 {} else } } );
 }
 
 function testwhile() {
-	var n;
+	var n, y, z = 1, s = "";
 	while <( n 1 ) { inc n; }
 	call assert_equals( 1, n, ${-} );
 	while <( n 10 ) {
@@ -264,6 +272,13 @@ function testwhile() {
 	call assert_equals( 10, off, ${-} );
 	call assert_equals( 10, aaa, ${-} );
 	call assert_equals( 1, bbb, ${-} );
+	while <( z y ) { call assert( FALSE, ${-} ); }
+	while <e( z y ) { call assert( FALSE, ${-} ); }
+	while >( y z ) { call assert( FALSE, ${-} ); }
+	while >e( y z ) { call assert( FALSE, ${-} ); }
+	while =( y z ) { call assert( FALSE, ${-} ); }
+	while <>( y y ) { call assert( FALSE, ${-} ); }
+	while <>( y s ) { call assert( FALSE, ${-} ); }
 	call assert_throws( "1", ${ () { while except( ${ 1 } ) { call assert( FALSE, ${-} ); } } } );
 	call assert_throws( "1", ${ () { while TRUE { call except( ${ 1 } ); } } } );
 	call assert_throws( "Unhandled 'break'", ${ () { break; } } );
@@ -867,7 +882,7 @@ function testfunction() {
 }
 
 function testworker() {
-	var worker = $execute( $worker( ${ () { locked { var a = 1; return a; } } } ) );
+	var worker = $execute( $worker( ${ () { locked { var a = 1, e = ${1(2)}; return a; } } } ) );
 	call assert_equals( 1, $result( worker ), ${-} );
 	call assert_equals( 1, $result( $execute( $worker( ${ ( a ) { let [ a 0 ] = 1; return [ a 0 ]; } } ), $buffer( 1 ) ) ), ${-} );
 	call assert_throws( "Unable to lock", ${ () { call $result( $execute( $worker( ${ () { locked { locked {} } } } ) ) ); } } );
@@ -964,6 +979,108 @@ function testlibrary() {
 	call assert_equals( 8, lib_function(), ${-} );
 }
 
+function testoptimizer() {
+	var one = 1, two = 2, acc, val, arr = $array( 3 0 1 "2" ), str = "abc";
+	let acc = +( 1 +( 1 +( 1 +( 1 +( 1 +( 1 +( 1 1 ) ) ) ) ) ) );
+	call assert_equals( 8, acc, ${-} );
+	let acc = +( 1 val++ );
+	call assert_equals( 1, acc, ${-} );
+	call assert_equals( 1, val, ${-} );
+	call assert_throws( "Not an integer", ${ () { var s = ""; let s = +( 1 s++ ); } } );
+	let acc = +( 1 val-- );
+	call assert_equals( 2, acc, ${-} );
+	call assert_equals( 0, val, ${-} );
+	call assert_throws( "Not an integer", ${ () { var s = ""; let s = +( 1 s-- ); } } );
+	let acc = +( 1 $tup( str 1 ) );
+	call assert_equals( 2, acc, ${-} );
+	call assert_throws( "X", ${ () { var v = +( 1 except( ${ X } ) ); } } );
+	let acc = [ arr 1 ];
+	call assert_equals( 1, acc, ${-} );
+	let acc = [ arr +( 1 1 ) ];
+	call assert_equals( "2", acc, ${-} );
+	call assert_throws( "Not an array", ${ () { var c; let c = [ c c ]; } } );
+	call assert_throws( "Array index", ${ () { var [ s 0 ], i; var c = [ s, i ]; } } );
+	let acc = $chr( str, 0 );
+	call assert_equals( "a", $asc( acc ), ${-} );
+	call assert_throws( "Not a string", ${ () { var c; let c = $chr( c, c ); } } );
+	call assert_throws( "String index", ${ () { var s = "", i; var c = $chr( s, i ); } } );
+	let acc = str;
+	let acc = str;
+	call assert_equals( str, acc, ${-} );
+	let [ arr 2 ] = 2;
+	call assert_equals( 2, [ arr 2 ], ${-} );
+	let [ arr 2 ] = "2";
+	call assert_equals( "2", [ arr 2 ], ${-} );
+	call assert_throws( "Array index", ${ () { var arr = $array( 0 ); let [ arr 0 ] = 0; } } );
+	call assert_throws( "Not an array", ${ () { var arr; let [ arr 0 ] = 0; } } );
+	let acc = &( 3 ONE );
+	call assert_equals( 1, acc, ${-} );
+	let acc = |( 0 ONE );
+	call assert_equals( 1, acc, ${-} );
+	let acc = ^( 1 ONE );
+	call assert_equals( 0, acc, ${-} );
+	let acc = +( 1 ONE );
+	call assert_equals( 2, acc, ${-} );
+	let acc = -( 1 ONE );
+	call assert_equals( 0, acc, ${-} );
+	let acc = *( 2 TWO );
+	call assert_equals( 4, acc, ${-} );
+	let acc = /( 6 TWO );
+	call assert_equals( 3, acc, ${-} );
+	call assert_throws( "Division", ${ () { var x = /( 0 NUL ); } } );
+	let acc = %( 3 TWO );
+	call assert_equals( 1, acc, ${-} );
+	call assert_throws( "Modulo", ${ () { var x = %( 0 NUL ); } } );
+	let acc = <<( 1 ONE );
+	call assert_equals( 2, acc, ${-} );
+	let acc = >>( 2 ONE );
+	call assert_equals( 1, acc, ${-} );
+	let acc = &( 3 1 );
+	call assert_equals( 1, acc, ${-} );
+	let acc = |( 0 1 );
+	call assert_equals( 1, acc, ${-} );
+	let acc = ^( 1 1 );
+	call assert_equals( 0, acc, ${-} );
+	let acc = +( 1 1 );
+	call assert_equals( 2, acc, ${-} );
+	let acc = -( 1 1 );
+	call assert_equals( 0, acc, ${-} );
+	let acc = *( 2 2 );
+	call assert_equals( 4, acc, ${-} );
+	let acc = /( 6 2 );
+	call assert_equals( 3, acc, ${-} );
+	call assert_throws( "Division", ${ () { var x = /( 0 0 ); } } );
+	let acc = %( 3 2 );
+	call assert_equals( 1, acc, ${-} );
+	call assert_throws( "Modulo", ${ () { var x = %( 0 0 ); } } );
+	let acc = <<( 1 1 );
+	call assert_equals( 2, acc, ${-} );
+	let acc = >>( 2 1 );
+	call assert_equals( 1, acc, ${-} );
+	let acc = &( 3 one );
+	call assert_equals( 1, acc, ${-} );
+	let acc = |( 0 one );
+	call assert_equals( 1, acc, ${-} );
+	let acc = ^( 1 one );
+	call assert_equals( 0, acc, ${-} );
+	let acc = +( 1 one );
+	call assert_equals( 2, acc, ${-} );
+	let acc = -( 1 one );
+	call assert_equals( 0, acc, ${-} );
+	let acc = *( 2 two );
+	call assert_equals( 4, acc, ${-} );
+	let acc = /( 6 two );
+	call assert_equals( 3, acc, ${-} );
+	call assert_throws( "Division", ${ () { var x, y = /( 0 x ); } } );
+	let acc = %( 3 two );
+	call assert_equals( 1, acc, ${-} );
+	call assert_throws( "Modulo", ${ () { var x, y = %( 0 x ); } } );
+	let acc = <<( 1 one );
+	call assert_equals( 2, acc, ${-} );
+	let acc = >>( 2 one );
+	call assert_equals( 1, acc, ${-} );
+}
+
 program test {
 	call hello();
 	call assert( =( testvoid() 0 ), ${-} );
@@ -1027,5 +1144,6 @@ program test {
 	call testtrace();
 	call testeval();
 	call testlibrary();
+	call testoptimizer();
 	print "Tests passed.";
 }

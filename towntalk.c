@@ -206,13 +206,13 @@ static struct constant constants[] = {
 };
 
 /* Forward declarations. */
+void optimize_statements( struct statement *prev, char *message );
 static int validate_name( struct element *elem, char *message );
 static int validate_decl( struct string *decl, int line, struct environment *env, char *message );
 static void parse_keywords( struct keyword *keywords, struct element *elem,
 	struct function *func, struct variables *vars, struct statement *stmt, char *message );
 static struct element* parse_expressions( struct element *elem, struct function *func,
 	struct variables *vars, char terminator, struct expression *prev, int *num_exprs, char *message );
-static struct worker* parse_worker( struct element *elem, struct string *file, char *message );
 static struct element* value_to_element( int integer_value, struct string *string_value,
 	struct environment *env, char *message );
 
@@ -1156,7 +1156,7 @@ int add_constants( struct constant *constants, struct environment *env, char *me
 	return message[ 0 ] == 0;
 }
 
-static enum result evaluate_local( struct expression *this,
+enum result evaluate_local( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	struct variable *var = &vars->locals[ this->index ];
 	result->integer_value = var->integer_value;
@@ -1167,7 +1167,7 @@ static enum result evaluate_local( struct expression *this,
 	return OKAY;
 }
 
-static enum result evaluate_local_post_inc( struct expression *this,
+enum result evaluate_local_post_inc( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	struct variable *var = &vars->locals[ this->index ];
 	if( var->string_value ) {
@@ -1178,7 +1178,7 @@ static enum result evaluate_local_post_inc( struct expression *this,
 	return OKAY;
 }
 
-static enum result evaluate_local_post_dec( struct expression *this,
+enum result evaluate_local_post_dec( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	struct variable *var = &vars->locals[ this->index ];
 	if( var->string_value ) {
@@ -1189,7 +1189,7 @@ static enum result evaluate_local_post_dec( struct expression *this,
 	return OKAY;
 }
 
-static enum result evaluate_global( struct expression *this,
+enum result evaluate_global( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	struct variable *var = &( ( struct global_variable * ) ( ( struct string_expression * ) this )->str )->value;
 	result->integer_value = var->integer_value;
@@ -1212,7 +1212,7 @@ static enum result execute_global_assignment( struct statement *this,
 	return ret;
 }
 
-static enum result execute_local_assignment( struct statement *this,
+enum result execute_local_assignment( struct statement *this,
 	struct variables *vars, struct variable *result ) {
 	struct variable var = { 0 }, *dest = &vars->locals[ this->local ];
 	enum result ret = this->source->evaluate( this->source, vars, &var );
@@ -1361,7 +1361,7 @@ enum result evaluate_element( struct expression *expr, struct variables *vars, s
 	return ret;
 }
 
-static int to_int( struct variable *var ) {
+int to_int( struct variable *var ) {
 	if( var->string_value && var->string_value->type == CUSTOM
 	&& ( ( struct custom * ) var->string_value )->type->to_int ) {
 		return ( ( struct custom * ) var->string_value )->type->to_int( var );
@@ -1517,21 +1517,40 @@ static enum result execute_try_catch_statement( struct statement *this,
 
 static enum result execute_if_statement( struct statement *this,
 	struct variables *vars, struct variable *result ) {
+	struct block_statement *block = ( struct block_statement * ) this;
+	struct variable *lhs = &vars->locals[ block->lhs ];
+	struct variable *rhs = &vars->locals[ block->rhs ];
+	struct statement *stmt = block->if_block;
 	struct variable condition = { 0, NULL };
-	struct statement *stmt = ( ( struct block_statement * ) this )->else_block;
-	enum result ret = this->source->evaluate( this->source, vars, &condition );
-	if( ret ) {
-		if( condition.integer_value || condition.string_value ) {
-			stmt = ( ( struct block_statement * ) this )->if_block;
-		}
-		dispose_temporary( &condition );
-		while( stmt ) {
-			ret = stmt->execute( stmt, vars, result );
-			if( ret == OKAY ) {
-				stmt = stmt->next;
+	int oper = this->local;
+	enum result ret = OKAY;
+	if( oper && ( lhs->string_value || rhs->string_value ) ) {
+		oper = 0;
+	}
+	switch( oper ) {
+		case '!': if( lhs->integer_value == rhs->integer_value ) stmt = block->else_block; break;
+		case '(': if( lhs->integer_value > rhs->integer_value ) stmt = block->else_block; break;
+		case ')': if( lhs->integer_value < rhs->integer_value ) stmt = block->else_block; break;
+		case '<': if( lhs->integer_value >= rhs->integer_value ) stmt = block->else_block; break;
+		case '=': if( lhs->integer_value != rhs->integer_value ) stmt = block->else_block; break;
+		case '>': if( lhs->integer_value <= rhs->integer_value ) stmt = block->else_block; break;
+		default:
+			if( this->source->evaluate( this->source, vars, &condition ) ) {
+				if( condition.string_value ) {
+					dispose_temporary( &condition );
+				} else if( condition.integer_value == 0 ) {
+					stmt = block->else_block;
+				}
 			} else {
-				break;
+				return EXCEPTION;
 			}
+	}
+	while( stmt ) {
+		ret = stmt->execute( stmt, vars, result );
+		if( ret == OKAY ) {
+			stmt = stmt->next;
+		} else {
+			break;
 		}
 	}
 	return ret;
@@ -1540,57 +1559,59 @@ static enum result execute_if_statement( struct statement *this,
 static enum result execute_while_statement( struct statement *this,
 	struct variables *vars, struct variable *result ) {
 	struct environment *env = vars->func->env;
-	struct variable condition = { 0, NULL }, *lhs, *rhs;
+	struct variable condition = { 0 };
+	struct variable *lhs = &vars->locals[ ( ( struct block_statement * ) this )->lhs ];
+	struct variable *rhs = &vars->locals[ ( ( struct block_statement * ) this )->rhs ];
  	struct statement *stmt;
+ 	int oper = this->local;
  	enum result ret;
-	if( this->local == '<' ) {
-		lhs = &vars->locals[ this->source->parameters->index ];
-		rhs = &vars->locals[ this->source->parameters->next->index ];
-	} else {
-		lhs = NULL;
-		rhs = &condition;
-	}
  	while( 1 ) {
-		if( lhs && !( lhs->string_value || rhs->string_value ) ) {
-			condition.integer_value = lhs->integer_value < rhs->integer_value;
-		} else if( this->source->evaluate( this->source, vars, &condition ) ) {
-			if( condition.string_value ) {
-				dispose_temporary( &condition );
-				condition.integer_value = 1;
-				condition.string_value = NULL;
-			}
-		} else {
-			break;
+		if( oper && ( lhs->string_value || rhs->string_value ) ) {
+			oper = 0;
 		}
-		if( condition.integer_value ) {
-			condition.integer_value = 0;
-			stmt = ( ( struct block_statement * ) this )->if_block;
-			while( stmt ) {
-				ret = stmt->execute( stmt, vars, result );
-				if( ret == OKAY ) {
-					stmt = stmt->next;
-				} else if( ret == RETURN ) {
-					return RETURN;
-				} else if( ret == BREAK ) {
-					return OKAY;
-				} else if( ret == CONTINUE ) {
-					break;
-				} else if( ret == EXCEPTION ) {
+		switch( oper ) {
+			case '!': if( lhs->integer_value == rhs->integer_value ) return OKAY; break;
+			case '(': if( lhs->integer_value > rhs->integer_value ) return OKAY; break;
+			case ')': if( lhs->integer_value < rhs->integer_value ) return OKAY; break;
+			case '<': if( lhs->integer_value >= rhs->integer_value ) return OKAY; break;
+			case '=': if( lhs->integer_value != rhs->integer_value ) return OKAY; break;
+			case '>': if( lhs->integer_value <= rhs->integer_value ) return OKAY; break;
+			default:
+				if( this->source->evaluate( this->source, vars, &condition ) ) {
+					if( condition.string_value ) {
+						dispose_variable( &condition );
+					} else if( condition.integer_value ) {
+						condition.integer_value = 0;
+					} else {
+						return OKAY;
+					}
+				} else {
 					return EXCEPTION;
 				}
+		}
+		stmt = ( ( struct block_statement * ) this )->if_block;
+		while( stmt ) {
+			ret = stmt->execute( stmt, vars, result );
+			if( ret == OKAY ) {
+				stmt = stmt->next;
+			} else if( ret == RETURN ) {
+				return RETURN;
+			} else if( ret == BREAK ) {
+				return OKAY;
+			} else if( ret == CONTINUE ) {
+				break;
+			} else if( ret == EXCEPTION ) {
+				return EXCEPTION;
 			}
-			if( env->interrupted ) {
-				if( env->worker ) {
-					return throw_exit( vars, 0, "Interrupted." );
-				} else {
-					return throw( vars, this->source, 0, "Interrupted.");
-				}
+		}
+		if( env->interrupted ) {
+			if( env->worker ) {
+				return throw_exit( vars, 0, "Interrupted." );
+			} else {
+				return throw( vars, this->source, 0, "Interrupted.");
 			}
-		} else {
-			return OKAY;
 		}
 	}
-	return EXCEPTION;
 }
 
 static enum result execute_call_statement( struct statement *this,
@@ -1603,7 +1624,7 @@ static enum result execute_call_statement( struct statement *this,
 	return ret;
 }
 
-static enum result execute_array_assignment( struct statement *this,
+enum result execute_array_assignment( struct statement *this,
 	struct variables *vars, struct variable *result ) {
 	int idx;
 	struct array *arr;
@@ -2080,7 +2101,7 @@ static enum result evaluate_array_expression( struct expression *this,
 	return ret;
 }
 
-static enum result evaluate_index_expression( struct expression *this,
+enum result evaluate_index_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	int idx;
 	struct array *arr;
@@ -2366,29 +2387,21 @@ static enum result evaluate_ternary_expression( struct expression *this,
 	return ret;
 }
 
-static enum result evaluate_arithmetic_expression( struct expression *this,
+enum result evaluate_arithmetic_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	struct expression *parameter = this->parameters;
 	int lhs, rhs, oper = this->index;
-	if( parameter->evaluate == evaluate_local && !vars->locals[ parameter->index ].string_value ) {
-		lhs = vars->locals[ parameter->index ].integer_value;
-	} else if( !evaluate_integer( parameter, vars, &lhs ) ) {
+	if( !evaluate_integer( parameter, vars, &lhs ) ) {
 		return EXCEPTION;
 	}
 	while( parameter->next ) {
 		parameter = parameter->next;
 		if( parameter->evaluate == evaluate_integer_literal_expression ) {
 			rhs = parameter->index;
-		} else if( parameter->evaluate == evaluate_local && !vars->locals[ parameter->index ].string_value ) {
-			rhs = vars->locals[ parameter->index ].integer_value;
 		} else if( !evaluate_integer( parameter, vars, &rhs ) ) {
 			return EXCEPTION;
 		}
-		evaluate:
-		switch( oper & 0xFF ) {
-			case 0:
-				oper = this->index;
-				goto evaluate;
+		switch( oper ) {
 			case '!': lhs = lhs != rhs; break;
 			case '%':
 				if( rhs != 0 ) {
@@ -2420,7 +2433,6 @@ static enum result evaluate_arithmetic_expression( struct expression *this,
 			default :
 				return throw( vars, this, 0, "Unhandled integer operator." );
 		}
-		oper = oper >> 8;
 	}
 	result->integer_value = lhs;
 	return OKAY;
@@ -2697,7 +2709,7 @@ static enum result evaluate_cmp_expression( struct expression *this,
 	return ret;
 }
 
-static enum result evaluate_chr_expression( struct expression *this,
+enum result evaluate_chr_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	struct expression *parameter = this->parameters;
 	struct variable src = { 0, NULL };
@@ -3426,31 +3438,6 @@ static struct operator* get_operator( char *name, struct operator *oper ) {
 	return oper;
 }
 
-static void optimize_expression( struct expression *expr ) {
-	int count;
-	struct expression *param, *next;
-	if( expr->evaluate == evaluate_arithmetic_expression && expr->parameters->next->next == NULL ) {
-		/* Expression is a two-operand arithmetic expression. */
-		param = expr->parameters;
-		if( param->evaluate == evaluate_arithmetic_expression && ( ( param->index & 0xFF00 ) || param->parameters->next->next == NULL ) ) {
-			/* Left-hand side is a combined, or two-operand arithmetic expression. */
-			count = 0;
-			next = param->parameters;
-			while( next->next ) {
-				next = next->next;
-				count++;
-			}
-			if( count < 4 ) {
-				/* Combine arithmetic expressions. */
-				expr->index = param->index | ( expr->index << ( count * 8 ) );
-				next->next = param->next;
-				expr->parameters = param->parameters;
-				free( param );
-			}
-		}
-	}
-}
-
 static struct element* parse_infix_expression( struct element *elem,
 	struct function *func, struct variables *vars, struct expression *prev, char *message ) {
 	int count;
@@ -3475,7 +3462,6 @@ static struct element* parse_infix_expression( struct element *elem,
 							if( message[ 0 ] == 0 ) {
 								count++;
 								if( count == oper->num_operands || ( oper->num_operands < 0 && count >= -oper->num_operands ) ) {
-									optimize_expression( expr );
 									next = next->next;
 								} else {
 									sprintf( message, "Wrong number of arguments to '%.64s()' on line %d.", oper->name, child->line );
@@ -3516,7 +3502,6 @@ static struct element* parse_operator_expression( struct element *elem, struct o
 				expr->parameters = param.next;
 				if( message[ 0 ] == 0 ) {
 					if( count == oper->num_operands || ( oper->num_operands < 0 && count >= -oper->num_operands ) ) {
-						optimize_expression( expr );
 						next = next->next;
 					} else {
 						sprintf( message, "Wrong number of arguments to '%.64s()' on line %d.", oper->name, next->line );
@@ -4480,7 +4465,7 @@ static struct element* parse_case_statement( struct element *elem,
 	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
 	struct expression expr;
 	struct element *next = elem->next;
-	struct statement block, *stmt = calloc( 1, sizeof( struct block_statement ) );
+	struct statement block = { 0 }, *stmt = calloc( 1, sizeof( struct block_statement ) );
 	if( stmt ) {
 		stmt->dispose = dispose_block_statement;
 		prev->next = stmt;
@@ -4504,7 +4489,7 @@ static struct element* parse_case_statement( struct element *elem,
 static struct element* parse_default_statement( struct element *elem,
 	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
 	struct element *next = elem->next;
-	struct statement block, *stmt = calloc( 1, sizeof( struct block_statement ) );
+	struct statement block = { 0 }, *stmt = calloc( 1, sizeof( struct block_statement ) );
 	if( stmt ) {
 		stmt->dispose = dispose_block_statement;
 		prev->next = stmt;
@@ -4531,7 +4516,7 @@ static struct element* parse_switch_statement( struct element *elem,
 	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
 	struct expression expr;
 	struct element *next = elem->next;
-	struct statement block, *cas, *def;
+	struct statement block = { 0 }, *cas, *def;
 	struct block_statement *stmt = calloc( 1, sizeof( struct block_statement ) );
 	if( stmt ) {
 		stmt->stmt.dispose = dispose_block_statement;
@@ -4751,49 +4736,51 @@ struct element* validate_syntax( char *syntax, struct element *elem,
 	return elem;
 }
 
-static void parse_keywords( struct keyword *keywords, struct element *elem,
+static struct element* parse_keyword( struct keyword *key, struct element *elem,
 	struct function *func, struct variables *vars, struct statement *stmt, char *message ) {
-	struct keyword *key;
+	if( key ) {
+		validate_syntax( key->syntax, elem->next, elem, func->env, message );
+		if( message[ 0 ] == 0 ) { 
+			elem = key->parse( elem, func, vars, stmt, message );
+		}
+	} else {
+		sprintf( message, "Unrecognized keyword '%.64s' on line %d.", elem->str.string, elem->line );
+	}
+	return elem;
+}
+
+static void parse_keywords( struct keyword *keywords, struct element *elem,
+	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
+	struct statement *stmt = prev;
 	while( elem && message[ 0 ] == 0 ) {
-		key = get_keyword( elem->str.string, keywords );
-		if( key ) {
-			validate_syntax( key->syntax, elem->next, elem, func->env, message );
-			if( message[ 0 ] == 0 ) { 
-				elem = key->parse( elem, func, vars, stmt, message );
-				while( stmt && stmt->next ) {
-					stmt = stmt->next;
-				}
-			}
-		} else {
-			sprintf( message, "Unrecognized keyword '%.64s' on line %d.", elem->str.string, elem->line );
+		elem = parse_keyword( get_keyword( elem->str.string, keywords ), elem, func, vars, stmt, message );
+		while( stmt && stmt->next ) {
+			stmt = stmt->next;
 		}
 	}
 }
 
 void parse_keywords_indexed( struct keyword **index, struct element *elem,
-	struct function *func, struct variables *vars, struct statement *stmt, char *message ) {
-	struct keyword *key;
+	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
+	struct statement *stmt = prev;
 	while( elem && message[ 0 ] == 0 ) {
-		key = get_keyword( elem->str.string, index[ hash_code( elem->str.string, 0 ) ] );
-		if( key ) {
-			validate_syntax( key->syntax, elem->next, elem, func->env, message );
-			if( message[ 0 ] == 0 ) { 
-				elem = key->parse( elem, func, vars, stmt, message );
-				while( stmt && stmt->next ) {
-					stmt = stmt->next;
-				}
-			}
-		} else {
-			sprintf( message, "Unrecognized keyword '%.64s' on line %d.", elem->str.string, elem->line );
+		elem = parse_keyword( get_keyword( elem->str.string, index[ hash_code( elem->str.string, 0 ) ] ), elem, func, vars, stmt, message );
+		while( stmt && stmt->next ) {
+			stmt = stmt->next;
 		}
 	}
+#if defined( OPTIMIZER )
+	if( message[ 0 ] == 0 && prev->next ) {
+		optimize_statements( prev, message );
+	}
+#endif
 }
 
 static struct element* parse_if_statement( struct element *elem,
 	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
 	struct expression expr;
 	struct element *next = elem->next;
-	struct statement block, *stmt = calloc( 1, sizeof( struct block_statement ) );
+	struct statement block = { 0 }, *stmt = calloc( 1, sizeof( struct block_statement ) );
 	if( stmt ) {
 		stmt->dispose = dispose_block_statement;
 		prev->next = stmt;
@@ -4801,9 +4788,16 @@ static struct element* parse_if_statement( struct element *elem,
 		next = parse_expression( next, func, vars, &expr, message );
 		if( expr.next ) {
 			stmt->source = expr.next;
+			if( stmt->source->evaluate == evaluate_arithmetic_expression
+			&& stmt->source->parameters->evaluate == evaluate_local
+			&& stmt->source->parameters->next->evaluate == evaluate_local
+			&& stmt->source->parameters->next->next == NULL ) {
+				stmt->local = stmt->source->index;
+				( ( struct block_statement * ) stmt )->lhs = stmt->source->parameters->index;
+				( ( struct block_statement * ) stmt )->rhs = stmt->source->parameters->next->index;
+			}
 			stmt->execute = execute_if_statement;
 			if( next->child ) {
-				block.next = NULL;
 				parse_keywords_indexed( func->env->statements_index, next->child, func, vars, &block, message );
 				( ( struct block_statement * ) stmt )->if_block = block.next;
 			}
@@ -4841,7 +4835,7 @@ static struct element* parse_while_statement( struct element *elem,
 	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
 	struct expression expr;
 	struct element *next = elem->next;
-	struct statement block, *stmt = calloc( 1, sizeof( struct block_statement ) );
+	struct statement block = { 0 }, *stmt = calloc( 1, sizeof( struct block_statement ) );
 	if( stmt ) {
 		stmt->dispose = dispose_block_statement;
 		prev->next = stmt;
@@ -4850,7 +4844,6 @@ static struct element* parse_while_statement( struct element *elem,
 		if( expr.next ) {
 			stmt->source = expr.next;
 			if( next->child ) {
-				block.next = NULL;
 				parse_keywords_indexed( func->env->statements_index, next->child, func, vars, &block, message );
 				( ( struct block_statement * ) stmt )->if_block = block.next;
 			}
@@ -4860,6 +4853,8 @@ static struct element* parse_while_statement( struct element *elem,
 				&& stmt->source->parameters->next->evaluate == evaluate_local
 				&& stmt->source->parameters->next->next == NULL ) {
 					stmt->local = stmt->source->index;
+					( ( struct block_statement * ) stmt )->lhs = stmt->source->parameters->index;
+					( ( struct block_statement * ) stmt )->rhs = stmt->source->parameters->next->index;
 				}
 				stmt->execute = execute_while_statement;
 				next = next->next;
@@ -4874,7 +4869,7 @@ static struct element* parse_while_statement( struct element *elem,
 static struct element* parse_catch_block( struct element *elem,
 	struct function *func, struct variables *vars, struct block_statement *try_stmt, char *message ) {
 	struct local_variable *local;
-	struct statement block;
+	struct statement block = { 0 };
 	if( elem->str.string[ 0 ] == 'c' ) {
 		elem = elem->next;
 		if( elem->str.string[ 0 ] == '(' ) {
@@ -4898,7 +4893,6 @@ static struct element* parse_catch_block( struct element *elem,
 	if( message[ 0 ] == 0 ) {
 		elem = elem->next;
 		if( elem->child ) {
-			block.next = NULL;
 			parse_keywords_indexed( func->env->statements_index, elem->child, func, vars, &block, message );
 			try_stmt->else_block = block.next;
 		}
@@ -4911,14 +4905,13 @@ static struct element* parse_catch_block( struct element *elem,
 
 static struct element* parse_try_statement( struct element *elem,
 	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
-	struct statement try_block;
+	struct statement try_block = { 0 };
 	struct block_statement *try_stmt = calloc( 1, sizeof( struct block_statement ) );
 	if( try_stmt ) {
 		try_stmt->stmt.dispose = dispose_block_statement;
 		prev->next = &try_stmt->stmt;
 		elem = elem->next;
 		if( elem->child ) {
-			try_block.next = NULL;
 			parse_keywords_indexed( func->env->statements_index, elem->child, func, vars, &try_block, message );
 			try_stmt->if_block = try_block.next;
 		}
@@ -5008,7 +5001,7 @@ struct function* parse_function( struct element *elem, char *name,
 }
 
 int parse_function_body( struct function *func, struct variables *vars, char *message ) {
-	struct statement stmt;
+	struct statement stmt = { 0 };
 	struct element *next = func->body->child;
 	if( next ) {
 		stmt.next = NULL;

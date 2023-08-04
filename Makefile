@@ -9,14 +9,14 @@ all: tt
 clean:
 	rm -f tt ttmt ttfx ttfx-midi ttfx-sdl1 xm2tmf
 
-tt: tt.c towntalk.c towntalk.h worker.c worker.h ttasm.c ttasm.h
-	$(CC) $(CFLAGS) $(ANSI_C) -DASM_STATEMENT tt.c towntalk.c worker.c ttasm.c -o tt
+tt: tt.c towntalk.c towntalk.h optimizer.c worker.c worker.h ttasm.c ttasm.h
+	$(CC) $(CFLAGS) $(ANSI_C) -DOPTIMIZER -DASM_STATEMENT tt.c towntalk.c optimizer.c worker.c ttasm.c -o tt
 
-ttmt: tt.c towntalk.c towntalk.h worker.c worker.h ttasm.c ttasm.h
-	$(CC) $(CFLAGS) $(ANSI_C) $(PTHREADS) -DMULTI_THREAD -DASM_STATEMENT tt.c towntalk.c worker.c ttasm.c -o ttmt
+ttmt: tt.c towntalk.c towntalk.h optimizer.c worker.c worker.h ttasm.c ttasm.h
+	$(CC) $(CFLAGS) $(ANSI_C) $(PTHREADS) -DMULTI_THREAD -DOPTIMIZER -DASM_STATEMENT tt.c towntalk.c optimizer.c worker.c ttasm.c -o ttmt
 
-ttfx: ttfx.c towntalk.c towntalk.h worker.c worker.h ttasm.c ttasm.h
-	$(CC) $(CFLAGS) -DMULTI_THREAD -DASM_STATEMENT ttfx.c towntalk.c worker.c ttasm.c -o ttfx `sdl2-config --cflags --libs`
+ttfx: ttfx.c towntalk.c towntalk.h optimizer.c worker.c worker.h ttasm.c ttasm.h
+	$(CC) $(CFLAGS) -DMULTI_THREAD -DOPTIMIZER -DASM_STATEMENT ttfx.c towntalk.c optimizer.c worker.c ttasm.c -o ttfx `sdl2-config --cflags --libs`
 
 ttfx-midi: ttfx.c towntalk.c towntalk.h
 	$(CC) $(CFLAGS) -DALSA_MIDI ttfx.c towntalk.c -o ttfx-midi `sdl2-config --cflags --libs` -lasound

@@ -121,7 +121,7 @@ struct element* parse_lock_statement( struct element *elem,
 	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
 	struct expression expr;
 	struct element *next = elem->next;
-	struct statement block, *stmt = calloc( 1, sizeof( struct block_statement ) );
+	struct statement block = { 0 }, *stmt = calloc( 1, sizeof( struct block_statement ) );
 	if( stmt ) {
 		stmt->dispose = dispose_block_statement;
 		prev->next = stmt;
