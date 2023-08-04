@@ -485,7 +485,7 @@ library xml {
 		call p:skip_space();
 		var ( element ) elem = new_element( "DOCTYPE" );
 		let elem.write = @write_doctype;
-		call list_add( elem.attributes new_tuple( "name" p:parse_string( "\11\12\15 " ) ) );
+		call list_add( elem.attributes new_tuple( "name" p:parse_string( "\11\12\15 >" ) ) );
 		call p:skip_space();
 		switch p:parse_string( "\11\12\15 [>" ) {
 			case "PUBLIC" {
