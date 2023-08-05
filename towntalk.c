@@ -138,10 +138,10 @@
 		||(expr expr ...)        Evaluates to 1 if any argument is non-null.
 		?(expr expr expr)        Evaluates second expr if first is non-null, else third.
 		$same(expr expr)         Evaluates to 1 if arguments have the same value.
-		$cmp(str str)            String/Tuple comparison, evaluates to 0 if equal.
+		$cmp(str str)            String/Tuple comparison, evaluates to 0 if equivalent.
 		$eq(expr expr)           Equivalent to !( $cmp( expr expr ) ).
-		$str(str int ...)        Integer to string and string concatenation.
-		$cat(str str ...)        String concatenation (same as $str).
+		$str(expr ...)           Integer to string and string concatenation.
+		$cat(expr ...)           String concatenation (same as $str).
 		$chr(str idx)            Character at idx as integer.
 		$sub(str off len)        Substring (or byte array to string).
 		$asc(int)                Character code to string.
@@ -1916,27 +1916,25 @@ static enum result evaluate_type_expression( struct expression *this,
 
 static enum result evaluate_field_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
-	struct variable struc = { 0, NULL }, index = { 0, NULL };
 	struct expression *parameter = this->parameters;
+	struct variable struc = { 0, NULL };
 	struct string_list *field;
-	int idx, len;
+	int idx;
 	enum result ret = parameter->evaluate( parameter, vars, &struc );
 	if( ret ) {
 		if( struc.string_value && struc.string_value->type == STRUCT ) {
-			ret = parameter->next->evaluate( parameter->next, vars, &index );
+			ret = evaluate_integer( parameter->next, vars, &idx );
 			if( ret ) {
-				len = ( ( struct structure * ) struc.string_value )->length;
-				if( index.integer_value >= 0 && index.integer_value < len ) {
+				if( idx >= 0 && idx < ( ( struct structure * ) struc.string_value )->length ) {
 					field = ( ( struct structure * ) struc.string_value )->fields;
-					for( idx = 0; idx < index.integer_value; idx++ ) {
+					while( idx-- ) {
 						field = field->next;
 					}
 					result->string_value = field->str;
 					result->string_value->reference_count++;
 				} else {
-					ret = throw( vars, this, index.integer_value, "Field index out of bounds." );
+					ret = throw( vars, this, idx, "Field index out of bounds." );
 				}
-				dispose_temporary( &index );
 			}
 		} else {
 			ret = throw( vars, this, struc.integer_value, "Not a structure." );
@@ -2035,23 +2033,27 @@ static enum result evaluate_array_expression( struct expression *this,
 	enum result ret = this->parameters->evaluate( this->parameters, vars, &var );
 	prev.next = NULL;
 	if( ret ) {
-		if( var.string_value && var.string_value->type == ELEMENT ) {
-			if( expr == NULL ) {
-				parse_expressions( ( struct element * ) var.string_value, vars->func, NULL, 0, &prev, &len, msg );
-				if( msg[ 0 ] == 0 ) {
-					expr = prev.next;
-					if( this->parameters->evaluate != evaluate_string_literal_expression ) {
-						expr_set_line( expr, this->line );
+		if( var.string_value ) {
+			if( var.string_value->type == ELEMENT ) {
+				if( expr == NULL ) {
+					parse_expressions( ( struct element * ) var.string_value, vars->func, NULL, 0, &prev, &len, msg );
+					if( msg[ 0 ] == 0 ) {
+						expr = prev.next;
+						if( this->parameters->evaluate != evaluate_string_literal_expression ) {
+							expr_set_line( expr, this->line );
+						}
+					} else {
+						ret = throw( vars, this, 0, msg );
 					}
 				} else {
-					ret = throw( vars, this, 0, msg );
+					ret = throw( vars, expr, 0, "Unexpected expression." );
 				}
+			} else if( var.string_value->type == STRUCT && !buf ) {
+				struc = ( struct structure * ) var.string_value;
+				len = struc->length;
 			} else {
-				ret = throw( vars, expr, 0, "Unexpected expression." );
+				len = to_int( &var );
 			}
-		} else if( var.string_value && var.string_value->type == STRUCT && !buf ) {
-			struc = ( struct structure * ) var.string_value;
-			len = struc->length;
 		} else {
 			len = var.integer_value;
 		}
@@ -2580,24 +2582,22 @@ static enum result evaluate_tup_expression( struct expression *this,
 
 static enum result evaluate_read_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
-	size_t len;
+	int count;
 	char message[ 64 ];
 	struct string *str;
-	struct variable count = { 0, NULL };
-	enum result ret = this->parameters->evaluate( this->parameters, vars, &count );
+	enum result ret = evaluate_integer( this->parameters, vars, &count );
 	if( ret ) {
-		if( count.integer_value >= 0 ) {
-			len = count.integer_value;
-			str = new_string( len );
+		if( count >= 0 ) {
+			str = new_string( count );
 			if( str ) {
 				clearerr( stdin );
-				if( len > 0 ) {
-					len = fread( str->string, 1, len, stdin );
-					str->string[ len ] = 0;
-					str->length = len;
+				if( count > 0 ) {
+					count = fread( str->string, 1, count, stdin );
+					str->string[ count ] = 0;
+					str->length = count;
 				}
 				if( ferror( stdin ) ) {
-					free( str );
+					unref_string( str );
 					strncpy( message, strerror( errno ), 63 );
 					message[ 63 ] = 0;
 					ret = throw( vars, this, 0, message );
@@ -2608,9 +2608,8 @@ static enum result evaluate_read_expression( struct expression *this,
 				ret = throw( vars, this, 0, OUT_OF_MEMORY );
 			}
 		} else {
-			ret = throw( vars, this, count.integer_value, "Invalid length." );
+			ret = throw( vars, this, count, "Invalid length." );
 		}
-		dispose_temporary( &count );
 	}
 	return ret;
 }
@@ -3007,15 +3006,13 @@ static enum result evaluate_argc_expression( struct expression *this,
 
 static enum result evaluate_argv_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
+	int idx;
 	char *val;
-	enum result ret;
 	struct string *str;
-	struct expression *parameter = this->parameters;
-	struct variable idx = { 0, NULL };
-	ret = parameter->evaluate( parameter, vars, &idx );
+	enum result ret = evaluate_integer( this->parameters, vars, &idx );
 	if( ret ) {
-		if( idx.integer_value >= 0 && idx.integer_value < vars->func->env->argc ) {
-			val = vars->func->env->argv[ idx.integer_value ];
+		if( idx >= 0 && idx < vars->func->env->argc ) {
+			val = vars->func->env->argv[ idx ];
 			str = new_string( strlen( val ) );
 			if( str ) {
 				memcpy( str->string, val, sizeof( char ) * str->length );
@@ -3024,9 +3021,8 @@ static enum result evaluate_argv_expression( struct expression *this,
 				ret = throw( vars, this, 0, OUT_OF_MEMORY );
 			}
 		} else {
-			ret = throw( vars, this, idx.integer_value, "Command-line argument index out of bounds." );
+			ret = throw( vars, this, idx, "Command-line argument index out of bounds." );
 		}
-		dispose_temporary( &idx );
 	}
 	return ret;
 }
@@ -3246,25 +3242,23 @@ static enum result evaluate_line_expression( struct expression *this,
 
 static enum result evaluate_hex_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
-	int len;
+	int len, val;
 	struct string *str;
-	struct variable val = { 0, NULL };
-	enum result ret = this->parameters->evaluate( this->parameters, vars, &val );
+	enum result ret = evaluate_integer( this->parameters, vars, &val );
 	if( ret ) {
 		str = new_string( sizeof( int ) * 2 + 2 );
 		if( str ) {
-			len = sprintf( str->string, "0x%08X", val.integer_value );
+			len = sprintf( str->string, "0x%08X", val );
 			if( len > 0 ) {
 				str->length = len;
 				result->string_value = str;
 			} else {
-				free( str );
+				unref_string( str );
 				ret = throw( vars, this, len, "Output error." );
 			}
 		} else {
 			ret = throw( vars, this, 0, OUT_OF_MEMORY );
 		}
-		dispose_temporary( &val );
 	}
 	return ret;
 }
@@ -3277,10 +3271,11 @@ static enum result evaluate_pack_expression( struct expression *this,
 	struct variable val = { 0, NULL };
 	enum result ret = this->parameters->evaluate( this->parameters, vars, &val );
 	if( ret ) {
-		if( val.string_value && val.string_value->type == ARRAY ) {
+		if( val.string_value && val.string_value && val.string_value->type == ARRAY ) {
 			src = ( ( struct array * ) val.string_value )->integer_values;
 			len = ( ( struct array * ) val.string_value )->length * 4;
 		} else {
+			val.integer_value = to_int( &val );
 			src = &val.integer_value;
 			len = 4;
 		}
