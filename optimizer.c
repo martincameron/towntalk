@@ -17,10 +17,12 @@ enum result evaluate_local_post_inc( struct expression *this, struct variables *
 enum result evaluate_local_post_dec( struct expression *this, struct variables *vars, struct variable *result );
 enum result execute_array_assignment( struct statement *this, struct variables *vars, struct variable *result );
 enum result execute_local_assignment( struct statement *this, struct variables *vars, struct variable *result );
+enum result execute_increment_statement( struct statement *this, struct variables *vars, struct variable *result );
+enum result execute_decrement_statement( struct statement *this, struct variables *vars, struct variable *result );
 int to_int( struct variable *var );
 
 enum arithmetic_op {
-	HALT, PUSH_CONST, PUSH_LOCAL, PUSH_LOCAL_PI, PUSH_LOCAL_PD, PUSH_EXPR, PUSH_ARRAY, PUSH_STRING,
+	HALT, PUSH_CONST, PUSH_LOCAL, INC_LOCAL, PUSH_LOCAL_PI, DEC_LOCAL, PUSH_LOCAL_PD, PUSH_EXPR, PUSH_ARRAY, PUSH_STRING,
 	POP_LOCAL, STORE_LOCAL, CHECK_ARRAY, POP_ARRAY, STORE_ARRAY, AND, OR, XOR, ADD, SUB, MUL, DIV, MOD, ASL, ASR,
 	AND_CONST, OR_CONST, XOR_CONST, ADD_CONST, SUB_CONST, MUL_CONST, DIV_CONST, MOD_CONST, ASL_CONST, ASR_CONST,
 	AND_LOCAL, OR_LOCAL, XOR_LOCAL, ADD_LOCAL, SUB_LOCAL, MUL_LOCAL, DIV_LOCAL, MOD_LOCAL, ASL_LOCAL, ASR_LOCAL
@@ -43,11 +45,12 @@ struct arithmetic_statement {
 
 static struct instruction* add_instructions( struct instructions *dest, struct instruction *src, int count, char *message ) {
 	struct instruction *insn;
-	int capacity = 4, new_count = dest->count + count;
-	while( capacity <= new_count ) {
-		capacity <<= 1;
-	}
-	if( dest->capacity < capacity ) {
+	int capacity, new_count = dest->count + count;
+	if( dest->capacity <= new_count ) {
+		capacity = 4;
+		while( capacity <= new_count ) {
+			capacity <<= 1;
+		}
 		insn = calloc( capacity, sizeof( struct instruction ) );
 		if( insn ) {
 			memcpy( insn, dest->list, dest->count * sizeof( struct instruction ) );
@@ -82,7 +85,9 @@ static void print_insns( struct instructions *insns, int line ) {
 			case HALT: return;
 			case PUSH_CONST: name = "PUSH_CONST"; break;
 			case PUSH_LOCAL: name = "PUSH_LOCAL"; break;
+			case INC_LOCAL: name = "INC_LOCAL"; break;
 			case PUSH_LOCAL_PI: name = "PUSH_LOCAL_PI"; break;
+			case DEC_LOCAL: name = "DEC_LOCAL"; break;
 			case PUSH_LOCAL_PD: name = "PUSH_LOCAL_PD"; break;
 			case PUSH_EXPR: name = "PUSH_EXPR"; break;
 			case PUSH_ARRAY: name = "PUSH_ARRAY"; break;
@@ -238,18 +243,24 @@ static enum result execute_arithmetic_statement( struct statement *this,
 					*top = to_int( local );
 				}
 				break;
+			case INC_LOCAL: /* Fallthrough. */
 			case PUSH_LOCAL_PI:
 				local = locals + insn->local;
 				if( local->string_value ) {
 					return throw( vars, insn->expr, 0, "Not an integer." );
+				} else if( insn->oper == INC_LOCAL ) {
+					local->integer_value++;
 				} else {
 					*++top = local->integer_value++;
 				}
 				break;
+			case DEC_LOCAL: /* Fallthrough. */
 			case PUSH_LOCAL_PD:
 				local = locals + insn->local;
 				if( local->string_value ) {
 					return throw( vars, insn->expr, 0, "Not an integer." );
+				} else if( insn->oper == DEC_LOCAL ) {
+					local->integer_value--;
 				} else {
 					*++top = local->integer_value--;
 				}
@@ -446,7 +457,7 @@ static struct statement* optimize_local_assignment( struct statement *stmt, stru
 	return stmt;
 }
 
-static struct statement* optimize_array_assignment( struct statement *stmt, struct statement *prev,  char *message ) {
+static struct statement* optimize_array_assignment( struct statement *stmt, struct statement *prev, char *message ) {
 	struct expression *src = stmt->source, *arr = src->next, *idx = arr->next;
 	struct arithmetic_statement *arith;
 	enum arithmetic_op oper = HALT;
@@ -474,6 +485,17 @@ static struct statement* optimize_array_assignment( struct statement *stmt, stru
 	return stmt;
 }
 
+static struct statement* optimize_increment( struct statement *stmt, struct statement *prev, enum arithmetic_op oper, char *message ) {
+	if( prev->execute == execute_arithmetic_statement && add_instruction( &( ( struct arithmetic_statement * ) prev )->insns, oper, stmt->local, stmt->source, message ) ) {
+		stmt->source->next = prev->source->next;
+		prev->source->next = stmt->source;
+		prev->next = stmt->next;
+		free( stmt );
+		return prev;
+	}
+	return stmt;
+}
+
 void optimize_statements( struct statement *prev, char *message ) {
 	struct statement *stmt = prev, *next = stmt->next;
 	while( next ) {
@@ -481,6 +503,10 @@ void optimize_statements( struct statement *prev, char *message ) {
 			next = optimize_local_assignment( next, prev, message );
 		} else if( next->execute == execute_array_assignment ) {
 			next = optimize_array_assignment( next, prev, message );
+		} else if( next->execute == execute_increment_statement ) {
+			next = optimize_increment( next, prev, INC_LOCAL, message );
+		} else if( next->execute == execute_decrement_statement ) {
+			next = optimize_increment( next, prev, DEC_LOCAL, message );
 		}
 		if( message[ 0 ] ) {
 			return;

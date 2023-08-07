@@ -1741,7 +1741,7 @@ static enum result execute_case_statement( struct statement *this,
 	return ret;
 }
 
-static enum result execute_increment_statement( struct statement *this,
+enum result execute_increment_statement( struct statement *this,
 	struct variables *vars, struct variable *result ) {
 	struct variable *local = &vars->locals[ this->local ];
 	if( local->string_value ) {
@@ -1751,7 +1751,7 @@ static enum result execute_increment_statement( struct statement *this,
 	return OKAY;
 }
 
-static enum result execute_decrement_statement( struct statement *this,
+enum result execute_decrement_statement( struct statement *this,
 	struct variables *vars, struct variable *result ) {
 	struct variable *local = &vars->locals[ this->local ];
 	if( local->string_value ) {
