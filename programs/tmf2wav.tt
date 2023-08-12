@@ -304,7 +304,7 @@ function new_replay( tmf, reverb ) {
 		throw "Not a TMF file.";
 	}
 	let this.channels = $array( 32 );
-	let this.song_name = trim( $sub( tmf 8 32 ) );
+	let this.song_name = trim( $sub( tmf 8 24 ) );
 	var offset = *( 32 64 );
 	var length = $unpack( tmf, 1 );
 	let this.sequence = $sub( tmf, offset, length );

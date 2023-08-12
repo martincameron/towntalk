@@ -20,7 +20,7 @@ function load_song( tmf, names ) {
 		throw "Not a TMF file.";
 	}
 	if names {
-		set [ names 0 ] = trim( $sub( tmf 8 32 ) );
+		set [ names 0 ] = trim( $sub( tmf 8 24 ) );
 	}
 	let offset = *( 32 64 );
 	let sequence = $sub( tmf, offset, $unpack( tmf, 1 ) );
