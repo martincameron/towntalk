@@ -1014,6 +1014,9 @@ static enum result execute_play_statement( struct statement *this,
 					dispose_variable( &fxenv->channels[ channel ].next_sequence );
 					fxenv->channels[ channel ].next_sequence.string_value = NULL;
 					process_sequence( fxenv, channel );
+					if( fxenv->channels[ channel ].sequence_wait ) {
+						fxenv->channels[ channel ].sequence_wait++;
+					}
 				}
 				SDL_UnlockAudio();
 			} else {
@@ -1268,7 +1271,9 @@ static enum result evaluate_seqmix_expression( struct expression *this,
 				if( fxenv->tick_len < MIN_TICK_LEN ) {
 					fxenv->tick_len = DEFAULT_PERIOD * SAMPLE_RATE / 24000;
 				}
-				audio_callback( fxenv, NULL, ( fxenv->tick_len - fxenv->audio_idx ) << 2 );
+				fxenv->audio_idx = 0;
+				fxenv->audio_end = fxenv->tick_len;
+				audio_callback( fxenv, NULL, fxenv->tick_len << 2 );
 			}
 			idx = 0;
 			end = fxenv->audio_end << 1;
