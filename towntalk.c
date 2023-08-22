@@ -3656,10 +3656,11 @@ static struct element* parse_refcall_expression( struct element *elem,
 static struct element* parse_thiscall_expression( struct element *elem,
 	struct function *func, struct variables *vars, struct expression *prev, char *message ) {
 	int idx, count;
+	struct variable *var;
 	struct structure *struc;
 	struct element *next = elem->next;
 	char *field = strchr( elem->str.string, '.' );
-	struct local_variable *local = get_local_variable( func->variable_decls, &elem->str.string[ 1 ], "." );
+	struct local_variable *captured = NULL, *local = get_local_variable( func->variable_decls, &elem->str.string[ 1 ], "." );
 	struct global_variable *global = ( struct global_variable * ) get_decl_indexed( func, &elem->str.string[ 1 ], GLOBAL );
 	struct expression param = { 0 }, *this, *expr = calloc( 1, sizeof( struct string_expression ) );
 	if( expr ) {
@@ -3667,10 +3668,17 @@ static struct element* parse_thiscall_expression( struct element *elem,
 		expr->line = elem->line;
 		if( local ) {
 			struc = local->type;
-		} else if( global ) {
-			struc = global->type;
 		} else {
-			struc = ( struct structure * ) get_decl_indexed( func, &elem->str.string[ 1 ], STRUCT );
+			if( vars ) {
+				captured = get_local_variable( vars->func->variable_decls, &elem->str.string[ 1 ], "." );
+			}
+			if( captured ) {
+				struc = captured->type;
+			} else if( global ) {
+				struc = global->type;
+			} else {
+				struc = ( struct structure * ) get_decl_indexed( func, &elem->str.string[ 1 ], STRUCT );
+			}
 		}
 		if( struc && field ) {
 			( ( struct string_expression * ) expr )->str = &struc->str;
@@ -3679,12 +3687,22 @@ static struct element* parse_thiscall_expression( struct element *elem,
 				if( next && next->str.string[ 0 ] == '(' ) {
 					parse_expressions( next->child, func, vars, 0, &param, &count, message );
 					expr->parameters = param.next;
-					if( local || global ) {
+					if( local || captured || global ) {
 						this = calloc( 1, sizeof( struct string_expression ) );
 						if( this ) {
 							if( local ) {
 								this->index = local->index;
 								this->evaluate = evaluate_local;
+							} else if( captured ) {
+								var = &vars->locals[ captured->index ];
+								this->index = var->integer_value;
+								if( var->string_value ) {
+									var->string_value->reference_count++;
+									( ( struct string_expression * ) this )->str = var->string_value;
+									this->evaluate = evaluate_string_literal_expression;
+								} else {
+									this->evaluate = evaluate_integer_literal_expression;
+								}
 							} else {
 								( ( struct string_expression * ) this )->str = &global->str;
 								this->evaluate = evaluate_global;

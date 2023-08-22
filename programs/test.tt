@@ -903,7 +903,7 @@ function testworker() {
 }
 
 function testthiscall() {
-	var ( exten ) obj = $new( exten );
+	var ( exten ) obj = $new( exten ), ( struc ) s;
 	let [ obj exten.g ] = $function( ${ ( ( exten ) this x ) { let this.f = x; return x; } } );
 	call assert_equals( 1, :exten.g( obj 1 ), ${-} );
 	call assert_equals( 2, :obj.g( 2 ), ${-} );
@@ -911,6 +911,7 @@ function testthiscall() {
 	let ext.g = obj.g;
 	call assert_equals( 3, :ext.g( 3 ), ${-} );
 	call assert_equals( 3, ext.f, ${-} );
+	call assert_equals( 4 :( $function( ${ () { return ?( 1 :obj.g( 4 ) :s.a( 3 ) ); } } ) ), ${-} );
 	call assert_throws( "Not an instance", ${ () { call :exten.g( 0 ); } } );
 	call assert_throws( "Not an instance", ${ () { call :exten.g( $array( 0 ) ); } } );
 	call assert_throws( "Not a function", ${ () { call :exten.g( $array( exten ) ); } } );
