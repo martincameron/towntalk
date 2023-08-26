@@ -6,6 +6,28 @@
 
 /*
 	Stack-machine for fast integer arithmetic and assignment.
+	
+	Sequential statements of the following forms are combined into a single subinterpreter statement:
+	
+		let local = arithmetic_expr;
+		let local = $chr( local expr );
+		let local = integer_literal;
+		let local = local;
+		let local = [ local expr ];
+		let [ local expr ] = arithetic_expr;
+		let [ local expr ] = $chr( local expr );
+		let [ local expr ] = integer_literal;
+		let [ local expr ] = local;
+		let [ local expr ] = [ local expr ];
+	
+	 Best performance is achieved when used in loops and conditional statements of the following forms:
+	
+		while relational_expr( local local ) ...
+		while relational_expr( local integer_literal ) ...
+		if relational_expr( local local ) ....
+		if relational_expr( local integer_literal ) ....
+	
+	Relational expressions are one of "<", "<e", "=", "<>", ">e", or ">".
 */
 
 enum result evaluate_arithmetic_expression( struct expression *this, struct variables *vars, struct variable *result );

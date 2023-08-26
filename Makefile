@@ -1,6 +1,6 @@
 
 CC=gcc
-CFLAGS=-Wextra -Wunused-variable -Og
+CFLAGS=-Wextra -Wunused-variable -Og -march=native
 ANSI_C=-ansi -pedantic
 PTHREADS=-pthread
 

@@ -1518,14 +1518,20 @@ static enum result execute_try_catch_statement( struct statement *this,
 static enum result execute_if_statement( struct statement *this,
 	struct variables *vars, struct variable *result ) {
 	struct block_statement *block = ( struct block_statement * ) this;
-	struct variable *lhs = &vars->locals[ block->lhs ];
-	struct variable *rhs = &vars->locals[ block->rhs ];
+	int oper = this->local, param = block->rhs;
+	struct variable *lhs = &vars->locals[ block->lhs ], *rhs = NULL;
 	struct statement *stmt = block->if_block;
 	struct variable condition = { 0, NULL };
-	int oper = this->local;
 	enum result ret = OKAY;
-	if( oper && ( lhs->string_value || rhs->string_value ) ) {
-		oper = 0;
+	if( oper ) {
+		if( lhs->string_value ) {
+			oper = 0;
+		} else if( oper < '@' ) {
+			rhs = &vars->locals[ param ];
+			if( rhs->string_value ) {
+				oper = 0;
+			}
+		}
 	}
 	switch( oper ) {
 		case '!': if( lhs->integer_value == rhs->integer_value ) stmt = block->else_block; break;
@@ -1534,6 +1540,12 @@ static enum result execute_if_statement( struct statement *this,
 		case '<': if( lhs->integer_value >= rhs->integer_value ) stmt = block->else_block; break;
 		case '=': if( lhs->integer_value != rhs->integer_value ) stmt = block->else_block; break;
 		case '>': if( lhs->integer_value <= rhs->integer_value ) stmt = block->else_block; break;
+		case 'A': if( lhs->integer_value == param ) stmt = block->else_block; break;
+		case 'H': if( lhs->integer_value > param ) stmt = block->else_block; break;
+		case 'I': if( lhs->integer_value < param ) stmt = block->else_block; break;
+		case '\\': if( lhs->integer_value >= param ) stmt = block->else_block; break;
+		case ']': if( lhs->integer_value != param ) stmt = block->else_block; break;
+		case '^': if( lhs->integer_value <= param ) stmt = block->else_block; break;
 		default:
 			if( this->source->evaluate( this->source, vars, &condition ) ) {
 				if( condition.string_value ) {
@@ -1560,12 +1572,12 @@ static enum result execute_while_statement( struct statement *this,
 	struct variables *vars, struct variable *result ) {
 	struct environment *env = vars->func->env;
 	struct variable condition = { 0 };
+	int oper = this->local, param = ( ( struct block_statement * ) this )->rhs;
 	struct variable *lhs = &vars->locals[ ( ( struct block_statement * ) this )->lhs ];
-	struct variable *rhs = &vars->locals[ ( ( struct block_statement * ) this )->rhs ];
- 	struct statement *stmt;
- 	int oper = this->local;
- 	enum result ret;
- 	while( 1 ) {
+	struct variable *rhs = oper < '@' ? &vars->locals[ param ] : lhs;
+	struct statement *stmt;
+	enum result ret;
+	while( 1 ) {
 		if( oper && ( lhs->string_value || rhs->string_value ) ) {
 			oper = 0;
 		}
@@ -1576,6 +1588,12 @@ static enum result execute_while_statement( struct statement *this,
 			case '<': if( lhs->integer_value >= rhs->integer_value ) return OKAY; break;
 			case '=': if( lhs->integer_value != rhs->integer_value ) return OKAY; break;
 			case '>': if( lhs->integer_value <= rhs->integer_value ) return OKAY; break;
+			case 'A': if( lhs->integer_value == param ) return OKAY; break;
+			case 'H': if( lhs->integer_value > param ) return OKAY; break;
+			case 'I': if( lhs->integer_value < param ) return OKAY; break;
+			case '\\': if( lhs->integer_value >= param ) return OKAY; break;
+			case ']': if( lhs->integer_value != param ) return OKAY; break;
+			case '^': if( lhs->integer_value <= param ) return OKAY; break;
 			default:
 				if( this->source->evaluate( this->source, vars, &condition ) ) {
 					if( condition.string_value ) {
@@ -2537,7 +2555,7 @@ static enum result evaluate_len_expression( struct expression *this,
 	if( parameter->evaluate == evaluate_local ) {
 		str = vars->locals[ parameter->index ].string_value;
 	} else {
-		ret = this->parameters->evaluate( this->parameters, vars, &var );
+		ret = parameter->evaluate( parameter, vars, &var );
 		str = var.string_value;
 	}
 	if( ret ) {
@@ -4801,13 +4819,15 @@ static struct element* parse_if_statement( struct element *elem,
 		next = parse_expression( next, func, vars, &expr, message );
 		if( expr.next ) {
 			stmt->source = expr.next;
-			if( stmt->source->evaluate == evaluate_arithmetic_expression
-			&& stmt->source->parameters->evaluate == evaluate_local
-			&& stmt->source->parameters->next->evaluate == evaluate_local
-			&& stmt->source->parameters->next->next == NULL ) {
-				stmt->local = stmt->source->index;
+			if( stmt->source->evaluate == evaluate_arithmetic_expression && stmt->source->index < '@'
+			&& stmt->source->parameters->evaluate == evaluate_local && stmt->source->parameters->next->next == NULL ) {
 				( ( struct block_statement * ) stmt )->lhs = stmt->source->parameters->index;
 				( ( struct block_statement * ) stmt )->rhs = stmt->source->parameters->next->index;
+				if( stmt->source->parameters->next->evaluate == evaluate_local ) {
+					stmt->local = stmt->source->index;
+				} else if( stmt->source->parameters->next->evaluate == evaluate_integer_literal_expression ) {
+					stmt->local = stmt->source->index + 32;
+				}
 			}
 			stmt->execute = execute_if_statement;
 			if( next->child ) {
@@ -4861,13 +4881,15 @@ static struct element* parse_while_statement( struct element *elem,
 				( ( struct block_statement * ) stmt )->if_block = block.next;
 			}
 			if( message[ 0 ] == 0 ) {
-				if( stmt->source->evaluate == evaluate_arithmetic_expression
-				&& stmt->source->parameters->evaluate == evaluate_local
-				&& stmt->source->parameters->next->evaluate == evaluate_local
-				&& stmt->source->parameters->next->next == NULL ) {
-					stmt->local = stmt->source->index;
+				if( stmt->source->evaluate == evaluate_arithmetic_expression && stmt->source->index < '@'
+				&& stmt->source->parameters->evaluate == evaluate_local && stmt->source->parameters->next->next == NULL ) {
 					( ( struct block_statement * ) stmt )->lhs = stmt->source->parameters->index;
 					( ( struct block_statement * ) stmt )->rhs = stmt->source->parameters->next->index;
+					if( stmt->source->parameters->next->evaluate == evaluate_local ) {
+						stmt->local = stmt->source->index;
+					} else if( stmt->source->parameters->next->evaluate == evaluate_integer_literal_expression ) {
+						stmt->local = stmt->source->index + 32;
+					}
 				}
 				stmt->execute = execute_while_statement;
 				next = next->next;
