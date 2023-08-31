@@ -1571,14 +1571,18 @@ static enum result execute_if_statement( struct statement *this,
 static enum result execute_while_statement( struct statement *this,
 	struct variables *vars, struct variable *result ) {
 	struct environment *env = vars->func->env;
-	struct variable condition = { 0 };
+	struct variable condition = { 0 }, *lhs = &condition, *rhs = &condition;
 	int oper = this->local, param = ( ( struct block_statement * ) this )->rhs;
-	struct variable *lhs = &vars->locals[ ( ( struct block_statement * ) this )->lhs ];
-	struct variable *rhs = oper < '@' ? &vars->locals[ param ] : lhs;
 	struct statement *stmt;
 	enum result ret;
+	if( oper ) {
+		lhs = &vars->locals[ ( ( struct block_statement * ) this )->lhs ];
+		if( oper < '@' ) {
+			rhs = &vars->locals[ param ];
+		}
+	}
 	while( 1 ) {
-		if( oper && ( lhs->string_value || rhs->string_value ) ) {
+		if( lhs->string_value || rhs->string_value ) {
 			oper = 0;
 		}
 		switch( oper ) {

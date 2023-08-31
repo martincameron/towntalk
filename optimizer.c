@@ -14,11 +14,13 @@
 		let local = integer_literal;
 		let local = local;
 		let local = [ local expr ];
-		let [ local expr ] = arithetic_expr;
+		let [ local expr ] = arithmetic_expr;
 		let [ local expr ] = $chr( local expr );
 		let [ local expr ] = integer_literal;
 		let [ local expr ] = local;
 		let [ local expr ] = [ local expr ];
+		inc local;
+		dec local;
 	
 	 Best performance is achieved when used in loops and conditional statements of the following forms:
 	
