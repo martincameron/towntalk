@@ -160,7 +160,6 @@ struct statement {
 struct block_statement {
 	struct statement stmt;
 	struct statement *if_block, *else_block;
-	int lhs, rhs;
 };
 
 /* Parser keyword. */
