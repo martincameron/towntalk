@@ -13,11 +13,13 @@
 		let local = $chr( local expr );
 		let local = integer_literal;
 		let local = local;
+		let local = global/const;
 		let local = [ local expr ];
 		let [ local expr ] = arithmetic_expr;
 		let [ local expr ] = $chr( local expr );
 		let [ local expr ] = integer_literal;
 		let [ local expr ] = local;
+		let [ local expr ] = global/const;
 		let [ local expr ] = [ local expr ];
 		inc local;
 		dec local;
@@ -48,7 +50,7 @@ enum result execute_decrement_statement( struct statement *this, struct variable
 int to_int( struct variable *var );
 
 enum arithmetic_op {
-	HALT, PUSH_CONST, PUSH_LOCAL, INC_LOCAL, PUSH_LOCAL_PI, DEC_LOCAL, PUSH_LOCAL_PD, PUSH_EXPR, PUSH_ARRAY, PUSH_STRING,
+	HALT, PUSH_CONST, PUSH_LOCAL, PUSH_GLOBAL, INC_LOCAL, PUSH_LOCAL_PI, DEC_LOCAL, PUSH_LOCAL_PD, PUSH_EXPR, PUSH_ARRAY, PUSH_STRING,
 	POP_LOCAL, STORE_LOCAL, CHECK_ARRAY, POP_ARRAY, STORE_ARRAY, AND, OR, XOR, ADD, SUB, MUL, DIV, MOD, ASL, ASR,
 	AND_CONST, OR_CONST, XOR_CONST, ADD_CONST, SUB_CONST, MUL_CONST, DIV_CONST, MOD_CONST, ASL_CONST, ASR_CONST,
 	AND_LOCAL, OR_LOCAL, XOR_LOCAL, ADD_LOCAL, SUB_LOCAL, MUL_LOCAL, DIV_LOCAL, MOD_LOCAL, ASL_LOCAL, ASR_LOCAL
@@ -111,6 +113,7 @@ static void print_insns( struct instructions *insns, int line ) {
 			case HALT: return;
 			case PUSH_CONST: name = "PUSH_CONST"; break;
 			case PUSH_LOCAL: name = "PUSH_LOCAL"; break;
+			case PUSH_GLOBAL: name = "PUSH_GLOBAL"; break;
 			case INC_LOCAL: name = "INC_LOCAL"; break;
 			case PUSH_LOCAL_PI: name = "PUSH_LOCAL_PI"; break;
 			case DEC_LOCAL: name = "DEC_LOCAL"; break;
@@ -214,13 +217,14 @@ static struct instruction* compile_arithmetic_expression( struct arithmetic_stat
 		if( insn ) {
 			insn = add_instruction( &stmt->insns, PUSH_STRING, expr->parameters->index, expr, message );
 		}
-	} else {
-		if( expr->evaluate == evaluate_global ) {
-			global = ( struct global_variable * ) ( ( struct string_expression * ) expr )->str;
-			if( global->str.type == CONST && global->initializer && global->initializer->evaluate == evaluate_integer_literal_expression ) {
-				return add_instruction( &stmt->insns, PUSH_CONST, global->initializer->index, expr, message );
-			}
+	} else if( expr->evaluate == evaluate_global ) {
+		global = ( struct global_variable * ) ( ( struct string_expression * ) expr )->str;
+		if( global->str.type == CONST && global->initializer && global->initializer->evaluate == evaluate_integer_literal_expression ) {
+			insn = add_instruction( &stmt->insns, PUSH_CONST, global->initializer->index, expr, message );
+		} else {
+			insn = add_instruction( &stmt->insns, PUSH_GLOBAL, 0, expr, message );
 		}
+	} else {
 		insn = add_instruction( &stmt->insns, PUSH_EXPR, 0, expr, message );
 	}
 	return insn;
@@ -264,9 +268,20 @@ static enum result execute_arithmetic_statement( struct statement *this,
 				local = locals + insn->local;
 				var.integer_value = local->integer_value;
 				var.string_value = local->string_value;
-				*++top = var.integer_value;
 				if( var.string_value ) {
-					*top = to_int( local );
+					*++top = to_int( local );
+				} else {
+					*++top = var.integer_value;
+				}
+				break;
+			case PUSH_GLOBAL:
+				local = &( ( struct global_variable * ) ( ( struct string_expression * ) insn->expr )->str )->value;
+				var.integer_value = local->integer_value;
+				var.string_value = local->string_value;
+				if( var.string_value ) {
+					*++top = to_int( local );
+				} else {
+					*++top = var.integer_value;
 				}
 				break;
 			case INC_LOCAL: /* Fallthrough. */
@@ -466,7 +481,7 @@ static struct statement* optimize_local_assignment( struct statement *stmt, stru
 	enum arithmetic_op oper = HALT;
 	if( expr->evaluate == evaluate_arithmetic_expression || expr->evaluate == evaluate_chr_expression || expr->evaluate == evaluate_integer_literal_expression ) {
 		oper = POP_LOCAL;
-	} else if( expr->evaluate == evaluate_local || expr->evaluate == evaluate_index_expression ) {
+	} else if( expr->evaluate == evaluate_local || expr->evaluate == evaluate_global || expr->evaluate == evaluate_index_expression ) {
 		oper = STORE_LOCAL;
 	}
 	if( oper ) {
@@ -490,7 +505,7 @@ static struct statement* optimize_array_assignment( struct statement *stmt, stru
 	if( arr->evaluate == evaluate_local ) {
 		if( src->evaluate == evaluate_arithmetic_expression || src->evaluate == evaluate_chr_expression || src->evaluate == evaluate_integer_literal_expression ) {
 			oper = POP_ARRAY;
-		} else if( src->evaluate == evaluate_local || src->evaluate == evaluate_index_expression ) {
+		} else if( src->evaluate == evaluate_local || src->evaluate == evaluate_global || src->evaluate == evaluate_index_expression ) {
 			oper = STORE_ARRAY;
 		}
 		if( oper ) {
