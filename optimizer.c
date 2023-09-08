@@ -179,7 +179,6 @@ static enum arithmetic_op get_arithmetic_op( struct expression *expr ) {
 static struct instruction* compile_arithmetic_expression( struct arithmetic_statement *stmt, struct expression *expr, int top, char *message ) {
 	struct instruction *insn;
 	struct expression *parameter;
-	struct global_variable *global;
 	enum arithmetic_op oper = get_arithmetic_op( expr );
 	if( top > 6 ) {
 		insn = add_instruction( &stmt->insns, PUSH_EXPR, 0, expr, message );
@@ -218,12 +217,7 @@ static struct instruction* compile_arithmetic_expression( struct arithmetic_stat
 			insn = add_instruction( &stmt->insns, PUSH_STRING, expr->parameters->index, expr, message );
 		}
 	} else if( expr->evaluate == evaluate_global ) {
-		global = ( struct global_variable * ) ( ( struct string_expression * ) expr )->str;
-		if( global->str.type == CONST && global->initializer && global->initializer->evaluate == evaluate_integer_literal_expression ) {
-			insn = add_instruction( &stmt->insns, PUSH_CONST, global->initializer->index, expr, message );
-		} else {
-			insn = add_instruction( &stmt->insns, PUSH_GLOBAL, 0, expr, message );
-		}
+		insn = add_instruction( &stmt->insns, PUSH_GLOBAL, 0, expr, message );
 	} else {
 		insn = add_instruction( &stmt->insns, PUSH_EXPR, 0, expr, message );
 	}
