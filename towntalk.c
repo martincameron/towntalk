@@ -3918,7 +3918,12 @@ static struct element* parse_global_expression( struct element *elem, struct fun
 		prev->next = expr;
 		( ( struct string_expression * ) expr )->str = &global->str;
 		expr->line = elem->line;
-		expr->evaluate = evaluate_global;
+		if( global->str.type == CONST && global->initializer && global->initializer->evaluate == evaluate_integer_literal_expression ) {
+			expr->index = global->initializer->index;
+			expr->evaluate = evaluate_integer_literal_expression;
+		} else {
+			expr->evaluate = evaluate_global;
+		}
 		if( field[ 0 ] == '.' ) {
 			next = parse_member_expression( global->type, expr, &field[ 1 ], elem, func, vars, prev, message );
 		} else if( field[ 0 ] == ':' ) {
