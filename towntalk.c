@@ -871,15 +871,18 @@ void dispose_environment( struct environment *env ) {
 	dispose_arrays( &env->arrays );
 }
 
-static struct string_list* append_string_list( struct string_list *tail, struct string *value ) {
+static struct string_list* append_string_list( struct string_list **head, struct string_list **tail, struct string *value ) {
 	struct string_list *list = malloc( sizeof( struct string_list ) );
 	if( list ) {
 		list->str = value;
 		value->reference_count++;
 		list->next = NULL;
-		if( tail ) {
-			tail->next = list;
+		if( *head ) {
+			( *tail )->next = list;
+		} else {
+			*head = list;
 		}
+		*tail = list;
 	}
 	return list;
 }
@@ -1108,8 +1111,10 @@ struct string_list* add_decl( struct string *decl, int line, struct environment 
 	struct string_list *list = NULL;
 	int hash = validate_decl( decl, line, env, message ) - 1;
 	if( message[ 0 ] == 0 ) {
-		list = append_string_list( NULL, decl );
+		list = malloc( sizeof( struct string_list ) );
 		if( list ) {
+			list->str = decl;
+			decl->reference_count++;
 			list->next = env->decls_index[ hash ];
 			env->decls_index[ hash ] = list;
 		} else {
@@ -1120,12 +1125,8 @@ struct string_list* add_decl( struct string *decl, int line, struct environment 
 }
 
 static struct string_list* add_global( struct global_variable *global, int line, struct environment *env, char *message ) {
-	struct string_list *list = append_string_list( env->globals_tail, &global->str );
+	struct string_list *list = append_string_list( &env->globals, &env->globals_tail, &global->str );
 	if( list ) {
-		if( env->globals == NULL ) {
-			env->globals = list;
-		}
-		env->globals_tail = list;
 		list = add_decl( &global->str, line, env, message );
 	} else {
 		strcpy( message, OUT_OF_MEMORY );
@@ -5148,7 +5149,6 @@ static struct element* parse_include( struct element *elem,
 }
 
 static int add_structure_field( struct structure *struc, struct element *elem, char *message ) {
-	struct string_list *tail;
 	struct string *field;
 	if( validate_name( elem, message ) ) {
 		if( struc->fields && get_string_list_index( struc->fields, elem->str.string ) >= 0 ) {
@@ -5156,17 +5156,14 @@ static int add_structure_field( struct structure *struc, struct element *elem, c
 		} else {
 			field = new_string_value( elem->str.string );
 			if( field ) {
-				tail = append_string_list( struc->fields_tail, field );
-				if( tail ) {
-					if( struc->fields == NULL ) {
-						struc->fields = tail;
-					}
-					struc->fields_tail = tail;
+				if( append_string_list( &struc->fields, &struc->fields_tail, field ) ) {
 					struc->length++;
 				} else {
 					strcpy( message, OUT_OF_MEMORY );
 				}
 				unref_string( field );
+			} else {
+				strcpy( message, OUT_OF_MEMORY );
 			}
 		}
 	}
@@ -5197,12 +5194,7 @@ static struct element* parse_struct_declaration( struct element *elem,
 				if( struc->super && struc->super != struc ) {
 					field = struc->super->fields;
 					while( field && message[ 0 ] == 0 ) {
-						tail = append_string_list( struc->fields_tail, field->str );
-						if( tail ) {
-							if( struc->fields == NULL ) {
-								struc->fields = tail;
-							}
-							struc->fields_tail = tail;
+						if( append_string_list( &struc->fields, &struc->fields_tail, field->str ) ) {
 							struc->length++;
 						} else {
 							strcpy( message, OUT_OF_MEMORY );
