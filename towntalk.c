@@ -871,12 +871,19 @@ void dispose_environment( struct environment *env ) {
 	dispose_arrays( &env->arrays );
 }
 
-static struct string_list* append_string_list( struct string_list **head, struct string_list **tail, struct string *value ) {
+static struct string_list* new_string_list( struct string *value, struct string_list *next ) {
 	struct string_list *list = malloc( sizeof( struct string_list ) );
 	if( list ) {
 		list->str = value;
 		value->reference_count++;
-		list->next = NULL;
+		list->next = next;
+	}
+	return list;
+}
+
+static struct string_list* append_string_list( struct string_list **head, struct string_list **tail, struct string *value ) {
+	struct string_list *list = new_string_list( value, NULL );
+	if( list ) {
 		if( *head ) {
 			( *tail )->next = list;
 		} else {
@@ -1111,11 +1118,8 @@ struct string_list* add_decl( struct string *decl, int line, struct environment 
 	struct string_list *list = NULL;
 	int hash = validate_decl( decl, line, env, message ) - 1;
 	if( message[ 0 ] == 0 ) {
-		list = malloc( sizeof( struct string_list ) );
+		list = new_string_list( decl, env->decls_index[ hash ] );
 		if( list ) {
-			list->str = decl;
-			decl->reference_count++;
-			list->next = env->decls_index[ hash ];
 			env->decls_index[ hash ] = list;
 		} else {
 			strcpy( message, OUT_OF_MEMORY );
@@ -5128,20 +5132,68 @@ static struct element* parse_program_declaration( struct element *elem,
 	return next;
 }
 
+static int include_tt_file( struct string *path, struct environment *env, char *message ) {
+	long file_length, success = 0;
+	char *program_buffer, *file_name = path->string, error[ 128 ] = "";
+	/* Load program file into string.*/
+	file_length = load_file( file_name, NULL, 0, 0, message );
+	if( file_length >= 0 ) {
+		if( file_length < MAX_INTEGER ) {
+			/* printf( "Parsing '%s'. Length %ld\n", file_name, file_length ); */
+			program_buffer = malloc( file_length + 1 );
+			if( program_buffer ) {
+				file_length = load_file( file_name, program_buffer, 0, file_length, message );
+				if( file_length >= 0 ) {
+					program_buffer[ file_length ] = 0;
+					/* Parse program structure.*/
+					success = parse_tt_program( program_buffer, path, env, message );
+				}
+				free( program_buffer );
+			} else {
+				strcpy( message, OUT_OF_MEMORY );
+			}
+		} else {
+			strcpy( message, "File too large." );
+		}
+	}
+	if( !success && strncmp( message, "Unable to parse", 15 ) ) {
+		strncpy( error, message, 127 );
+		error[ 127 ] = 0;
+		if( sprintf( message, "Unable to parse '%.96s'.\n%s", file_name, error ) < 0 ) {
+			strcpy( message, "Unable to parse. " );
+			strcat( message, error );
+		}
+	}
+	return success;
+}
+
 static struct element* parse_include( struct element *elem,
 	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
 	struct element *next = elem->next;
+	struct string_list *include;
 	int path_len = str_idx( func->file->string, "/:\\", -1 ) + 1;
 	int name_len = unquote_string( next->str.string, NULL );
-	char *path = malloc( path_len + name_len + 1 );
+	struct string *path = new_string( path_len + name_len );
 	if( path ) {
-		memcpy( path, func->file->string, sizeof( char ) * path_len );
-		unquote_string( next->str.string, &path[ path_len ] );
-		path[ path_len + name_len ] = 0;
-		if( parse_tt_file( path, func->env, message ) ) {
-			next = next->next->next;
+		memcpy( path->string, func->file->string, sizeof( char ) * path_len );
+		unquote_string( next->str.string, &path->string[ path_len ] );
+		if( get_string_list_index( func->env->include_paths, next->str.string ) < 0 ) {
+			include = new_string_list( &next->str, func->env->include_paths );
+			if( include ) {
+				func->env->include_paths = include;
+				if( include_tt_file( path, func->env, message ) ) {
+					next = next->next->next;
+				}
+				func->env->include_paths = include->next;
+				unref_string( include->str );
+				free( include );
+			} else {
+				strcpy( message, OUT_OF_MEMORY );
+			}
+		} else {
+			sprintf( message, "File %.64s already included on line %d.\n", next->str.string, elem->line );
 		}
-		free( path );
+		unref_string( path );
 	} else {
 		strcpy( message, OUT_OF_MEMORY );
 	}
@@ -5409,44 +5461,37 @@ static int validate_decl( struct string *decl, int line, struct environment *env
 }
 
 /* Parse the specified program text into env. Returns zero and writes message on failure. */
-int parse_tt_program( char *program, char *file_name, struct environment *env, char *message ) {
+int parse_tt_program( char *program, struct string *file, struct environment *env, char *message ) {
 	int idx;
-	struct element *elem;
 	struct string_list *list;
 	struct function *init, *func;
-	struct string *file = new_string_value( file_name );
-	if( file ) {
-		elem = parse_element( program, message );
-		if( elem ) {
-			/* Create empty function for global evaluation. */
-			init = new_function( "[Init]", NULL );
-			if( init ) {
-				init->file = file;
-				file->reference_count++;
-				init->env = env;
-				/* Populate execution environment. */
-				parse_keywords( declarations, elem, init, NULL, NULL, message );
-				/* Parse function bodies. */
-				for( idx = 0; idx < 32; idx++ ) {
-					list = env->decls_index[ idx ];
-					while( list && message[ 0 ] == 0 ) {
-						if( list->str->type == FUNCTION ) {
-							func = ( struct function * ) list->str;
-							if( func->body ) {
-								parse_function_body( func, NULL, message );
-								func->body = NULL;
-							}
+	struct element *elem = parse_element( program, message );
+	if( elem ) {
+		/* Create empty function for global evaluation. */
+		init = new_function( "[Init]", NULL );
+		if( init ) {
+			init->file = file;
+			file->reference_count++;
+			init->env = env;
+			/* Populate execution environment. */
+			parse_keywords( declarations, elem, init, NULL, NULL, message );
+			/* Parse function bodies. */
+			for( idx = 0; idx < 32; idx++ ) {
+				list = env->decls_index[ idx ];
+				while( list && message[ 0 ] == 0 ) {
+					if( list->str->type == FUNCTION ) {
+						func = ( struct function * ) list->str;
+						if( func->body ) {
+							parse_function_body( func, NULL, message );
+							func->body = NULL;
 						}
-						list = list->next;
 					}
+					list = list->next;
 				}
-				unref_string( &init->str );
 			}
-			unref_string( &elem->str );
+			unref_string( &init->str );
 		}
-		unref_string( file );
-	} else {
-		strcpy( message, OUT_OF_MEMORY );
+		unref_string( &elem->str );
 	}
 	return message[ 0 ] == 0;
 }
@@ -5454,36 +5499,13 @@ int parse_tt_program( char *program, char *file_name, struct environment *env, c
 /* Parse the specified program file into env.
    Returns zero and writes up to 256 bytes to message on failure. */
 int parse_tt_file( char *file_name, struct environment *env, char *message ) {
-	long file_length, success = 0;
-	char *program_buffer, error[ 128 ] = "";
-	/* Load program file into string.*/
-	file_length = load_file( file_name, NULL, 0, 0, message );
-	if( file_length >= 0 ) {
-		if( file_length < MAX_INTEGER ) {
-			/* printf( "Parsing '%s'. Length %ld\n", file_name, file_length ); */
-			program_buffer = malloc( file_length + 1 );
-			if( program_buffer ) {
-				file_length = load_file( file_name, program_buffer, 0, file_length, message );
-				if( file_length >= 0 ) {
-					program_buffer[ file_length ] = 0;
-					/* Parse program structure.*/
-					success = parse_tt_program( program_buffer, file_name, env, message );
-				}
-				free( program_buffer );
-			} else {
-				strcpy( message, OUT_OF_MEMORY );
-			}
-		} else {
-			strcpy( message, "File too large." );
-		}
-	}
-	if( !success && strncmp( message, "Unable to parse", 15 ) ) {
-		strncpy( error, message, 127 );
-		error[ 127 ] = 0;
-		if( sprintf( message, "Unable to parse '%.96s'.\n%s", file_name, error ) < 0 ) {
-			strcpy( message, "Unable to parse. " );
-			strcat( message, error );
-		}
+	int success = 0;
+	struct string *path = new_string_value( file_name );
+	if( path ) {
+		success = include_tt_file( path, env, message );
+		unref_string( path );
+	} else {
+		strcpy( message, OUT_OF_MEMORY );
 	}
 	return success;
 }

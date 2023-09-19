@@ -1739,17 +1739,17 @@ static int initialize_fxenvironment( struct fxenvironment *fxenv, char *message 
 	return 0;
 }
 
-static int parse_ttfx_file( char *file_name, struct fxenvironment *env, char *message ) {
+static int parse_ttfx_file( char *path, struct fxenvironment *env, char *message ) {
 	long file_length, bank_length, success = 0;
-	struct string *program_buffer;
+	struct string *program_buffer, *file_name;
 	/* Load program file into string.*/
-	file_length = load_file( file_name, NULL, 0, 0, message );
+	file_length = load_file( path, NULL, 0, 0, message );
 	if( file_length >= MAX_INTEGER ) {
 		strcpy( message, "File too large." );
 	} else if( file_length >= 0 ) {
 		program_buffer = new_string( file_length );
 		if( program_buffer ) {
-			file_length = load_file( file_name, program_buffer->string, 0, file_length, message );
+			file_length = load_file( path, program_buffer->string, 0, file_length, message );
 			bank_length = datfile_extract( program_buffer->string, file_length, 0, NULL );
 			if( bank_length >= 0 ) {
 				/* Extract program from bank 0 of datfile. */
@@ -1765,8 +1765,14 @@ static int parse_ttfx_file( char *file_name, struct fxenvironment *env, char *me
 		}
 		if( program_buffer ) {
 			if( file_length >= 0 ) {
-				/* Parse program structure.*/
-				success = parse_tt_program( program_buffer->string, file_name, &env->env, message );
+				file_name = new_string_value( path );
+				if( file_name ) {
+					/* Parse program structure.*/
+					success = parse_tt_program( program_buffer->string, file_name, &env->env, message );
+					unref_string( file_name );
+				} else {
+					strcpy( message, OUT_OF_MEMORY );
+				}
 			}
 			unref_string( program_buffer );
 		} else {

@@ -74,6 +74,7 @@ struct environment {
 	struct operator *operators_index[ 32 ];
 	struct string_list *decls_index[ 32 ];
 	struct string_list *globals, *globals_tail;
+	struct string_list *include_paths;
 	struct function *entry_point;
 	struct custom *worker;
 };
@@ -214,7 +215,7 @@ int add_constants( struct constant *constants, struct environment *env, char *me
 int parse_tt_file( char *file_name, struct environment *env, char *message );
 
 /* Parse the specified program text into env. Returns zero and writes message on failure. */
-int parse_tt_program( char *program, char *file_name, struct environment *env, char *message );
+int parse_tt_program( char *program, struct string *file_name, struct environment *env, char *message );
 
 /* Initialize expr to call the specified function when evaluated. */
 void initialize_call_expr( struct function_expression *expr, struct function *func );
