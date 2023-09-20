@@ -5177,6 +5177,10 @@ static struct element* parse_include( struct element *elem,
 	if( path ) {
 		memcpy( path->string, func->file->string, sizeof( char ) * path_len );
 		unquote_string( next->str.string, &path->string[ path_len ] );
+		if( strchr( "/\\", path->string[ path_len ] ) || strchr( &path->string[ path_len ], ':' ) ) {
+			/* Absolute path. */
+			unquote_string( next->str.string, path->string );
+		}
 		if( get_string_list_index( func->env->include_paths, next->str.string ) < 0 ) {
 			include = new_string_list( &next->str, func->env->include_paths );
 			if( include ) {
