@@ -5497,6 +5497,9 @@ int parse_tt_program( char *program, struct string *file, struct environment *en
 		}
 		unref_string( &elem->str );
 	}
+	if( env->interrupted ) {
+		strcpy( message, "Interrupted." );
+	}
 	return message[ 0 ] == 0;
 }
 

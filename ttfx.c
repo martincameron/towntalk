@@ -18,7 +18,7 @@
 #endif
 
 /*
-	SDL graphics and sound extension for Towntalk (c)2021 Martin Cameron.
+	SDL graphics and sound extension for Towntalk (c)2023 Martin Cameron.
 	
 	Statements:
 		display w, h, "caption";               Open a display window.
@@ -1797,17 +1797,17 @@ int main( int argc, char **argv ) {
 		return EXIT_FAILURE;
 	}
 	file_name = argv[ 1 ];
-	/* Parse program file. */
-	if( initialize_fxenvironment( &fxenv, message )
-	&& parse_ttfx_file( file_name, &fxenv, message ) ) {
-		fxenv.env.argc = argc - 1;
-		fxenv.env.argv = &argv[ 1 ];
-		if( fxenv.env.entry_point ) {
-			/* Initialize SDL. */
-			if( SDL_Init( SDL_INIT_AUDIO | SDL_INIT_VIDEO | SDL_INIT_TIMER ) == 0 ) {
-				/* Install signal handler. */
-				interrupt_handler = signal( SIGINT, signal_handler );
-				if( interrupt_handler != SIG_ERR ) {
+	/* Install signal handler. */
+	interrupt_handler = signal( SIGINT, signal_handler );
+	if( interrupt_handler != SIG_ERR ) {
+		/* Parse program file. */
+		if( initialize_fxenvironment( &fxenv, message )
+		&& parse_ttfx_file( file_name, &fxenv, message ) ) {
+			fxenv.env.argc = argc - 1;
+			fxenv.env.argv = &argv[ 1 ];
+			if( fxenv.env.entry_point ) {
+				/* Initialize SDL. */
+				if( SDL_Init( SDL_INIT_AUDIO | SDL_INIT_VIDEO | SDL_INIT_TIMER ) == 0 ) {
 					/* Evaluate the last entry-point function. */
 					initialize_call_expr( &expr, fxenv.env.entry_point );
 					if( initialize_globals( &fxenv.env, &except ) && expr.expr.evaluate( &expr.expr, &vars, &result ) ) {
@@ -1837,19 +1837,19 @@ int main( int argc, char **argv ) {
 					}
 					dispose_variable( &result );
 					dispose_variable( &except );
+					SDL_Quit();
 				} else {
-					fprintf( stderr, "Unable to install signal handler: %s\n", strerror( errno ) );
+					fprintf( stderr, "Unable to initialise SDL: %s\n", SDL_GetError() );
 				}
-				SDL_Quit();
 			} else {
-				fprintf( stderr, "Unable to initialise SDL: %s\n", SDL_GetError() );
+				fputs( "No programs found.\n", stderr );
 			}
 		} else {
-			fputs( "No programs found.\n", stderr );
+			fputs( message, stderr );
+			fputc( '\n', stderr );
 		}
 	} else {
-		fputs( message, stderr );
-		fputc( '\n', stderr );
+		fprintf( stderr, "Unable to install signal handler: %s\n", strerror( errno ) );
 	}
 	dispose_fxenvironment( &fxenv );
 	return exit_code;

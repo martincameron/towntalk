@@ -108,18 +108,18 @@ int main( int argc, char **argv ) {
 		return EXIT_FAILURE;
 	}
 	file_name = argv[ 1 ];
-	/* Parse program file. */
-	if( initialize_environment( &env, message )
-	&& initialize_worker_extension( &env, message )
+	/* Install signal handler. */
+	if( signal( SIGINT, interrupt_handler ) != SIG_ERR ) {
+		/* Parse program file. */
+		if( initialize_environment( &env, message )
+		&& initialize_worker_extension( &env, message )
 #if defined( ASM_STATEMENT )
-	&& add_statements( asm_keyword, &env, message )
+		&& add_statements( asm_keyword, &env, message )
 #endif
-	&& parse_tt_file( file_name, &env, message ) ) {
-		env.argc = argc - 1;
-		env.argv = &argv[ 1 ];
-		if( env.entry_point ) {
-			/* Install signal handler. */
-			if( signal( SIGINT, interrupt_handler ) != SIG_ERR ) {
+		&& parse_tt_file( file_name, &env, message ) ) {
+			env.argc = argc - 1;
+			env.argv = &argv[ 1 ];
+			if( env.entry_point ) {
 				/* Evaluate the last entry-point function. */
 				initialize_call_expr( &expr, env.entry_point );
 				if( initialize_globals( &env, &except ) && expr.expr.evaluate( &expr.expr, &vars, &result ) ) {
@@ -150,13 +150,13 @@ int main( int argc, char **argv ) {
 				dispose_variable( &result );
 				dispose_variable( &except );
 			} else {
-				fprintf( stderr, "Unable to install signal handler: %s\n", strerror( errno ) );
+				fprintf( stderr, "No programs found.\n" );
 			}
 		} else {
-			fprintf( stderr, "No programs found.\n" );
+			fprintf( stderr, "%s\n", message );
 		}
 	} else {
-		fprintf( stderr, "%s\n", message );
+		fprintf( stderr, "Unable to install signal handler: %s\n", strerror( errno ) );
 	}
 	dispose_environment( &env );
 	return exit_code;
