@@ -672,7 +672,7 @@ static int parse_instructions( struct element *elem, struct function *func, stru
 				}
 			}
 		} else {
-			if( strcmp( "let", elem->str.string ) == 0 ) {
+			if( is_keyword( elem->str.string, "let" ) ) {
 				if( output ) {
 					elem = parse_let( elem, func, &output[ count ], message );
 				} else {
@@ -681,7 +681,7 @@ static int parse_instructions( struct element *elem, struct function *func, stru
 				if( elem == NULL ) {
 					break;
 				}
-			} else if( strcmp( "jump", elem->str.string ) == 0 ) {
+			} else if( is_keyword( elem->str.string, "jump" ) ) {
 				if( output ) {
 					elem = parse_jump( elem, func, labels->next, &output[ count ], message );
 				} else {
@@ -690,7 +690,7 @@ static int parse_instructions( struct element *elem, struct function *func, stru
 				if( elem == NULL ) {
 					break;
 				}
-			} else if( strcmp( "halt", elem->str.string ) == 0 ) {
+			} else if( is_keyword( elem->str.string, "halt" ) ) {
 				if( output ) {
 					output[ count ].opcode = HALT;
 				}

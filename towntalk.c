@@ -24,7 +24,7 @@
 	Strings are immutable and can be used as byte arrays.
 	String literals may include the escape sequences "\"", "\\", and octal "\nnn".
 	Buffers are arrays that cannot hold references but use much less memory.
-	Dollar-expressions have an alternate form with an initial capital, eg. 'Time'.
+	Keywords and dollar-expressions may be expressed with a capital, eg. 'Print Time;'.
 	Elements are immutable trees of strings with next and child references.
 	A valid program file may be parsed into an element tree.
 	Elements are separated by whitespace, commas, ';' or '='.
@@ -287,7 +287,7 @@ struct string* new_string_value( char *source ) {
 	return str;
 }
 
-/* Return a 5-bit hash-code to be used for indexing the specified string. */
+/* Return a 5-bit hash-code to be used for case-insensitively indexing the specified string. */
 static int hash_code( char *str, char terminator ) {
 	char chr = str[ 0 ];
 	int idx = 1, hash = 0;
@@ -4622,8 +4622,19 @@ static struct element* parse_switch_statement( struct element *elem,
 	return next;
 }
 
+/* Return 1 if name is equivalent to the specified keyword. */
+int is_keyword( char *name, char *key ) {
+	int chr = key[ 0 ];
+	if( strcmp( &name[ 1 ], &key[ 1 ] ) == 0 ) {
+		if( chr == name[ 0 ] || ( chr > 96 && chr - 32 == name[ 0 ] ) ) {
+			return 1;
+		}
+	}
+	return 0;
+}
+
 static struct keyword* get_keyword( char *name, struct keyword *keywords ) {
-	while( keywords && strcmp( keywords->name, name ) ) {
+	while( keywords && !is_keyword( name, keywords->name ) ) {
 		keywords = keywords->next;
 	}
 	return keywords;
@@ -4672,10 +4683,10 @@ struct element* validate_syntax( char *syntax, struct element *elem,
 			}
 		} else if( chr == 'c' ) {
 			/* Catch or finally. */
-			if( elem && ( strcmp( elem->str.string, "catch" ) == 0 || strcmp( elem->str.string, "finally" ) == 0 ) ) {
+			if( elem && ( is_keyword( elem->str.string, "catch" ) || is_keyword( elem->str.string, "finally" ) ) ) {
 				chr = elem->str.string[ 0 ];
 				elem = elem->next;
-				if( chr == 'c' ) {
+				if( strchr( "Cc", chr ) ) {
 					if( elem && elem->str.string[ 0 ] == '(' ) {
 						validate_syntax( "n0", elem->child, elem, env, message );
 						if( message[ 0 ] == 0 ) {
@@ -4689,7 +4700,7 @@ struct element* validate_syntax( char *syntax, struct element *elem,
 				if( message[ 0 ] == 0 ) {
 					elem = validate_syntax( "{", elem, key, env, message );
 					if( message[ 0 ] == 0 && elem
-					&& ( strcmp( elem->str.string, "catch" ) == 0 || strcmp( elem->str.string, "finally" ) == 0 ) ) {
+					&& ( is_keyword( elem->str.string, "catch" ) || is_keyword( elem->str.string, "finally" ) ) ) {
 						elem = validate_syntax( "c", elem, key, env, message );
 					}
 				}
@@ -4855,8 +4866,8 @@ static struct element* parse_if_statement( struct element *elem,
 			}
 			if( message[ 0 ] == 0 ) {
 				next = next->next;
-				if( next && strcmp( next->str.string, "else" ) == 0 ) {
-					if( next->next && ( next->next->str.string[ 0 ] == '{' || strcmp( next->next->str.string, "if" ) == 0 ) ) {
+				if( next && is_keyword( next->str.string, "else" ) ) {
+					if( next->next && ( next->next->str.string[ 0 ] == '{' || is_keyword( next->next->str.string, "if" ) ) ) {
 						next = next->next;
 						block.next = NULL;
 						if( next->child ) {
@@ -4918,7 +4929,7 @@ static struct element* parse_catch_block( struct element *elem,
 	struct function *func, struct variables *vars, struct block_statement *try_stmt, char *message ) {
 	struct local_variable *local;
 	struct statement block = { 0 };
-	if( elem->str.string[ 0 ] == 'c' ) {
+	if( strchr( "Cc", elem->str.string[ 0 ] ) ) {
 		elem = elem->next;
 		if( elem->str.string[ 0 ] == '(' ) {
 			parse_variable_declaration( elem, func, vars, NULL, add_local_variable, message );
@@ -4966,7 +4977,7 @@ static struct element* parse_try_statement( struct element *elem,
 		if( message[ 0 ] == 0 ) {
 			elem = parse_catch_block( elem->next, func, vars, try_stmt, message );
 			while( message[ 0 ] == 0 && elem
-			&& ( strcmp( elem->str.string, "catch" ) == 0 || strcmp( elem->str.string, "finally" ) == 0 ) ) {
+			&& ( is_keyword( elem->str.string, "catch" ) || is_keyword( elem->str.string, "finally" ) ) ) {
 				try_stmt = calloc( 1, sizeof( struct block_statement ) );
 				if( try_stmt ) {
 					try_stmt->stmt.dispose = dispose_block_statement;
