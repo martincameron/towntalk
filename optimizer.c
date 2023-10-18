@@ -47,13 +47,14 @@ enum result execute_array_assignment( struct statement *this, struct variables *
 enum result execute_local_assignment( struct statement *this, struct variables *vars, struct variable *result );
 enum result execute_increment_statement( struct statement *this, struct variables *vars, struct variable *result );
 enum result execute_decrement_statement( struct statement *this, struct variables *vars, struct variable *result );
-int to_int( struct variable *var );
+enum result to_int( struct variable *var, int *result, struct variables *vars, struct expression *source );
 
 enum arithmetic_op {
-	HALT, PUSH_CONST, PUSH_LOCAL, PUSH_GLOBAL, INC_LOCAL, PUSH_LOCAL_PI, DEC_LOCAL, PUSH_LOCAL_PD, PUSH_EXPR, PUSH_ARRAY, PUSH_STRING,
-	POP_LOCAL, STORE_LOCAL, CHECK_ARRAY, POP_ARRAY, STORE_ARRAY, AND, OR, XOR, ADD, SUB, MUL, DIV, MOD, ASL, ASR,
-	AND_CONST, OR_CONST, XOR_CONST, ADD_CONST, SUB_CONST, MUL_CONST, DIV_CONST, MOD_CONST, ASL_CONST, ASR_CONST,
-	AND_LOCAL, OR_LOCAL, XOR_LOCAL, ADD_LOCAL, SUB_LOCAL, MUL_LOCAL, DIV_LOCAL, MOD_LOCAL, ASL_LOCAL, ASR_LOCAL
+	HALT, PUSH_CONST, PUSH_LOCAL, LOAD_LOCAL, PUSH_GLOBAL, LOAD_GLOBAL, INC_LOCAL, PUSH_LOCAL_PI, DEC_LOCAL, PUSH_LOCAL_PD,
+	PUSH_EXPR, LOAD_EXPR, PUSH_ARRAY, LOAD_ARRAY, PUSH_STRING, POP_LOCAL, STORE_LOCAL, CHECK_ARRAY, POP_ARRAY, STORE_ARRAY,
+	AND_STACK, OR__STACK, XOR_STACK, ADD_STACK, SUB_STACK, MUL_STACK, DIV_STACK, MOD_STACK, ASL_STACK, ASR_STACK,
+	AND_CONST, OR__CONST, XOR_CONST, ADD_CONST, SUB_CONST, MUL_CONST, DIV_CONST, MOD_CONST, ASL_CONST, ASR_CONST,
+	AND_LOCAL, OR__LOCAL, XOR_LOCAL, ADD_LOCAL, SUB_LOCAL, MUL_LOCAL, DIV_LOCAL, MOD_LOCAL, ASL_LOCAL, ASR_LOCAL
 };
 
 struct instruction {
@@ -113,31 +114,35 @@ static void print_insns( struct instructions *insns, int line ) {
 			case HALT: return;
 			case PUSH_CONST: name = "PUSH_CONST"; break;
 			case PUSH_LOCAL: name = "PUSH_LOCAL"; break;
+			case LOAD_LOCAL: name = "LOAD_LOCAL"; break;
 			case PUSH_GLOBAL: name = "PUSH_GLOBAL"; break;
+			case LOAD_GLOBAL: name = "LOAD_GLOBAL"; break;
 			case INC_LOCAL: name = "INC_LOCAL"; break;
 			case PUSH_LOCAL_PI: name = "PUSH_LOCAL_PI"; break;
 			case DEC_LOCAL: name = "DEC_LOCAL"; break;
 			case PUSH_LOCAL_PD: name = "PUSH_LOCAL_PD"; break;
 			case PUSH_EXPR: name = "PUSH_EXPR"; break;
+			case LOAD_EXPR: name = "LOAD_EXPR"; break;
 			case PUSH_ARRAY: name = "PUSH_ARRAY"; break;
+			case LOAD_ARRAY: name = "LOAD_ARRAY"; break;
 			case PUSH_STRING: name = "PUSH_STRING"; break;
 			case POP_LOCAL: name = "POP_LOCAL"; break;
 			case STORE_LOCAL: name = "STORE_LOCAL"; break;
 			case CHECK_ARRAY: name = "CHECK_ARRAY"; break;
 			case POP_ARRAY: name = "POP_ARRAY"; break;
 			case STORE_ARRAY: name = "STORE_ARRAY"; break;
-			case AND: name = "AND"; break;
-			case OR : name = "OR"; break;
-			case XOR: name = "XOR"; break;
-			case ADD: name = "ADD"; break;
-			case SUB: name = "SUB"; break;
-			case MUL: name = "MUL"; break;
-			case DIV: name = "DIV"; break;
-			case MOD: name = "MOD"; break;
-			case ASL: name = "ASL"; break;
-			case ASR: name = "ASR"; break;
+			case AND_STACK: name = "AND_STACK"; break;
+			case OR__STACK: name = "OR__STACK"; break;
+			case XOR_STACK: name = "XOR_STACK"; break;
+			case ADD_STACK: name = "ADD_STACK"; break;
+			case SUB_STACK: name = "SUB_STACK"; break;
+			case MUL_STACK: name = "MUL_STACK"; break;
+			case DIV_STACK: name = "DIV_STACK"; break;
+			case MOD_STACK: name = "MOD_STACK"; break;
+			case ASL_STACK: name = "ASL_STACK"; break;
+			case ASR_STACK: name = "ASR_STACK"; break;
 			case AND_CONST: name = "AND_CONST"; break;
-			case OR_CONST : name = "OR_CONST"; break;
+			case OR__CONST: name = "OR__CONST"; break;
 			case XOR_CONST: name = "XOR_CONST"; break;
 			case ADD_CONST: name = "ADD_CONST"; break;
 			case SUB_CONST: name = "SUB_CONST"; break;
@@ -147,7 +152,7 @@ static void print_insns( struct instructions *insns, int line ) {
 			case ASL_CONST: name = "ASL_CONST"; break;
 			case ASR_CONST: name = "ASR_CONST"; break;
 			case AND_LOCAL: name = "AND_LOCAL"; break;
-			case OR_LOCAL : name = "OR_LOCAL"; break;
+			case OR__LOCAL: name = "OR__LOCAL"; break;
 			case XOR_LOCAL: name = "XOR_LOCAL"; break;
 			case ADD_LOCAL: name = "ADD_LOCAL"; break;
 			case SUB_LOCAL: name = "SUB_LOCAL"; break;
@@ -170,7 +175,7 @@ static enum arithmetic_op get_arithmetic_op( struct expression *expr ) {
 	if( expr->evaluate == evaluate_arithmetic_expression ) {
 		chr = strchr( OPS, expr->index );
 		if( chr ) {
-			oper = AND + ( chr - OPS );
+			oper = AND_STACK + ( chr - OPS );
 		}
 	}
 	return oper;
@@ -190,9 +195,9 @@ static struct instruction* compile_arithmetic_expression( struct arithmetic_stat
 			insn = compile_arithmetic_expression( stmt, parameter, top + 1, message );
 			if( insn ) {
 				if( insn->oper == PUSH_CONST ) {
-					insn->oper = oper + AND_CONST - AND;
+					insn->oper = oper + AND_CONST - AND_STACK;
 				} else if( insn->oper == PUSH_LOCAL ) {
-					insn->oper = oper + AND_LOCAL - AND;
+					insn->oper = oper + AND_LOCAL - AND_STACK;
 				} else {
 					insn = add_instruction( &stmt->insns, oper, 0, parameter, message );
 				}
@@ -231,7 +236,7 @@ static void dispose_arithmetic_statement( struct statement *this ) {
 
 static enum result divide( int *lhs, int rhs, struct variables *vars, struct expression *src ) {
 	if( rhs == 0 ) {
-		return throw( vars, src, 0, "Division by zero." );
+		return throw( vars, src, 0, "Integer division by zero." );
 	}
 	*lhs /= rhs;
 	return OKAY;
@@ -260,22 +265,38 @@ static enum result execute_arithmetic_statement( struct statement *this,
 				break;
 			case PUSH_LOCAL:
 				local = locals + insn->local;
+				if( local->string_value ) {
+					if( !to_int( local, ++top, vars, insn->expr ) ) {
+						return EXCEPTION;
+					}
+				} else {
+					*++top = local->integer_value;
+				}
+				break;
+			case LOAD_LOCAL:
+				local = locals + insn->local;
 				var.integer_value = local->integer_value;
 				var.string_value = local->string_value;
 				if( var.string_value ) {
-					*++top = to_int( local );
-				} else {
-					*++top = var.integer_value;
+					var.string_value->reference_count++;
 				}
 				break;
 			case PUSH_GLOBAL:
 				local = &( ( struct global_variable * ) ( ( struct string_expression * ) insn->expr )->str )->value;
+				if( local->string_value ) {
+					if( !to_int( local, ++top, vars, insn->expr ) ) {
+						return EXCEPTION;
+					}
+				} else {
+					*++top = local->integer_value;
+				}
+				break;
+			case LOAD_GLOBAL:
+				local = &( ( struct global_variable * ) ( ( struct string_expression * ) insn->expr )->str )->value;
 				var.integer_value = local->integer_value;
 				var.string_value = local->string_value;
 				if( var.string_value ) {
-					*++top = to_int( local );
-				} else {
-					*++top = var.integer_value;
+					var.string_value->reference_count++;
 				}
 				break;
 			case INC_LOCAL: /* Fallthrough. */
@@ -304,12 +325,23 @@ static enum result execute_arithmetic_statement( struct statement *this,
 				var.integer_value = 0;
 				var.string_value = NULL;
 				if( insn->expr->evaluate( insn->expr, vars, &var ) ) {
-					*++top = var.integer_value;
 					if( var.string_value ) {
-						*top = to_int( &var );
+						if( !to_int( &var, ++top, vars, insn->expr ) ) {
+							unref_string( var.string_value );
+							return EXCEPTION;
+						}
 						unref_string( var.string_value );
+					} else {
+						*++top = var.integer_value;
 					}
 				} else {
+					return EXCEPTION;
+				}
+				break;
+			case LOAD_EXPR:
+				var.integer_value = 0;
+				var.string_value = NULL;
+				if( !insn->expr->evaluate( insn->expr, vars, &var ) ) {
 					return EXCEPTION;
 				}
 				break;
@@ -319,13 +351,34 @@ static enum result execute_arithmetic_statement( struct statement *this,
 					index = *top;
 					arr = ( struct array * ) local->string_value;
 					if( ( unsigned int ) index < ( unsigned int ) arr->length ) {
+						if( arr->string_values && arr->string_values[ index ] ) {
+							var.integer_value = arr->integer_values[ index ];
+							var.string_value = arr->string_values[ index ];
+							if( !to_int( &var, top, vars, insn->expr ) ) {
+								return EXCEPTION;
+							}
+						} else {
+							*top = arr->integer_values[ index ];
+						}
+					} else {
+						return throw( vars, insn->expr, index, "Array index out of bounds." );
+					}
+				} else {
+					return throw( vars, insn->expr, 0, "Not an array." );
+				}
+				break;
+			case LOAD_ARRAY:
+				local = locals + insn->local;
+				if( local->string_value && local->string_value->type == ARRAY ) {
+					index = *top--;
+					arr = ( struct array * ) local->string_value;
+					if( ( unsigned int ) index < ( unsigned int ) arr->length ) {
 						var.integer_value = arr->integer_values[ index ];
 						if( arr->string_values && arr->string_values[ index ] ) {
 							var.string_value = arr->string_values[ index ];
-							*top = to_int( &var );
+							var.string_value->reference_count++;
 						} else {
 							var.string_value = NULL;
-							*top = var.integer_value;
 						}
 					} else {
 						return throw( vars, insn->expr, index, "Array index out of bounds." );
@@ -360,13 +413,8 @@ static enum result execute_arithmetic_statement( struct statement *this,
 				local->integer_value = var.integer_value;
 				if( local->string_value ) {
 					unref_string( local->string_value );
-					local->string_value = NULL;
 				}
-				if( var.string_value ) {
-					var.string_value->reference_count++;
-					local->string_value = var.string_value;
-				}
-				top--;
+				local->string_value = var.string_value;
 				break;
 			case CHECK_ARRAY:
 				local = locals + insn->local;
@@ -390,33 +438,28 @@ static enum result execute_arithmetic_statement( struct statement *this,
 				}
 				break;
 			case STORE_ARRAY:
-				top -= 2;
-				index = top[ 1 ];
+				index = *top--;
 				arr = ( struct array * ) locals[ insn->local ].string_value;
 				arr->integer_values[ index ] = var.integer_value;
 				if( arr->string_values ) {
 					if( arr->string_values[ index ] ) {
 						unref_string( arr->string_values[ index ] );
 					}
-					arr->string_values[ index ] = NULL;
-				}
-				if( var.string_value ) {
-					var.string_value->reference_count++;
 					arr->string_values[ index ] = var.string_value;
 				}
 				break;
-			case AND: top--; *top  &= top[ 1 ]; break;
-			case OR : top--; *top  |= top[ 1 ]; break;
-			case XOR: top--; *top  ^= top[ 1 ]; break;
-			case ADD: top--; *top  += top[ 1 ]; break;
-			case SUB: top--; *top  -= top[ 1 ]; break;
-			case MUL: top--; *top  *= top[ 1 ]; break;
-			case DIV: top--; if( !divide( top, top[ 1 ], vars, insn->expr ) ) return EXCEPTION; break;
-			case MOD: top--; if( !modulo( top, top[ 1 ], vars, insn->expr ) ) return EXCEPTION; break;
-			case ASL: top--; *top <<= top[ 1 ]; break;
-			case ASR: top--; *top >>= top[ 1 ]; break;
+			case AND_STACK: top--; *top  &= top[ 1 ]; break;
+			case OR__STACK: top--; *top  |= top[ 1 ]; break;
+			case XOR_STACK: top--; *top  ^= top[ 1 ]; break;
+			case ADD_STACK: top--; *top  += top[ 1 ]; break;
+			case SUB_STACK: top--; *top  -= top[ 1 ]; break;
+			case MUL_STACK: top--; *top  *= top[ 1 ]; break;
+			case DIV_STACK: top--; if( !divide( top, top[ 1 ], vars, insn->expr ) ) return EXCEPTION; break;
+			case MOD_STACK: top--; if( !modulo( top, top[ 1 ], vars, insn->expr ) ) return EXCEPTION; break;
+			case ASL_STACK: top--; *top <<= top[ 1 ]; break;
+			case ASR_STACK: top--; *top >>= top[ 1 ]; break;
 			case AND_CONST: *top  &= insn->local; break;
-			case OR_CONST : *top  |= insn->local; break;
+			case OR__CONST: *top  |= insn->local; break;
 			case XOR_CONST: *top  ^= insn->local; break;
 			case ADD_CONST: *top  += insn->local; break;
 			case SUB_CONST: *top  -= insn->local; break;
@@ -425,16 +468,128 @@ static enum result execute_arithmetic_statement( struct statement *this,
 			case MOD_CONST: if( !modulo( top, insn->local, vars, insn->expr ) ) return EXCEPTION; break;
 			case ASL_CONST: *top <<= insn->local; break;
 			case ASR_CONST: *top >>= insn->local; break;
-			case AND_LOCAL: local = locals + insn->local; *top  &= local->string_value ? to_int( local ) : local->integer_value; break;
-			case OR_LOCAL : local = locals + insn->local; *top  |= local->string_value ? to_int( local ) : local->integer_value; break;
-			case XOR_LOCAL: local = locals + insn->local; *top  ^= local->string_value ? to_int( local ) : local->integer_value; break;
-			case ADD_LOCAL: local = locals + insn->local; *top  += local->string_value ? to_int( local ) : local->integer_value; break;
-			case SUB_LOCAL: local = locals + insn->local; *top  -= local->string_value ? to_int( local ) : local->integer_value; break;
-			case MUL_LOCAL: local = locals + insn->local; *top  *= local->string_value ? to_int( local ) : local->integer_value; break;
-			case DIV_LOCAL: local = locals + insn->local; if( !divide( top, local->string_value ? to_int( local ) : local->integer_value, vars, insn->expr ) ) return EXCEPTION; break;
-			case MOD_LOCAL: local = locals + insn->local; if( !modulo( top, local->string_value ? to_int( local ) : local->integer_value, vars, insn->expr ) ) return EXCEPTION; break;
-			case ASL_LOCAL: local = locals + insn->local; *top <<= local->string_value ? to_int( local ) : local->integer_value; break;
-			case ASR_LOCAL: local = locals + insn->local; *top >>= local->string_value ? to_int( local ) : local->integer_value; break;
+			case AND_LOCAL:
+				local = locals + insn->local;
+				if( local->string_value ) {
+					if( to_int( local, &index, vars, insn->expr ) ) {
+						*top &= index;
+					} else {
+						return EXCEPTION;
+					}
+				} else {
+					*top &= local->integer_value;
+				}
+				break;
+			case OR__LOCAL:
+				local = locals + insn->local;
+				if( local->string_value ) {
+					if( to_int( local, &index, vars, insn->expr ) ) {
+						*top |= index;
+					} else {
+						return EXCEPTION;
+					}
+				} else {
+					*top |= local->integer_value;
+				}
+				break;
+			case XOR_LOCAL:
+				local = locals + insn->local;
+				if( local->string_value ) {
+					if( to_int( local, &index, vars, insn->expr ) ) {
+						*top ^= index;
+					} else {
+						return EXCEPTION;
+					}
+				} else {
+					*top ^= local->integer_value;
+				}
+				break;
+			case ADD_LOCAL:
+				local = locals + insn->local;
+				if( local->string_value ) {
+					if( to_int( local, &index, vars, insn->expr ) ) {
+						*top += index;
+					} else {
+						return EXCEPTION;
+					}
+				} else {
+					*top += local->integer_value;
+				}
+				break;
+			case SUB_LOCAL:
+				local = locals + insn->local;
+				if( local->string_value ) {
+					if( to_int( local, &index, vars, insn->expr ) ) {
+						*top -= index;
+					} else {
+						return EXCEPTION;
+					}
+				} else {
+					*top -= local->integer_value;
+				}
+				break;
+			case MUL_LOCAL:
+				local = locals + insn->local;
+				if( local->string_value ) {
+					if( to_int( local, &index, vars, insn->expr ) ) {
+						*top *= index;
+					} else {
+						return EXCEPTION;
+					}
+				} else {
+					*top *= local->integer_value;
+				}
+				break;
+			case DIV_LOCAL:
+				local = locals + insn->local;
+				if( local->string_value ) {
+					if( !to_int( local, &index, vars, insn->expr ) ) {
+						return EXCEPTION;
+					}
+				} else {
+					index = local->integer_value;
+				}
+				if( !divide( top, index, vars, insn->expr ) ) {
+					return EXCEPTION;
+				}
+				break;
+			case MOD_LOCAL:
+				local = locals + insn->local;
+				if( local->string_value ) {
+					if( !to_int( local, &index, vars, insn->expr ) ) {
+						return EXCEPTION;
+					}
+				} else {
+					index = local->integer_value;
+				}
+				if( !modulo( top, index, vars, insn->expr ) ) {
+					return EXCEPTION;
+				}
+				break;
+			case ASL_LOCAL:
+				local = locals + insn->local;
+				if( local->string_value ) {
+					if( to_int( local, &index, vars, insn->expr ) ) {
+						*top <<= index;
+					} else {
+						return EXCEPTION;
+					}
+				} else {
+					*top <<= local->integer_value;
+				}
+				break;
+			case ASR_LOCAL:
+				local = locals + insn->local;
+				if( local->string_value ) {
+					if( to_int( local, &index, vars, insn->expr ) ) {
+						*top >>= index;
+					} else {
+						return EXCEPTION;
+					}
+				} else {
+					*top >>= local->integer_value;
+				}
+				break;
 		}
 		insn++;
 	}
@@ -482,8 +637,11 @@ static struct statement* optimize_local_assignment( struct statement *stmt, stru
 		arith = new_arithmetic_statement( stmt, prev, message );
 		if( arith ) {
 			stmt = &arith->stmt;
-			if( compile_arithmetic_expression( arith, expr, 0, message ) && add_instruction( &arith->insns, oper, arith->stmt.local, expr, message ) ) {
-				if( prev && prev->execute == execute_arithmetic_statement ) {
+			if( compile_arithmetic_expression( arith, expr, 0, message ) ) {
+				if( oper == STORE_LOCAL ) {
+					arith->insns.list[ arith->insns.count - 1 ].oper++;
+				}
+				if( add_instruction( &arith->insns, oper, arith->stmt.local, expr, message ) && prev && prev->execute == execute_arithmetic_statement ) {
 					return combine_arithmetic_statements( ( struct arithmetic_statement * ) prev, arith, message );
 				}
 			}
@@ -508,9 +666,11 @@ static struct statement* optimize_array_assignment( struct statement *stmt, stru
 				stmt = &arith->stmt;
 				if( compile_arithmetic_expression( arith, idx, 0, message )
 				&& add_instruction( &arith->insns, CHECK_ARRAY, arr->index, idx, message )
-				&& compile_arithmetic_expression( arith, src, 1, message )
-				&& add_instruction( &arith->insns, oper, arr->index, arr, message ) ) {
-					if( prev && prev->execute == execute_arithmetic_statement ) {
+				&& compile_arithmetic_expression( arith, src, 1, message ) ) {
+					if( oper == STORE_ARRAY ) {
+						arith->insns.list[ arith->insns.count - 1 ].oper++;
+					}
+					if( add_instruction( &arith->insns, oper, arr->index, arr, message ) && prev && prev->execute == execute_arithmetic_statement ) {
 						return combine_arithmetic_statements( ( struct arithmetic_statement * ) prev, arith, message );
 					}
 				}

@@ -79,14 +79,6 @@ struct environment {
 	struct custom *worker;
 };
 
-/* Custom type. */
-struct custom_type {
-	char *name;
-	int ( *to_int )( struct variable *var );
-	struct string* ( *to_string )( struct variable *var );
-	void ( *dispose )( struct string *this );
-};
-
 /* Reference-counted custom type instance. */
 struct custom {
 	struct string str;
@@ -186,6 +178,14 @@ struct constant {
 	char *name;
 	int integer_value;
 	char *string_value;
+};
+
+/* Custom type. */
+struct custom_type {
+	char *name;
+	enum result ( *to_int )( struct variable *var, int *result, struct variables *vars, struct expression *source );
+	enum result ( *to_str )( struct variable *var, struct string **result, struct variables *vars, struct expression *source );
+	void ( *dispose )( struct string *this );
 };
 
 /* The maximum integer value. */

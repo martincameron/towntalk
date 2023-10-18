@@ -146,7 +146,7 @@
 		$sub(str off len)        Substring (or byte array to string).
 		$asc(int)                Character code to string.
 		$hex(int)                Integer to fixed-length signed hex string.
-		$int(str)                String to integer.
+		$int(str)                String or custom type to integer.
 		$len(str/arr)            Length of string, array or structure.
 		$tup(str int)            String/Integer tuple.
 		$array(len ...)          Create array of specified length and values.
@@ -1232,12 +1232,17 @@ enum result execute_local_assignment( struct statement *this,
 static enum result write_string_expression( struct expression *expr, struct variables *vars, int lf, FILE *output ) {
 	struct variable value = { 0, NULL };
 	struct string *str;
-	if( expr->evaluate( expr, vars, &value ) ) {
+	enum result ret = expr->evaluate( expr, vars, &value );
+	if( ret ) {
 		if( value.string_value ) {
-			if( value.string_value->type == CUSTOM && ( ( struct custom * ) value.string_value )->type->to_string ) {
-				str = ( ( struct custom * ) value.string_value )->type->to_string( &value );
+			if( value.string_value->type == CUSTOM && ( ( struct custom * ) value.string_value )->type->to_str ) {
+				ret = ( ( struct custom * ) value.string_value )->type->to_str( &value, &str, vars, expr );
 				dispose_temporary( &value );
-				value.string_value = str;
+				if( ret ) {
+					value.string_value = str;
+				} else {
+					return ret;
+				}
 			}
 			fwrite( value.string_value->string, 1, value.string_value->length, output );
 		} else {
@@ -1247,9 +1252,8 @@ static enum result write_string_expression( struct expression *expr, struct vari
 			fputc( '\n', output );
 		}
 		dispose_temporary( &value );
-		return OKAY;
 	}
-	return EXCEPTION;
+	return ret;
 }
 
 static enum result execute_print_statement( struct statement *this,
@@ -1366,33 +1370,32 @@ enum result evaluate_element( struct expression *expr, struct variables *vars, s
 	return ret;
 }
 
-int to_int( struct variable *var ) {
-	if( var->string_value && var->string_value->type == CUSTOM
-	&& ( ( struct custom * ) var->string_value )->type->to_int ) {
-		return ( ( struct custom * ) var->string_value )->type->to_int( var );
+enum result to_int( struct variable *var, int *result, struct variables *vars, struct expression *source ) {
+	if( var->string_value ) {
+		if( var->string_value->type == CUSTOM && ( ( struct custom * ) var->string_value )->type->to_int ) {
+			return ( ( struct custom * ) var->string_value )->type->to_int( var, result, vars, source );
+		}
 	}
-	return var->integer_value;
+	*result = var->integer_value;
+	return OKAY;
 }
 
 /* Evaluate the specified expression into the specified integer result. */
 enum result evaluate_integer( struct expression *expr, struct variables *vars, int *result ) {
+	enum result ret;
 	struct variable var;
 	if( expr->evaluate == evaluate_local && !vars->locals[ expr->index ].string_value ) {
-		result[ 0 ] = vars->locals[ expr->index ].integer_value;
+		*result = vars->locals[ expr->index ].integer_value;
 		return OKAY;
 	}
 	var.integer_value = 0;
 	var.string_value = NULL;
-	if( expr->evaluate( expr, vars, &var ) ) {
-		if( var.string_value ) {
-			result[ 0 ] = to_int( &var );
-			dispose_temporary( &var );
-		} else {
-			result[ 0 ] = var.integer_value;
-		}
-		return OKAY;
+	ret = expr->evaluate( expr, vars, &var );
+	if( ret ) {
+		ret = to_int( &var, result, vars, expr );
+		dispose_temporary( &var );
 	}
-	return EXCEPTION;
+	return ret;
 }
 
 /* Return 1 if the specified reference is an instance of the specified custom type. */
@@ -2062,13 +2065,13 @@ static void expr_set_line( struct expression *expr, int line ) {
 
 static enum result evaluate_array_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
-	struct expression prev, *expr = this->parameters->next;
+	struct expression prev, *param = this->parameters, *expr = param->next;
 	int idx, len, buf = this->index == 'B';
 	struct variable var = { 0, NULL };
 	struct structure *struc = NULL;
 	char msg[ 128 ] = "";
 	struct array *arr;
-	enum result ret = this->parameters->evaluate( this->parameters, vars, &var );
+	enum result ret = param->evaluate( param, vars, &var );
 	prev.next = NULL;
 	if( ret ) {
 		if( var.string_value ) {
@@ -2077,7 +2080,7 @@ static enum result evaluate_array_expression( struct expression *this,
 					parse_expressions( ( struct element * ) var.string_value, vars->func, NULL, 0, &prev, &len, msg );
 					if( msg[ 0 ] == 0 ) {
 						expr = prev.next;
-						if( this->parameters->evaluate != evaluate_string_literal_expression ) {
+						if( param->evaluate != evaluate_string_literal_expression ) {
 							expr_set_line( expr, this->line );
 						}
 					} else {
@@ -2090,7 +2093,7 @@ static enum result evaluate_array_expression( struct expression *this,
 				struc = ( struct structure * ) var.string_value;
 				len = struc->length;
 			} else {
-				len = to_int( &var );
+				ret = to_int( &var, &len, vars, param );
 			}
 		} else {
 			len = var.integer_value;
@@ -2483,14 +2486,18 @@ static enum result evaluate_int_expression( struct expression *this,
 	int val;
 	char *end;
 	struct variable str = { 0, NULL };
-	enum result ret = evaluate_string( this->parameters, vars, &str );
+	enum result ret = this->parameters->evaluate( this->parameters, vars, &str );
 	if( ret ) {
-		errno = 0;
-		val = ( int ) strtoul( str.string_value->string, &end, 0 );
-		if( end[ 0 ] || errno ) {
-			ret = throw( vars, this, 0, "Unable to convert string to integer." );
+		if( str.string_value && str.string_value->type <= ELEMENT ) {
+			errno = 0;
+			val = ( int ) strtoul( str.string_value->string, &end, 0 );
+			if( end[ 0 ] || errno ) {
+				ret = throw( vars, this, 0, "Unable to convert string to integer." );
+			} else {
+				result->integer_value = val;
+			}
 		} else {
-			result->integer_value = val;
+			ret = to_int( &str, &result->integer_value, vars, this->parameters );
 		}
 		dispose_temporary( &str );
 	}
@@ -2509,10 +2516,14 @@ static enum result evaluate_str_expression( struct expression *this,
 		ret = parameter->evaluate( parameter, vars, &var );
 		if( ret ) {
 			if( var.string_value ) {
-				if( var.string_value->type == CUSTOM && ( ( struct custom * ) var.string_value )->type->to_string ) {
-					new = ( ( struct custom * ) var.string_value )->type->to_string( &var );
+				if( var.string_value->type == CUSTOM && ( ( struct custom * ) var.string_value )->type->to_str ) {
+					ret = ( ( struct custom * ) var.string_value )->type->to_str( &var, &new, vars, parameter );
 					dispose_temporary( &var );
-					var.string_value = new;
+					if( ret ) {
+						var.string_value = new;
+					} else {
+						break;
+					}
 				}
 				len = var.string_value->length;
 				val = var.string_value->string;
@@ -3313,26 +3324,28 @@ static enum result evaluate_pack_expression( struct expression *this,
 			src = ( ( struct array * ) val.string_value )->integer_values;
 			len = ( ( struct array * ) val.string_value )->length * 4;
 		} else {
-			val.integer_value = to_int( &val );
 			src = &val.integer_value;
+			ret = to_int( &val, src, vars, this->parameters );
 			len = 4;
 		}
-		str = new_string( len );
-		if( str ) {
-			idx = 0;
-			out = str->string;
-			while( idx < len ) {
-				in = src[ idx >> 2 ];
-				out[ idx ] = in >> 24;
-				out[ idx + 1 ] = in >> 16;
-				out[ idx + 2 ] = in >> 8;
-				out[ idx + 3 ] = in;
-				idx += 4;
+		if( ret ) {
+			str = new_string( len );
+			if( str ) {
+				idx = 0;
+				out = str->string;
+				while( idx < len ) {
+					in = src[ idx >> 2 ];
+					out[ idx ] = in >> 24;
+					out[ idx + 1 ] = in >> 16;
+					out[ idx + 2 ] = in >> 8;
+					out[ idx + 3 ] = in;
+					idx += 4;
+				}
+				out[ idx ] = 0;
+				result->string_value = str;
+			} else {
+				ret = throw( vars, this, 0, OUT_OF_MEMORY );
 			}
-			out[ idx ] = 0;
-			result->string_value = str;
-		} else {
-			ret = throw( vars, this, 0, OUT_OF_MEMORY );
 		}
 		dispose_temporary( &val );
 	}

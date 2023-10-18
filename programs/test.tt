@@ -555,7 +555,6 @@ function testint() {
 	call assert_equals( -256, $int( "0xFFFFFF00" ), ${-} );
 	call assert_equals( 256, $int( "-0xFFFFFF00" ), ${-} );
 	call assert_throws( "1", ${ () { call $int( except( ${ 1 } ) ); } } );
-	call assert_throws( "Not a string", ${ () { call $int( 1 ); } } );
 	call assert_throws( "Unable to convert", ${ () { call $int( "a" ); } } );
 }
 
@@ -1034,10 +1033,10 @@ function testoptimizer() {
 	call assert_equals( 4, acc, ${-} );
 	let acc = /( 6 TWO );
 	call assert_equals( 3, acc, ${-} );
-	call assert_throws( "Division", ${ () { var x = /( 0 NUL ); } } );
+	call assert_throws( "Integer division", ${ () { var x = /( 0 NUL ); } } );
 	let acc = %( 3 TWO );
 	call assert_equals( 1, acc, ${-} );
-	call assert_throws( "Modulo", ${ () { var x = %( 0 NUL ); } } );
+	call assert_throws( "Modulo division", ${ () { var x = %( 0 NUL ); } } );
 	let acc = <<( 1 ONE );
 	call assert_equals( 2, acc, ${-} );
 	let acc = >>( 2 ONE );
@@ -1056,10 +1055,10 @@ function testoptimizer() {
 	call assert_equals( 4, acc, ${-} );
 	let acc = /( 6 2 );
 	call assert_equals( 3, acc, ${-} );
-	call assert_throws( "Division", ${ () { var x = /( 0 0 ); } } );
+	call assert_throws( "Integer division", ${ () { var x = /( 0 0 ); } } );
 	let acc = %( 3 2 );
 	call assert_equals( 1, acc, ${-} );
-	call assert_throws( "Modulo", ${ () { var x = %( 0 0 ); } } );
+	call assert_throws( "Modulo division", ${ () { var x = %( 0 0 ); } } );
 	let acc = <<( 1 1 );
 	call assert_equals( 2, acc, ${-} );
 	let acc = >>( 2 1 );
@@ -1078,10 +1077,10 @@ function testoptimizer() {
 	call assert_equals( 4, acc, ${-} );
 	let acc = /( 6 two );
 	call assert_equals( 3, acc, ${-} );
-	call assert_throws( "Division", ${ () { var x, y = /( 0 x ); } } );
+	call assert_throws( "Integer division", ${ () { var x, y = /( 0 x ); } } );
 	let acc = %( 3 two );
 	call assert_equals( 1, acc, ${-} );
-	call assert_throws( "Modulo", ${ () { var x, y = %( 0 x ); } } );
+	call assert_throws( "Modulo division", ${ () { var x, y = %( 0 x ); } } );
 	let acc = <<( 1 one );
 	call assert_equals( 2, acc, ${-} );
 	let acc = >>( 2 one );
