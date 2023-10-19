@@ -440,12 +440,18 @@ static enum result execute_arithmetic_statement( struct statement *this,
 			case STORE_ARRAY:
 				index = *top--;
 				arr = ( struct array * ) locals[ insn->local ].string_value;
-				arr->integer_values[ index ] = var.integer_value;
 				if( arr->string_values ) {
 					if( arr->string_values[ index ] ) {
 						unref_string( arr->string_values[ index ] );
 					}
+					arr->integer_values[ index ] = var.integer_value;
 					arr->string_values[ index ] = var.string_value;
+				} else if( var.string_value ) {
+					if( !to_int( &var, &arr->integer_values[ index ], vars, insn->expr ) ) {
+						return EXCEPTION;
+					}
+				} else {
+					arr->integer_values[ index ] = var.integer_value;
 				}
 				break;
 			case AND_STACK: top--; *top  &= top[ 1 ]; break;

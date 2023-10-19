@@ -1685,14 +1685,17 @@ enum result execute_array_assignment( struct statement *this,
 				if( ( unsigned int ) idx < ( unsigned int ) arr->length ) {
 					ret = src_expr->evaluate( src_expr, vars, &src );
 					if( ret ) {
-						arr->integer_values[ idx ] = src.integer_value;
 						if( arr->string_values ) {
 							if( arr->string_values[ idx ] ) {
 								unref_string( arr->string_values[ idx ] );
 							}
+							arr->integer_values[ idx ] = src.integer_value;
 							arr->string_values[ idx ] = src.string_value;
-						} else {
+						} else if( src.string_value ) {
+							ret = to_int( &src, &arr->integer_values[ idx ], vars, src_expr );
 							dispose_temporary( &src );
+						} else {
+							arr->integer_values[ idx ] = src.integer_value;
 						}
 					}
 				} else {
