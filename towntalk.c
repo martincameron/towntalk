@@ -1383,17 +1383,28 @@ enum result to_int( struct variable *var, int *result, struct variables *vars, s
 /* Evaluate the specified expression into the specified integer result. */
 enum result evaluate_integer( struct expression *expr, struct variables *vars, int *result ) {
 	enum result ret;
-	struct variable var;
-	if( expr->evaluate == evaluate_local && !vars->locals[ expr->index ].string_value ) {
-		*result = vars->locals[ expr->index ].integer_value;
+	struct variable var, *local;
+	if( expr->evaluate == evaluate_integer_literal_expression ) {
+		*result = expr->index;
+		return OKAY;
+	} else if( expr->evaluate == evaluate_local ) {
+		local = &vars->locals[ expr->index ];
+		if( local->string_value ) {
+			return to_int( local, result, vars, expr );
+		}
+		*result = local->integer_value;
 		return OKAY;
 	}
 	var.integer_value = 0;
 	var.string_value = NULL;
 	ret = expr->evaluate( expr, vars, &var );
 	if( ret ) {
-		ret = to_int( &var, result, vars, expr );
-		dispose_temporary( &var );
+		if( var.string_value ) {
+			ret = to_int( &var, result, vars, expr );
+			dispose_temporary( &var );
+		} else {
+			*result = var.integer_value;
+		}
 	}
 	return ret;
 }
@@ -2442,9 +2453,7 @@ enum result evaluate_arithmetic_expression( struct expression *this,
 	}
 	while( parameter->next ) {
 		parameter = parameter->next;
-		if( parameter->evaluate == evaluate_integer_literal_expression ) {
-			rhs = parameter->index;
-		} else if( !evaluate_integer( parameter, vars, &rhs ) ) {
+		if( !evaluate_integer( parameter, vars, &rhs ) ) {
 			return EXCEPTION;
 		}
 		switch( oper ) {
