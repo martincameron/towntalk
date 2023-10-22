@@ -288,7 +288,7 @@ void unref_string( struct string *str );
 void assign_variable( struct variable *src, struct variable *dest );
 
 /* Assign src variable to dest array at the specified index, managing reference counts. */
-void assign_array_variable( struct variable *src, struct array *arr, int idx );
+enum result assign_array_variable( struct variable *src, struct array *arr, int idx, struct variables *vars, struct expression *source );
 
 /* Assign an exception with the specified error code and message to vars and return EXCEPTION. */
 enum result throw( struct variables *vars, struct expression *source, int integer, const char *string );

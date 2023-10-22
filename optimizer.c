@@ -448,8 +448,10 @@ static enum result execute_arithmetic_statement( struct statement *this,
 					arr->string_values[ index ] = var.string_value;
 				} else if( var.string_value ) {
 					if( !to_int( &var, &arr->integer_values[ index ], vars, insn->expr ) ) {
+						unref_string( var.string_value );
 						return EXCEPTION;
 					}
+					unref_string( var.string_value );
 				} else {
 					arr->integer_values[ index ] = var.integer_value;
 				}

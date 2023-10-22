@@ -643,18 +643,6 @@ void assign_variable( struct variable *src, struct variable *dest ) {
 	}
 }
 
-/* Assign src variable to dest array at the specified index, managing reference counts. */
-void assign_array_variable( struct variable *src, struct array *arr, int idx ) {
-	struct variable var = { 0, NULL };
-	assign_variable( src, &var );
-	arr->integer_values[ idx ] = var.integer_value;
-	if( arr->string_values ) {
-		arr->string_values[ idx ] = var.string_value;
-	} else {
-		dispose_temporary( &var );
-	}
-}
-
 static int compare_variables( struct variable *var1, struct variable *var2 ) {
 	struct string *str1, *str2;
 	int result = var1->integer_value - var2->integer_value;
@@ -1378,6 +1366,25 @@ enum result to_int( struct variable *var, int *result, struct variables *vars, s
 	}
 	*result = var->integer_value;
 	return OKAY;
+}
+
+/* Assign src variable to dest array at the specified index, managing reference counts. */
+enum result assign_array_variable( struct variable *src, struct array *arr, int idx, struct variables *vars, struct expression *source ) {
+	struct string *str;
+	if( arr->string_values ) {
+		arr->integer_values[ idx ] = src->integer_value;
+		str = arr->string_values[ idx ];
+		if( str ) {
+			unref_string( str );
+		}
+		str = src->string_value;
+		arr->string_values[ idx ] = str;
+		if( str ) {
+			str->reference_count++;
+		}
+		return OKAY;
+	}
+	return to_int( src, &arr->integer_values[ idx ], vars, source );
 }
 
 /* Evaluate the specified expression into the specified integer result. */
@@ -2131,7 +2138,7 @@ static enum result evaluate_array_expression( struct expression *this,
 						dispose_variable( &var );
 						ret = expr->evaluate( expr, vars, &var );
 						if( ret ) {
-							assign_array_variable( &var, arr, idx++ );
+							ret = assign_array_variable( &var, arr, idx++, vars, expr );
 						}
 					} else {
 						ret = throw( vars, this, idx, "Array index out of bounds." );
@@ -2627,14 +2634,23 @@ static enum result evaluate_tup_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	struct expression *parameter = this->parameters;
 	struct variable str = { 0, NULL };
-	int val;
 	enum result ret = parameter->evaluate( parameter, vars, &str );
 	if( ret ) {
-		ret = evaluate_integer( parameter->next, vars, &val );
-		if( ret ) {
-			result->integer_value = val;
-			result->string_value = str.string_value;
+		parameter = parameter->next;
+		if( str.string_value ) {
+			ret = evaluate_integer( parameter, vars, &str.integer_value );
+			if( ret ) {
+				result->integer_value = str.integer_value;
+				result->string_value = str.string_value;
+			} else {
+				dispose_temporary( &str );
+			}
 		} else {
+			str.integer_value = 0;
+			ret = parameter->evaluate( parameter, vars, &str );
+			if( ret ) {
+				result->integer_value = str.integer_value;
+			}
 			dispose_temporary( &str );
 		}
 	}

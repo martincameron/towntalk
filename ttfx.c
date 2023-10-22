@@ -1282,7 +1282,7 @@ static enum result evaluate_seqmix_expression( struct expression *this,
 			}
 			while( idx < end ) {
 				var.integer_value = fxenv->audio[ idx ];
-				assign_array_variable( &var, ( struct array * ) arr.string_value, idx++ );
+				assign_array_variable( &var, ( struct array * ) arr.string_value, idx++, vars, this );
 			}
 			result->integer_value = fxenv->audio_end;
 			SDL_UnlockAudio();
