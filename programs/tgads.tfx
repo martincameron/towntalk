@@ -942,7 +942,7 @@ function read_dir( path ) {
 	let len = 0;
 	let elem = head;
 	while elem {
-		set[ arr len ] = $tup( $unquote( $child( elem ) ) $int( $next( $child( elem ) ) ) );
+		set [ arr len ] = $tup( $unquote( $child( elem ) ) $int( $next( $child( elem ) ) ) );
 		let elem = $next( elem );
 		inc len;
 	}
@@ -957,14 +957,12 @@ function sort_dir( vals ) {
 		let progress = FALSE;
 		while <( idx $len( vals ) ) {
 			let tmp = [ vals -( idx 1 ) ];
-			if <( tmp 0 ) {
-				let lhs = tmp;
-			} else {
-				let lhs = $tup( tmp, 0 );
+			let lhs = tmp;
+			if >e( $tup( 0 lhs ) 0 ) {
+				let lhs = $tup( lhs, 0 );
 			}
-			if <( [ vals idx ] 0 ) {
-				let rhs = [ vals idx ];
-			} else {
+			let rhs = [ vals idx ];
+			if >e( $tup( 0 rhs ) 0 ) {
 				let rhs = $tup( [ vals idx ] 0 );
 			}
 			if >( $cmp( lhs rhs ) 0 ) {
@@ -980,10 +978,10 @@ function sort_dir( vals ) {
 function format_dir( vals ) {
 	var idx, len;
 	while <( idx $len( vals ) ) {
-		if <( [ vals idx ] 0 ) {
+		let len = $tup( 0 [ vals idx ] );
+		if <( len 0 ) {
 			set [ vals idx ] = $tup( $str( "[Dir] " [ vals idx ] ) 1 ); 
 		} else {
-			let len = $tup( 0 [ vals idx ] );
 			if >( len 9999 ) {
 				if >( len *( 1048576 2047 ) ) {
 					let len = "(+2g)";
@@ -1082,10 +1080,10 @@ function fs_dir_selected() {
 function fs_list_selected() {
 	var file;
 	let file = [ [ tg_a fs_list ] [ tg_c fs_list ] ];
-	if =( file 0 ) {
-		set [ tg_a fs_file ] = $sub( file, 6, -( $len( file ) 6 ) );
-	} else {
+	if $tup( 0 file ) {
 		set [ tg_a fs_file ] = "";
+	} else {
+		set [ tg_a fs_file ] = $sub( file, 6, -( $len( file ) 6 ) );
 	}
 	let tg_update = TRUE;
 }

@@ -18,9 +18,9 @@
 	When a '#' character is encountered, the rest of the line is ignored.
 	Variable and function names must be alphanumeric.
 	Commas within name and argument lists are optional.
-	A value is an integer with an associated reference.
-	References may be null, strings, elements, arrays or functions.
-	Non-null values may evaluate to zero in integer expressions.
+	A value may be an integer, a reference, or a tuple.
+	References may be strings, elements, arrays, structs, functions or custom types.
+	A tuple is a reference with an associated integer.
 	Strings are immutable and can be used as byte arrays.
 	String literals may include the escape sequences "\"", "\\", and octal "\nnn".
 	Buffers are arrays that cannot hold references but use much less memory.
@@ -1362,6 +1362,8 @@ enum result to_int( struct variable *var, int *result, struct variables *vars, s
 	if( var->string_value ) {
 		if( var->string_value->type == CUSTOM && ( ( struct custom * ) var->string_value )->type->to_int ) {
 			return ( ( struct custom * ) var->string_value )->type->to_int( var, result, vars, source );
+		} else {
+			return throw( vars, source, 0, "Not an integer." );
 		}
 	}
 	*result = var->integer_value;
@@ -5485,14 +5487,16 @@ static struct keyword declarations[] = {
 static int validate_name( struct element *elem, char *message ) {
 	int chr = elem->str.string[ 0 ], idx = 1, len = elem->str.length;
 	int result = len < 65 && ( chr >= 'A' && chr <= 'Z') || ( chr >= 'a' && chr <= 'z' );
-	/* First character must be alphabetical.*/
-	while( idx < len ) {
-		chr = elem->str.string[ idx++ ];
-		if( !( chr == '_' || ( chr >= '0' && chr <= '9' )
-		|| ( chr >= 'A' && chr <= 'Z' ) || ( chr >= 'a' && chr <= 'z' ) ) ) {
-			/* Subsequent characters must be alphanumerical, or underscore. */
-			result = 0;
-			idx = len;
+	if( result ) {
+		/* First character must be alphabetical.*/
+		while( idx < len ) {
+			chr = elem->str.string[ idx++ ];
+			if( !( chr == '_' || ( chr >= '0' && chr <= '9' )
+			|| ( chr >= 'A' && chr <= 'Z' ) || ( chr >= 'a' && chr <= 'z' ) ) ) {
+				/* Subsequent characters must be alphanumerical, or underscore. */
+				result = 0;
+				idx = len;
+			}
 		}
 	}
 	if( !result ) {

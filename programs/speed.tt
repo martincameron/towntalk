@@ -1,6 +1,6 @@
 
 program speed {
-	var time = $time, elapsed = 0, total = 0, scale = 1;
+	var time = $tup( 0 $time ), elapsed = 0, total = 0, scale = 1;
 	var prog = ${ ( n ) { var a = 0; while <( a n ) { inc a; } return a; } };
 	var worker1 = $worker( prog );
 	var worker2 = $worker( prog );
@@ -18,7 +18,7 @@ program speed {
 		call $execute( worker3 count );
 		call $execute( worker4 count );
 		let total = +( total /( +( $result( worker1 ) $result( worker2 ) $result( worker3 ) $result( worker4 ) ) scale ) );
-		let elapsed = -( $time time );
+		let elapsed = -( $tup( 0 $time ) time );
 	}
 
 	print $cat( "Finished in " elapsed " seconds. At least " /( total elapsed ) " * " scale " iterations per second." );
