@@ -206,7 +206,7 @@ static struct constant constants[] = {
 };
 
 /* Forward declarations. */
-void optimize_statements( struct statement *prev, char *message );
+void optimize_statements( struct function *func, struct statement *prev, char *message );
 static int validate_name( struct element *elem, char *message );
 static int validate_decl( struct string *decl, int line, struct environment *env, char *message );
 static void parse_keywords( struct keyword *keywords, struct element *elem,
@@ -730,7 +730,7 @@ static void dispose_global_variable( struct global_variable *global ) {
 	free( global );
 }
 
-static void dispose_statements( struct statement *statements ) {
+void dispose_statements( struct statement *statements ) {
 	struct statement *next;
 	while( statements ) {
 		next = statements->next;
@@ -1439,7 +1439,7 @@ enum result evaluate_custom( struct expression *expr, struct custom_type *type, 
 	return ret;
 }
 
-static enum result execute_statements( struct statement *stmt, struct variables *vars, struct variable *result ) {
+enum result execute_statements( struct statement *stmt, struct variables *vars, struct variable *result ) {
 	enum result ret = OKAY;
 	while( stmt ) {
 		ret = stmt->execute( stmt, vars, result );
@@ -1543,62 +1543,24 @@ static enum result execute_try_catch_statement( struct statement *this,
 	return ret;
 }
 
-static enum result execute_if_statement( struct statement *this,
+enum result execute_if_statement( struct statement *this,
 	struct variables *vars, struct variable *result ) {
-	struct block_statement *block = ( struct block_statement * ) this;
-	struct variable condition = { 0 }, *lhs = &condition, *rhs = &condition;
-	struct statement *stmt = block->if_block;
-	struct expression *parameter;
-	int oper = this->local;
-	enum result ret = OKAY;
-	if( oper ) {
-		parameter = this->source->parameters;
-		lhs = &vars->locals[ parameter->index ];
-		if( lhs->string_value ) {
-			oper = 0;
-		} else {
-			parameter = parameter->next;
-			if( parameter->evaluate == evaluate_local ) {
-				rhs = &vars->locals[ parameter->index ];
-				if( rhs->string_value ) {
-					oper = 0;
-				}
-			} else if( parameter->evaluate == evaluate_integer_literal_expression ) {
-				condition.integer_value = parameter->index;
-			} else if( parameter->evaluate == evaluate_global ) {
-				rhs = &( ( struct global_variable * ) ( ( struct string_expression * ) parameter )->str )->value;
-				if( rhs->string_value ) {
-					oper = 0;
-				}
-			} else {
-				oper = 0;
-			}
+	struct statement *stmt = ( ( struct block_statement * ) this )->if_block;
+	struct variable condition = { 0 };
+	enum result ret = this->source->evaluate( this->source, vars, &condition );
+	if( ret ) {
+		if( condition.string_value ) {
+			dispose_temporary( &condition );
+		} else if( condition.integer_value == 0 ) {
+			stmt = ( ( struct block_statement * ) this )->else_block;
 		}
-	}
-	switch( oper ) {
-		case '!': if( lhs->integer_value == rhs->integer_value ) stmt = block->else_block; break;
-		case '(': if( lhs->integer_value > rhs->integer_value ) stmt = block->else_block; break;
-		case ')': if( lhs->integer_value < rhs->integer_value ) stmt = block->else_block; break;
-		case '<': if( lhs->integer_value >= rhs->integer_value ) stmt = block->else_block; break;
-		case '=': if( lhs->integer_value != rhs->integer_value ) stmt = block->else_block; break;
-		case '>': if( lhs->integer_value <= rhs->integer_value ) stmt = block->else_block; break;
-		default:
-			if( this->source->evaluate( this->source, vars, &condition ) ) {
-				if( condition.string_value ) {
-					dispose_temporary( &condition );
-				} else if( condition.integer_value == 0 ) {
-					stmt = block->else_block;
-				}
+		while( stmt ) {
+			ret = stmt->execute( stmt, vars, result );
+			if( ret == OKAY ) {
+				stmt = stmt->next;
 			} else {
-				return EXCEPTION;
+				break;
 			}
-	}
-	while( stmt ) {
-		ret = stmt->execute( stmt, vars, result );
-		if( ret == OKAY ) {
-			stmt = stmt->next;
-		} else {
-			break;
 		}
 	}
 	return ret;
@@ -4881,7 +4843,7 @@ void parse_keywords_indexed( struct keyword **index, struct element *elem,
 	}
 #if defined( OPTIMIZER )
 	if( message[ 0 ] == 0 && prev->next ) {
-		optimize_statements( prev, message );
+		optimize_statements( func, prev, message );
 	}
 #endif
 }
@@ -4898,10 +4860,6 @@ static struct element* parse_if_statement( struct element *elem,
 		next = parse_expression( next, func, vars, &expr, message );
 		if( expr.next ) {
 			stmt->source = expr.next;
-			if( stmt->source->evaluate == evaluate_arithmetic_expression
-			&& stmt->source->parameters->evaluate == evaluate_local && stmt->source->parameters->next->next == NULL ) {
-				stmt->local = stmt->source->index;
-			}
 			stmt->execute = execute_if_statement;
 			if( next->child ) {
 				parse_keywords_indexed( func->env->statements_index, next->child, func, vars, &block, message );

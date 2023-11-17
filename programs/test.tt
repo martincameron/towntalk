@@ -1062,6 +1062,18 @@ function testoptimizer() {
 	call assert_equals( 2, acc, ${-} );
 	let acc = >>( 2 ONE );
 	call assert_equals( 1, acc, ${-} );
+	let acc = <>( 2 ONE );
+	call assert_equals( 1, acc, ${-} );
+	let acc = <( 1 ONE );
+	call assert_equals( 0, acc, ${-} );
+	let acc = <e( 1 ONE );
+	call assert_equals( 1, acc, ${-} );
+	let acc = =( 1 ONE );
+	call assert_equals( 1, acc, ${-} );
+	let acc = >e( 1 ONE );
+	call assert_equals( 1, acc, ${-} );
+	let acc = >( 1 ONE );
+	call assert_equals( 0, acc, ${-} );
 	let acc = &( 3 1 );
 	call assert_equals( 1, acc, ${-} );
 	let acc = |( 0 1 );
@@ -1084,6 +1096,18 @@ function testoptimizer() {
 	call assert_equals( 2, acc, ${-} );
 	let acc = >>( 2 1 );
 	call assert_equals( 1, acc, ${-} );
+	let acc = <>( 2 1 );
+	call assert_equals( 1, acc, ${-} );
+	let acc = <( 1 1 );
+	call assert_equals( 0, acc, ${-} );
+	let acc = <e( 1 1 );
+	call assert_equals( 1, acc, ${-} );
+	let acc = =( 1 1 );
+	call assert_equals( 1, acc, ${-} );
+	let acc = >e( 1 1 );
+	call assert_equals( 1, acc, ${-} );
+	let acc = >( 1 1 );
+	call assert_equals( 0, acc, ${-} );
 	let acc = &( 3 one );
 	call assert_equals( 1, acc, ${-} );
 	call assert_throws( "Not an integer", ${ () { var s = ""; let s = &( 3 s ); } } );
@@ -1116,6 +1140,24 @@ function testoptimizer() {
 	let acc = >>( 2 one );
 	call assert_equals( 1, acc, ${-} );
 	call assert_throws( "Not an integer", ${ () { var s = ""; let s = >>( 3 s ); } } );
+	let acc = <>( 2 one );
+	call assert_equals( 1, acc, ${-} );
+	call assert_throws( "Not an integer", ${ () { var s = ""; let s = <>( 3 s ); } } );
+	let acc = <( 1 one );
+	call assert_equals( 0, acc, ${-} );
+	call assert_throws( "Not an integer", ${ () { var s = ""; let s = <( 3 s ); } } );
+	let acc = <e( 1 one );
+	call assert_equals( 1, acc, ${-} );
+	call assert_throws( "Not an integer", ${ () { var s = ""; let s = <e( 3 s ); } } );
+	let acc = =( 1 one );
+	call assert_equals( 1, acc, ${-} );
+	call assert_throws( "Not an integer", ${ () { var s = ""; let s = =( 3 s ); } } );
+	let acc = >e( 1 one );
+	call assert_equals( 1, acc, ${-} );
+	call assert_throws( "Not an integer", ${ () { var s = ""; let s = >e( 3 s ); } } );
+	let acc = >( 1 one );
+	call assert_equals( 0, acc, ${-} );
+	call assert_throws( "Not an integer", ${ () { var s = ""; let s = >( 3 s ); } } );
 }
 
 program test {
