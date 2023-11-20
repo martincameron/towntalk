@@ -4,6 +4,8 @@
 
 #include "towntalk.h"
 
+/* #define PRINT_INSNS */
+
 /*
 	Stack-machine for fast integer arithmetic and assignment.
 	
@@ -726,24 +728,17 @@ static struct arithmetic_statement *add_arithmetic_statement( struct statement *
 
 static struct statement* optimize_local_assignment( struct statement *stmt, struct statement *prev, char *message ) {
 	struct expression *expr = stmt->source;
-	struct arithmetic_statement *arith;
-	enum arithmetic_op oper = HALT;
-	int local = stmt->local;
-	if( expr->evaluate == evaluate_arithmetic_expression || expr->evaluate == evaluate_chr_expression || expr->evaluate == evaluate_integer_literal_expression ) {
-		oper = POP_LOCAL;
-	} else if( expr->evaluate == evaluate_local || expr->evaluate == evaluate_global || expr->evaluate == evaluate_index_expression ) {
-		oper = STORE_LOCAL;
-	}
-	if( oper ) {
-		arith = add_arithmetic_statement( stmt, prev, message );
-		if( arith ) {
-			stmt = &arith->stmt;
-			if( compile_arithmetic_expression( arith, expr, 0, message ) ) {
-				if( oper == STORE_LOCAL ) {
-					arith->insns.list[ arith->insns.count - 1 ].oper++;
-				}
-				add_instruction( &arith->insns, oper, local, expr, message );
+	int local = stmt->local, *oper, dest = POP_LOCAL;
+	struct arithmetic_statement *arith = add_arithmetic_statement( stmt, prev, message );
+	if( arith ) {
+		stmt = &arith->stmt;
+		if( compile_arithmetic_expression( arith, expr, 0, message ) ) {
+			oper = &arith->insns.list[ arith->insns.count - 1 ].oper;
+			if( *oper == PUSH_LOCAL || *oper == PUSH_GLOBAL || *oper == PUSH_EXPR || *oper == PUSH_ARRAY ) {
+				dest = STORE_LOCAL;
+				(*oper)++;
 			}
+			add_instruction( &arith->insns, dest, local, expr, message );
 		}
 	}
 	return stmt;
@@ -752,25 +747,20 @@ static struct statement* optimize_local_assignment( struct statement *stmt, stru
 static struct statement* optimize_array_assignment( struct statement *stmt, struct statement *prev, char *message ) {
 	struct expression *src = stmt->source, *arr = src->next, *idx = arr->next;
 	struct arithmetic_statement *arith;
-	enum arithmetic_op oper = HALT;
+	int *oper, dest = POP_ARRAY;
 	if( arr->evaluate == evaluate_local ) {
-		if( src->evaluate == evaluate_arithmetic_expression || src->evaluate == evaluate_chr_expression || src->evaluate == evaluate_integer_literal_expression ) {
-			oper = POP_ARRAY;
-		} else if( src->evaluate == evaluate_local || src->evaluate == evaluate_global || src->evaluate == evaluate_index_expression ) {
-			oper = STORE_ARRAY;
-		}
-		if( oper ) {
-			arith = add_arithmetic_statement( stmt, prev, message );
-			if( arith ) {
-				stmt = &arith->stmt;
-				if( compile_arithmetic_expression( arith, idx, 0, message )
-				&& add_instruction( &arith->insns, CHECK_ARRAY, arr->index, idx, message )
-				&& compile_arithmetic_expression( arith, src, 1, message ) ) {
-					if( oper == STORE_ARRAY ) {
-						arith->insns.list[ arith->insns.count - 1 ].oper++;
-					}
-					add_instruction( &arith->insns, oper, arr->index, arr, message );
+		arith = add_arithmetic_statement( stmt, prev, message );
+		if( arith ) {
+			stmt = &arith->stmt;
+			if( compile_arithmetic_expression( arith, idx, 0, message )
+			&& add_instruction( &arith->insns, CHECK_ARRAY, arr->index, idx, message )
+			&& compile_arithmetic_expression( arith, src, 1, message ) ) {
+				oper = &arith->insns.list[ arith->insns.count - 1 ].oper;
+				if( *oper == PUSH_LOCAL || *oper == PUSH_GLOBAL || *oper == PUSH_EXPR || *oper == PUSH_ARRAY ) {
+					dest = STORE_ARRAY;
+					(*oper)++;
 				}
+				add_instruction( &arith->insns, dest, arr->index, arr, message );
 			}
 		}
 	}
