@@ -4524,7 +4524,7 @@ static struct element* parse_call_statement( struct element *elem,
 
 static struct element* parse_case_statement( struct element *elem,
 	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
-	struct expression expr;
+	struct expression expr = { 0 };
 	struct element *next = elem->next;
 	struct statement block = { 0 }, *stmt = calloc( 1, sizeof( struct block_statement ) );
 	if( stmt ) {
@@ -4533,7 +4533,6 @@ static struct element* parse_case_statement( struct element *elem,
 		next = parse_expressions( next, func, vars, '{', &expr, NULL, message );
 		stmt->source = expr.next;
 		if( message[ 0 ] == 0 ) {
-			block.next = NULL;
 			parse_keywords_indexed( func->env->statements_index, next->child, func, vars, &block, message );
 			( ( struct block_statement * ) stmt )->if_block = block.next;
 			if( message[ 0 ] == 0 ) {
