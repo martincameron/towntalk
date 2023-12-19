@@ -1,0 +1,335 @@
+
+rem {
+	Simple JSON parser.
+}
+
+library json {
+	struct ascii {
+		# Enumerated ASCII character codes.
+		nul soh stx etx eot enq ack bel bs  tab lf  vt  ff cr so si
+		dle dc1 dc2 dc3 dc4 nak syn etb can em  sub esc fs gs rs us
+		space exclam quote hash dollar percent amp squote
+		lparen rparen star plus comma minus dot slash
+		d0 d1 d2 d3 d4 d5 d6 d7 d8 d9 colon semicolon lt equals gt question at
+		A B C D E F G H I J K L M N O P Q R S T U V W X Y Z
+		lbracket backslash rbracket caret underscore backquote
+		a b c d e f g h i j k l m n o p q r s t u v w x y z
+		lbrace pipe rbrace tilde del
+	}
+
+	struct tuple {
+		# Value with associated key, such as a named attribute.
+		key, value
+	}
+
+	struct list {
+		# Array-backed list.
+		array, len
+	}
+
+	struct parser {
+		# Supplies characters from a string and tracks line numbers.
+		source, idx, current, line
+	}
+
+	struct writer {
+		# Provides function to write output.
+		write
+	}
+
+	struct node {
+		# Common node properties and functions.
+		write
+	}
+	
+	struct value( node ) {
+		# Single value.
+		value;
+	}
+	
+	struct string( value ) {
+		# Quoted value.
+	}
+	
+	struct array( node ) {
+		# List of values.
+		values;
+	}
+	
+	struct object( node ) {
+		# List of tuples.
+		tuples;
+	}
+	
+	# Return a new tuple, initialized with the specified values.
+	function new_tuple( key value ) {
+		var ( tuple ) tup = $new( tuple );
+		let tup.key = key;
+		let tup.value = value;
+		return tup;
+	}
+
+	# Return a new empty list with the specified initial capacity.
+	function new_list( capacity ) {
+		var ( list ) this = $new( list );
+		let this.array = $array( capacity );
+		return this;
+	}
+	
+	# Return the item at the specified index.
+	function list_get( ( list ) this, idx ) {
+		if <( idx this.len ) {
+			return [ this.array idx ];
+		}
+		throw $trace( $cat( "Index " idx " out of bounds for length " this.len "." ) );
+	}
+
+	# Add the specified value to the specified list, increasing the capacity if necessary.
+	function list_add( ( list ) this, value ) {
+		if >e( this.len $len( this.array ) ) {
+			var arr = $array( *( this.len 2 ) );
+			var idx;
+			while <( idx this.len ) {
+				let [ arr idx ] = [ this.array idx ];
+				inc idx;
+			}
+			let this.array = arr;
+		}
+		let [ this.array this.len ] = value;
+		let this.len = +( this.len 1 );
+	}
+
+	# Insert the specified value into the specified list at the specified index.
+	function list_insert( ( list ) this, value, idx ) {
+		call list_add( this, 0 );
+		while <( idx this.len ) {
+			var tmp = [ this.array idx ];
+			let [ this.array idx++ ] = value;
+			let value = tmp;
+		}
+	}
+
+	# Return a new parser for the specified source string.
+	function new_parser( source ) {
+		var ( parser ) this = $new( parser );
+		let this.source = source;
+		let this.idx = -1;
+		let this.line = 1;
+		call this:next_char();
+		return this;
+	}
+
+	# Return the next character from the specified parser, or -1 if no more are available.
+	function parser_next_char( ( parser ) this ) {
+		let this.idx = +( this.idx 1 );
+		if <( this.idx $len( this.source ) ) {
+			let this.current = &( $chr( this.source this.idx ) 0xFF );
+			if =( this.current ascii.lf ) {
+				let this.line = +( this.line 1 );
+			}
+		} else {
+			let this.current = -1;
+		}
+		return this.current;
+	}
+
+	# Return a string from the specified parser, up to the end or one of the characters in the specified string.
+	function parser_parse_string( ( parser ) this, terminators ) {
+		if <( this.current 0 ) {
+			return "";
+		}
+		var end = $stridx( this.source, terminators, this.idx );
+		if <( end 0 ) {
+			let end = $len( this.source );
+			let this.current = -1;
+		} else {
+			let this.current = &( $chr( this.source end ) 0xFF );
+			if =( this.current ascii.lf ) {
+				let this.line = +( this.line 1 );
+			}
+		}
+		var str = $sub( this.source, this.idx, -( end this.idx ) );
+		let this.idx = end;
+		var idx = ?( $len( str ) $stridx( str, "\12", 0 ) -1 );
+		while >e( idx 0 ) {
+			let this.line = +( this.line 1 );
+			inc idx;
+			let idx = ?( <( idx $len( str ) ) $stridx( str, "\12", idx ) -1 );
+		}
+		return str;
+	}
+
+	# Return an instance of json_string from the specified parser.
+	function parse_string_value( ( parser ) p ) {
+		call p:expect( ascii.quote );
+		call p:next_char();
+		var str = p:parse_string( "\"" );
+		var end = -( $len( str ) 1 );
+		call p:expect( ascii.quote );
+		call p:next_char();
+		if >e( end 0 ) {
+			while =( $chr( str end ) ascii.backslash ) {
+				let str = $cat( str "\"" p:parse_string( "\"" ) );
+				let end = -( $len( str ) 1 );
+				call p:expect( ascii.quote );
+				call p:next_char();
+			}
+		}
+		return $new( string @write_string str );
+	}
+	
+	# Return an instance of json_string from the specified parser.
+	function parse_char_value( ( parser ) p ) {
+		call p:expect( ascii.squote );
+		call p:next_char();
+		var str = p:parse_string( "'" );
+		call p:expect( ascii.squote );
+		call p:next_char();
+		return $new( string @write_string str );
+	}
+
+	# Skip over space and control-characters from the specified parser.
+	function parser_skip_space( ( parser ) this ) {
+		while &&( >e( this.current 0 ) <e( this.current 32 ) ) {
+			call this:next_char();
+		}
+		return this.current;
+	}
+
+	# Throw an exception if the current character of the specified parser is not the specified code-point.
+	function parser_expect( ( parser ) this, chr ) {
+		if <>( this.current chr ) {
+			throw $trace( $cat( "Expected '" $asc( chr ) "' on line " this.line "."  ) );
+		}
+	}
+	
+	function write_array( ( array ) this, ( writer ) output ) {
+		var idx, ( list ) values = this.values;
+		call :output.write( "[" );
+		while <( idx values.len ) {
+			if idx {
+				call :output.write( "," );
+			}
+			var ( node ) node = [ values.array idx++ ];
+			call :node.write( output );
+		}
+		call :output.write( "]" );
+	}
+	
+	function parse_array( ( parser ) p ) {
+		call p:expect( ascii.lbracket );
+		var ( array ) arr = $new( array @write_array new_list( 1 ) );
+		call p:next_char();
+		call p:skip_space();
+		while <>( p.current ascii.rbracket ) {
+			call list_add( arr.values parse_node( p ) );
+			call p:skip_space();
+			if =( p.current ascii.comma ) {
+				call p:next_char();
+				call p:skip_space();
+			}
+		}
+		call p:next_char();
+		return arr;
+	}
+	
+	function write_object( ( object ) this, ( writer ) output ) {
+		var idx, ( list ) tuples = this.tuples;
+		call :output.write( "{" );
+		while <( idx tuples.len ) {
+			if idx {
+				call :output.write( "," );
+			}
+			var ( tuple ) tup = [ tuples.array idx++ ];
+			call :node.write( tup.key output );
+			call :output.write( ":" );
+			call :node.write( tup.value output );
+		}
+		call :output.write( "}" );
+	}
+	
+	function parse_object( ( parser ) p ) {
+		call p:expect( ascii.lbrace );
+		var ( object ) obj = $new( object @write_object new_list( 1 ) );
+		call p:next_char();
+		call p:skip_space();
+		while <>( p.current ascii.rbrace ) {
+			var key = parse_node( p );
+			call p:skip_space();
+			call p:expect( ascii.colon );
+			call p:next_char();
+			call p:skip_space();
+			call list_add( obj.tuples new_tuple( key parse_node( p ) ) );
+			call p:skip_space();
+			if =( p.current ascii.comma ) {
+				call p:next_char();
+				call p:skip_space();
+			}
+		}
+		call p:next_char();
+		return obj;
+	}
+	
+	function write_string( ( string ) this, ( writer ) output ) {
+		call :output.write( "\"" );
+		call :output.write( this.value );
+		call :output.write( "\"" );
+	}
+	
+	function write_value( ( value ) this, ( writer ) output ) {
+		call :output.write( this.value );
+	}
+	
+	function parse_node( ( parser ) p ) {
+		call p:skip_space();
+		switch p.current {
+			case ascii.lbracket {
+				return parse_array( p );
+			}
+			case ascii.lbrace {
+				return parse_object( p );
+			}
+			case ascii.quote {
+				return parse_string_value( p );
+			}
+			case ascii.squote {
+				return parse_char_value( p );
+			}
+			case ascii.minus ascii.d0 ascii.d1 ascii.d2 ascii.d3 ascii.d4 ascii.d5 ascii.d6 ascii.d7 ascii.d8 ascii.d9 {
+				return $new( value @write_value p:parse_string( "\11\12\13 ," ) );
+			}
+			default {
+				throw $trace( $cat( "Unexpected character '" $asc( p.current ) "' on line " p.line "." ) );
+			}
+		}
+	}
+	
+	function array_get( ( array ) arr, idx ) {
+		return list_get( arr.values idx );
+	}
+	
+	function object_get( ( object ) obj, name ) {
+		var array = list.array( obj.tuples );
+		var idx, len = list.len( obj.tuples );
+		while <( idx len ) {
+			var ( tuple ) tup = [ array idx++ ];
+			if &&( $instanceof( tup.key value ) $eq( value.value( tup.key ) name ) ) {
+				return tup.value;
+			}
+		}
+	}
+}
+
+program json_test {
+	var ( json_node ) node;
+	if <( $argc 2 ) {
+		let node = json_parse_node( json_new_parser( "[ { \"a\":1, \"b\\\"\": { \"c\": 'd' } }, \"str\", 1 ]" ) );
+		
+		call :node.write( $new( json_writer $function( ${ ( this, str ) { write str; } } ) ) );
+		
+		print json_value.value( json_object_get( json_array_get( node 0 ) "a" ) );
+		
+	} else {
+		let node = json_parse_node( json_new_parser( $load( $argv( 1 ) ) ) );
+	}
+}

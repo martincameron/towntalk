@@ -68,7 +68,7 @@ library xml {
 	}
 
 	# Return a new tuple, initialized with the specified values.
-	function new_tuple( key value ) { 
+	function new_tuple( key value ) {
 		var ( tuple ) tup = $new( tuple );
 		let tup.key = key;
 		let tup.value = value;
@@ -80,6 +80,14 @@ library xml {
 		var ( list ) this = $new( list );
 		let this.array = $array( capacity );
 		return this;
+	}
+	
+	# Return the item at the specified index.
+	function list_get( ( list ) this, idx ) {
+		if <( idx this.len ) {
+			return [ this.array idx ];
+		}
+		throw $trace( $cat( "Index " idx " out of bounds for length " this.len "." ) );
 	}
 
 	# Add the specified value to the specified list, increasing the capacity if necessary.
@@ -161,7 +169,7 @@ library xml {
 	function parse_qname( ( parser ) p ) {
 		var quote = p.current;
 		if &&( <>( quote ascii.quote ) <>( quote ascii.squote ) ) {
-			throw $cat( "Expected quote character on line " p.line "."  );
+			throw $trace( $cat( "Expected quote character on line " p.line "."  ) );
 		}
 		call p:next_char();
 		var str = p:parse_string( $asc( quote ) );
@@ -181,7 +189,7 @@ library xml {
 	# Throw an exception if the current character of the specified parser is not the specified code-point.
 	function parser_expect( ( parser ) this, chr ) {
 		if <>( this.current chr ) {
-			throw $cat( "Expected '" $asc( chr ) "' on line " this.line "."  );
+			throw $trace( $cat( "Expected '" $asc( chr ) "' on line " this.line "."  ) );
 		}
 	}
 
@@ -276,7 +284,7 @@ library xml {
 					}
 				}
 			}
-			throw $cat( "Element '" name "' not permitted as child of '" this.name "'." );
+			throw $trace( $cat( "Element '" name "' not permitted as child of '" this.name "'." ) );
 		}
 		return new_element( name );
 	}
@@ -330,7 +338,7 @@ library xml {
 				call p:next_char();
 				let name = p:parse_string( "\11\12\15 >" );
 				if $cmp( elem.name name ) {
-					throw $cat( "Unexpected close tag '</" name ">' on line " p.line "." );
+					throw $trace( $cat( "Unexpected close tag '</" name ">' on line " p.line "." ) );
 				}
 			}
 		}
@@ -373,7 +381,7 @@ library xml {
 		call p:expect( ascii.lbracket );
 		call p:next_char();
 		if $cmp( "CDATA" p:parse_string( "[" ) ) {
-			throw $cat( "Expected 'CDATA' on line " p.line "." );
+			throw $trace( $cat( "Expected 'CDATA' on line " p.line "." ) );
 		}
 		call p:next_char();
 		var str = p:parse_string( "]" );
@@ -525,7 +533,7 @@ library xml {
 				return parse_cdata( p );
 			}
 		}
-		throw $cat( "Unsupported declaration on line " p.line "." );
+		throw $trace( $cat( "Unsupported declaration on line " p.line "." ) );
 	}
 
 	# Return a list of nodes from the specified parser.
@@ -570,7 +578,6 @@ program xml_test {
 	} else {
 		let nodes = xml_parse_node_list( xml_new_parser( $load( $argv( 1 ) ) ) 0 );
 	}
-
 	# Format and output.
 	call xml_indent_node_list( nodes "\12" );
 	var ( xml_writer ) out = $new( xml_writer $function( ${ ( this, str ) { write str; } } ) );
