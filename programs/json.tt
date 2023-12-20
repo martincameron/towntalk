@@ -163,18 +163,14 @@ library json {
 	function parse_string_value( ( parser ) p ) {
 		call p:expect( ascii.quote );
 		call p:next_char();
-		var str = p:parse_string( "\"" );
-		var end = -( $len( str ) 1 );
+		var str = p:parse_string( "\\\"" );
+		while =( p.current ascii.backslash ) {
+			let str = $cat( str "\\" $asc( p:next_char() ) );
+			call p:next_char();
+			let str = $cat( str p:parse_string( "\\\"" ) );
+		}
 		call p:expect( ascii.quote );
 		call p:next_char();
-		if >e( end 0 ) {
-			while =( $chr( str end ) ascii.backslash ) {
-				let str = $cat( str "\"" p:parse_string( "\"" ) );
-				let end = -( $len( str ) 1 );
-				call p:expect( ascii.quote );
-				call p:next_char();
-			}
-		}
 		return $new( string @write_string str );
 	}
 	
@@ -323,7 +319,7 @@ library json {
 program json_test {
 	var ( json_node ) node;
 	if <( $argc 2 ) {
-		let node = json_parse_node( json_new_parser( "[ { \"a\":1, \"b\\\"\": { \"c\": 'd' } }, \"str\", 1 ]" ) );
+		let node = json_parse_node( json_new_parser( "[ { \"a\":1, \"\\\\b\\\"\": { \"c\": 'd' } }, \"str\", 1 ]" ) );
 		
 		call :node.write( $new( json_writer $function( ${ ( this, str ) { write str; } } ) ) );
 		
