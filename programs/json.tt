@@ -181,7 +181,7 @@ library json {
 		var str = p:parse_string( "'" );
 		call p:expect( ascii.squote );
 		call p:next_char();
-		return $new( string @write_string str );
+		return $new( string @write_chars str );
 	}
 
 	# Skip over space and control-characters from the specified parser.
@@ -270,6 +270,12 @@ library json {
 		call :output.write( "\"" );
 		call :output.write( this.value );
 		call :output.write( "\"" );
+	}
+	
+	function write_chars( ( string ) this, ( writer ) output ) {
+		call :output.write( "'" );
+		call :output.write( this.value );
+		call :output.write( "'" );
 	}
 	
 	function write_value( ( value ) this, ( writer ) output ) {

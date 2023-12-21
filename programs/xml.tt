@@ -166,7 +166,7 @@ library xml {
 	}
 
 	# Return the content of a quoted string from the specified parser.
-	function parse_qname( ( parser ) p ) {
+	function parse_qvalue( ( parser ) p ) {
 		var quote = p.current;
 		if &&( <>( quote ascii.quote ) <>( quote ascii.squote ) ) {
 			throw $trace( $cat( "Expected quote character on line " p.line "."  ) );
@@ -239,6 +239,17 @@ library xml {
 		let elem.create_element = @create_element;
 		return elem;
 	}
+	
+	# Write a quoted value, using the appropriate quote character.
+	function write_qvalue( value, ( writer ) output ) {
+		var quote = "\"";
+		if >e( $stridx( value quote 0 ) 0 ) {
+			let quote = "'";
+		}
+		call :output.write( quote );
+		call :output.write( value );
+		call :output.write( quote );
+	}
 
 	# Member function for writing element nodes and their children.
 	function write_element( ( element ) this, ( writer ) output ) {
@@ -250,9 +261,8 @@ library xml {
 			var ( tuple ) att = [ atts.array idx++ ];
 			call :output.write( " " );
 			call :output.write( att.key );
-			call :output.write( "=\"" );
-			call :output.write( att.value );
-			call :output.write( "\"" );
+			call :output.write( "=" );
+			call write_qvalue( att.value output );
 		}
 		var ( list ) children = this.children;
 		if &&( this.template <e( list.len( element.children( this.template ) ) 0 ) <e( children.len 0 ) ) {
@@ -320,7 +330,7 @@ library xml {
 			call p:expect( ascii.equals );
 			call p:next_char();
 			call p:skip_space();
-			call list_add( elem.attributes new_tuple( name parse_qname( p ) ) );
+			call list_add( elem.attributes new_tuple( name parse_qvalue( p ) ) );
 			call p:skip_space();
 		}
 		switch p.current {
@@ -478,9 +488,8 @@ library xml {
 					call :output.write( att.key );
 				}
 			}
-			call :output.write( " \"" );
-			call :output.write( att.value );
-			call :output.write( "\"" );
+			call :output.write( " " );
+			call write_qvalue( att.value output );
 		}
 		call :output.write( ">" );
 	}
@@ -498,13 +507,13 @@ library xml {
 		switch p:parse_string( "\11\12\15 [>" ) {
 			case "PUBLIC" {
 				call p:skip_space();
-				call list_add( elem.attributes new_tuple( "PUBLIC" parse_qname( p ) ) );
+				call list_add( elem.attributes new_tuple( "PUBLIC" parse_qvalue( p ) ) );
 				call p:skip_space();
-				call list_add( elem.attributes new_tuple( "SYSTEM" parse_qname( p ) ) );
+				call list_add( elem.attributes new_tuple( "SYSTEM" parse_qvalue( p ) ) );
 			}
 			case "SYSTEM" {
 				call p:skip_space();
-				call list_add( elem.attributes new_tuple( "SYSTEM" parse_qname( p ) ) );
+				call list_add( elem.attributes new_tuple( "SYSTEM" parse_qvalue( p ) ) );
 			}
 		}
 		call p:skip_space();
@@ -574,7 +583,7 @@ program xml_test {
 		# Document template used to specify permitted element names.
 		var template = "<elem><child><x>cdata</x><y/></child></elem>";
 		# Parse document against template.
-		let nodes = xml_parse_node_list( xml_new_parser( "<?xml version=\"?\"?><!---test--><!DOCTYPE elem PUBLIC \"a\" 'b'[]><elem>text<child x=\"y\"><![CDATA[]txt]]><x/><x>x</x><y/></child>&ent;</elem>\12" ), template );
+		let nodes = xml_parse_node_list( xml_new_parser( "<?xml version=\"?\"?><!---test--><!DOCTYPE elem PUBLIC \"a\" 'b\"'[]><elem>text<child x=\"y\" y='\"z'><![CDATA[]txt]]><x/><x>x</x><y/></child>&ent;</elem>\12" ), template );
 	} else {
 		let nodes = xml_parse_node_list( xml_new_parser( $load( $argv( 1 ) ) ) 0 );
 	}
