@@ -218,12 +218,13 @@ library json {
 		call p:next_char();
 		call p:skip_space();
 		while <>( p.current ascii.rbracket ) {
-			call list_add( arr.values parse_node( p ) );
-			call p:skip_space();
-			if =( p.current ascii.comma ) {
+			if list.len( arr.values ) {
+				call p:expect( ascii.comma );
 				call p:next_char();
 				call p:skip_space();
 			}
+			call list_add( arr.values parse_node( p ) );
+			call p:skip_space();
 		}
 		call p:next_char();
 		return arr;
@@ -250,6 +251,11 @@ library json {
 		call p:next_char();
 		call p:skip_space();
 		while <>( p.current ascii.rbrace ) {
+			if list.len( obj.tuples ) {
+				call p:expect( ascii.comma );
+				call p:next_char();
+				call p:skip_space();
+			}
 			var key = parse_node( p );
 			call p:skip_space();
 			call p:expect( ascii.colon );
@@ -257,10 +263,6 @@ library json {
 			call p:skip_space();
 			call list_add( obj.tuples new_tuple( key parse_node( p ) ) );
 			call p:skip_space();
-			if =( p.current ascii.comma ) {
-				call p:next_char();
-				call p:skip_space();
-			}
 		}
 		call p:next_char();
 		return obj;
@@ -297,8 +299,8 @@ library json {
 			case ascii.squote {
 				return parse_char_value( p );
 			}
-			case ascii.minus ascii.d0 ascii.d1 ascii.d2 ascii.d3 ascii.d4 ascii.d5 ascii.d6 ascii.d7 ascii.d8 ascii.d9 {
-				return $new( value @write_value p:parse_string( "\11\12\13 ," ) );
+			case ascii.minus ascii.d0 ascii.d1 ascii.d2 ascii.d3 ascii.d4 ascii.d5 ascii.d6 ascii.d7 ascii.d8 ascii.d9 ascii.n {
+				return $new( value @write_value p:parse_string( "\11\12\13 ,:]}" ) );
 			}
 			default {
 				throw $trace( $cat( "Unexpected character '" $asc( p.current ) "' on line " p.line "." ) );
@@ -325,11 +327,16 @@ library json {
 program json_test {
 	var ( json_node ) node;
 	if <( $argc 2 ) {
-		let node = json_parse_node( json_new_parser( "[ { \"a\":1, \"\\\\b\\\"\": { \"c\": 'd' } }, \"str\", 1 ]" ) );
+		let node = json_parse_node( json_new_parser( "[ { \"a\":1, 'b':{ \"c\": \"\\\\d\\\"\" }, 3:[[],4], 5:{6:7},-8:null}, \"str\", 1 ]" ) );
 		
 		call :node.write( $new( json_writer $function( ${ ( this, str ) { write str; } } ) ) );
 		
 		print json_value.value( json_object_get( json_array_get( node 0 ) "a" ) );
+		var ( json_array ) arr = node;
+		var ( json_object ) obj = arr:get( 0 );
+		let obj = obj:get( "b" );
+		var ( json_value ) val = obj:get( "c" );
+		print val.value;
 		
 	} else {
 		let node = json_parse_node( json_new_parser( $load( $argv( 1 ) ) ) );
