@@ -3351,7 +3351,7 @@ int unpack( char *str, int idx ) {
 		| ( ( unsigned char ) str[ idx + 2 ] << 8 ) | ( unsigned char ) str[ idx + 3 ];
 }
 
-static enum result evaluate_unpack_expression( struct expression *this,
+enum result evaluate_unpack_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	struct expression *parameter = this->parameters;
 	struct variable str = { 0, NULL };

@@ -14,12 +14,14 @@
 		if relational_expr { ... }
 		let local = arithmetic_expr;
 		let local = $chr( local expr );
+		let local = $unpack( global/const expr );
 		let local = integer_literal;
 		let local = local;
 		let local = global/const;
 		let local = [ local expr ];
 		let [ local expr ] = arithmetic_expr;
 		let [ local expr ] = $chr( local expr );
+		let [ local expr ] = $unpack( global/const expr );
 		let [ local expr ] = integer_literal;
 		let [ local expr ] = local;
 		let [ local expr ] = global/const;
@@ -38,6 +40,7 @@
 
 enum result evaluate_arithmetic_expression( struct expression *this, struct variables *vars, struct variable *result );
 enum result evaluate_chr_expression( struct expression *this, struct variables *vars, struct variable *result );
+enum result evaluate_unpack_expression( struct expression *this, struct variables *vars, struct variable *result );
 enum result evaluate_index_expression( struct expression *this, struct variables *vars, struct variable *result );
 enum result evaluate_global( struct expression *this, struct variables *vars, struct variable *result );
 enum result evaluate_local( struct expression *this, struct variables *vars, struct variable *result );
@@ -55,7 +58,7 @@ void dispose_statements( struct statement *statements );
 enum arithmetic_op {
 	HALT, IF, PUSH_CONST, PUSH_LOCAL, LOAD_LOCAL, PUSH_GLOBAL, LOAD_GLOBAL,
 	INC_LOCAL, PUSH_LOCAL_PI, DEC_LOCAL, PUSH_LOCAL_PD,
-	PUSH_EXPR, LOAD_EXPR, PUSH_ARRAY, LOAD_ARRAY, PUSH_STRING,
+	PUSH_EXPR, LOAD_EXPR, PUSH_ARRAY, LOAD_ARRAY, PUSH_STRING, PUSH_UNPACK,
 	POP_LOCAL, STORE_LOCAL, CHECK_ARRAY, POP_ARRAY, STORE_ARRAY,
 	AND_STACK, OR__STACK, XOR_STACK, ADD_STACK, SUB_STACK,
 	MUL_STACK, DIV_STACK, MOD_STACK, ASL_STACK, ASR_STACK,
@@ -72,7 +75,7 @@ enum arithmetic_op {
 static char* arithmetic_ops[] = {
 	"HALT", "IF", "PUSH_CONST", "PUSH_LOCAL", "LOAD_LOCAL", "PUSH_GLOBAL", "LOAD_GLOBAL",
 	"INC_LOCAL", "PUSH_LOCAL_PI", "DEC_LOCAL", "PUSH_LOCAL_PD",
-	"PUSH_EXPR", "LOAD_EXPR", "PUSH_ARRAY", "LOAD_ARRAY", "PUSH_STRING",
+	"PUSH_EXPR", "LOAD_EXPR", "PUSH_ARRAY", "LOAD_ARRAY", "PUSH_STRING", "PUSH_UNPACK",
 	"POP_LOCAL", "STORE_LOCAL", "CHECK_ARRAY", "POP_ARRAY", "STORE_ARRAY",
 	"AND_STACK", "OR__STACK", "XOR_STACK", "ADD_STACK", "SUB_STACK",
 	"MUL_STACK", "DIV_STACK", "MOD_STACK", "ASL_STACK", "ASR_STACK",
@@ -203,6 +206,11 @@ static struct instruction* compile_arithmetic_expression( struct arithmetic_stat
 		insn = compile_arithmetic_expression( stmt, expr->parameters->next, top, message );
 		if( insn ) {
 			insn = add_instruction( &stmt->insns, PUSH_STRING, expr->parameters->index, expr, message );
+		}
+	} else if( expr->evaluate == evaluate_unpack_expression && expr->parameters->evaluate == evaluate_global ) {
+		insn = compile_arithmetic_expression( stmt, expr->parameters->next, top, message );
+		if( insn ) {
+			insn = add_instruction( &stmt->insns, PUSH_UNPACK, 0, expr->parameters, message );
 		}
 	} else if( expr->evaluate == evaluate_global ) {
 		insn = add_instruction( &stmt->insns, PUSH_GLOBAL, 0, expr, message );
@@ -391,6 +399,19 @@ static enum result execute_arithmetic_statement( struct statement *this,
 					index = *top;
 					if( ( unsigned int ) index < ( unsigned int ) local->string_value->length ) {
 						*top = ( signed char ) local->string_value->string[ index ];
+					} else {
+						return throw( vars, insn->expr, index, "String index out of bounds." );
+					}
+				} else {
+					return throw( vars, insn->expr, 0, "Not a string." );
+				}
+				break;
+			case PUSH_UNPACK:
+				local = &( ( struct global_variable * ) ( ( struct string_expression * ) insn->expr )->str )->value;
+				if( local->string_value ) {
+					index = *top;
+					if( ( unsigned int ) index < ( unsigned int ) local->string_value->length >> 2 ) {
+						*top = unpack( local->string_value->string, index );
 					} else {
 						return throw( vars, insn->expr, index, "String index out of bounds." );
 					}

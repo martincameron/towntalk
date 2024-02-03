@@ -8,6 +8,7 @@ const TEN = 10;
 const STR = "*";
 const CAT = $str( "*" "*" );
 const ELE = ${ ( * ) };
+const TAB = "\0\0\0\1\0";
 
 struct struc {
 	a,b,c,d,e;
@@ -1027,6 +1028,10 @@ function testoptimizer() {
 	call assert_equals( "a", $asc( acc ), ${-} );
 	call assert_throws( "Not a string", ${ () { var c; let c = $chr( c, c ); } } );
 	call assert_throws( "String index", ${ () { var s = "", i; var c = $chr( s, i ); } } );
+	let acc = $unpack( TAB, 0 );
+	call assert_equals( 1, acc ${-} );
+	call assert_throws( "Not a string", ${ () { var c; let c = $unpack( ONE, c ); } } );
+	call assert_throws( "String index", ${ () { var i = 1; var c = $unpack( TAB, i ); } } );
 	let acc = str;
 	let acc = str;
 	call assert_equals( str, acc, ${-} );
