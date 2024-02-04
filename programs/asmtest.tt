@@ -130,6 +130,9 @@ function testletv_opr() {
 	# letv_opr_vv
 	call assert_throws( "Invalid operator 'x'", ${ () { var a; asm { let a = x( a a ); } } } );
 	call assert_throws( "Invalid local variable 'x'", ${ () { var a; asm { let a = +( a x ); } } } );
+	# letv_opr_vp
+	call assert_throws( "Invalid operator 'x'", ${ () { var a; asm { let a = x( a a++ ); } } } );
+	call assert_throws( "Invalid local variable 'x++'", ${ () { var a; asm { let a = +( a x++ ); } } } );
 }
 
 function testleta() {
@@ -275,7 +278,7 @@ function testunpack() {
 	# letv_unp_vv
 	call assert_throws( "Not a string or index", ${ () { var a = ""; asm { let a = $unpack( a a ); } } } );
 	# letv_unp_vp
-	call assert_throws( "Invalid operator", ${ () { var a = ""; asm { let a = $xxx( a a++ ); } } } );
+	call assert_throws( "Not a string or index", ${ () { var a = ""; asm { let a = $unpack( a a++ ); } } } );
 }
 
 program asmtest {

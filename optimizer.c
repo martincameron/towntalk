@@ -16,15 +16,13 @@
 		let local = $chr( local expr );
 		let local = $unpack( global/const expr );
 		let local = integer_literal;
-		let local = local;
-		let local = global/const;
+		let local = local/global/const;
 		let local = [ local expr ];
 		let [ local expr ] = arithmetic_expr;
 		let [ local expr ] = $chr( local expr );
 		let [ local expr ] = $unpack( global/const expr );
 		let [ local expr ] = integer_literal;
-		let [ local expr ] = local;
-		let [ local expr ] = global/const;
+		let [ local expr ] = local/global/const;
 		let [ local expr ] = [ local expr ];
 		inc local;
 		dec local;
@@ -254,6 +252,7 @@ static enum result execute_arithmetic_statement( struct statement *this,
 	struct variable var, *locals = vars->locals, *local;
 	struct array *arr;
 	enum result ret;
+	char *chr;
 	while( 1 ) {
 		switch( insn->oper ) {
 			case HALT:
@@ -411,7 +410,10 @@ static enum result execute_arithmetic_statement( struct statement *this,
 				if( local->string_value ) {
 					index = *top;
 					if( ( unsigned int ) index < ( unsigned int ) local->string_value->length >> 2 ) {
-						*top = unpack( local->string_value->string, index );
+						index <<= 2;
+						chr = local->string_value->string;
+						*top = ( ( signed char ) chr[ index ] << 24 ) | ( ( unsigned char ) chr[ index + 1 ] << 16 )
+							| ( ( unsigned char ) chr[ index + 2 ] << 8 ) | ( unsigned char ) chr[ index + 3 ];
 					} else {
 						return throw( vars, insn->expr, index, "String index out of bounds." );
 					}

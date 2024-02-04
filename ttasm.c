@@ -735,6 +735,7 @@ static enum result execute_asm_statement( struct statement *this,
 	struct environment *env = vars->func->env;
 	struct variable *locals = vars->locals;
 	struct string *str;
+	char *chr;
 	for( idx = 0, len = vars->func->num_variables; idx < len; idx++ ) {
 		str = locals[ idx ].string_value;
 		if( str ) {
@@ -1044,7 +1045,10 @@ static enum result execute_asm_statement( struct statement *this,
 			case LETV_UNP_VI:
 				/* letv_unp_vi x y 0 imm : let x = $unpack( y imm ); */
 				if( ( unsigned int ) ins->imm < string_bounds[ ins->y ] >> 2 ) {
-					locals[ ins->x ].integer_value = unpack( locals[ ins->y ].string_value->string, ins->imm );
+					idx = ins->imm;
+					chr = locals[ ins->y ].string_value->string;
+					locals[ ins->x ].integer_value = ( ( signed char ) chr[ idx ] << 24 ) | ( ( unsigned char ) chr[ idx + 1 ] << 16 )
+						| ( ( unsigned char ) chr[ idx + 2 ] << 8 ) | ( unsigned char ) chr[ idx + 3 ];
 				} else {
 					return throw( vars, this->source, ins->imm, "Not a string or index out of bounds." );
 				}
@@ -1053,7 +1057,10 @@ static enum result execute_asm_statement( struct statement *this,
 			case LETV_UNP_VV:
 				/* letv_unp_vv x y z   0 : let x = $unpack( y z ); */
 				if( ( unsigned int ) locals[ ins->z ].integer_value < string_bounds[ ins->y ] >> 2 ) {
-					locals[ ins->x ].integer_value = unpack( locals[ ins->y ].string_value->string, locals[ ins->z ].integer_value );
+					idx = locals[ ins->z ].integer_value;
+					chr = locals[ ins->y ].string_value->string;
+					locals[ ins->x ].integer_value = ( ( signed char ) chr[ idx ] << 24 ) | ( ( unsigned char ) chr[ idx + 1 ] << 16 )
+						| ( ( unsigned char ) chr[ idx + 2 ] << 8 ) | ( unsigned char ) chr[ idx + 3 ];
 				} else {
 					return throw( vars, this->source, ins->imm, "Not a string or index out of bounds." );
 				}
@@ -1062,7 +1069,10 @@ static enum result execute_asm_statement( struct statement *this,
 			case LETV_UNP_VP:
 				/* letv_unp_vp x y z   0 : let x = $unpack( y z++ ); */
 				if( ( unsigned int ) locals[ ins->z ].integer_value < string_bounds[ ins->y ] >> 2 ) {
-					locals[ ins->x ].integer_value = unpack( locals[ ins->y ].string_value->string, locals[ ins->z ].integer_value++ );
+					idx = locals[ ins->z ].integer_value++;
+					chr = locals[ ins->y ].string_value->string;
+					locals[ ins->x ].integer_value = ( ( signed char ) chr[ idx ] << 24 ) | ( ( unsigned char ) chr[ idx + 1 ] << 16 )
+						| ( ( unsigned char ) chr[ idx + 2 ] << 8 ) | ( unsigned char ) chr[ idx + 3 ];
 				} else {
 					return throw( vars, this->source, ins->imm, "Not a string or index out of bounds." );
 				}
