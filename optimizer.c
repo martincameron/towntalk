@@ -55,7 +55,7 @@ void dispose_statements( struct statement *statements );
 
 enum arithmetic_op {
 	HALT, IF, PUSH_CONST, PUSH_LOCAL, LOAD_LOCAL, PUSH_GLOBAL, LOAD_GLOBAL,
-	INC_LOCAL, PUSH_LOCAL_PI, DEC_LOCAL, PUSH_LOCAL_PD,
+	INC_LOCAL, PUSH_LOCAL_PI, DEC_LOCAL, PUSH_LOCAL_PD, ASSIGN_EXPR,
 	PUSH_EXPR, LOAD_EXPR, PUSH_ARRAY, LOAD_ARRAY, PUSH_STRING, PUSH_UNPACK,
 	POP_LOCAL, STORE_LOCAL, CHECK_ARRAY, POP_ARRAY, STORE_ARRAY,
 	AND_STACK, OR__STACK, XOR_STACK, ADD_STACK, SUB_STACK,
@@ -72,7 +72,7 @@ enum arithmetic_op {
 #if defined( PRINT_INSNS )
 static char* arithmetic_ops[] = {
 	"HALT", "IF", "PUSH_CONST", "PUSH_LOCAL", "LOAD_LOCAL", "PUSH_GLOBAL", "LOAD_GLOBAL",
-	"INC_LOCAL", "PUSH_LOCAL_PI", "DEC_LOCAL", "PUSH_LOCAL_PD",
+	"INC_LOCAL", "PUSH_LOCAL_PI", "DEC_LOCAL", "PUSH_LOCAL_PD", "ASSIGN_EXPR",
 	"PUSH_EXPR", "LOAD_EXPR", "PUSH_ARRAY", "LOAD_ARRAY", "PUSH_STRING", "PUSH_UNPACK",
 	"POP_LOCAL", "STORE_LOCAL", "CHECK_ARRAY", "POP_ARRAY", "STORE_ARRAY",
 	"AND_STACK", "OR__STACK", "XOR_STACK", "ADD_STACK", "SUB_STACK",
@@ -325,6 +325,19 @@ static enum result execute_arithmetic_statement( struct statement *this,
 				} else {
 					*++top = local->integer_value--;
 				}
+				break;
+			case ASSIGN_EXPR:
+				var.integer_value = 0;
+				var.string_value = NULL;
+				if( !insn->expr->evaluate( insn->expr, vars, &var ) ) {
+					return EXCEPTION;
+				}
+				local = locals + insn->local;
+				local->integer_value = var.integer_value;
+				if( local->string_value ) {
+					unref_string( local->string_value );
+				}
+				local->string_value = var.string_value;
 				break;
 			case PUSH_EXPR:
 				var.integer_value = 0;
@@ -751,17 +764,24 @@ static struct arithmetic_statement *add_arithmetic_statement( struct statement *
 
 static struct statement* optimize_local_assignment( struct statement *stmt, struct statement *prev, char *message ) {
 	struct expression *expr = stmt->source;
-	int local = stmt->local, *oper, dest = POP_LOCAL;
+	struct instruction *insn;
+	int local = stmt->local, oper, dest = POP_LOCAL;
 	struct arithmetic_statement *arith = add_arithmetic_statement( stmt, prev, message );
 	if( arith ) {
 		stmt = &arith->stmt;
 		if( compile_arithmetic_expression( arith, expr, 0, message ) ) {
-			oper = &arith->insns.list[ arith->insns.count - 1 ].oper;
-			if( *oper == PUSH_LOCAL || *oper == PUSH_GLOBAL || *oper == PUSH_EXPR || *oper == PUSH_ARRAY ) {
-				dest = STORE_LOCAL;
-				(*oper)++;
+			insn = &arith->insns.list[ arith->insns.count - 1 ];
+			oper = insn->oper;
+			if( oper == PUSH_EXPR ) {
+				insn->oper = ASSIGN_EXPR;
+				insn->local = local;
+			} else {
+				if( oper == PUSH_LOCAL || oper == PUSH_GLOBAL || oper == PUSH_ARRAY ) {
+					dest = STORE_LOCAL;
+					insn->oper++;
+				}
+				add_instruction( &arith->insns, dest, local, expr, message );
 			}
-			add_instruction( &arith->insns, dest, local, expr, message );
 		}
 	}
 	return stmt;
