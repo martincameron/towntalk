@@ -304,27 +304,33 @@ static enum result execute_arithmetic_statement( struct statement *this,
 					var.string_value->reference_count++;
 				}
 				break;
-			case INC_LOCAL: /* Fallthrough. */
+			case INC_LOCAL:
+				local = locals + insn->local;
+				if( !local->string_value ) {
+					local->integer_value++;
+					break;
+				}
+				/* Fallthrough. */
 			case PUSH_LOCAL_PI:
 				local = locals + insn->local;
-				if( local->string_value ) {
-					return throw( vars, insn->expr, 0, "Not an integer." );
-				} else if( insn->oper == INC_LOCAL ) {
-					local->integer_value++;
-				} else {
+				if( !local->string_value ) {
 					*++top = local->integer_value++;
+					break;
 				}
-				break;
-			case DEC_LOCAL: /* Fallthrough. */
+				/* Fallthrough. */
+			case DEC_LOCAL: 
+				local = locals + insn->local;
+				if( !local->string_value ) {
+					local->integer_value--;
+					break;
+				}
+				/* Fallthrough. */
 			case PUSH_LOCAL_PD:
 				local = locals + insn->local;
 				if( local->string_value ) {
 					return throw( vars, insn->expr, 0, "Not an integer." );
-				} else if( insn->oper == DEC_LOCAL ) {
-					local->integer_value--;
-				} else {
-					*++top = local->integer_value--;
-				}
+				} 
+				*++top = local->integer_value--;
 				break;
 			case ASSIGN_EXPR:
 				var.integer_value = 0;
