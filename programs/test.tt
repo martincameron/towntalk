@@ -296,6 +296,15 @@ function testwhile() {
 	call assert_throws( "Not an integer", ${ () { var x = ""; while <( x x ) {} } } );
 }
 
+function testuntil() {
+	call assert_equals( 1, :( $function( ${ () { var x; until TRUE { inc x; } return x; } } ) ), ${-} );
+	call assert_equals( 1, :( $function( ${ () { until TRUE { return 1; } return 0; } } ) ), ${-} );
+	call assert_equals( 1, :( $function( ${ () { until TRUE { break; return 0; } return 1; } } ) ), ${-} );
+	call assert_equals( 1, :( $function( ${ () { until TRUE { continue; return 0; } return 1; } } ) ), ${-} );
+	call assert_throws( "1", ${ () { until TRUE { throw 1; } return 0; } } );
+	call assert_throws( "1", ${ () { until except( ${ 1 } ) {} } } );
+}
+
 function testtry() {
 	var e, ( struc ) s;
 	try {} catch e { call assert( FALSE, ${-} ); }
@@ -1176,6 +1185,7 @@ program test {
 	call testswitch();
 	call testif();
 	call testwhile();
+	call testuntil();
 	call testtry();
 	call testoper();
 	call testinfix();

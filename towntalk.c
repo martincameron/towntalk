@@ -75,10 +75,11 @@
 		return expr;             Return from the current function.
 		throw expr;              Return to the nearest catch statement.
 		exit expr;               Terminate program with specified exit code.
-		while expr {statements}  Repeat statements until expr is null.
+		while expr {statements}  Execute statements if expr is not null and repeat.
+		until expr {statements}  Execute statements and repeat if expr is null.
 		break;                   Exit current while statement.
 		continue;                Stop current iteration of while statement.
-		if expr {statements}     Execute statements if expr is non-null.
+		if expr {statements}     Execute statements if expr is not null.
 		   else if expr {stmts}  Equivalent to 'else { if expr { stmts } }'.
 		   else {statements}     Optional, execute if expr is null.
 		switch expr {            Selection statement for integers or strings.
@@ -1626,6 +1627,46 @@ static enum result execute_while_statement( struct statement *this,
 			} else if( ret == EXCEPTION ) {
 				return EXCEPTION;
 			}
+		}
+		if( env->interrupted ) {
+			if( env->worker ) {
+				return throw_exit( vars, 0, "Interrupted." );
+			} else {
+				return throw( vars, this->source, 0, "Interrupted.");
+			}
+		}
+	}
+}
+
+static enum result execute_until_statement( struct statement *this,
+	struct variables *vars, struct variable *result ) {
+	struct environment *env = vars->func->env;
+	struct variable condition = { 0 };
+	struct statement *stmt;
+	enum result ret;
+	while( 1 ) {
+		stmt = ( ( struct block_statement * ) this )->if_block;
+		while( stmt ) {
+			ret = stmt->execute( stmt, vars, result );
+			if( ret == OKAY ) {
+				stmt = stmt->next;
+			} else if( ret == RETURN ) {
+				return RETURN;
+			} else if( ret == BREAK ) {
+				return OKAY;
+			} else if( ret == CONTINUE ) {
+				break;
+			} else if( ret == EXCEPTION ) {
+				return EXCEPTION;
+			}
+		}
+		if( this->source->evaluate( this->source, vars, &condition ) ) {
+			if( condition.string_value || condition.integer_value ) {
+				dispose_temporary( &condition );
+				return OKAY;
+			}
+		} else {
+			return EXCEPTION;
 		}
 		if( env->interrupted ) {
 			if( env->worker ) {
@@ -4925,6 +4966,15 @@ static struct element* parse_while_statement( struct element *elem,
 	return next;
 }
 
+static struct element* parse_until_statement( struct element *elem,
+	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
+	struct element *next = parse_while_statement( elem, func, vars, prev, message );
+	if( message[ 0 ] == 0 ) {
+		prev->next->execute = execute_until_statement;
+	}
+	return next;
+}
+
 static struct element* parse_catch_block( struct element *elem,
 	struct function *func, struct variables *vars, struct block_statement *try_stmt, char *message ) {
 	struct local_variable *local;
@@ -5314,6 +5364,7 @@ static struct keyword statements[] = {
 	{ "continue", ";", parse_continue_statement, NULL },
 	{ "if", "x{", parse_if_statement, NULL },
 	{ "while", "x{", parse_while_statement, NULL },
+	{ "until", "x{", parse_until_statement, NULL },
 	{ "call", "x;", parse_call_statement, NULL },
 	{ "try", "{c", parse_try_statement, NULL },
 	{ "set", "x=x;", parse_assignment_statement, NULL },

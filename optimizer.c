@@ -329,7 +329,7 @@ static enum result execute_arithmetic_statement( struct statement *this,
 				local = locals + insn->local;
 				if( local->string_value ) {
 					return throw( vars, insn->expr, 0, "Not an integer." );
-				} 
+				}
 				*++top = local->integer_value--;
 				break;
 			case ASSIGN_EXPR:
