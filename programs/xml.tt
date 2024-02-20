@@ -66,21 +66,6 @@ library xml {
 		# Element node, short-tags are enabled for output if template has no children.
 		name, attributes, children, template, create_element
 	}
-
-	# Return a new tuple, initialized with the specified values.
-	function new_tuple( key value ) {
-		var ( tuple ) tup = $new( tuple );
-		let tup.key = key;
-		let tup.value = value;
-		return tup;
-	}
-
-	# Return a new empty list with the specified initial capacity.
-	function new_list( capacity ) {
-		var ( list ) this = $new( list );
-		let this.array = $array( capacity );
-		return this;
-	}
 	
 	# Return the item at the specified index.
 	function list_get( ( list ) this, idx ) {
@@ -93,8 +78,7 @@ library xml {
 	# Add the specified value to the specified list, increasing the capacity if necessary.
 	function list_add( ( list ) this, value ) {
 		if >e( this.len $len( this.array ) ) {
-			var arr = $array( *( this.len 2 ) );
-			var idx;
+			var idx, arr = $array( *( this.len 2 ) );
 			while <( idx this.len ) {
 				let [ arr idx ] = [ this.array idx ];
 				inc idx;
@@ -127,12 +111,12 @@ library xml {
 
 	# Return the next character from the specified parser, or -1 if no more are available.
 	function parser_next_char( ( parser ) this ) {
+		if =( this.current ascii.lf ) {
+			let this.line = +( this.line 1 );
+		}
 		let this.idx = +( this.idx 1 );
 		if <( this.idx $len( this.source ) ) {
 			let this.current = &( $chr( this.source this.idx ) 0xFF );
-			if =( this.current ascii.lf ) {
-				let this.line = +( this.line 1 );
-			}
 		} else {
 			let this.current = -1;
 		}
@@ -150,17 +134,17 @@ library xml {
 			let this.current = -1;
 		} else {
 			let this.current = &( $chr( this.source end ) 0xFF );
-			if =( this.current ascii.lf ) {
-				let this.line = +( this.line 1 );
-			}
 		}
 		var str = $sub( this.source, this.idx, -( end this.idx ) );
 		let this.idx = end;
-		var idx = ?( $len( str ) $stridx( str, "\12", 0 ) -1 );
-		while >e( idx 0 ) {
+		var idx, len = $len( str );
+		while <( idx len ) {
+			let idx = $stridx( str, "\12", idx );
+			if <( idx 0 ) {
+				break;
+			}
 			let this.line = +( this.line 1 );
 			inc idx;
-			let idx = ?( <( idx $len( str ) ) $stridx( str, "\12", idx ) -1 );
 		}
 		return str;
 	}
@@ -234,8 +218,8 @@ library xml {
 		var ( element ) elem = $new( element );
 		let elem.name = name;
 		let elem.write = @write_element;
-		let elem.attributes = new_list( 1 );
-		let elem.children = new_list( 1 );
+		let elem.attributes = $new( list $array( 1 ) );
+		let elem.children = $new( list $array( 1 ) );
 		let elem.create_element = @create_element;
 		return elem;
 	}
@@ -330,7 +314,7 @@ library xml {
 			call p:expect( ascii.equals );
 			call p:next_char();
 			call p:skip_space();
-			call list_add( elem.attributes new_tuple( name parse_qvalue( p ) ) );
+			call list_add( elem.attributes $new( tuple name parse_qvalue( p ) ) );
 			call p:skip_space();
 		}
 		switch p.current {
@@ -502,18 +486,18 @@ library xml {
 		call p:skip_space();
 		var ( element ) elem = new_element( "DOCTYPE" );
 		let elem.write = @write_doctype;
-		call list_add( elem.attributes new_tuple( "name" p:parse_string( "\11\12\15 >" ) ) );
+		call list_add( elem.attributes $new( tuple "name" p:parse_string( "\11\12\15 >" ) ) );
 		call p:skip_space();
 		switch p:parse_string( "\11\12\15 [>" ) {
 			case "PUBLIC" {
 				call p:skip_space();
-				call list_add( elem.attributes new_tuple( "PUBLIC" parse_qvalue( p ) ) );
+				call list_add( elem.attributes $new( tuple "PUBLIC" parse_qvalue( p ) ) );
 				call p:skip_space();
-				call list_add( elem.attributes new_tuple( "SYSTEM" parse_qvalue( p ) ) );
+				call list_add( elem.attributes $new( tuple "SYSTEM" parse_qvalue( p ) ) );
 			}
 			case "SYSTEM" {
 				call p:skip_space();
-				call list_add( elem.attributes new_tuple( "SYSTEM" parse_qvalue( p ) ) );
+				call list_add( elem.attributes $new( tuple "SYSTEM" parse_qvalue( p ) ) );
 			}
 		}
 		call p:skip_space();
@@ -548,7 +532,7 @@ library xml {
 	# Return a list of nodes from the specified parser.
 	function parse_node_list( ( parser ) p, template ) {
 		var ( element ) parent = new_element( "doc" );
-		var ( list ) nodes = new_list( 16 );
+		var ( list ) nodes = $new( list $array( 16 ) );
 		if template {
 			call list_add( parent.children parse_node( new_parser( template ) parent ) );
 			let parent.template = parent;
