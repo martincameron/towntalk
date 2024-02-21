@@ -116,8 +116,10 @@ static struct instruction* add_instruction( struct instructions *insns,
 		capacity = ( capacity << 1 ) + 4;
 		list = calloc( capacity + 1, sizeof( struct instruction ) );
 		if( list ) {
-			memcpy( list, insns->list, insns->count * sizeof( struct instruction ) );
-			free( insns->list );
+			if( insns->list ) {
+				memcpy( list, insns->list, insns->count * sizeof( struct instruction ) );
+				free( insns->list );
+			}
 			insns->list = list;
 			insns->capacity = capacity;
 		} else {
@@ -139,8 +141,10 @@ static int add_block( struct blocks *blocs, struct statement *src, char *message
 		capacity = ( capacity << 1 ) + 2;
 		list = calloc( capacity, sizeof( struct statement * ) );
 		if( list ) {
-			memcpy( list, blocs->list, blocs->count * sizeof( struct statement * ) );
-			free( blocs->list );
+			if( blocs->list ) {
+				memcpy( list, blocs->list, blocs->count * sizeof( struct statement * ) );
+				free( blocs->list );
+			}
 			blocs->list = list;
 			blocs->capacity = capacity;
 		} else {
@@ -248,7 +252,7 @@ static enum result modulo( int *lhs, int rhs, struct variables *vars, struct exp
 static enum result execute_arithmetic_statement( struct statement *this,
 	struct variables *vars, struct variable *result ) {
 	struct instruction *insn = ( ( struct arithmetic_statement * ) this )->insns.list;
-	int stack[ 8 ], *top = &stack[ -1 ], index;
+	int stack[ 9 ], *top = stack, index;
 	struct variable var, *locals = vars->locals, *local;
 	struct array *arr;
 	enum result ret;
