@@ -12,7 +12,7 @@
 #include "towntalk.h"
 
 /*
-	Towntalk (c)2023 Martin Cameron.
+	Towntalk (c)2024 Martin Cameron.
 
 	A program file consists of a list of declarations.
 	When a '#' character is encountered, the rest of the line is ignored.
@@ -65,6 +65,7 @@
 		rem {}                   Comment.
 		var a, b, c = expr;      Local variables.
 		var ( struct ) a;        Local variable with associated struct.
+		var [ a expr ];          Local variable initialized with array of specified length.
 		let var = expr;          Assign expression to local or global variable.
 		let [ arr idx ] = expr;  Assign expression to array at specified index.
 		let struc.f(arr) = expr; Assign expression to array at named field of specified struct.
@@ -1442,13 +1443,8 @@ enum result evaluate_custom( struct expression *expr, struct custom_type *type, 
 
 enum result execute_statements( struct statement *stmt, struct variables *vars, struct variable *result ) {
 	enum result ret = OKAY;
-	while( stmt ) {
-		ret = stmt->execute( stmt, vars, result );
-		if( ret == OKAY ) {
-			stmt = stmt->next;
-		} else {
-			return ret;
-		}
+	while( stmt && ( ret = stmt->execute( stmt, vars, result ) ) == OKAY ) {
+		stmt = stmt->next;
 	}
 	return ret;
 }
@@ -1555,13 +1551,8 @@ enum result execute_if_statement( struct statement *this,
 		} else if( condition.integer_value == 0 ) {
 			stmt = ( ( struct block_statement * ) this )->else_block;
 		}
-		while( stmt ) {
-			ret = stmt->execute( stmt, vars, result );
-			if( ret == OKAY ) {
-				stmt = stmt->next;
-			} else {
-				break;
-			}
+		while( stmt && ( ret = stmt->execute( stmt, vars, result ) ) == OKAY ) {
+			stmt = stmt->next;
 		}
 	}
 	return ret;
@@ -1614,16 +1605,14 @@ static enum result execute_while_statement( struct statement *this,
 				}
 		}
 		stmt = ( ( struct block_statement * ) this )->if_block;
-		while( stmt ) {
-			ret = stmt->execute( stmt, vars, result );
-			if( ret == OKAY ) {
-				stmt = stmt->next;
-			} else if( ret == RETURN ) {
+		while( stmt && ( ret = stmt->execute( stmt, vars, result ) ) == OKAY ) {
+			stmt = stmt->next;
+		}
+		if( stmt ) {
+			if( ret == RETURN ) {
 				return RETURN;
 			} else if( ret == BREAK ) {
 				return OKAY;
-			} else if( ret == CONTINUE ) {
-				break;
 			} else if( ret == EXCEPTION ) {
 				return EXCEPTION;
 			}
@@ -1646,16 +1635,14 @@ static enum result execute_until_statement( struct statement *this,
 	enum result ret;
 	while( 1 ) {
 		stmt = ( ( struct block_statement * ) this )->if_block;
-		while( stmt ) {
-			ret = stmt->execute( stmt, vars, result );
-			if( ret == OKAY ) {
-				stmt = stmt->next;
-			} else if( ret == RETURN ) {
+		while( stmt && ( ret = stmt->execute( stmt, vars, result ) ) == OKAY ) {
+			stmt = stmt->next;
+		}
+		if( stmt ) {
+			if( ret == RETURN ) {
 				return RETURN;
 			} else if( ret == BREAK ) {
 				return OKAY;
-			} else if( ret == CONTINUE ) {
-				break;
 			} else if( ret == EXCEPTION ) {
 				return EXCEPTION;
 			}
@@ -1797,13 +1784,8 @@ static enum result execute_case_statement( struct statement *this,
 	struct variables *vars, struct variable *result ) {
 	struct statement *stmt = ( ( struct block_statement * ) this )->if_block;
 	enum result ret = OKAY;
-	while( stmt ) {
-		ret = stmt->execute( stmt, vars, result );
-		if( ret == OKAY ) {
-			stmt = stmt->next;
-		} else {
-			break;
-		}
+	while( stmt && ( ret = stmt->execute( stmt, vars, result ) ) == OKAY ) {
+		stmt = stmt->next;
 	}
 	return ret;
 }
@@ -1874,18 +1856,14 @@ static enum result evaluate_call_expression( struct expression *this,
 	}
 	if( ret ) {
 		stmt = call_vars.func->statements;
-		while( stmt ) {
-			ret = stmt->execute( stmt, &call_vars, result );
-			if( ret == OKAY ) {
-				stmt = stmt->next;
-			} else if( ret == EXCEPTION ) {
-				break;
-			} else if( ret == RETURN ) {
+		while( stmt && ( ret = stmt->execute( stmt, &call_vars, result ) ) == OKAY ) {
+			stmt = stmt->next;
+		}
+		if( stmt ) {
+			if( ret == RETURN ) {
 				ret = OKAY;
-				break;
-			} else {
+			} else if( ret ) {
 				ret = throw( vars, this, ret, "Unhandled 'break' or 'continue'." );
-				break;
 			}
 		}
 	}

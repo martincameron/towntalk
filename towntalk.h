@@ -4,7 +4,7 @@
 
 #include "stdlib.h"
 
-/* Towntalk (c)2023 Martin Cameron. */
+/* Towntalk (c)2024 Martin Cameron. */
 
 /* Return value of execute/evaluate functions. */
 enum result {
