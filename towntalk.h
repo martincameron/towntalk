@@ -8,7 +8,7 @@
 
 /* Return value of execute/evaluate functions. */
 enum result {
-	EXCEPTION, OKAY, RETURN, BREAK, CONTINUE
+	EXCEPTION, OKAY, RETURN, BREAK, CONTINUE, AGAIN
 };
 
 /* Reference type. */

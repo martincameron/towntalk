@@ -1305,6 +1305,53 @@ static enum result execute_continue_statement( struct statement *this,
 	return CONTINUE;
 }
 
+static enum result throw_interrupted( struct variables *vars, struct expression *source ) {
+	if( vars->func->env->worker ) {
+		return throw_exit( vars, 0, "Interrupted." );
+	} else {
+		return throw( vars, source, 0, "Interrupted.");
+	}
+}
+
+static enum result execute_tail_call_statement( struct statement *this,
+	struct variables *vars, struct variable *result ) {
+	enum result ret = OKAY;
+	struct expression *source = this->source, *parameter = source->parameters;
+	struct function *func = ( ( struct function_expression * ) source )->function;
+	int num_params = func->num_parameters, num_locals = func->num_variables;
+	int idx = 0, size = sizeof( struct variable ) * num_params;
+	struct variable *locals = alloca( size );
+	memset( locals, 0, size );
+	while( idx < num_params ) {
+		ret = parameter->evaluate( parameter, vars, &locals[ idx++ ] );
+		if( ret ) {
+			parameter = parameter->next;
+		} else {
+			break;
+		}
+	}
+	if( ret ) {
+		idx = 0;
+		while( idx < num_params ) {
+			assign_variable( &locals[ idx ], &vars->locals[ idx ] );
+			idx++;
+		}
+		while( idx < num_locals ) {
+			dispose_variable( &vars->locals[ idx++ ] );
+		}
+		if( func->env->interrupted ) {
+			ret = throw_interrupted( vars, source );
+		} else {
+			ret = AGAIN;
+		}
+	}
+	idx = 0;
+	while( idx < num_params ) {
+		dispose_temporary( &locals[ idx++ ] );
+	}
+	return ret;
+}
+
 void dispose_block_statement( struct statement *this ) {
 	dispose_statements( ( ( struct block_statement * ) this )->if_block );
 	dispose_statements( ( ( struct block_statement * ) this )->else_block );
@@ -1618,11 +1665,7 @@ static enum result execute_while_statement( struct statement *this,
 			}
 		}
 		if( env->interrupted ) {
-			if( env->worker ) {
-				return throw_exit( vars, 0, "Interrupted." );
-			} else {
-				return throw( vars, this->source, 0, "Interrupted.");
-			}
+			return throw_interrupted( vars, this->source );
 		}
 	}
 }
@@ -1656,11 +1699,7 @@ static enum result execute_until_statement( struct statement *this,
 			return EXCEPTION;
 		}
 		if( env->interrupted ) {
-			if( env->worker ) {
-				return throw_exit( vars, 0, "Interrupted." );
-			} else {
-				return throw( vars, this->source, 0, "Interrupted.");
-			}
+			return throw_interrupted( vars, this->source );
 		}
 	}
 }
@@ -1854,7 +1893,7 @@ static enum result evaluate_call_expression( struct expression *this,
 			break;
 		}
 	}
-	if( ret ) {
+	while( ret ) {
 		stmt = call_vars.func->statements;
 		while( stmt && ( ret = stmt->execute( stmt, &call_vars, result ) ) == OKAY ) {
 			stmt = stmt->next;
@@ -1862,10 +1901,13 @@ static enum result evaluate_call_expression( struct expression *this,
 		if( stmt ) {
 			if( ret == RETURN ) {
 				ret = OKAY;
+			} else if( ret == AGAIN ) {
+				continue;
 			} else if( ret ) {
 				ret = throw( vars, this, ret, "Unhandled 'break' or 'continue'." );
 			}
 		}
+		break;
 	}
 	idx = 0, count = call_vars.func->num_variables;
 	while( idx < count ) {
@@ -4853,17 +4895,25 @@ static void parse_keywords( struct keyword *keywords, struct element *elem,
 void parse_keywords_indexed( struct keyword **index, struct element *elem,
 	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
 	struct statement *stmt = prev;
+	struct expression *source;
 	while( elem && message[ 0 ] == 0 ) {
 		elem = parse_keyword( get_keyword( elem->str.string, index[ hash_code( elem->str.string, 0 ) ] ), elem, func, vars, stmt, message );
 		while( stmt && stmt->next ) {
 			stmt = stmt->next;
 		}
 	}
-#if defined( OPTIMIZER )
 	if( message[ 0 ] == 0 && prev->next ) {
+		if( stmt->execute == execute_return_statement ) {
+			source = stmt->source;
+			if( source && source->evaluate == evaluate_call_expression
+			&& ( ( struct function_expression * ) source )->function == func ) {
+				stmt->execute = execute_tail_call_statement;
+			}
+		}
+#if defined( OPTIMIZER )
 		optimize_statements( func, prev, message );
-	}
 #endif
+	}
 }
 
 static struct element* parse_if_statement( struct element *elem,
