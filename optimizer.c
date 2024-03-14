@@ -880,7 +880,7 @@ struct statement* optimize_statements( struct function *func, struct statement *
 			next = optimize_if( next, prev, message );
 		}
 		if( message[ 0 ] ) {
-			return;
+			return prev;
 		}
 		prev = next;
 		next = next->next;
