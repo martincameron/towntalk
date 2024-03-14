@@ -246,12 +246,12 @@ struct element* parse_expr_list_statement( struct element *elem,
 	char *message );
 
 /* Parse statements from the specified element using the specified keyword index.
-   Writes up to 128 bytes to message on failure. */
-void parse_keywords_indexed( struct keyword **index, struct element *elem,
+   Returns the last statement parsed. Writes up to 128 bytes to message on failure. */
+struct statement* parse_keywords_indexed( struct keyword **index, struct element *elem,
 	struct function *func, struct variables *vars, struct statement *stmt, char *message );
 
 /* Validate the specified element against the specified syntax string.
-   Returns the next element and writes up to 128 bytes to message on failure. */
+   Returns the next element. Writes up to 128 bytes to message on failure. */
 struct element* validate_syntax( char *syntax, struct element *elem,
 	struct element *key, struct environment *env, char *message );
 
@@ -259,7 +259,7 @@ struct element* validate_syntax( char *syntax, struct element *elem,
 struct string_list* add_decl( struct string *decl, int line, struct environment *env, char *message );
 
 /* Parse a single expression and append it to prev.
-   Returns the next element to be parsed and writes up to 128 bytes to message on failure. */
+   Returns the next element to be parsed. Writes up to 128 bytes to message on failure. */
 struct element* parse_expression( struct element *elem,
 	struct function *func, struct variables *vars, struct expression *prev, char *message );
 

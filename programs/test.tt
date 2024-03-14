@@ -890,6 +890,7 @@ function testfunction() {
 	let local = $new( struc "a" );
 	call assert_equals( local.a, :( $function( ${ () { return local.a; } } ) ), ${-} );
 	call assert_equals( local.a, :( $function( ${ () { return local:geta(); } } ) ), ${-} );
+	call assert_equals( STR, :( $function( ${ ( x ) { if x { return x; } return @( STR ); } } ) 0 ), ${-} );
 	call assert_throws( "1", ${ () { return except( ${ 1 } ); } } );
 	call assert_throws( "1", ${ () { call $function( except( ${ 1 } ) ); } } );
 	call assert_throws( "1", ${ () { call :( $function( ${ ( param ) {} } ) except( ${ 1 } ) ); } } );

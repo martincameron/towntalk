@@ -732,7 +732,7 @@ static enum result execute_arithmetic_statement( struct statement *this,
 }
 
 /* Replace the source statement with a new arithmetic statement (combined with the previous statement if possible). */
-static struct arithmetic_statement *add_arithmetic_statement( struct statement *src, struct statement *prev, char *message ) {
+static struct arithmetic_statement* add_arithmetic_statement( struct statement *src, struct statement *prev, char *message ) {
 	struct expression *expr;
 	struct arithmetic_statement *arith;
 	if( prev->execute == execute_arithmetic_statement ) {
@@ -864,7 +864,8 @@ static void print_insns( struct function *func, struct arithmetic_statement *stm
 }
 #endif
 
-void optimize_statements( struct function *func, struct statement *prev, char *message ) {
+/* Returns the last statement after optimization. */
+struct statement* optimize_statements( struct function *func, struct statement *prev, char *message ) {
 	struct statement *stmt = prev, *next = stmt->next;
 	while( next ) {
 		if( next->execute == execute_local_assignment ) {
@@ -892,4 +893,5 @@ void optimize_statements( struct function *func, struct statement *prev, char *m
 		stmt = stmt->next;
 	}
 #endif
+	return prev;
 }

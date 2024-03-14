@@ -107,13 +107,14 @@
 		variable                 Value of named local or global variable.
 		local++                  Value of named local variable prior to increment.
 		local--                  Value of named local variable prior to decrement.
-		function(expr ...)       Call function with specified args.
+		function(expr ...)       Call declared function with specified args.
 		[arr idx]                Array element.
 		struct                   Structure reference.
 		struct.field             Index of named struct field.
 		struct.field(array)      Value of named field of specified array.
 		variable.field           Value of named field of associated structure of specified array variable.
-		@function                Function reference.
+		@function                Reference to declared function.
+		@(expr ...)              Recursive function call.
 		:(func expr ...)         Call function reference with specified args.
 		:struct.memb(this ...)   Call member-function. Equivalent to ":(struct.memb(this) this ...)", but this evaluated once.
 		:variable.member(...)    Call member-function using associated structure. Equivalent to ":struct.member(variable ...)".
@@ -208,7 +209,7 @@ static struct constant constants[] = {
 };
 
 /* Forward declarations. */
-void optimize_statements( struct function *func, struct statement *prev, char *message );
+struct statement * optimize_statements( struct function *func, struct statement *prev, char *message );
 static int validate_name( struct element *elem, char *message );
 static int validate_decl( struct string *decl, int line, struct environment *env, char *message );
 static void parse_keywords( struct keyword *keywords, struct element *elem,
@@ -4109,8 +4110,13 @@ struct element* parse_expression( struct element *elem,
 	} else if( elem->str.length > 128 ) {
 		sprintf( message, "Invalid expression '%.64s' on line %d.", value, elem->line );
 	} else if( value[ 0 ] == '@' ) {
-		/* Function reference operator. */
-		next = parse_func_ref_expression( elem, func, prev, message );
+		if( value[ 1 ] ) {
+			/* Function reference operator. */
+			next = parse_func_ref_expression( elem, func, prev, message );
+		} else {
+			/* Recursive function call. */
+			next = parse_call_expression( elem, func, vars, func, prev, message );
+		}
 	} else if( value[ 0 ] == ':' ) {
 		if( value[ 1 ] == 0 ) {
 			/* Function reference call. */
@@ -4892,28 +4898,21 @@ static void parse_keywords( struct keyword *keywords, struct element *elem,
 	}
 }
 
-void parse_keywords_indexed( struct keyword **index, struct element *elem,
+struct statement* parse_keywords_indexed( struct keyword **index, struct element *elem,
 	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
 	struct statement *stmt = prev;
-	struct expression *source;
 	while( elem && message[ 0 ] == 0 ) {
 		elem = parse_keyword( get_keyword( elem->str.string, index[ hash_code( elem->str.string, 0 ) ] ), elem, func, vars, stmt, message );
 		while( stmt && stmt->next ) {
 			stmt = stmt->next;
 		}
 	}
-	if( message[ 0 ] == 0 && prev->next ) {
-		if( stmt->execute == execute_return_statement ) {
-			source = stmt->source;
-			if( source && source->evaluate == evaluate_call_expression
-			&& ( ( struct function_expression * ) source )->function == func ) {
-				stmt->execute = execute_tail_call_statement;
-			}
-		}
 #if defined( OPTIMIZER )
-		optimize_statements( func, prev, message );
-#endif
+	if( message[ 0 ] == 0 && prev->next ) {
+		stmt = optimize_statements( func, prev, message );
 	}
+#endif
+	return stmt;
 }
 
 static struct element* parse_if_statement( struct element *elem,
@@ -5138,14 +5137,25 @@ struct function* parse_function( struct element *elem, char *name,
 }
 
 int parse_function_body( struct function *func, struct variables *vars, char *message ) {
-	struct statement stmt = { 0 };
+	struct statement prev = { 0 }, *stmt = NULL;
 	struct element *next = func->body->child;
+	struct expression *source;
 	if( next ) {
-		stmt.next = NULL;
-		parse_keywords_indexed( func->env->statements_index, next, func, vars, &stmt, message );
-		func->statements = stmt.next;
+		prev.next = NULL;
+		stmt = parse_keywords_indexed( func->env->statements_index, next, func, vars, &prev, message );
+		func->statements = prev.next;
 	}
-	return message[ 0 ] == 0;
+	if( message[ 0 ] == 0 ) {
+		if( stmt && stmt->execute == execute_return_statement ) {
+			source = stmt->source;
+			if( source && source->evaluate == evaluate_call_expression
+			&& ( ( struct function_expression * ) source )->function == func ) {
+				stmt->execute = execute_tail_call_statement;
+			}
+		}
+		return 1;
+	}
+	return 0;
 }
 
 static enum result evaluate_function_expression( struct expression *this,
