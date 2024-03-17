@@ -202,6 +202,11 @@ const int MAX_INTEGER = ( 1 << ( sizeof( int ) * 8 - 1 ) ) - 1u;
 /* Message to be used to avoid memory allocation in out-of-memory error paths. */
 const char *OUT_OF_MEMORY = "Out of memory.";
 
+/* Limit total stack-usage to 1M. */
+const int MAX_ELEMENT_DEPTH = 1024;
+const int MAX_CALL_DEPTH = 256;
+const int MAX_LOCALS = 128;
+
 static struct constant constants[] = {
 	{ "FALSE", 0, NULL },
 	{  "TRUE", 1, NULL },
@@ -437,10 +442,14 @@ static struct element* copy_element( struct element *source ) {
 	return head;
 }
 
-static int parse_child_element( char *buffer, int idx, struct element *parent, char *message ) {
+static int parse_child_element( char *buffer, int idx, struct element *parent, int depth, char *message ) {
 	struct element *elem = NULL;
-	int offset = idx, length = 0, line = parent->line, end, str_len;
+	int offset = idx, length = 0, line = parent->line, len;
 	char *bracket, chr = '\n';
+	if( depth > MAX_ELEMENT_DEPTH ) {
+		sprintf( message, "Maximum element depth exceeded on line %d.", line );
+		return -5;
+	}
 	while( chr ) {
 		chr = buffer[ idx++ ];
 		if( chr <= 32 || strchr( "\"#(),;=[]{}", chr ) ) {
@@ -468,20 +477,20 @@ static int parse_child_element( char *buffer, int idx, struct element *parent, c
 				line++;
 			} else if( chr && strchr( "\"(,;=[{", chr ) ) {
 				if( chr == '"' ) {
-					end = parse_string( buffer, idx - 1, NULL, line, message );
-					if( end < 0 ) {
-						return end;
+					len = parse_string( buffer, idx - 1, NULL, line, message );
+					if( len < 0 ) {
+						return len;
 					} else {
-						str_len = end - idx + 1;
+						len = len - idx + 1;
 					}
 				} else {
-					str_len = 2;
+					len = 2;
 				}
 				if( elem == NULL ) {
-					elem = new_element( str_len );
+					elem = new_element( len );
 					parent->child = elem;
 				} else {
-					elem->next = new_element( str_len );
+					elem->next = new_element( len );
 					elem = elem->next;
 				}
 				if( elem ) {
@@ -496,12 +505,12 @@ static int parse_child_element( char *buffer, int idx, struct element *parent, c
 						if( bracket ) {
 							elem->str.string[ 0 ] = bracket[ 0 ];
 							elem->str.string[ 1 ] = bracket[ 1 ];
-							idx = parse_child_element( buffer, idx, elem, message );
+							idx = parse_child_element( buffer, idx, elem, depth + 1, message );
 							if( idx > 0 ) {
 								/* Exchange line and elem->line. */
-								line = elem->line - line;
-								elem->line = elem->line - line;
-								line = elem->line + line;
+								len = elem->line;
+								elem->line = line;
+								line = len;
 								if( buffer[ idx - 1 ] != bracket[ 1 ] ) {
 									sprintf( message, "Unclosed element on line %d.", line );
 									return -2;
@@ -539,7 +548,7 @@ static struct element* parse_element( char *buffer, char *message ) {
 	elem.str.string = NULL;
 	elem.str.type = ELEMENT;
 	elem.child = elem.next = NULL;
-	idx = parse_child_element( buffer, 0, &elem, message );
+	idx = parse_child_element( buffer, 0, &elem, 0, message );
 	if( idx > 0 ) {
 		if( buffer[ idx - 1 ] != 0 ) {
 			sprintf( message, "Unexpected closing bracket '%c' on line %d.", buffer[ idx - 1 ], elem.line );
@@ -1065,7 +1074,9 @@ static struct function* new_function( char *name, struct function *parent ) {
 
 static struct local_variable* new_local_variable( struct function *func, struct element *name, struct structure *type, char *message ) {
 	struct local_variable *local = NULL;
-	if( validate_decl( &name->str, name->line, func->env, message ) ) {
+	if( func->num_variables >= MAX_LOCALS ) {
+		sprintf( message, "Too many local variables in function '%.64s' on line %d.", func->str.string, func->line );
+	} else if( validate_decl( &name->str, name->line, func->env, message ) ) {
 		local = malloc( sizeof( struct local_variable ) + sizeof( char ) * ( name->str.length + 1 ) );
 		if( local ) {
 			local->index = func->num_variables;
@@ -1513,6 +1524,7 @@ static enum result execute_try_finally_statement( struct statement *this,
 	try_vars.locals = fin_vars.locals = vars->locals;
 	try_vars.func = fin_vars.func = vars->func;
 	try_vars.line = fin_vars.line = vars->line;
+	try_vars.depth = fin_vars.depth = vars->depth;
 	try_ret = execute_statements( ( ( struct block_statement * ) this )->if_block, &try_vars, &try_res );
 	fin_ret = execute_statements( ( ( struct block_statement * ) this )->else_block, &fin_vars, &fin_res );
 	if( try_ret == OKAY ) {
@@ -1571,6 +1583,7 @@ static enum result execute_try_catch_statement( struct statement *this,
 	try_vars.locals = vars->locals;
 	try_vars.func = vars->func;
 	try_vars.line = vars->line;
+	try_vars.depth = vars->depth;
 	ret = execute_statements( ( ( struct block_statement * ) this )->if_block, &try_vars, result );
 	if( ret == EXCEPTION ) {
 		exception_var = vars->func->variable_decls;
@@ -1882,6 +1895,10 @@ static enum result evaluate_call_expression( struct expression *this,
 	call_vars.line = this->line;
 	call_vars.func = ( ( struct function_expression * ) this )->function;
 	count = sizeof( struct variable ) * call_vars.func->num_variables;
+	call_vars.depth = vars->depth + 1;
+	if( call_vars.depth >= MAX_CALL_DEPTH ) {
+		return throw_exit( vars, 1, "Maximum call-depth exceeded.");
+	}
 	call_vars.locals = alloca( count );
 	call_vars.exception = vars->exception;
 	memset( call_vars.locals, 0, count );

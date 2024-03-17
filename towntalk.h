@@ -116,7 +116,7 @@ struct variables {
 	struct variable *exception;
 	struct variable *locals;
 	struct function *func;
-	int line;
+	int line, depth;
 };
 
 /* Expression list. */
