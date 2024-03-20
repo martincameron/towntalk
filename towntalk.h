@@ -68,6 +68,7 @@ struct variable {
 struct environment {
 	int argc;
 	char **argv, interrupted;
+	size_t stack_limit;
 	struct string exit;
 	struct array arrays;
 	struct keyword *statements_index[ 32 ];
@@ -116,7 +117,7 @@ struct variables {
 	struct variable *exception;
 	struct variable *locals;
 	struct function *func;
-	int line, depth;
+	int line;
 };
 
 /* Expression list. */

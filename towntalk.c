@@ -203,8 +203,7 @@ const int MAX_INTEGER = ( 1 << ( sizeof( int ) * 8 - 1 ) ) - 1u;
 const char *OUT_OF_MEMORY = "Out of memory.";
 
 /* Limit total stack-usage to 1M. */
-const int MAX_ELEMENT_DEPTH = 1024;
-const int MAX_CALL_DEPTH = 256;
+const int MAX_STACK = 1024;
 const int MAX_LOCALS = 128;
 
 static struct constant constants[] = {
@@ -446,7 +445,7 @@ static int parse_child_element( char *buffer, int idx, struct element *parent, i
 	struct element *elem = NULL;
 	int offset = idx, length = 0, line = parent->line, len;
 	char *bracket, chr = '\n';
-	if( depth > MAX_ELEMENT_DEPTH ) {
+	if( depth > MAX_STACK ) {
 		sprintf( message, "Maximum element depth exceeded on line %d.", line );
 		return -5;
 	}
@@ -1524,7 +1523,6 @@ static enum result execute_try_finally_statement( struct statement *this,
 	try_vars.locals = fin_vars.locals = vars->locals;
 	try_vars.func = fin_vars.func = vars->func;
 	try_vars.line = fin_vars.line = vars->line;
-	try_vars.depth = fin_vars.depth = vars->depth;
 	try_ret = execute_statements( ( ( struct block_statement * ) this )->if_block, &try_vars, &try_res );
 	fin_ret = execute_statements( ( ( struct block_statement * ) this )->else_block, &fin_vars, &fin_res );
 	if( try_ret == OKAY ) {
@@ -1583,7 +1581,6 @@ static enum result execute_try_catch_statement( struct statement *this,
 	try_vars.locals = vars->locals;
 	try_vars.func = vars->func;
 	try_vars.line = vars->line;
-	try_vars.depth = vars->depth;
 	ret = execute_statements( ( ( struct block_statement * ) this )->if_block, &try_vars, result );
 	if( ret == EXCEPTION ) {
 		exception_var = vars->func->variable_decls;
@@ -1895,9 +1892,8 @@ static enum result evaluate_call_expression( struct expression *this,
 	call_vars.line = this->line;
 	call_vars.func = ( ( struct function_expression * ) this )->function;
 	count = sizeof( struct variable ) * call_vars.func->num_variables;
-	call_vars.depth = vars->depth + 1;
-	if( call_vars.depth >= MAX_CALL_DEPTH ) {
-		return throw_exit( vars, 1, "Maximum call-depth exceeded.");
+	if( ( size_t ) &this < call_vars.func->env->stack_limit ) {
+		return throw( vars, this, 0, "Stack overflow." );
 	}
 	call_vars.locals = alloca( count );
 	call_vars.exception = vars->exception;
@@ -5749,6 +5745,7 @@ int add_operators( struct operator *operators, struct environment *env, char *me
    Returns zero and writes message on failure. */
 int initialize_environment( struct environment *env, char *message ) {
 	memset( env, 0, sizeof( struct environment ) );
+	env->stack_limit = ( size_t ) &env - MAX_STACK * 256;
 	return add_statements( statements, env, message )
 		&& add_operators( operators, env, message )
 		&& add_constants( constants, env, message );
