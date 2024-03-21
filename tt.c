@@ -14,6 +14,8 @@
 #include "ttasm.h"
 #endif
 
+#define MAX_STACK 1048576
+
 static struct environment env;
 
 static void interrupt_handler( int signum ) {
@@ -31,7 +33,8 @@ void* worker_thread( void *data ) {
 	struct function_expression expr = { 0 };
 	struct worker *work = ( struct worker * ) data;
 	vars.exception = &work->exception;
-	initialize_call_expr( &expr, work->env.entry_point );
+	vars.func = work->env.entry_point;
+	initialize_entry_point( &expr, vars.func );
 	expr.expr.parameters = work->parameters;
 	work->ret = expr.expr.evaluate( &expr.expr, &vars, &work->result );
 	return NULL;
@@ -111,7 +114,7 @@ int main( int argc, char **argv ) {
 	/* Install signal handler. */
 	if( signal( SIGINT, interrupt_handler ) != SIG_ERR ) {
 		/* Parse program file. */
-		if( initialize_environment( &env, message )
+		if( initialize_environment( &env, MAX_STACK, message )
 		&& initialize_worker_extension( &env, message )
 #if defined( ASM_STATEMENT )
 		&& add_statements( asm_keyword, &env, message )
@@ -121,7 +124,7 @@ int main( int argc, char **argv ) {
 			env.argv = &argv[ 1 ];
 			if( env.entry_point ) {
 				/* Evaluate the last entry-point function. */
-				initialize_call_expr( &expr, env.entry_point );
+				initialize_entry_point( &expr, env.entry_point );
 				if( initialize_globals( &env, &except ) && expr.expr.evaluate( &expr.expr, &vars, &result ) ) {
 					exit_code = EXIT_SUCCESS;
 				} else if( except.string_value && except.string_value->type == EXIT ) {

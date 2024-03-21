@@ -202,10 +202,6 @@ const int MAX_INTEGER = ( 1 << ( sizeof( int ) * 8 - 1 ) ) - 1u;
 /* Message to be used to avoid memory allocation in out-of-memory error paths. */
 const char *OUT_OF_MEMORY = "Out of memory.";
 
-/* Limit total stack-usage to 1M. */
-const int MAX_STACK = 1024;
-const int MAX_LOCALS = 128;
-
 static struct constant constants[] = {
 	{ "FALSE", 0, NULL },
 	{  "TRUE", 1, NULL },
@@ -445,7 +441,7 @@ static int parse_child_element( char *buffer, int idx, struct element *parent, i
 	struct element *elem = NULL;
 	int offset = idx, length = 0, line = parent->line, len;
 	char *bracket, chr = '\n';
-	if( depth > MAX_STACK ) {
+	if( depth < 1 ) {
 		sprintf( message, "Maximum element depth exceeded on line %d.", line );
 		return -5;
 	}
@@ -504,7 +500,7 @@ static int parse_child_element( char *buffer, int idx, struct element *parent, i
 						if( bracket ) {
 							elem->str.string[ 0 ] = bracket[ 0 ];
 							elem->str.string[ 1 ] = bracket[ 1 ];
-							idx = parse_child_element( buffer, idx, elem, depth + 1, message );
+							idx = parse_child_element( buffer, idx, elem, depth - 1, message );
 							if( idx > 0 ) {
 								/* Exchange line and elem->line. */
 								len = elem->line;
@@ -540,14 +536,14 @@ static int parse_child_element( char *buffer, int idx, struct element *parent, i
 	return idx;
 }
 
-static struct element* parse_element( char *buffer, char *message ) {
+static struct element* parse_element( char *buffer, int max_depth, char *message ) {
 	int idx;
 	struct element elem;
 	elem.line = 1;
 	elem.str.string = NULL;
 	elem.str.type = ELEMENT;
 	elem.child = elem.next = NULL;
-	idx = parse_child_element( buffer, 0, &elem, 0, message );
+	idx = parse_child_element( buffer, 0, &elem, max_depth, message );
 	if( idx > 0 ) {
 		if( buffer[ idx - 1 ] != 0 ) {
 			sprintf( message, "Unexpected closing bracket '%c' on line %d.", buffer[ idx - 1 ], elem.line );
@@ -1073,7 +1069,7 @@ static struct function* new_function( char *name, struct function *parent ) {
 
 static struct local_variable* new_local_variable( struct function *func, struct element *name, struct structure *type, char *message ) {
 	struct local_variable *local = NULL;
-	if( func->num_variables >= MAX_LOCALS ) {
+	if( func->num_variables >= 128 ) {
 		sprintf( message, "Too many local variables in function '%.64s' on line %d.", func->str.string, func->line );
 	} else if( validate_decl( &name->str, name->line, func->env, message ) ) {
 		local = malloc( sizeof( struct local_variable ) + sizeof( char ) * ( name->str.length + 1 ) );
@@ -3265,7 +3261,7 @@ static enum result evaluate_parse_expression( struct expression *this,
 	char message[ 128 ] = "";
 	enum result ret = evaluate_string( parameter, vars, &str );
 	if( ret ) {
-		elem = parse_element( str.string_value->string, message );
+		elem = parse_element( str.string_value->string, vars->func->env->element_depth, message );
 		if( message[ 0 ] == 0 ) {
 			result->string_value = &elem->str;
 		} else {
@@ -5584,7 +5580,7 @@ int parse_tt_program( char *program, struct string *file, struct environment *en
 	int idx;
 	struct string_list *list;
 	struct function *init, *func;
-	struct element *elem = parse_element( program, message );
+	struct element *elem = parse_element( program, env->element_depth, message );
 	if( elem ) {
 		/* Create empty function for global evaluation. */
 		init = new_function( "[Init]", NULL );
@@ -5742,17 +5738,19 @@ int add_operators( struct operator *operators, struct environment *env, char *me
 }
 
 /* Initialize env with the the standard statements, operators and constants.
+   The maximum available stack must be specified in bytes.
    Returns zero and writes message on failure. */
-int initialize_environment( struct environment *env, char *message ) {
+int initialize_environment( struct environment *env, int max_stack, char *message ) {
 	memset( env, 0, sizeof( struct environment ) );
-	env->stack_limit = ( size_t ) &env - MAX_STACK * 256;
+	env->element_depth = max_stack >> 10;
 	return add_statements( statements, env, message )
 		&& add_operators( operators, env, message )
 		&& add_constants( constants, env, message );
 }
 
-/* Initialize expr to execute the specified function when evaluated. */
-void initialize_call_expr( struct function_expression *expr, struct function *func ) {
+/* Initialize expr to call the specified entry-point function when evaluated. */
+void initialize_entry_point( struct function_expression *expr, struct function *func ) {
+	func->env->stack_limit = ( size_t ) &expr - ( func->env->element_depth << 9 );
 	memset( expr, 0, sizeof( struct function_expression ) );
 	expr->expr.evaluate = evaluate_call_expression;
 	expr->expr.line = func->line;

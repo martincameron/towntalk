@@ -1,8 +1,8 @@
 
-#include "towntalk.h"
-
 #ifndef _WORKER_H
 #define _WORKER_H 1
+
+#include "towntalk.h"
 
 /*
 	Extension for multi-threaded subinterpreters.

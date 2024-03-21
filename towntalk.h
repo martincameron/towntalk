@@ -66,9 +66,9 @@ struct variable {
 
 /* Execution environment. */
 struct environment {
-	int argc;
-	char **argv, interrupted;
 	size_t stack_limit;
+	int element_depth, argc;
+	char **argv, interrupted;
 	struct string exit;
 	struct array arrays;
 	struct keyword *statements_index[ 32 ];
@@ -196,8 +196,9 @@ extern const int MAX_INTEGER;
 extern const char *OUT_OF_MEMORY;
 
 /* Initialize env with the the standard statements, operators and constants.
+   The maximum available stack must be specified in bytes.
    Returns zero and writes message on failure. */
-int initialize_environment( struct environment *env, char *message );
+int initialize_environment( struct environment *env, int max_stack, char *message );
 
 /* Add a copy of the specified null-terminated statement array to env.
    Returns zero and writes message on failure. */
@@ -218,8 +219,8 @@ int parse_tt_file( char *file_name, struct environment *env, char *message );
 /* Parse the specified program text into env. Returns zero and writes message on failure. */
 int parse_tt_program( char *program, struct string *file_name, struct environment *env, char *message );
 
-/* Initialize expr to call the specified function when evaluated. */
-void initialize_call_expr( struct function_expression *expr, struct function *func );
+/* Initialize expr to call the specified entry-point function when evaluated. */
+void initialize_entry_point( struct function_expression *expr, struct function *func );
 
 /* Evaluate the global-variable initialization expressions for env before program execution.
    Returns zero and assigns exception on failure. */

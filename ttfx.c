@@ -17,6 +17,8 @@
 #include "ttasm.h"
 #endif
 
+#define MAX_STACK 1048576
+
 /*
 	SDL graphics and sound extension for Towntalk (c)2023 Martin Cameron.
 	
@@ -202,7 +204,8 @@ int worker_thread( void *data ) {
 	struct function_expression expr = { 0 };
 	struct worker *work = ( struct worker * ) data;
 	vars.exception = &work->exception;
-	initialize_call_expr( &expr, work->env.entry_point );
+	vars.func = work->env.entry_point;
+	initialize_entry_point( &expr, vars.func );
 	expr.expr.parameters = work->parameters;
 	work->ret = expr.expr.evaluate( &expr.expr, &vars, &work->result );
 	return 0;
@@ -1721,7 +1724,7 @@ static int initialize_fxenvironment( struct fxenvironment *fxenv, char *message 
 	for( idx = 0; idx < NUM_CHANNELS; idx++ ) {
 		fxenv->channels[ idx ].gain = 4096;
 	}
-	if( initialize_environment( &fxenv->env, message )
+	if( initialize_environment( &fxenv->env, MAX_STACK, message )
 	&& add_constants( fxconstants, &fxenv->env, message )
 	&& add_event_constants( fxenv, message )
 	&& add_statements( fxstatements, &fxenv->env, message )
@@ -1809,7 +1812,7 @@ int main( int argc, char **argv ) {
 				/* Initialize SDL. */
 				if( SDL_Init( SDL_INIT_AUDIO | SDL_INIT_VIDEO | SDL_INIT_TIMER ) == 0 ) {
 					/* Evaluate the last entry-point function. */
-					initialize_call_expr( &expr, fxenv.env.entry_point );
+					initialize_entry_point( &expr, fxenv.env.entry_point );
 					if( initialize_globals( &fxenv.env, &except ) && expr.expr.evaluate( &expr.expr, &vars, &result ) ) {
 						exit_code = EXIT_SUCCESS;
 					} else if( except.string_value && except.string_value->type == EXIT ) {

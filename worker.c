@@ -17,6 +17,8 @@
 		$result(worker)          Wait for the return value of a worker function.
 */
 
+#define MAX_STACK 65536
+
 static struct worker* new_worker( char *message );
 
 #if !defined( MULTI_THREAD )
@@ -31,7 +33,7 @@ int start_worker( struct worker *work ) {
 	struct variables vars = { 0 };
 	struct function_expression expr = { 0 };
 	vars.exception = &work->exception;
-	initialize_call_expr( &expr, work->env.entry_point );
+	initialize_entry_point( &expr, work->env.entry_point );
 	expr.expr.parameters = work->parameters;
 	work->ret = expr.expr.evaluate( &expr.expr, &vars, &work->result );
 	return 1;
@@ -387,7 +389,7 @@ static struct worker* new_worker( char *message ) {
 		work->custom.str.length = strlen( worker_type.name );
 		work->custom.str.reference_count = 1;
 		work->custom.str.type = CUSTOM;
-		if( initialize_environment( &work->env, message )
+		if( initialize_environment( &work->env, MAX_STACK, message )
 		&& add_statements( locked_statement, &work->env, message )
 		&& initialize_worker( work, message ) ) {
 			work->env.worker = &work->custom;
