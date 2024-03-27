@@ -19,7 +19,10 @@
 
 #define MAX_STACK 65536
 
+/* Forward-declarations. */
 static struct worker* new_worker( char *message );
+int check_element_depth( struct element *elem, int max_depth );
+enum result throw_stack_overflow( struct variables *vars, struct expression *expr );
 
 #if !defined( MULTI_THREAD )
 /* Add thread-safe custom statements and operators to the specified worker.
@@ -205,6 +208,7 @@ enum result evaluate_worker_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	struct expression *parameter = this->parameters;
 	struct element *elem, key = { { 1, "$worker", 9, ELEMENT }, NULL, NULL, 0 };
+	struct environment *env = vars->func->env;
 	struct variable var = { 0, NULL };
 	char message[ 128 ] = "";
 	struct worker *work;
@@ -212,13 +216,15 @@ enum result evaluate_worker_expression( struct expression *this,
 	if( vars->func->env->worker ) {
 		ret = throw( vars, this, 0, "Operation not permitted." );
 	} else {
-		ret = parameter->evaluate( parameter, vars, &var );
+		ret = evaluate_element( parameter, vars, &var, 0 );
 	}
 	if( ret ) {
-		if( var.string_value && var.string_value->type == ELEMENT ) {
-			elem = ( struct element * ) var.string_value;
+		elem = ( struct element * ) var.string_value;
+		if( ( size_t ) &ret < env->stack_limit || ( elem->line < 1 && !check_element_depth( elem, env->element_depth ) ) ) {
+			ret = throw_stack_overflow( vars, this );
+		} else {
 			key.line = this->line;
-			validate_syntax( "({0", elem, &key, vars->func->env, message );
+			validate_syntax( "({0", elem, &key, env, message );
 			if( message[ 0 ] == 0 ) {
 				work = parse_worker( elem, vars->func->file, message );
 				if( work ) {
@@ -229,8 +235,6 @@ enum result evaluate_worker_expression( struct expression *this,
 			} else {
 				ret = throw( vars, this, 0, message );
 			}
-		} else {
-			ret = throw( vars, this, 0, "Not an element." );
 		}
 		dispose_temporary( &var );
 	}
@@ -240,6 +244,7 @@ enum result evaluate_worker_expression( struct expression *this,
 enum result evaluate_execute_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	struct expression *parameter = this->parameters;
+	struct environment *env = vars->func->env;
 	struct variable var = { 0, NULL };
 	struct worker *work;
 	struct string *str;
@@ -254,7 +259,9 @@ enum result evaluate_execute_expression( struct expression *this,
 			parameter = parameter->next;
 		}
 		if( work->env.entry_point->num_parameters == count ) {
-			if( work->locked == 0 ) {
+			if( ( size_t ) &ret < env->stack_limit ) {
+				ret = throw_stack_overflow( vars, this );
+			} else if( work->locked == 0 ) {
 				await_worker( work, 1 );
 				idx = 0;
 				parameter = this->parameters->next;
@@ -291,15 +298,15 @@ enum result evaluate_execute_expression( struct expression *this,
 					work->ret = OKAY;
 					dispose_variable( &work->result );
 					dispose_variable( &work->exception );
-					vars->func->env->worker = &work->custom;
-					work->env.interrupted = vars->func->env->interrupted;
+					env->worker = &work->custom;
+					work->env.interrupted = env->interrupted;
 					if( start_worker( work ) ) {
 						result->string_value = var.string_value;
 						result->string_value->reference_count++;
 					} else {
 						ret = throw( vars, this, 0, "Unable to start worker." );
 					}
-					vars->func->env->worker = NULL;
+					env->worker = NULL;
 				}
 			} else {
 				ret = throw( vars, this, 0, "Worker locked." );

@@ -1178,6 +1178,69 @@ function testoptimizer() {
 	call assert_throws( "Not an integer", ${ () { var s = ""; let s = >( 3 s ); } } );
 }
 
+function teststack() {
+	call assert_throws( "Maximum", ${ () { var [ arr 1 ]; let [ arr 0 ] = arr; call $expr( arr ); } } );
+	call assert_throws( "Maximum", ${ () {
+		var lhs = "(", rhs = ")";
+		while 1 {
+			call $parse( $cat( lhs rhs ) );
+			let lhs = $cat( lhs lhs );
+			let rhs = $cat( rhs rhs );
+		}
+	} } );
+	call assert_throws( "Stack", ${ () { call @(); } } );
+	call assert_throws( "Stack", ${ () {
+		var depth = 64;
+		var oper = $parse( "!" );
+		var next = $parse( "()" );
+		var expr = $elem( oper 0 $elem( next ${ 1 } 0 ) );
+		while 1 {
+			var idx = 0;
+			while <( idx depth ) {
+				let expr = $elem( oper 0 $elem( next expr 0 ) );
+				inc idx;
+			}
+			call $eval( expr );
+			let depth = *( depth 2 );
+		}
+	} } );
+	call assert_throws( "Stack", ${ () {
+		var depth = 64;
+		var elem = $parse( "()" );
+		while 1 {
+			var idx = 0;
+			while <( idx depth ) {
+				let elem = $elem( elem elem 0 );
+				inc idx;
+			}
+			call $unparse( elem );
+			let depth = *( depth 2 );
+		}
+	} } );
+	call assert_throws( "Stack", ${ () {
+		var depth = 64;
+		var stmt = $parse( "call" );
+		var func = $parse( "$function" );
+		var parm = $parse( "()" );
+		var body = $parse( "{}" );
+		var coln = $parse( ":" );
+		var semi = $parse( ";" );
+		var dolr = $parse( "$" );
+		var elem = $elem( parm 0 body );
+		while 1 {
+			var idx = 0;
+			while <( idx depth ) {
+				let elem = $elem( parm 0 $elem( body $elem( stmt 0
+					$elem( coln 0 $elem( parm $elem( func 0 $elem( parm
+						$elem( dolr 0 $elem( body elem 0 ) ) 0 ) ) semi ) ) ) 0 ) );
+				inc idx;
+			}
+			call :( $function( elem ) );
+			let depth = *( depth 2 );
+		}
+	} } );
+}
+
 program test {
 	call hello();
 	call assert( =( testvoid() 0 ), ${-} );
@@ -1243,5 +1306,6 @@ program test {
 	call testeval();
 	call testlibrary();
 	call testoptimizer();
+	call teststack();
 	print "Tests passed.";
 }

@@ -217,7 +217,7 @@ static void parse_keywords( struct keyword *keywords, struct element *elem,
 static struct element* parse_expressions( struct element *elem, struct function *func,
 	struct variables *vars, char terminator, struct expression *prev, int *num_exprs, char *message );
 static struct element* value_to_element( int integer_value, struct string *string_value,
-	struct environment *env, char *message );
+	struct environment *env, int max_depth, char *message );
 
 /* Allocate and return a new element with the specified string length. */
 struct element* new_element( int str_len ) {
@@ -2925,14 +2925,14 @@ static struct element* new_string_element( struct string *value ) {
 }
 
 static struct element* new_tuple_element( struct string *string_value, int integer_value,
-	struct environment *env, char *message ) {
+	struct environment *env, int max_depth, char *message ) {
 	struct element *elem = new_element( 4 ), *child = NULL;
 	if( elem ) {
 		strcpy( elem->str.string, "$tup" );
 		elem->next = new_element( 2 );
 		if( elem->next ) {
 			strcpy( elem->next->str.string, "()" );
-			child = value_to_element( 0, string_value, env, message );
+			child = value_to_element( 0, string_value, env, max_depth - 1, message );
 			if( child ) {
 				elem->next->child = child;
 				while( child->next ) {
@@ -2967,7 +2967,7 @@ static struct element* new_literal_element( struct element *child ) {
 	return elem;
 }
 
-static struct element* new_array_element( struct array *arr, struct environment *env, char *message ) {
+static struct element* new_array_element( struct array *arr, struct environment *env, int max_depth, char *message ) {
 	struct element *tail = NULL, *elem = new_element( 7 );
 	int idx = 0, count = 0;
 	struct string *str = NULL;
@@ -3007,7 +3007,7 @@ static struct element* new_array_element( struct array *arr, struct environment 
 				if( arr->string_values ) {
 					str = arr->string_values[ idx ];
 				}
-				tail->next = value_to_element( arr->integer_values[ idx++ ], str, env, message );
+				tail->next = value_to_element( arr->integer_values[ idx++ ], str, env, max_depth - 1, message );
 				tail = tail->next;
 			}
 		}
@@ -3023,11 +3023,13 @@ static struct element* new_array_element( struct array *arr, struct environment 
 }
 
 static struct element* value_to_element( int integer_value, struct string *string_value,
-	struct environment *env, char *message ) {
+	struct environment *env, int max_depth, char *message ) {
 	struct element *elem = NULL;
-	if( string_value ) {
+	if( max_depth < 1 ) {
+		strcpy( message, "Maximum element depth exceeded." );
+	} else if( string_value ) {
 		if( integer_value ) {
-			elem = new_tuple_element( string_value, integer_value, env, message );
+			elem = new_tuple_element( string_value, integer_value, env, max_depth, message );
 		} else {
 			switch( string_value->type ) {
 				case STRING:
@@ -3037,7 +3039,7 @@ static struct element* value_to_element( int integer_value, struct string *strin
 					elem = new_literal_element( ( struct element * ) string_value );
 					break;
 				case ARRAY:
-					elem = new_array_element( ( struct array * ) string_value, env, message );
+					elem = new_array_element( ( struct array * ) string_value, env, max_depth, message );
 					break;
 				case STRUCT:
 					elem = new_element( string_value->length );
@@ -3071,40 +3073,67 @@ static struct element* value_to_element( int integer_value, struct string *strin
 	return elem;
 }
 
+enum result throw_stack_overflow( struct variables *vars, struct expression *expr ) {
+	return throw( vars, expr, 0, "Stack overflow." );
+}
+
 static enum result evaluate_expr_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
+	struct environment *env = vars->func->env;
 	struct variable var = { 0, NULL };
 	struct element *elem;
 	char msg[ 128 ] = "";
 	enum result ret = this->parameters->evaluate( this->parameters, vars, &var );
 	if( ret ) {
-		elem = value_to_element( var.integer_value, var.string_value, vars->func->env, msg );
-		if( elem ) {
-			result->string_value = &elem->str;
+		if( ( size_t ) &ret < env->stack_limit ) {
+			ret = throw_stack_overflow( vars, this );
 		} else {
-			ret = throw( vars, this, 0, msg );
+			elem = value_to_element( var.integer_value, var.string_value, env, env->element_depth, msg );
+			if( elem ) {
+				result->string_value = &elem->str;
+			} else {
+				ret = throw( vars, this, 0, msg );
+			}
 		}
 		dispose_temporary( &var );
 	}
 	return ret;
 }
 
+int check_element_depth( struct element *elem, int max_depth ) {
+	max_depth--;
+	while( elem ) {
+		if( elem->child && ( max_depth < 0 || !check_element_depth( elem->child, max_depth ) ) ) {
+			return 0;
+		}
+		elem = elem->next;
+	}
+	return 1;
+}
+
 static enum result evaluate_eval_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
+	struct environment *env = vars->func->env;
 	struct variable var = { 0, NULL };
 	struct expression prev;
+	struct element *elem;
 	char msg[ 128 ] = "";
 	enum result ret = evaluate_element( this->parameters, vars, &var, 0 );
 	if( ret ) {
-		prev.next = NULL;
-		parse_expression( ( struct element * ) var.string_value, vars->func, NULL, &prev, msg );
-		if( msg[ 0 ] == 0 ) {
-			expr_set_line( prev.next, this->line );
-			ret = prev.next->evaluate( prev.next, vars, result );
+		elem = ( struct element * ) var.string_value;
+		if( ( size_t ) &ret < env->stack_limit || ( elem->line < 1 && !check_element_depth( elem, env->element_depth ) ) ) {
+			ret = throw_stack_overflow( vars, this );
 		} else {
-			ret = throw( vars, this, 0, msg );
+			prev.next = NULL;
+			parse_expression( elem, vars->func, NULL, &prev, msg );
+			if( msg[ 0 ] == 0 ) {
+				expr_set_line( prev.next, this->line );
+				ret = prev.next->evaluate( prev.next, vars, result );
+			} else {
+				ret = throw( vars, this, 0, msg );
+			}
+			dispose_expressions( prev.next );
 		}
-		dispose_expressions( prev.next );
 		dispose_temporary( &var );
 	}
 	return ret;
@@ -3212,7 +3241,6 @@ static enum result evaluate_elem_expression( struct expression *this,
 					if( elem.string_value->reference_count > 1 ) {
 						value = new_element( elem.string_value->length );
 						if( value ) {
-							value->line = ( ( struct element * ) elem.string_value )->line;
 							memcpy( value->str.string, elem.string_value->string,
 								sizeof( char ) * elem.string_value->length );
 						} else {
@@ -3220,6 +3248,7 @@ static enum result evaluate_elem_expression( struct expression *this,
 						}
 					} else { /* Re-use element. */
 						value = ( struct element * ) elem.string_value;
+						value->line = 0;
 						if( value->child ) {
 							unref_string( &value->child->str );
 							value->child = NULL;
@@ -3276,23 +3305,30 @@ static enum result evaluate_unparse_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	int len;
 	struct string *str;
+	struct element *elem;
 	struct expression *parameter = this->parameters;
-	struct variable elem = { 0, NULL };
-	enum result ret = evaluate_element( parameter, vars, &elem, 0 );
+	struct environment *env = vars->func->env;
+	struct variable var = { 0, NULL };
+	enum result ret = evaluate_element( parameter, vars, &var, 0 );
 	if( ret ) {
-		len = write_element( ( struct element * ) elem.string_value, NULL );
-		if( len >= 0 ) {
-			str = new_string( len );
-			if( str ) {
-				write_element( ( struct element * ) elem.string_value, str->string );
-				result->string_value = str;
-			} else {
-				ret = throw( vars, this, 0, OUT_OF_MEMORY );
-			}
+		elem = ( struct element * ) var.string_value;
+		if( ( size_t ) &ret < env->stack_limit || ( elem->line < 1 && !check_element_depth( elem, env->element_depth ) ) ) {
+			ret = throw_stack_overflow( vars, this );
 		} else {
-			ret = throw( vars, this, 0, "String too large." );
+			len = write_element( elem, NULL );
+			if( len >= 0 ) {
+				str = new_string( len );
+				if( str ) {
+					write_element( elem, str->string );
+					result->string_value = str;
+				} else {
+					ret = throw( vars, this, 0, OUT_OF_MEMORY );
+				}
+			} else {
+				ret = throw( vars, this, 0, "String too large." );
+			}
 		}
-		dispose_temporary( &elem );
+		dispose_temporary( &var );
 	}
 	return ret;
 }
@@ -5170,6 +5206,7 @@ int parse_function_body( struct function *func, struct variables *vars, char *me
 static enum result evaluate_function_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	struct expression *parameter = this->parameters;
+	struct environment *env = vars->func->env;
 	struct variable var = { 0, NULL };
 	struct function *func;
 	struct element *elem, key = { { 1, "$function", 9, ELEMENT }, NULL, NULL, 0 };
@@ -5177,26 +5214,30 @@ static enum result evaluate_function_expression( struct expression *this,
 	enum result ret = evaluate_element( parameter, vars, &var, 0 );
 	if( ret ) {
 		elem = ( struct element * ) var.string_value;
-		key.line = this->line;
-		validate_syntax( "({0", elem, &key, vars->func->env, message );
-		if( message[ 0 ] == 0 ) {
-			func = parse_function( elem, NULL, vars->func, message );
-			if( func ) {
-				if( parameter->evaluate != evaluate_string_literal_expression ) {
-					unref_string( func->file );
-					func->file = &func->str;
-				}
-				if( parse_function_body( func, vars, message ) ) {
-					result->string_value = &func->str;
+		if( ( size_t ) &ret < env->stack_limit || ( elem->line < 1 && !check_element_depth( elem, env->element_depth ) ) ) {
+			ret = throw_stack_overflow( vars, this );
+		} else {
+			key.line = this->line;
+			validate_syntax( "({0", elem, &key, env, message );
+			if( message[ 0 ] == 0 ) {
+				func = parse_function( elem, NULL, vars->func, message );
+				if( func ) {
+					if( parameter->evaluate != evaluate_string_literal_expression ) {
+						unref_string( func->file );
+						func->file = &func->str;
+					}
+					if( parse_function_body( func, vars, message ) ) {
+						result->string_value = &func->str;
+					} else {
+						unref_string( &func->str );
+						ret = throw( vars, this, 0, message );
+					}
 				} else {
-					unref_string( &func->str );
 					ret = throw( vars, this, 0, message );
 				}
 			} else {
 				ret = throw( vars, this, 0, message );
 			}
-		} else {
-			ret = throw( vars, this, 0, message );
 		}
 		dispose_temporary( &var );
 	}
