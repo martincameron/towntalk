@@ -1312,7 +1312,8 @@ static enum result execute_continue_statement( struct statement *this,
 	return CONTINUE;
 }
 
-static enum result throw_interrupted( struct variables *vars, struct expression *source ) {
+/* Throw an exception for the specified expression to indicate the interrupted status has been set. */
+enum result throw_interrupted( struct variables *vars, struct expression *source ) {
 	if( vars->func->env->worker ) {
 		return throw_exit( vars, 0, "Interrupted." );
 	} else {
@@ -2082,7 +2083,7 @@ static enum result evaluate_trace_expression( struct expression *this,
 			result->integer_value = var.integer_value;
 			result->string_value = &arr->str;
 		} else {
-			ret = throw( vars, this, 0, OUT_OF_MEMORY );
+			ret = throw_out_of_memory( vars, this );
 		}
 		dispose_temporary( &var );
 	}
@@ -2187,7 +2188,7 @@ static enum result evaluate_array_expression( struct expression *this,
 					unref_string( &arr->str );
 				}
 			} else {
-				ret = throw( vars, this, 0, OUT_OF_MEMORY );
+				ret = throw_out_of_memory( vars, this );
 			}
 		} else {
 			ret = throw( vars, this, var.integer_value, "Invalid array length." );
@@ -2597,7 +2598,7 @@ static enum result evaluate_str_expression( struct expression *this,
 					str_len += len;
 					str = new;
 				} else {
-					ret = throw( vars, this, 0, OUT_OF_MEMORY );
+					ret = throw_out_of_memory( vars, this );
 				}
 			} else {
 				ret = throw( vars, this, len, "String too large." );
@@ -2625,7 +2626,7 @@ static enum result evaluate_asc_expression( struct expression *this,
 			str->string[ 0 ] = val;
 			result->string_value = str;
 		} else {
-			ret = throw( vars, this, 0, OUT_OF_MEMORY );
+			ret = throw_out_of_memory( vars, this );
 		}
 	}
 	return ret;
@@ -2717,7 +2718,7 @@ static enum result evaluate_read_expression( struct expression *this,
 					result->string_value = str;
 				}
 			} else {
-				ret = throw( vars, this, 0, OUT_OF_MEMORY );
+				ret = throw_out_of_memory( vars, this );
 			}
 		} else {
 			ret = throw( vars, this, count, "Invalid length." );
@@ -2765,7 +2766,7 @@ static enum result evaluate_load_expression( struct expression *this,
 							ret = throw( vars, this, 0, message );
 						}
 					} else {
-						ret = throw( vars, this, 0, OUT_OF_MEMORY );
+						ret = throw_out_of_memory( vars, this );
 					}
 				} else {
 					ret = throw( vars, this, 0, "File too large." );
@@ -2886,7 +2887,7 @@ static enum result evaluate_sub_expression( struct expression *this,
 							}
 							result->string_value = str;
 						} else {
-							ret = throw( vars, this, 0, OUT_OF_MEMORY );
+							ret = throw_out_of_memory( vars, this );
 						}
 					} else {
 						ret = throw( vars, this, idx, "Range out of bounds." );
@@ -3073,8 +3074,14 @@ static struct element* value_to_element( int integer_value, struct string *strin
 	return elem;
 }
 
-enum result throw_stack_overflow( struct variables *vars, struct expression *expr ) {
-	return throw( vars, expr, 0, "Stack overflow." );
+/* Throw an exception for the specified expression to indicate a failure to allocate memory. */
+enum result throw_out_of_memory( struct variables *vars, struct expression *source ) {
+	return throw( vars, source, 0, OUT_OF_MEMORY );
+}
+
+/* Throw an exception for the specified expression to indicate a stack-overflow. */
+enum result throw_stack_overflow( struct variables *vars, struct expression *source ) {
+	return throw( vars, source, 0, "Stack overflow." );
 }
 
 static enum result evaluate_expr_expression( struct expression *this,
@@ -3159,7 +3166,7 @@ static enum result evaluate_argv_expression( struct expression *this,
 				memcpy( str->string, val, sizeof( char ) * str->length );
 				result->string_value = str;
 			} else {
-				ret = throw( vars, this, 0, OUT_OF_MEMORY );
+				ret = throw_out_of_memory( vars, this );
 			}
 		} else {
 			ret = throw( vars, this, idx, "Command-line argument index out of bounds." );
@@ -3180,7 +3187,7 @@ static enum result evaluate_time_expression( struct expression *this,
 		if( str ) {
 			memcpy( str->string, time_str, sizeof( char ) * str->length );
 		} else {
-			ret = throw( vars, this, 0, OUT_OF_MEMORY );
+			ret = throw_out_of_memory( vars, this );
 		}
 	}
 	if( ret ) {
@@ -3244,7 +3251,7 @@ static enum result evaluate_elem_expression( struct expression *this,
 							memcpy( value->str.string, elem.string_value->string,
 								sizeof( char ) * elem.string_value->length );
 						} else {
-							ret = throw( vars, this, 0, OUT_OF_MEMORY );
+							ret = throw_out_of_memory( vars, this );
 						}
 					} else { /* Re-use element. */
 						value = ( struct element * ) elem.string_value;
@@ -3322,7 +3329,7 @@ static enum result evaluate_unparse_expression( struct expression *this,
 					write_element( elem, str->string );
 					result->string_value = str;
 				} else {
-					ret = throw( vars, this, 0, OUT_OF_MEMORY );
+					ret = throw_out_of_memory( vars, this );
 				}
 			} else {
 				ret = throw( vars, this, 0, "String too large." );
@@ -3348,7 +3355,7 @@ static enum result evaluate_quote_expression( struct expression *this,
 				write_byte_string( var.string_value->string, var.string_value->length, str->string );
 				result->string_value = str;
 			} else {
-				ret = throw( vars, this, 0, OUT_OF_MEMORY );
+				ret = throw_out_of_memory( vars, this );
 			}
 		} else {
 			ret = throw( vars, this, 0, "String too large." );
@@ -3369,7 +3376,7 @@ static enum result evaluate_unquote_expression( struct expression *this,
 		if( str ) {
 			result->string_value = str;
 		} else {
-			ret = throw( vars, this, 0, OUT_OF_MEMORY );
+			ret = throw_out_of_memory( vars, this );
 		}
 		dispose_temporary( &var );
 	}
@@ -3405,7 +3412,7 @@ static enum result evaluate_hex_expression( struct expression *this,
 				ret = throw( vars, this, len, "Output error." );
 			}
 		} else {
-			ret = throw( vars, this, 0, OUT_OF_MEMORY );
+			ret = throw_out_of_memory( vars, this );
 		}
 	}
 	return ret;
@@ -3443,7 +3450,7 @@ static enum result evaluate_pack_expression( struct expression *this,
 				out[ idx ] = 0;
 				result->string_value = str;
 			} else {
-				ret = throw( vars, this, 0, OUT_OF_MEMORY );
+				ret = throw_out_of_memory( vars, this );
 			}
 		}
 		dispose_temporary( &val );
@@ -5153,7 +5160,12 @@ static struct element* add_function_parameter( struct function *func, struct ele
 struct function* parse_function( struct element *elem, char *name,
 	struct function *parent, char *message ) {
 	struct element *child;
-	struct function *func = new_function( name, parent );
+	struct function *func;
+	if( elem->line < 1 && !check_element_depth( elem, parent->env->element_depth ) ) {
+		strcpy( message, "Maximum element depth exceeded." );
+		return NULL;
+	}
+	func = new_function( name, parent );
 	if( func ) {
 		func->line = elem->line;
 		func->file = parent->file;
@@ -5214,7 +5226,7 @@ static enum result evaluate_function_expression( struct expression *this,
 	enum result ret = evaluate_element( parameter, vars, &var, 0 );
 	if( ret ) {
 		elem = ( struct element * ) var.string_value;
-		if( ( size_t ) &ret < env->stack_limit || ( elem->line < 1 && !check_element_depth( elem, env->element_depth ) ) ) {
+		if( ( size_t ) &ret < env->stack_limit ) {
 			ret = throw_stack_overflow( vars, this );
 		} else {
 			key.line = this->line;

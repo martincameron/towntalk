@@ -706,7 +706,7 @@ static enum result execute_surface_statement( struct statement *this,
 								}
 								free( pixels );
 							} else {
-								ret = throw( vars, this->source, 0, OUT_OF_MEMORY );
+								ret = throw_out_of_memory( vars, this->source );
 							}
 						} else {
 							ret = throw( vars, this->source, 0, "Not an array." );
@@ -1404,7 +1404,7 @@ static enum result evaluate_dir_expression( struct expression *this,
 									ret = throw( vars, this, errno, strerror( errno ) );
 								}
 							} else {
-								ret = throw( vars, this, 0, OUT_OF_MEMORY );
+								ret = throw_out_of_memory( vars, this );
 							}
 						}
 						if( head ) {
@@ -1450,7 +1450,7 @@ static enum result evaluate_path_expression( struct expression *this,
 					strcpy( str->string, path );
 					result->string_value = str;
 				} else {
-					ret = throw( vars, this, 0, OUT_OF_MEMORY );
+					ret = throw_out_of_memory( vars, this );
 				}
 				free( path );
 			} else if( errno ) {
@@ -1496,7 +1496,7 @@ static enum result evaluate_extract_expression( struct expression *this,
 							datfile.string_value->length, bank.integer_value, str->string );
 						result->string_value = str;
 					} else {
-						ret = throw( vars, this, 0, OUT_OF_MEMORY );
+						ret = throw_out_of_memory( vars, this );
 					}
 				} else if( bank_length == -1 ) {
 					ret = throw( vars, this, bank.integer_value, "Invalid bank." );

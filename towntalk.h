@@ -295,6 +295,15 @@ enum result assign_array_variable( struct variable *src, struct array *arr, int 
 /* Assign an exception with the specified error code and message to vars and return EXCEPTION. */
 enum result throw( struct variables *vars, struct expression *source, int integer, const char *string );
 
+/* Throw an exception for the specified expression to indicate a failure to allocate memory. */
+enum result throw_out_of_memory( struct variables *vars, struct expression *source );
+
+/* Throw an exception for the specified expression to indicate a stack-overflow. */
+enum result throw_stack_overflow( struct variables *vars, struct expression *source );
+
+/* Throw an exception for the specified expression to indicate the interrupted status has been set. */
+enum result throw_interrupted( struct variables *vars, struct expression *source );
+
 /* Assign an uncatchable exception with the specified exit code and message to vars and return EXCEPTION. */
 enum result throw_exit( struct variables *vars, int exit_code, const char *message );
 

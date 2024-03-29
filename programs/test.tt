@@ -1217,7 +1217,7 @@ function teststack() {
 			let depth = *( depth 2 );
 		}
 	} } );
-	call assert_throws( "Stack", ${ () {
+	call assert_throws( "Maximum", ${ () {
 		var depth = 64;
 		var stmt = $parse( "call" );
 		var func = $parse( "$function" );

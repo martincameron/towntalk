@@ -719,14 +719,6 @@ static int parse_instructions( struct element *elem, struct function *func, stru
 	return count;
 }
 
-static enum result throw_interrupt( struct variables *vars, struct expression *source ) {
-	if( vars->func->env->worker ) {
-		return throw_exit( vars, 0, "Interrupted." );
-	} else {
-		return throw( vars, source, 0, "Interrupted.");
-	}
-}
-
 static enum result execute_asm_statement( struct statement *this,
 	struct variables *vars, struct variable *result ) {
 	struct asm_statement *stmt = ( struct asm_statement * ) this;
@@ -758,7 +750,7 @@ static enum result execute_asm_statement( struct statement *this,
 				/* jump_lt     0 y z off : jump <( y z ) label; */
 				if( locals[ ins->y ].integer_value < locals[ ins->z ].integer_value ) {
 					if( env->interrupted ) {
-						return throw_interrupt( vars, this->source );
+						return throw_interrupted( vars, this->source );
 					} else {
 						ins = &stmt->instructions[ ins->imm ];
 					}
@@ -770,7 +762,7 @@ static enum result execute_asm_statement( struct statement *this,
 				/* jump_le     0 y z off : jump <e( y z ) label; */
 				if( locals[ ins->y ].integer_value <= locals[ ins->z ].integer_value ) {
 					if( env->interrupted ) {
-						return throw_interrupt( vars, this->source );
+						return throw_interrupted( vars, this->source );
 					} else {
 						ins = &stmt->instructions[ ins->imm ];
 					}
@@ -782,7 +774,7 @@ static enum result execute_asm_statement( struct statement *this,
 				/* jump_eq     0 y z off : jump =( y z ) label; */
 				if( locals[ ins->y ].integer_value == locals[ ins->z ].integer_value ) {
 					if( env->interrupted ) {
-						return throw_interrupt( vars, this->source );
+						return throw_interrupted( vars, this->source );
 					} else {
 						ins = &stmt->instructions[ ins->imm ];
 					}
@@ -794,7 +786,7 @@ static enum result execute_asm_statement( struct statement *this,
 				/* jump_ne     0 y z off : jump <>( y z ) label; */
 				if( locals[ ins->y ].integer_value != locals[ ins->z ].integer_value ) {
 					if( env->interrupted ) {
-						return throw_interrupt( vars, this->source );
+						return throw_interrupted( vars, this->source );
 					} else {
 						ins = &stmt->instructions[ ins->imm ];
 					}
@@ -806,7 +798,7 @@ static enum result execute_asm_statement( struct statement *this,
 				/* jump_ge     0 y z off : jump >e( y z ) label; */
 				if( locals[ ins->y ].integer_value >= locals[ ins->z ].integer_value ) {
 					if( env->interrupted ) {
-						return throw_interrupt( vars, this->source );
+						return throw_interrupted( vars, this->source );
 					} else {
 						ins = &stmt->instructions[ ins->imm ];
 					}
@@ -818,7 +810,7 @@ static enum result execute_asm_statement( struct statement *this,
 				/* jump_gt     0 y z off : jump >( y z ) label; */
 				if( locals[ ins->y ].integer_value > locals[ ins->z ].integer_value ) {
 					if( env->interrupted ) {
-						return throw_interrupt( vars, this->source );
+						return throw_interrupted( vars, this->source );
 					} else {
 						ins = &stmt->instructions[ ins->imm ];
 					}

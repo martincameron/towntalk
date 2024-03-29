@@ -4,7 +4,7 @@
 #include "worker.h"
 
 /*
-	Extension for multi-threaded subinterpreters.
+	Extension for multi-threaded sub-interpreters.
 	Only buffers can be passed by reference to a worker.
 	
 	Statements:
@@ -21,8 +21,6 @@
 
 /* Forward-declarations. */
 static struct worker* new_worker( char *message );
-int check_element_depth( struct element *elem, int max_depth );
-enum result throw_stack_overflow( struct variables *vars, struct expression *expr );
 
 #if !defined( MULTI_THREAD )
 /* Add thread-safe custom statements and operators to the specified worker.
@@ -220,7 +218,7 @@ enum result evaluate_worker_expression( struct expression *this,
 	}
 	if( ret ) {
 		elem = ( struct element * ) var.string_value;
-		if( ( size_t ) &ret < env->stack_limit || ( elem->line < 1 && !check_element_depth( elem, env->element_depth ) ) ) {
+		if( ( size_t ) &ret < env->stack_limit ) {
 			ret = throw_stack_overflow( vars, this );
 		} else {
 			key.line = this->line;
