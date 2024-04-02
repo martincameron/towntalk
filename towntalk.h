@@ -198,7 +198,7 @@ extern const char *OUT_OF_MEMORY;
 /* Initialize env with the the standard statements, operators and constants.
    The maximum available stack must be specified in bytes.
    Returns zero and writes message on failure. */
-int initialize_environment( struct environment *env, int max_stack, char *message );
+int initialize_environment( struct environment *env, size_t max_stack, char *message );
 
 /* Add a copy of the specified null-terminated statement array to env.
    Returns zero and writes message on failure. */

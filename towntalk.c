@@ -2592,7 +2592,7 @@ static enum result evaluate_str_expression( struct expression *this,
 				if( new ) {
 					if( str ) {
 						memcpy( new->string, str->string, sizeof( char ) * str_len );
-						free( str );
+						unref_string( str );
 					}
 					memcpy( &new->string[ str_len ], val, sizeof( char ) * len );
 					str_len += len;
@@ -2609,8 +2609,8 @@ static enum result evaluate_str_expression( struct expression *this,
 	}
 	if( ret ) {
 		result->string_value = str;
-	} else {
-		free( str );
+	} else if( str ) {
+		unref_string( str );
 	}
 	return ret;
 }
@@ -2762,7 +2762,7 @@ static enum result evaluate_load_expression( struct expression *this,
 							str->string[ len ] = 0;
 							result->string_value = str;
 						} else {
-							free( str );
+							unref_string( str );
 							ret = throw( vars, this, 0, message );
 						}
 					} else {
@@ -3107,7 +3107,7 @@ static enum result evaluate_expr_expression( struct expression *this,
 	return ret;
 }
 
-int check_element_depth( struct element *elem, int max_depth ) {
+static int check_element_depth( struct element *elem, int max_depth ) {
 	max_depth--;
 	while( elem ) {
 		if( elem->child && ( max_depth < 0 || !check_element_depth( elem->child, max_depth ) ) ) {
@@ -5793,7 +5793,7 @@ int add_operators( struct operator *operators, struct environment *env, char *me
 /* Initialize env with the the standard statements, operators and constants.
    The maximum available stack must be specified in bytes.
    Returns zero and writes message on failure. */
-int initialize_environment( struct environment *env, int max_stack, char *message ) {
+int initialize_environment( struct environment *env, size_t max_stack, char *message ) {
 	memset( env, 0, sizeof( struct environment ) );
 	env->element_depth = max_stack >> 10;
 	return add_statements( statements, env, message )
