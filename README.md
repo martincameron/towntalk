@@ -85,7 +85,7 @@ int main( int argc, char **argv ) {
 			}
 			exit_code = except.integer_value;
 		} else {
-			fprintf( stderr, "Unhandled exception %d.\n", except.integer_value );
+			fprintf( stderr, "Unhandled exception %d.\n", ( int ) except.integer_value );
 			if( except.string_value && except.string_value->string ) {
 				fprintf( stderr, "%s\n", except.string_value->string );
 			}

@@ -134,7 +134,7 @@ int main( int argc, char **argv ) {
 					}
 					exit_code = except.integer_value;
 				} else {
-					fprintf( stderr, "Unhandled exception %d.\n", except.integer_value );
+					fprintf( stderr, "Unhandled exception %d.\n", ( int ) except.integer_value );
 					if( except.string_value && except.string_value->string ) {
 						if( except.string_value->type == ARRAY ) {
 							arr = ( struct array * ) except.string_value;
@@ -144,7 +144,7 @@ int main( int argc, char **argv ) {
 							}
 						}
 						if( func ) {
-							fprintf( stderr, "%s (on line %d of '%s')\n", arr->str.string, arr->integer_values[ 0 ], func->file->string );
+							fprintf( stderr, "%s (on line %d of '%s')\n", arr->str.string, ( int ) arr->integer_values[ 0 ], func->file->string );
 						} else {
 							fprintf( stderr, "%s\n", except.string_value->string );
 						}

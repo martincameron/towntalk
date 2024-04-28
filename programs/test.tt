@@ -116,9 +116,9 @@ function testvars( x ) {
 	call assert_throws( "Undeclared variable 'xxx'", ${ () { let xxx = 0; } } );
 	call assert_throws( "Expected '=' after 'let'", ${ () { let xxx; } } );
 	call assert_throws( "Invalid local variable expression", ${ (x) { call x+; } } );
-	call assert_throws( "Invalid integer", ${ () { var x = 1$2; } } );
-	call assert_throws( "Not an integer", ${ () { var x = "x"; call x++; } } );
-	call assert_throws( "Not an integer", ${ () { var x = "x"; call x--; } } );
+	call assert_throws( "Invalid number", ${ () { var x = 1$2; } } );
+	call assert_throws( "Not a number", ${ () { var x = "x"; call x++; } } );
+	call assert_throws( "Not a number", ${ () { var x = "x"; call x--; } } );
 	return g;
 }
 
@@ -189,8 +189,8 @@ function testbuffer() {
 	call assert_equals( 1, [ b 0 ], ${-} );
 	set [ :( $function( ${ () { return b; } } ) ) 0 ] = 2;
 	call assert_equals( 2, [ b 0 ], ${-} );
-	call assert_throws( "Not an integer.", ${ () { call $buffer( 1 "a" ); } });
-	call assert_throws( "Not an integer", ${ () { set [ $buffer( 1 ) 0 ] = ""; } } );
+	call assert_throws( "Not a number.", ${ () { call $buffer( 1 "a" ); } });
+	call assert_throws( "Not a number", ${ () { set [ $buffer( 1 ) 0 ] = ""; } } );
 }
 
 function testswitch() {
@@ -245,9 +245,9 @@ function testif() {
 	if <( y $len( STR ) ) {} else { call assert( FALSE, ${-} ); }
 	call assert_throws( "1", ${ () { if except( ${ 1 } ) { call except( ${ 2 } ); } } } );
 	call assert_throws( "Expected '{'", ${ () { if 0 {} else } } );
-	call assert_throws( "Not an integer", ${ () { var x = ""; if <( x 0 ) {} } } );
-	call assert_throws( "Not an integer", ${ () { var x, y = ""; if <( x y ) {} } } );
-	call assert_throws( "Not an integer", ${ () { var x; if <( x STR ) {} } } );
+	call assert_throws( "Not a number", ${ () { var x = ""; if <( x 0 ) {} } } );
+	call assert_throws( "Not a number", ${ () { var x, y = ""; if <( x y ) {} } } );
+	call assert_throws( "Not a number", ${ () { var x; if <( x STR ) {} } } );
 }
 
 function testwhile() {
@@ -296,7 +296,7 @@ function testwhile() {
 	call assert_throws( "1", ${ () { while except( ${ 1 } ) { call assert( FALSE, ${-} ); } } } );
 	call assert_throws( "1", ${ () { while TRUE { call except( ${ 1 } ); } } } );
 	call assert_throws( "Unhandled 'break'", ${ () { break; } } );
-	call assert_throws( "Not an integer", ${ () { var x = ""; while <( x x ) {} } } );
+	call assert_throws( "Not a number", ${ () { var x = ""; while <( x x ) {} } } );
 }
 
 function testuntil() {
@@ -820,7 +820,7 @@ function testinc() {
 	var int;
 	inc int;
 	call assert_equals( 1, int, ${-} );
-	call assert_throws( "Not an integer.", ${ () { var int = ""; inc int; } } );
+	call assert_throws( "Not a number.", ${ () { var int = ""; inc int; } } );
 	call assert_throws( "Undeclared local variable", ${ () { inc a; } } );
 	call assert_throws( "Expected name after 'inc'", ${ () { inc; } } );
 }
@@ -829,7 +829,7 @@ function testdec() {
 	var int;
 	dec int;
 	call assert_equals( -1, int, ${-} );
-	call assert_throws( "Not an integer.", ${ () { var int = ""; dec int; } } );
+	call assert_throws( "Not a number.", ${ () { var int = ""; dec int; } } );
 	call assert_throws( "Undeclared local variable", ${ () { dec a; } } );
 }
 
@@ -1011,26 +1011,26 @@ function testoptimizer() {
 	inc acc;
 	call assert_equals( 2, acc, ${-} );
 	call assert_equals( 1, val, ${-} );
-	call assert_throws( "Not an integer", ${ () { var s = ""; let s = +( s 1 ); } } );
-	call assert_throws( "Not an integer", ${ () { var s = ""; let s = +( STR 1 ); } } );
-	call assert_throws( "Not an integer", ${ () { var s = ""; let s = +( s++ 1 ); } } );
+	call assert_throws( "Not a number", ${ () { var s = ""; let s = +( s 1 ); } } );
+	call assert_throws( "Not a number", ${ () { var s = ""; let s = +( STR 1 ); } } );
+	call assert_throws( "Not a number", ${ () { var s = ""; let s = +( s++ 1 ); } } );
 	let acc = +( 1 val-- );
 	dec acc;
 	call assert_equals( 1, acc, ${-} );
 	call assert_equals( 0, val, ${-} );
-	call assert_throws( "Not an integer", ${ () { var s = ""; let s = +( 1 s-- ); } } );
-	call assert_throws( "Not an integer", ${ () { var s = ""; let s = +( $str( STR ) 1 ); } } );
+	call assert_throws( "Not a number", ${ () { var s = ""; let s = +( 1 s-- ); } } );
+	call assert_throws( "Not a number", ${ () { var s = ""; let s = +( $str( STR ) 1 ); } } );
 	let acc = +( 1 $len( str ) );
 	call assert_equals( 4, acc, ${-} );
 	call assert_throws( "X", ${ () { var v = +( 1 except( ${ X } ) ); } } );
 	let acc = [ $array( 1 1 ) 0 ];
 	call assert_equals( 1, acc, ${-} );
-	call assert_throws( "Not an integer", ${ () { var s = [ $array( "" ) 0 ]; } } );
+	call assert_throws( "Not a number", ${ () { var s = [ $array( "" ) 0 ]; } } );
 	let acc = +( [ arr 1 ] 1 );
 	call assert_equals( 2, acc, ${-} );
 	call assert_throws( "Not an array", ${ () { var c; let c = +( [ c c ] 0 ); } } );
 	call assert_throws( "Array index", ${ () { var [ s 0 ]; var c = +( [ s 0 ] 0 ); } } );
-	call assert_throws( "Not an integer", ${ () { var s = $array( 1, "" ); let s = +( [ s 0 ] 0 ); } } );
+	call assert_throws( "Not a number", ${ () { var s = $array( 1, "" ); let s = +( [ s 0 ] 0 ); } } );
 	let acc = [ arr 1 ];
 	call assert_equals( 1, acc, ${-} );
 	let acc = [ arr +( 1 1 ) ];
@@ -1055,7 +1055,7 @@ function testoptimizer() {
 	let acc = $buffer( 1 );
 	let [ acc 0 ] = one;
 	call assert_equals( 1, [ acc 0 ], ${-} );
-	call assert_throws( "Not an integer", ${ () { var s = $buffer( 1 ); let [ s 0 ] = s; } } );
+	call assert_throws( "Not a number", ${ () { var s = $buffer( 1 ); let [ s 0 ] = s; } } );
 	call assert_throws( "Array index", ${ () { var arr = $array( 0 ); let [ arr 0 ] = 0; } } );
 	call assert_throws( "Not an array", ${ () { var arr; let [ arr 0 ] = 0; } } );
 	let acc = &( 3 ONE );
@@ -1128,54 +1128,54 @@ function testoptimizer() {
 	call assert_equals( 0, acc, ${-} );
 	let acc = &( 3 one );
 	call assert_equals( 1, acc, ${-} );
-	call assert_throws( "Not an integer", ${ () { var s = ""; let s = &( 3 s ); } } );
+	call assert_throws( "Not a number", ${ () { var s = ""; let s = &( 3 s ); } } );
 	let acc = |( 0 one );
 	call assert_equals( 1, acc, ${-} );
-	call assert_throws( "Not an integer", ${ () { var s = ""; let s = |( 3 s ); } } );
+	call assert_throws( "Not a number", ${ () { var s = ""; let s = |( 3 s ); } } );
 	let acc = ^( 1 one );
 	call assert_equals( 0, acc, ${-} );
-	call assert_throws( "Not an integer", ${ () { var s = ""; let s = ^( 3 s ); } } );
+	call assert_throws( "Not a number", ${ () { var s = ""; let s = ^( 3 s ); } } );
 	let acc = +( 1 one );
 	call assert_equals( 2, acc, ${-} );
-	call assert_throws( "Not an integer", ${ () { var s = ""; let s = +( 3 s ); } } );
+	call assert_throws( "Not a number", ${ () { var s = ""; let s = +( 3 s ); } } );
 	let acc = -( 1 one );
 	call assert_equals( 0, acc, ${-} );
-	call assert_throws( "Not an integer", ${ () { var s = ""; let s = -( 3 s ); } } );
+	call assert_throws( "Not a number", ${ () { var s = ""; let s = -( 3 s ); } } );
 	let acc = *( 2 two );
 	call assert_equals( 4, acc, ${-} );
-	call assert_throws( "Not an integer", ${ () { var s = ""; let s = *( 3 s ); } } );
+	call assert_throws( "Not a number", ${ () { var s = ""; let s = *( 3 s ); } } );
 	let acc = /( 6 two );
 	call assert_equals( 3, acc, ${-} );
-	call assert_throws( "Not an integer", ${ () { var s = ""; let s = /( 3 s ); } } );
+	call assert_throws( "Not a number", ${ () { var s = ""; let s = /( 3 s ); } } );
 	call assert_throws( "Integer division", ${ () { var x, y = /( 0 x ); } } );
 	let acc = %( 3 two );
 	call assert_equals( 1, acc, ${-} );
-	call assert_throws( "Not an integer", ${ () { var s = ""; let s = %( 3 s ); } } );
+	call assert_throws( "Not a number", ${ () { var s = ""; let s = %( 3 s ); } } );
 	call assert_throws( "Modulo division", ${ () { var x, y = %( 0 x ); } } );
 	let acc = <<( 1 one );
 	call assert_equals( 2, acc, ${-} );
-	call assert_throws( "Not an integer", ${ () { var s = ""; let s = <<( 3 s ); } } );
+	call assert_throws( "Not a number", ${ () { var s = ""; let s = <<( 3 s ); } } );
 	let acc = >>( 2 one );
 	call assert_equals( 1, acc, ${-} );
-	call assert_throws( "Not an integer", ${ () { var s = ""; let s = >>( 3 s ); } } );
+	call assert_throws( "Not a number", ${ () { var s = ""; let s = >>( 3 s ); } } );
 	let acc = <>( 2 one );
 	call assert_equals( 1, acc, ${-} );
-	call assert_throws( "Not an integer", ${ () { var s = ""; let s = <>( 3 s ); } } );
+	call assert_throws( "Not a number", ${ () { var s = ""; let s = <>( 3 s ); } } );
 	let acc = <( 1 one );
 	call assert_equals( 0, acc, ${-} );
-	call assert_throws( "Not an integer", ${ () { var s = ""; let s = <( 3 s ); } } );
+	call assert_throws( "Not a number", ${ () { var s = ""; let s = <( 3 s ); } } );
 	let acc = <e( 1 one );
 	call assert_equals( 1, acc, ${-} );
-	call assert_throws( "Not an integer", ${ () { var s = ""; let s = <e( 3 s ); } } );
+	call assert_throws( "Not a number", ${ () { var s = ""; let s = <e( 3 s ); } } );
 	let acc = =( 1 one );
 	call assert_equals( 1, acc, ${-} );
-	call assert_throws( "Not an integer", ${ () { var s = ""; let s = =( 3 s ); } } );
+	call assert_throws( "Not a number", ${ () { var s = ""; let s = =( 3 s ); } } );
 	let acc = >e( 1 one );
 	call assert_equals( 1, acc, ${-} );
-	call assert_throws( "Not an integer", ${ () { var s = ""; let s = >e( 3 s ); } } );
+	call assert_throws( "Not a number", ${ () { var s = ""; let s = >e( 3 s ); } } );
 	let acc = >( 1 one );
 	call assert_equals( 0, acc, ${-} );
-	call assert_throws( "Not an integer", ${ () { var s = ""; let s = >( 3 s ); } } );
+	call assert_throws( "Not a number", ${ () { var s = ""; let s = >( 3 s ); } } );
 }
 
 function teststack() {

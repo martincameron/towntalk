@@ -6,6 +6,12 @@
 
 /* Towntalk (c)2024 Martin Cameron. */
 
+#if defined( FLOATING_POINT )
+typedef double number;
+#else
+typedef int number;
+#endif
+
 /* Return value of execute/evaluate functions. */
 enum result {
 	EXCEPTION, OKAY, RETURN, BREAK, CONTINUE, AGAIN
@@ -40,7 +46,7 @@ struct element {
 /* Reference-counted array. */
 struct array {
 	struct string str;
-	int *integer_values;
+	number *integer_values;
 	struct string **string_values;
 	struct structure *structure;
 	struct array *prev, *next;
@@ -60,7 +66,7 @@ struct function {
 
 /* Variable value. */
 struct variable {
-	int integer_value;
+	number integer_value;
 	struct string *string_value;
 };
 
@@ -128,10 +134,11 @@ struct expression {
 		struct variables *vars, struct variable *result );
 };
 
-/* Expression with associated reference. */
-struct string_expression {
+/* Expression with associated value. */
+struct value_expression {
 	struct expression expr;
 	struct string *str;
+	number num;
 };
 
 /* Expression with associated function. */
@@ -184,7 +191,7 @@ struct constant {
 /* Custom type. */
 struct custom_type {
 	char *name;
-	enum result ( *to_int )( struct variable *var, int *result, struct variables *vars, struct expression *source );
+	enum result ( *to_num )( struct variable *var, number *result, struct variables *vars, struct expression *source );
 	enum result ( *to_str )( struct variable *var, struct string **result, struct variables *vars, struct expression *source );
 	void ( *dispose )( struct string *this );
 };
@@ -247,32 +254,8 @@ struct element* parse_expr_list_statement( struct element *elem,
 	enum result ( *execute )( struct statement *this, struct variables *vars, struct variable *result ),
 	char *message );
 
-/* Parse statements from the specified element using the specified keyword index.
-   Returns the last statement parsed. Writes up to 128 bytes to message on failure. */
-struct statement* parse_keywords_indexed( struct keyword **index, struct element *elem,
-	struct function *func, struct variables *vars, struct statement *stmt, char *message );
-
-/* Validate the specified element against the specified syntax string.
-   Returns the next element. Writes up to 128 bytes to message on failure. */
-struct element* validate_syntax( char *syntax, struct element *elem,
-	struct element *key, struct environment *env, char *message );
-
 /* Add the specified global declaration to the specified environment. */
 struct string_list* add_decl( struct string *decl, int line, struct environment *env, char *message );
-
-/* Parse a single expression and append it to prev.
-   Returns the next element to be parsed. Writes up to 128 bytes to message on failure. */
-struct element* parse_expression( struct element *elem,
-	struct function *func, struct variables *vars, struct expression *prev, char *message );
-
-/* Parse and return a new function reference with the specified name from the specified element.
-   The function body is not parsed by this function to allow for forward declarations.
-   Returns NULL and writes up to 128 bytes to message on failure. */
-struct function* parse_function( struct element *elem, char *name,
-	struct function *parent, char *message );
-	
-/* Parse the body of a function returned by parse_function(). */
-int parse_function_body( struct function *func, struct variables *vars, char *message );
 
 /* Allocate and return a string of the specified length and reference count of 1. */
 struct string* new_string( int length );
@@ -311,14 +294,6 @@ enum result throw_exit( struct variables *vars, int exit_code, const char *messa
    The encoded length is returned. */
 int write_byte_string( char *bytes, int count, char *output );
 
-/* Evaluate an integer value using the index field of the specified expression. */
-enum result evaluate_integer_literal_expression( struct expression *this,
-	struct variables *vars, struct variable *result );
-
-/* Evaluate a string reference associated with a string expression. */
-enum result evaluate_string_literal_expression( struct expression *this,
-	struct variables *vars, struct variable *result );
-
 /* Return a new string reference from the specified null-terminated character array. */
 struct string* new_string_value( char *source );
 
@@ -347,6 +322,9 @@ enum result evaluate_string( struct expression *expr, struct variables *vars, st
 /* Evaluate the specified expression into the specified result variable.
    Throws an exception if the value is not an element reference or null (if allowed). */
 enum result evaluate_element( struct expression *expr, struct variables *vars, struct variable *result, int allow_null );
+
+/* Evaluate the specified expression into the specified number result. */
+enum result evaluate_number( struct expression *expr, struct variables *vars, number *result );
 
 /* Evaluate the specified expression into the specified integer result. */
 enum result evaluate_integer( struct expression *expr, struct variables *vars, int *result );

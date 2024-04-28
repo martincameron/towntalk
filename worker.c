@@ -19,8 +19,15 @@
 
 #define MAX_STACK 65536
 
-/* Forward-declarations. */
+/* Forward-declarations and externals. */
 static struct worker* new_worker( char *message );
+enum result evaluate_number_literal_expression( struct expression *this, struct variables *vars, struct variable *result );
+enum result evaluate_string_literal_expression( struct expression *this, struct variables *vars, struct variable *result );
+struct statement* parse_keywords_indexed( struct keyword **index, struct element *elem, struct function *func, struct variables *vars, struct statement *stmt, char *message );
+struct element* parse_expression( struct element *elem, struct function *func, struct variables *vars, struct expression *prev, char *message );
+struct function* parse_function( struct element *elem, char *name, struct function *parent, char *message );
+int parse_function_body( struct function *func, struct variables *vars, char *message );
+struct element* validate_syntax( char *syntax, struct element *elem, struct element *key, struct environment *env, char *message );
 
 #if !defined( MULTI_THREAD )
 /* Add thread-safe custom statements and operators to the specified worker.
@@ -129,10 +136,10 @@ struct element* parse_lock_statement( struct element *elem,
 		stmt->dispose = dispose_block_statement;
 		prev->next = stmt;
 		if( next->str.string[ 0 ] == '{' ) {
-			expr.next = calloc( 1, sizeof( struct expression ) );
+			expr.next = calloc( 1, sizeof( struct value_expression ) );
 			if( expr.next ) {
 				expr.next->line = elem->line;
-				expr.next->evaluate = evaluate_integer_literal_expression;
+				expr.next->evaluate = evaluate_number_literal_expression;
 			} else {
 				strcpy( message, OUT_OF_MEMORY );
 			}
@@ -177,7 +184,7 @@ static struct worker* parse_worker( struct element *elem, struct string *file, c
 						work->strings = calloc( params, sizeof( struct array ) );
 					}
 					if( work->strings ) {
-						work->parameters = calloc( params, sizeof( struct string_expression ) );
+						work->parameters = calloc( params, sizeof( struct value_expression ) );
 					}
 					if( work->parameters ) {
 						for( idx = 0; idx < params; idx++ ) {
@@ -268,6 +275,7 @@ enum result evaluate_execute_expression( struct expression *this,
 					ret = parameter->evaluate( parameter, vars, &work->args[ idx ] );
 					if( ret ) {
 						work->parameters[ idx ].index = work->args[ idx ].integer_value;
+						( ( struct value_expression * ) work->parameters )[ idx ].num = work->args[ idx ].integer_value;
 						str = work->args[ idx ].string_value;
 						if( str ) {
 							if( str->type == STRING || ( str->type == ARRAY && !( ( struct array * ) str )->string_values ) ) {
@@ -279,14 +287,14 @@ enum result evaluate_execute_expression( struct expression *this,
 									work->strings[ idx ].integer_values = ( ( struct array * ) str )->integer_values;
 									work->strings[ idx ].length = ( ( struct array * ) str )->length;
 								}
-								( ( struct string_expression * ) work->parameters )[ idx ].str = &work->strings[ idx ].str;
+								( ( struct value_expression * ) work->parameters )[ idx ].str = &work->strings[ idx ].str;
 								work->parameters[ idx ].evaluate = evaluate_string_literal_expression;
 							} else {
 								ret = throw( vars, this, 0, "Values of this type cannot be passed to workers." );
 							}
 						} else {
-							( ( struct string_expression * ) work->parameters )[ idx ].str = NULL;
-							work->parameters[ idx ].evaluate = evaluate_integer_literal_expression;
+							( ( struct value_expression * ) work->parameters )[ idx ].str = NULL;
+							work->parameters[ idx ].evaluate = evaluate_number_literal_expression;
 						}
 					}
 					parameter = parameter->next;

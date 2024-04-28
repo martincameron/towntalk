@@ -36,6 +36,9 @@
 	Relational expressions are one of "<", "<e", "=", "<>", ">e", or ">".
 */
 
+/* Externals. */
+enum result evaluate_number_literal_expression( struct expression *this, struct variables *vars, struct variable *result );
+enum result evaluate_string_literal_expression( struct expression *this, struct variables *vars, struct variable *result );
 enum result evaluate_arithmetic_expression( struct expression *this, struct variables *vars, struct variable *result );
 enum result evaluate_chr_expression( struct expression *this, struct variables *vars, struct variable *result );
 enum result evaluate_unpack_expression( struct expression *this, struct variables *vars, struct variable *result );
@@ -191,7 +194,7 @@ static struct instruction* compile_arithmetic_expression( struct arithmetic_stat
 				}
 			}
 		}
-	} else if( expr->evaluate == evaluate_integer_literal_expression ) {
+	} else if( expr->evaluate == evaluate_number_literal_expression ) {
 		insn = add_instruction( &stmt->insns, PUSH_CONST, expr->index, expr, message );
 	} else if( expr->evaluate == evaluate_local ) {
 		insn = add_instruction( &stmt->insns, PUSH_LOCAL, expr->index, expr, message );
@@ -291,7 +294,7 @@ static enum result execute_arithmetic_statement( struct statement *this,
 				}
 				break;
 			case PUSH_GLOBAL:
-				local = &( ( struct global_variable * ) ( ( struct string_expression * ) insn->expr )->str )->value;
+				local = &( ( struct global_variable * ) ( ( struct value_expression * ) insn->expr )->str )->value;
 				if( local->string_value ) {
 					if( !to_int( local, ++top, vars, insn->expr ) ) {
 						return EXCEPTION;
@@ -301,7 +304,7 @@ static enum result execute_arithmetic_statement( struct statement *this,
 				}
 				break;
 			case LOAD_GLOBAL:
-				local = &( ( struct global_variable * ) ( ( struct string_expression * ) insn->expr )->str )->value;
+				local = &( ( struct global_variable * ) ( ( struct value_expression * ) insn->expr )->str )->value;
 				var.integer_value = local->integer_value;
 				var.string_value = local->string_value;
 				if( var.string_value ) {
@@ -332,7 +335,7 @@ static enum result execute_arithmetic_statement( struct statement *this,
 			case PUSH_LOCAL_PD:
 				local = locals + insn->local;
 				if( local->string_value ) {
-					return throw( vars, insn->expr, 0, "Not an integer." );
+					return throw( vars, insn->expr, 0, "Not a number." );
 				}
 				*++top = local->integer_value--;
 				break;
@@ -429,7 +432,7 @@ static enum result execute_arithmetic_statement( struct statement *this,
 				}
 				break;
 			case PUSH_UNPACK:
-				local = &( ( struct global_variable * ) ( ( struct string_expression * ) insn->expr )->str )->value;
+				local = &( ( struct global_variable * ) ( ( struct value_expression * ) insn->expr )->str )->value;
 				if( local->string_value ) {
 					index = *top;
 					if( ( unsigned int ) index < ( unsigned int ) local->string_value->length >> 2 ) {
