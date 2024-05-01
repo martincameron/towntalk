@@ -1,4 +1,5 @@
 
+#include "stddef.h"
 #include "string.h"
 
 #include "worker.h"
@@ -274,7 +275,7 @@ enum result evaluate_execute_expression( struct expression *this,
 					dispose_variable( &work->args[ idx ] );
 					ret = parameter->evaluate( parameter, vars, &work->args[ idx ] );
 					if( ret ) {
-						work->parameters[ idx ].index = work->args[ idx ].integer_value;
+						work->parameters[ idx ].index = ( ptrdiff_t ) work->args[ idx ].integer_value;
 						( ( struct value_expression * ) work->parameters )[ idx ].num = work->args[ idx ].integer_value;
 						str = work->args[ idx ].string_value;
 						if( str ) {
