@@ -1,7 +1,7 @@
 # towntalk
 
 A simple interpreted programming language with a C-like syntax,
-fast integer arithmetic, managed strings, arrays, and exceptions.
+fast arithmetic, managed strings, arrays, and exceptions.
 
 An SDL extension is provided for basic input, 2D graphics, sound, and 
 a limited form of multi-threading.

@@ -944,7 +944,7 @@ static struct array* stack_trace( struct expression *expr, struct variables *var
 }
 
 /* Assign an exception with the specified error code and message to vars and return EXCEPTION. */
-enum result throw( struct variables *vars, struct expression *source, int integer, const char *string ) {
+enum result throw( struct variables *vars, struct expression *source, number num, const char *string ) {
 	struct variable *exception = vars->exception;
 	struct array *arr = NULL;
 	if( string ) {
@@ -956,7 +956,7 @@ enum result throw( struct variables *vars, struct expression *source, int intege
 		}
 	}
 	dispose_temporary( exception );
-	exception->integer_value = integer;
+	exception->integer_value = num;
 	exception->string_value = &arr->str;
 	return EXCEPTION;
 }
@@ -2601,7 +2601,7 @@ enum result evaluate_arithmetic_expression( struct expression *this,
 	return OKAY;
 }
 
-static int parse_number( char *str, number *result ) {
+int parse_number( char *str, number *result ) {
 	char *end;
 	int value;
 	errno = 0;

@@ -7,16 +7,13 @@ PTHREADS=-pthread
 all: tt
 
 clean:
-	rm -f tt ttmt ttfp ttfx ttfx-midi ttfx-sdl1 xm2tmf
+	rm -f tt ttfp ttfx ttfx-midi ttfx-sdl1 xm2tmf
 
 tt: tt.c towntalk.c towntalk.h optimizer.c worker.c worker.h ttasm.c ttasm.h
 	$(CC) $(CFLAGS) $(ANSI_C) -DOPTIMIZER -DASM_STATEMENT tt.c towntalk.c optimizer.c worker.c ttasm.c -o tt
 
-ttmt: tt.c towntalk.c towntalk.h optimizer.c worker.c worker.h ttasm.c ttasm.h
-	$(CC) $(CFLAGS) $(ANSI_C) $(PTHREADS) -DMULTI_THREAD -DOPTIMIZER -DASM_STATEMENT tt.c towntalk.c optimizer.c worker.c ttasm.c -o ttmt
-
 ttfp: tt.c towntalk.c towntalk.h optimizer.c worker.c worker.h ttasm.c ttasm.h
-	$(CC) $(CFLAGS) $(ANSI_C) $(PTHREADS) -DFLOATING_POINT -DOPTIMIZER -DMULTI_THREAD tt.c towntalk.c optimizer.c worker.c -o ttfp
+	$(CC) $(CFLAGS) $(ANSI_C) $(PTHREADS) -DMULTI_THREAD -DFLOATING_POINT -DOPTIMIZER -DASM_STATEMENT tt.c towntalk.c optimizer.c worker.c ttasm.c -o ttfp
 
 ttfx: ttfx.c towntalk.c towntalk.h optimizer.c worker.c worker.h ttasm.c ttasm.h
 	$(CC) $(CFLAGS) -DMULTI_THREAD -DOPTIMIZER -DASM_STATEMENT ttfx.c towntalk.c optimizer.c worker.c ttasm.c -o ttfx `sdl2-config --cflags --libs`

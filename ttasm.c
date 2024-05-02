@@ -1,13 +1,14 @@
 
 #include "errno.h"
 #include "signal.h"
+#include "stddef.h"
 #include "stdio.h"
 #include "string.h"
 
 #include "towntalk.h"
 
 /*
-	Experimental bytecode assembler/interpreter for fast integer arithmetic.
+	Experimental bytecode assembler/interpreter for fast arithmetic.
 	Associated references are not assigned for performance reasons.
 
 	Example:
@@ -55,6 +56,8 @@
 	letv_div_vv x y z   0 : let x = /( y z );
 	letv_mod_vi x y 0 imm : let x = %( y imm );
 	letv_mod_vv x y z   0 : let x = %( y z );
+	letv_fdi_vi x y 0 imm : let x = //( y imm );
+	letv_fdi_vv x y z   0 : let x = //( y z );
 	letv_shl_vi x y 0 imm : let x = <<( y imm );
 	letv_shl_vv x y z   0 : let x = <<( y z );
 	letv_asr_vi x y 0 imm : let x = >>( y imm );
@@ -72,6 +75,9 @@
 	letv_unp_vv x y z   0 : let x = $unpack( y z );
 	letv_unp_vp x y z   0 : let x = $unpack( y z++ );
 */
+
+/* Externals. */
+int parse_number( char *str, number *result );
 
 enum opcodes {
 	HALT,
@@ -100,6 +106,8 @@ enum opcodes {
 	LETV_DIV_VV,
 	LETV_MOD_VI,
 	LETV_MOD_VV,
+	LETV_FDI_VI,
+	LETV_FDI_VV,
 	LETV_SHL_VI,
 	LETV_SHL_VV,
 	LETV_ASR_VI,
@@ -138,6 +146,7 @@ static struct asm_operator let_vi_operators[] = {
 	{ "*", LETV_MUL_VI },
 	{ "/", LETV_DIV_VI },
 	{ "%", LETV_MOD_VI },
+	{ "//", LETV_FDI_VI },
 	{ "<<", LETV_SHL_VI },
 	{ ">>", LETV_ASR_VI },
 	{ "&", LETV_AND_VI },
@@ -154,6 +163,7 @@ static struct asm_operator let_vv_operators[] = {
 	{ "*", LETV_MUL_VV },
 	{ "/", LETV_DIV_VV },
 	{ "%", LETV_MOD_VV },
+	{ "//", LETV_FDI_VV },
 	{ "<<", LETV_SHL_VV },
 	{ ">>", LETV_ASR_VV },
 	{ "&", LETV_AND_VV },
@@ -172,7 +182,7 @@ static struct asm_operator let_vp_operators[] = {
 
 struct instruction {
 	char opcode, x, y, z;
-	int imm;
+	number imm;
 };
 
 struct asm_statement {
@@ -391,8 +401,7 @@ static struct element* parse_leta( struct element *elem, struct function *func, 
 			str = child->next->str.string;
 			if( str[ 0 ] == '-' || ( str[ 0 ] >= '0' && str[ 0 ] <= '9' ) ) {
 				/* letai_v */
-				output->imm = ( int ) strtol( str, &str, 0 );
-				if( str[ 0 ] == 0 ) {
+				if( parse_number( str, &output->imm ) ) {
 					next = next->next->next;
 					idx = get_local_variable( func, next, "", message );
 					if( idx >= 0 ) {
@@ -413,8 +422,7 @@ static struct element* parse_leta( struct element *elem, struct function *func, 
 					str = next->str.string;
 					if( str[ 0 ] == '-' || ( str[ 0 ] >= '0' && str[ 0 ] <= '9' ) ) {
 						/* letav_i */
-						output->imm = ( int ) strtol( str, &str, 0 );
-						if( str[ 0 ] == 0 ) {
+						if( parse_number( str, &output->imm ) ) {
 							output->opcode = LETAV_I;
 						} else {
 							sprintf( message, "Invalid immediate '%.64s' at line %d.", next->str.string, next->line );
@@ -479,8 +487,7 @@ static struct element* parse_letv_a( struct element *elem, struct function *func
 				str = child->next->str.string;
 				if( str[ 0 ] == '-' || ( str[ 0 ] >= '0' && str[ 0 ] <= '9' ) ) {
 					/* letv_ai */
-					output->imm = ( int ) strtol( str, &str, 0 );
-					if( str[ 0 ] == 0 ) {
+					if( parse_number( str, &output->imm ) ) {
 						output->opcode = LETV_AI;
 					} else {
 						sprintf( message, "Invalid immediate '%.64s' at line %d.", child->next->str.string, child->next->line );
@@ -521,14 +528,12 @@ static struct element* parse_letv_i( struct element *elem, struct function *func
 		opcode      x y z imm : mnemonic
 		letv_i      x 0 0 imm : let x = imm;
 	*/
-	char *end;
 	struct element *next = elem->next;
 	int idx = get_local_variable( func, next, "", message );
 	if( idx >= 0 ) {
 		output->x = idx;
 		next = next->next->next;
-		output->imm = ( int ) strtol( next->str.string, &end, 0 );
-		if( end[ 0 ] == 0 ) {
+		if( parse_number( next->str.string, &output->imm ) ) {
 			output->opcode = LETV_I;
 		} else {
 			sprintf( message, "Invalid immediate '%.64s' at line %d.", next->str.string, next->line );
@@ -588,8 +593,7 @@ static struct element* parse_letv_opr( struct element *elem, struct function *fu
 					oper = get_asm_operator( let_vi_operators, next->str.string );
 					if( oper ) {
 						output->opcode = oper->opcode;
-						output->imm = ( int ) strtol( str, &str, 0 );
-						if( str[ 0 ] == 0 ) {
+						if( parse_number( str, &output->imm ) ) {
 							next = next->next;
 						} else {
 							sprintf( message, "Invalid immediate '%.64s' at line %d.", child->next->str.string, child->next->line );
@@ -752,7 +756,7 @@ static enum result execute_asm_statement( struct statement *this,
 					if( env->interrupted ) {
 						return throw_interrupted( vars, this->source );
 					} else {
-						ins = &stmt->instructions[ ins->imm ];
+						ins = &stmt->instructions[ ( int ) ins->imm ];
 					}
 				} else {
 					ins++;
@@ -764,7 +768,7 @@ static enum result execute_asm_statement( struct statement *this,
 					if( env->interrupted ) {
 						return throw_interrupted( vars, this->source );
 					} else {
-						ins = &stmt->instructions[ ins->imm ];
+						ins = &stmt->instructions[ ( int ) ins->imm ];
 					}
 				} else {
 					ins++;
@@ -776,7 +780,7 @@ static enum result execute_asm_statement( struct statement *this,
 					if( env->interrupted ) {
 						return throw_interrupted( vars, this->source );
 					} else {
-						ins = &stmt->instructions[ ins->imm ];
+						ins = &stmt->instructions[ ( int ) ins->imm ];
 					}
 				} else {
 					ins++;
@@ -788,7 +792,7 @@ static enum result execute_asm_statement( struct statement *this,
 					if( env->interrupted ) {
 						return throw_interrupted( vars, this->source );
 					} else {
-						ins = &stmt->instructions[ ins->imm ];
+						ins = &stmt->instructions[ ( int ) ins->imm ];
 					}
 				} else {
 					ins++;
@@ -800,7 +804,7 @@ static enum result execute_asm_statement( struct statement *this,
 					if( env->interrupted ) {
 						return throw_interrupted( vars, this->source );
 					} else {
-						ins = &stmt->instructions[ ins->imm ];
+						ins = &stmt->instructions[ ( int ) ins->imm ];
 					}
 				} else {
 					ins++;
@@ -812,7 +816,7 @@ static enum result execute_asm_statement( struct statement *this,
 					if( env->interrupted ) {
 						return throw_interrupted( vars, this->source );
 					} else {
-						ins = &stmt->instructions[ ins->imm ];
+						ins = &stmt->instructions[ ( int ) ins->imm ];
 					}
 				} else {
 					ins++;
@@ -830,8 +834,9 @@ static enum result execute_asm_statement( struct statement *this,
 				break;
 			case LETV_AI:
 				/* letv_ai     x y 0 imm : let x = [ y imm ]; */
-				if( ( unsigned int ) ins->imm < array_bounds[ ins->y ] ) {
-					locals[ ins->x ].integer_value = ( ( struct array * ) locals[ ins->y ].string_value )->integer_values[ ins->imm ];
+				idx = ( int ) ins->imm;
+				if( idx < array_bounds[ ins->y ] ) {
+					locals[ ins->x ].integer_value = ( ( struct array * ) locals[ ins->y ].string_value )->integer_values[ idx ];
 				} else {
 					return throw( vars, this->source, ins->imm, "Not an array or index out of bounds." );
 				}
@@ -839,8 +844,9 @@ static enum result execute_asm_statement( struct statement *this,
 				break;
 			case LETV_AV:
 				/* letv_av     x y z   0 : let x = [ y z ]; */
-				if( ( unsigned int ) locals[ ins->z ].integer_value < array_bounds[ ins->y ] ) {
-					locals[ ins->x ].integer_value = ( ( struct array * ) locals[ ins->y ].string_value )->integer_values[ locals[ ins->z ].integer_value ];
+				idx = ( int ) locals[ ins->z ].integer_value;
+				if( idx < array_bounds[ ins->y ] ) {
+					locals[ ins->x ].integer_value = ( ( struct array * ) locals[ ins->y ].string_value )->integer_values[ idx ];
 				} else {
 					return throw( vars, this->source, locals[ ins->z ].integer_value, "Not an array or index out of bounds." );
 				}
@@ -848,8 +854,10 @@ static enum result execute_asm_statement( struct statement *this,
 				break;
 			case LETV_AP:
 				/* letv_ap     x y z   0 : let x = [ y z++ ]; */
-				if( ( unsigned int ) locals[ ins->z ].integer_value < array_bounds[ ins->y ] ) {
-					locals[ ins->x ].integer_value = ( ( struct array * ) locals[ ins->y ].string_value )->integer_values[ locals[ ins->z ].integer_value++ ];
+				idx = ( int ) locals[ ins->z ].integer_value;
+				if( idx < array_bounds[ ins->y ] ) {
+					locals[ ins->x ].integer_value = ( ( struct array * ) locals[ ins->y ].string_value )->integer_values[ idx ];
+					locals[ ins->z ].integer_value++;
 				} else {
 					return throw( vars, this->source, locals[ ins->z ].integer_value, "Not an array or index out of bounds." );
 				}
@@ -857,8 +865,9 @@ static enum result execute_asm_statement( struct statement *this,
 				break;
 			case LETAV_I:
 				/* letav_i     x y 0 imm : let [ x y ] = imm; */
-				if( ( unsigned int ) locals[ ins->y ].integer_value < array_bounds[ ins->x ] ) {
-					( ( struct array * ) locals[ ins->x ].string_value )->integer_values[ locals[ ins->y ].integer_value ] = ins->imm;
+				idx = ( int ) locals[ ins->y ].integer_value;
+				if( idx < array_bounds[ ins->x ] ) {
+					( ( struct array * ) locals[ ins->x ].string_value )->integer_values[ idx ] = ins->imm;
 				} else {
 					return throw( vars, this->source, locals[ ins->y ].integer_value, "Not an array or index out of bounds." );
 				}
@@ -866,8 +875,9 @@ static enum result execute_asm_statement( struct statement *this,
 				break;
 			case LETAI_V:
 				/* letai_v     x 0 z imm : let [ x imm ] = z; */
-				if( ( unsigned int ) ins->imm < array_bounds[ ins->x ] ) {
-					( ( struct array * ) locals[ ins->x ].string_value )->integer_values[ ins->imm ] = locals[ ins->z ].integer_value;
+				idx = ( int ) ins->imm;
+				if( idx < array_bounds[ ins->x ] ) {
+					( ( struct array * ) locals[ ins->x ].string_value )->integer_values[ idx ] = locals[ ins->z ].integer_value;
 				} else {
 					return throw( vars, this->source, ins->imm, "Not an array or index out of bounds." );
 				}
@@ -875,8 +885,9 @@ static enum result execute_asm_statement( struct statement *this,
 				break;
 			case LETAV_V:
 				/* letav_v     x y z   0 : let [ x y ] = z; */
-				if( ( unsigned int ) locals[ ins->y ].integer_value < array_bounds[ ins->x ] ) {
-					( ( struct array * ) locals[ ins->x ].string_value )->integer_values[ locals[ ins->y ].integer_value ] = locals[ ins->z ].integer_value;
+				idx = ( int ) locals[ ins->y ].integer_value;
+				if( idx < array_bounds[ ins->x ] ) {
+					( ( struct array * ) locals[ ins->x ].string_value )->integer_values[ idx ] = locals[ ins->z ].integer_value;
 				} else {
 					return throw( vars, this->source, locals[ ins->y ].integer_value, "Not an array or index out of bounds." );
 				}
@@ -884,8 +895,10 @@ static enum result execute_asm_statement( struct statement *this,
 				break;
 			case LETAP_V:
 				/* letap_v     x y z   0 : let [ x y++ ] = z; */
-				if( ( unsigned int ) locals[ ins->y ].integer_value < array_bounds[ ins->x ] ) {
-					( ( struct array * ) locals[ ins->x ].string_value )->integer_values[ locals[ ins->y ].integer_value++ ] = locals[ ins->z ].integer_value;
+				idx = ( int ) locals[ ins->y ].integer_value;
+				if( idx < array_bounds[ ins->x ] ) {
+					( ( struct array * ) locals[ ins->x ].string_value )->integer_values[ idx ] = locals[ ins->z ].integer_value;
+					locals[ ins->y ].integer_value++;
 				} else {
 					return throw( vars, this->source, locals[ ins->y ].integer_value, "Not an array or index out of bounds." );
 				}
@@ -924,7 +937,7 @@ static enum result execute_asm_statement( struct statement *this,
 			case LETV_DIV_VI:
 				/* letv_div_vi x y 0 imm : let x = /( y imm ); */
 				if( ins->imm ) {
-					locals[ ins->x ].integer_value = locals[ ins->y ].integer_value / ins->imm;
+					locals[ ins->x ].integer_value = ( int ) ( ( ptrdiff_t ) locals[ ins->y ].integer_value / ( ptrdiff_t ) ins->imm );
 				} else {
 					return throw( vars, this->source, 0, "Integer division by zero." );
 				}
@@ -933,7 +946,7 @@ static enum result execute_asm_statement( struct statement *this,
 			case LETV_DIV_VV:
 				/* letv_div_vv x y z   0 : let x = /( y z ); */
 				if( locals[ ins->z ].integer_value ) {
-					locals[ ins->x ].integer_value = locals[ ins->y ].integer_value / locals[ ins->z ].integer_value;
+					locals[ ins->x ].integer_value = ( int ) ( ( ptrdiff_t ) locals[ ins->y ].integer_value / ( ptrdiff_t ) locals[ ins->z ].integer_value );
 				} else {
 					return throw( vars, this->source, 0, "Integer division by zero." );
 				}
@@ -942,7 +955,7 @@ static enum result execute_asm_statement( struct statement *this,
 			case LETV_MOD_VI:
 				/* letv_mod_vi x y 0 imm : let x = %( y imm ); */
 				if( ins->imm ) {
-					locals[ ins->x ].integer_value = locals[ ins->y ].integer_value % ins->imm;
+					locals[ ins->x ].integer_value = ( int ) ( ( ptrdiff_t ) locals[ ins->y ].integer_value % ( ptrdiff_t ) ins->imm );
 				} else {
 					return throw( vars, this->source, 0, "Modulo division by zero." );
 				}
@@ -951,66 +964,77 @@ static enum result execute_asm_statement( struct statement *this,
 			case LETV_MOD_VV:
 				/* letv_mod_vv x y z   0 : let x = %( y z ); */
 				if( locals[ ins->z ].integer_value ) {
-					locals[ ins->x ].integer_value = locals[ ins->y ].integer_value % locals[ ins->z ].integer_value;
+					locals[ ins->x ].integer_value = ( int ) ( ( ptrdiff_t ) locals[ ins->y ].integer_value % ( ptrdiff_t ) locals[ ins->z ].integer_value );
 				} else {
 					return throw( vars, this->source, 0, "Modulo division by zero." );
 				}
 				ins++;
 				break;
+			case LETV_FDI_VI:
+				/* letv_fdi_vi x y 0 imm : let x = //( y imm ); */
+				locals[ ins->x ].integer_value = locals[ ins->y ].integer_value / ins->imm;
+				ins++;
+				break;
+			case LETV_FDI_VV:
+				/* letv_fdi_vv x y z   0 : let x = //( y z ); */
+				locals[ ins->x ].integer_value = locals[ ins->y ].integer_value / locals[ ins->z ].integer_value;
+				ins++;
+				break;
 			case LETV_SHL_VI:
 				/* letv_shl_vi x y 0 imm : let x = <<( y imm ); */
-				locals[ ins->x ].integer_value = locals[ ins->y ].integer_value << ins->imm;
+				locals[ ins->x ].integer_value = ( int ) ( ( ptrdiff_t ) locals[ ins->y ].integer_value << ( ptrdiff_t ) ins->imm );
 				ins++;
 				break;
 			case LETV_SHL_VV:
 				/* letv_shl_vv x y z   0 : let x = <<( y z ); */
-				locals[ ins->x ].integer_value = locals[ ins->y ].integer_value << locals[ ins->z ].integer_value;
+				locals[ ins->x ].integer_value = ( int ) ( ( ptrdiff_t ) locals[ ins->y ].integer_value << ( ptrdiff_t ) locals[ ins->z ].integer_value );
 				ins++;
 				break;
 			case LETV_ASR_VI:
 				/* letv_asr_vi x y 0 imm : let x = >>( y imm ); */
-				locals[ ins->x ].integer_value = locals[ ins->y ].integer_value >> ins->imm;
+				locals[ ins->x ].integer_value = ( int ) ( ( ptrdiff_t ) locals[ ins->y ].integer_value >> ( ptrdiff_t ) ins->imm );
 				ins++;
 				break;
 			case LETV_ASR_VV:
 				/* letv_asr_vv x y z   0 : let x = >>( y z ); */
-				locals[ ins->x ].integer_value = locals[ ins->y ].integer_value >> locals[ ins->z ].integer_value;
+				locals[ ins->x ].integer_value = ( int ) ( ( ptrdiff_t ) locals[ ins->y ].integer_value >> ( ptrdiff_t ) locals[ ins->z ].integer_value );
 				ins++;
 				break;
 			case LETV_AND_VI:
 				/* letv_and_vi x y 0 imm : let x = &( y imm ); */
-				locals[ ins->x ].integer_value = locals[ ins->y ].integer_value & ins->imm;
+				locals[ ins->x ].integer_value = ( int ) ( ( ptrdiff_t ) locals[ ins->y ].integer_value & ( ptrdiff_t ) ins->imm );
 				ins++;
 				break;
 			case LETV_AND_VV:
 				/* letv_and_vv x y z   0 : let x = &( y z ); */
-				locals[ ins->x ].integer_value = locals[ ins->y ].integer_value & locals[ ins->z ].integer_value;
+				locals[ ins->x ].integer_value = ( int ) ( ( ptrdiff_t ) locals[ ins->y ].integer_value & ( ptrdiff_t ) locals[ ins->z ].integer_value );
 				ins++;
 				break;
 			case LETV_OR_VI:
 				/* letv_or_vi x y 0 imm : let x = |( y imm ); */
-				locals[ ins->x ].integer_value = locals[ ins->y ].integer_value | ins->imm;
+				locals[ ins->x ].integer_value = ( int ) ( ( ptrdiff_t ) locals[ ins->y ].integer_value | ( ptrdiff_t ) ins->imm );
 				ins++;
 				break;
 			case LETV_OR_VV:
 				/* letv_or_vv  x y z   0 : let x = |( y z ); */
-				locals[ ins->x ].integer_value = locals[ ins->y ].integer_value | locals[ ins->z ].integer_value;
+				locals[ ins->x ].integer_value = ( int ) ( ( ptrdiff_t ) locals[ ins->y ].integer_value | ( ptrdiff_t ) locals[ ins->z ].integer_value );
 				ins++;
 				break;
 			case LETV_XOR_VI:
 				/* letv_xor_vi x y 0 imm : let x = ^( y imm ); */
-				locals[ ins->x ].integer_value = locals[ ins->y ].integer_value ^ ins->imm;
+				locals[ ins->x ].integer_value = ( int ) ( ( ptrdiff_t ) locals[ ins->y ].integer_value ^ ( ptrdiff_t ) ins->imm );
 				ins++;
 				break;
 			case LETV_XOR_VV:
 				/* letv_xor_vv x y z   0 : let x = ^( y z ); */
-				locals[ ins->x ].integer_value = locals[ ins->y ].integer_value ^ locals[ ins->z ].integer_value;
+				locals[ ins->x ].integer_value = ( int ) ( ( ptrdiff_t ) locals[ ins->y ].integer_value ^ ( ptrdiff_t ) locals[ ins->z ].integer_value );
 				ins++;
 				break;
 			case LETV_CHR_VI:
 				/* letv_chr_vi x y 0 imm : let x = $chr( y imm ); */
-				if( ( unsigned int ) ins->imm < string_bounds[ ins->y ] ) {
-					locals[ ins->x ].integer_value = ( signed char ) locals[ ins->y ].string_value->string[ ins->imm ];
+				idx = ( int ) ins->imm;
+				if( idx < string_bounds[ ins->y ] ) {
+					locals[ ins->x ].integer_value = ( signed char ) locals[ ins->y ].string_value->string[ idx ];
 				} else {
 					return throw( vars, this->source, ins->imm, "Not a string or index out of bounds." );
 				}
@@ -1018,8 +1042,9 @@ static enum result execute_asm_statement( struct statement *this,
 				break;
 			case LETV_CHR_VV:
 				/* letv_chr_vv x y z   0 : let x = $chr( y z ); */
-				if( ( unsigned int ) locals[ ins->z ].integer_value < string_bounds[ ins->y ] ) {
-					locals[ ins->x ].integer_value = ( signed char ) locals[ ins->y ].string_value->string[ locals[ ins->z ].integer_value ];
+				idx = ( int ) locals[ ins->z ].integer_value;
+				if( idx < string_bounds[ ins->y ] ) {
+					locals[ ins->x ].integer_value = ( signed char ) locals[ ins->y ].string_value->string[ idx ];
 				} else {
 					return throw( vars, this->source, locals[ ins->z ].integer_value, "Not a string or index out of bounds." );
 				}
@@ -1027,8 +1052,10 @@ static enum result execute_asm_statement( struct statement *this,
 				break;
 			case LETV_CHR_VP:
 				/* letv_chr_vp x y z   0 : let x = $chr( y z++ ); */
-				if( ( unsigned int ) locals[ ins->z ].integer_value < string_bounds[ ins->y ] ) {
-					locals[ ins->x ].integer_value = ( signed char ) locals[ ins->y ].string_value->string[ locals[ ins->z ].integer_value++ ];
+				idx = ( int ) locals[ ins->z ].integer_value;
+				if( idx < string_bounds[ ins->y ] ) {
+					locals[ ins->x ].integer_value = ( signed char ) locals[ ins->y ].string_value->string[ idx ];
+					locals[ ins->z ].integer_value++;
 				} else {
 					return throw( vars, this->source, locals[ ins->z ].integer_value, "Not a string or index out of bounds." );
 				}
@@ -1036,8 +1063,8 @@ static enum result execute_asm_statement( struct statement *this,
 				break;
 			case LETV_UNP_VI:
 				/* letv_unp_vi x y 0 imm : let x = $unpack( y imm ); */
-				if( ( unsigned int ) ins->imm < string_bounds[ ins->y ] >> 2 ) {
-					idx = ins->imm;
+				idx = ( int ) ins->imm;
+				if( idx < string_bounds[ ins->y ] >> 2 ) {
 					chr = locals[ ins->y ].string_value->string;
 					locals[ ins->x ].integer_value = ( ( signed char ) chr[ idx ] << 24 ) | ( ( unsigned char ) chr[ idx + 1 ] << 16 )
 						| ( ( unsigned char ) chr[ idx + 2 ] << 8 ) | ( unsigned char ) chr[ idx + 3 ];
@@ -1048,8 +1075,8 @@ static enum result execute_asm_statement( struct statement *this,
 				break;
 			case LETV_UNP_VV:
 				/* letv_unp_vv x y z   0 : let x = $unpack( y z ); */
-				if( ( unsigned int ) locals[ ins->z ].integer_value < string_bounds[ ins->y ] >> 2 ) {
-					idx = locals[ ins->z ].integer_value;
+				idx = ( int ) locals[ ins->z ].integer_value;
+				if( idx < string_bounds[ ins->y ] >> 2 ) {
 					chr = locals[ ins->y ].string_value->string;
 					locals[ ins->x ].integer_value = ( ( signed char ) chr[ idx ] << 24 ) | ( ( unsigned char ) chr[ idx + 1 ] << 16 )
 						| ( ( unsigned char ) chr[ idx + 2 ] << 8 ) | ( unsigned char ) chr[ idx + 3 ];
@@ -1060,11 +1087,12 @@ static enum result execute_asm_statement( struct statement *this,
 				break;
 			case LETV_UNP_VP:
 				/* letv_unp_vp x y z   0 : let x = $unpack( y z++ ); */
-				if( ( unsigned int ) locals[ ins->z ].integer_value < string_bounds[ ins->y ] >> 2 ) {
-					idx = locals[ ins->z ].integer_value++;
+				idx = ( int ) locals[ ins->z ].integer_value;
+				if( idx < string_bounds[ ins->y ] >> 2 ) {
 					chr = locals[ ins->y ].string_value->string;
 					locals[ ins->x ].integer_value = ( ( signed char ) chr[ idx ] << 24 ) | ( ( unsigned char ) chr[ idx + 1 ] << 16 )
 						| ( ( unsigned char ) chr[ idx + 2 ] << 8 ) | ( unsigned char ) chr[ idx + 3 ];
+					locals[ ins->z ].integer_value++;
 				} else {
 					return throw( vars, this->source, ins->imm, "Not a string or index out of bounds." );
 				}
