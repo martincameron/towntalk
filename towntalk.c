@@ -1156,7 +1156,7 @@ int add_constants( struct constant *constants, struct environment *env, char *me
 		if( global ) {
 			if( add_global( global, 0, env, message ) ) {
 				global->str.type = CONST;
-				global->value.integer_value = constants->integer_value;
+				global->value.integer_value = constants->number_value;
 				if( constants->string_value ) {
 					global->value.string_value = new_string_literal( constants->string_value );
 					if( global->value.string_value == NULL ) {

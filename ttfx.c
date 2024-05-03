@@ -482,7 +482,7 @@ static void audio_callback( void *userdata, Uint8 *stream, int len ) {
 	int *fxaudio = fxenv->audio, *fxstream = fxenv->stream;
 	int out_idx, out_end, aud_idx, aud_end, ampl;
 	int chan_idx, count, offset = 0;
-	#if defined( ALSA_MIDI )
+#if defined( ALSA_MIDI )
 	SDL_Event event = { 0 };
 	unsigned char chr;
 	if( fxenv->midi_in ) {
@@ -518,7 +518,7 @@ static void audio_callback( void *userdata, Uint8 *stream, int len ) {
 			}
 		}
 	}
-	#endif
+#endif
 	while( offset < samples ) {
 		count = samples - offset;
 		if( fxenv->audio_idx + count > fxenv->audio_end ) {
@@ -653,8 +653,9 @@ static enum result execute_display_statement( struct statement *this,
 static enum result execute_surface_statement( struct statement *this,
 	struct variables *vars, struct variable *result ) {
 	struct variable var = { 0, NULL };
-	int surf, width, height, idx, len, *values;
+	int surf, width, height, idx, len;
 	struct array *arr;
+	number *values;
 	Uint32 *pixels;
 #if SDL_MAJOR_VERSION > 1
 	struct SDL_Texture *texture = NULL;
@@ -694,7 +695,7 @@ static enum result execute_surface_statement( struct statement *this,
 								if( len >= width * height ) {
 									len = width * height;
 									while( idx < len ) {
-										pixels[ idx ] = values[ idx ];
+										pixels[ idx ] = ( ptrdiff_t ) values[ idx ];
 										idx++;
 									}
 									if( SDL_UpdateTexture( texture, NULL, pixels, width * sizeof( Uint32 ) ) ) {
@@ -738,7 +739,7 @@ static enum result execute_surface_statement( struct statement *this,
 									len = width * height;
 									pixels = ( Uint32 * ) surface->pixels;
 									while( idx < len ) {
-										pixels[ idx ] = values[ idx ];
+										pixels[ idx ] = ( ptrdiff_t ) values[ idx ];
 										idx++;
 									}
 								} else {
@@ -947,51 +948,45 @@ static enum result execute_audio_statement( struct statement *this,
 static enum result execute_sample_statement( struct statement *this,
 	struct variables *vars, struct variable *result ) {
 	/* sample index "data" loopstart looplen; */
-	enum result ret;
-	int loop, llen, lend, idx = 0;
-	struct string *data;
-	struct variable params[ 4 ];
+	int loop, llen, lend, idx, len;
+	struct variable data = { 0 };
 	struct expression *expr = this->source;
 	struct fxenvironment *fxenv = ( struct fxenvironment * ) vars->func->env;
-	memset( params, 0, 4 * sizeof( struct variable ) );
-	ret = expr->evaluate( expr, vars, &params[ idx++ ] );
-	expr = expr->next;
-	while( ret && expr ) {
-		ret = expr->evaluate( expr, vars, &params[ idx++ ] );
+	enum result ret = evaluate_integer( expr, vars, &idx );
+	if( ret ) {
 		expr = expr->next;
+		ret = evaluate_string( expr, vars, &data );
 	}
 	if( ret ) {
-		idx = params[ 0 ].integer_value - 1;
-		if( idx >= 0 && idx < NUM_SAMPLES ) {
-			data = params[ 1 ].string_value;
-			if( data ) {
-				if( data->length < MAX_SAMPLE_LEN ) {
-					loop = params[ 2 ].integer_value;
-					llen = params[ 3 ].integer_value;
-					lend = loop + llen;
-					if( loop >= 0 && lend >= loop && lend <= data->length ) {
-						SDL_LockAudio();
-						fxenv->samples[ idx ].loop_start = loop;
-						fxenv->samples[ idx ].loop_length = llen;
-						assign_variable( &params[ 1 ], &fxenv->samples[ idx ].sample_data );
-						SDL_UnlockAudio();
-					} else {
-						ret = throw( vars, this->source, lend, "Loop out of bounds." );
-					}
+		expr = expr->next;
+		ret = evaluate_integer( expr, vars, &loop );
+	}
+	if( ret ) {
+		expr = expr->next;
+		ret = evaluate_integer( expr, vars, &llen );
+	}
+	if( ret ) {
+		if( idx > 0 && idx <= NUM_SAMPLES ) {
+			len = data.string_value->length;
+			if( len < MAX_SAMPLE_LEN ) {
+				lend = loop + llen;
+				if( loop >= 0 && lend >= loop && lend <= len ) {
+					SDL_LockAudio();
+					fxenv->samples[ idx - 1 ].loop_start = loop;
+					fxenv->samples[ idx - 1 ].loop_length = llen;
+					assign_variable( &data, &fxenv->samples[ idx - 1 ].sample_data );
+					SDL_UnlockAudio();
 				} else {
-					ret = throw( vars, this->source, data->length, "Sample data too long." );
+					ret = throw( vars, this->source, lend, "Loop out of bounds." );
 				}
 			} else {
-				ret = throw( vars, this->source, 0, "Sample data not a string." );
+				ret = throw( vars, this->source, len, "Sample data too long." );
 			}
 		} else {
 			ret = throw( vars, this->source, idx, "Invalid sample index." );
 		}
 	}
-	idx = 0;
-	while( idx < 4 ) {
-		dispose_variable( &params[ idx++ ] );
-	}
+	dispose_variable( &data );
 	return ret;
 }
 
@@ -1033,14 +1028,14 @@ static enum result execute_play_statement( struct statement *this,
 
 static enum result execute_midi_statement( struct statement *this,
 	struct variables *vars, struct variable *result ) {
-	#if defined( ALSA_MIDI )
+#if defined( ALSA_MIDI )
 	int err = 0;
 	struct fxenvironment *fxenv = ( struct fxenvironment * ) vars->func->env;
-	#endif
+#endif
 	struct variable device = { 0, NULL };
 	enum result ret = this->source->evaluate( this->source, vars, &device );
 	if( ret ) {
-		#if defined( ALSA_MIDI )
+#if defined( ALSA_MIDI )
 		SDL_LockAudio();
 		if( fxenv->midi_in ) {
 			err = snd_rawmidi_close( fxenv->midi_in );
@@ -1053,9 +1048,9 @@ static enum result execute_midi_statement( struct statement *this,
 		if( err < 0 ) {
 			ret = throw( vars, this->source, err, snd_strerror( err ) );
 		}
-		#else
+#else
 		ret = throw( vars, this->source, 0, "MIDI not supported." );
-		#endif
+#endif
 		dispose_variable( &device );
 	}
 	return ret;
@@ -1211,13 +1206,17 @@ static enum result evaluate_millis_expression( struct expression *this,
 
 static enum result evaluate_xmouse_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
-	SDL_GetMouseState( &result->integer_value, NULL );
+	int x;
+	SDL_GetMouseState( &x, NULL );
+	result->integer_value = x;
 	return OKAY;
 }
 
 static enum result evaluate_ymouse_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
-	SDL_GetMouseState( NULL, &result->integer_value );
+	int y;
+	SDL_GetMouseState( NULL, &y );
+	result->integer_value = y;
 	return OKAY;
 }
 
@@ -1477,36 +1476,29 @@ static enum result evaluate_datfile_expression( struct expression *this,
 /* Extract the specified bank from the specified datfile. */
 static enum result evaluate_extract_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
-	int bank_length;
 	struct string *str;
-	struct variable datfile = { 0 }, bank = { 0 };
+	int bank, bank_length;
+	struct variable datfile = { 0 };
 	struct expression *parameter = this->parameters;
-	enum result ret = parameter->evaluate( parameter, vars, &datfile );
+	enum result ret = evaluate_string( parameter, vars, &datfile );
 	if( ret ) {
-		if( datfile.string_value ) {
-			parameter = parameter->next;
-			ret = parameter->evaluate( parameter, vars, &bank );
-			if( ret ) {
-				bank_length = datfile_extract( datfile.string_value->string,
-					datfile.string_value->length, bank.integer_value, NULL );
-				if( bank_length >= 0 ) {
-					str = new_string( bank_length );
-					if( str ) {
-						datfile_extract( datfile.string_value->string,
-							datfile.string_value->length, bank.integer_value, str->string );
-						result->string_value = str;
-					} else {
-						ret = throw_out_of_memory( vars, this );
-					}
-				} else if( bank_length == -1 ) {
-					ret = throw( vars, this, bank.integer_value, "Invalid bank." );
+		parameter = parameter->next;
+		ret = evaluate_integer( parameter, vars, &bank );
+		if( ret ) {
+			bank_length = datfile_extract( datfile.string_value->string, datfile.string_value->length, bank, NULL );
+			if( bank_length >= 0 ) {
+				str = new_string( bank_length );
+				if( str ) {
+					datfile_extract( datfile.string_value->string, datfile.string_value->length, bank, str->string );
+					result->string_value = str;
 				} else {
-					ret = throw( vars, this, bank_length, "Not a datfile." );
+					ret = throw_out_of_memory( vars, this );
 				}
-				dispose_variable( &bank );
+			} else if( bank_length == -1 ) {
+				ret = throw( vars, this, bank, "Invalid bank." );
+			} else {
+				ret = throw( vars, this, bank_length, "Not a datfile." );
 			}
-		} else {
-			ret = throw( vars, this, 0, "Not a string." );
 		}
 		dispose_variable( &datfile );
 	}
@@ -1520,47 +1512,44 @@ static enum result evaluate_extract_expression( struct expression *this,
 static enum result evaluate_stream_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	/* count = $stream( array offset count ) */
-	int length, samples, idx, end, off, *values;
+	number *values;
+	struct variable arr = { 0 };
+	int length, samples, idx, end, offset, count;
 	struct expression *parameter = this->parameters;
-	struct variable arr = { 0, NULL }, offset = { 0, NULL }, count = { 0, NULL };
 	struct fxenvironment *fxenv = ( struct fxenvironment * ) vars->func->env;
 	enum result ret = parameter->evaluate( parameter, vars, &arr );
 	if( ret ) {
 		parameter = parameter->next;
-		ret = parameter->evaluate( parameter, vars, &offset );
+		ret = evaluate_integer( parameter, vars, &offset );
 		if( ret ) {
 			parameter = parameter->next;
-			ret = parameter->evaluate( parameter, vars, &count );
+			ret = evaluate_integer( parameter, vars, &count );
 			if( ret ) {
 				if( arr.string_value && arr.string_value->type == ARRAY ) {
 					values = ( ( struct array * ) arr.string_value )->integer_values;
 					length = ( ( ( struct array * ) arr.string_value )->length ) >> 1;
-					if( offset.integer_value >= 0 && count.integer_value >= 0
-					&& MAX_INTEGER - count.integer_value >= offset.integer_value
-					&& offset.integer_value + count.integer_value <= length ) {
+					if( offset >= 0 && count >= 0 && MAX_INTEGER - count >= offset && offset + count <= length ) {
 						SDL_LockAudio();
 						samples = fxenv->audio_end - fxenv->stream_idx;
-						if( samples > count.integer_value ) {
-							samples = count.integer_value;
+						if( samples > count ) {
+							samples = count;
 						}
 						idx = fxenv->stream_idx << 1;
 						end = idx + ( samples << 1 );
-						off = offset.integer_value << 1;
+						offset = offset << 1;
 						while( idx < end ) {
-							fxenv->stream[ idx++ ] = values[ off++ ];
+							fxenv->stream[ idx++ ] = ( ptrdiff_t ) values[ offset++ ];
 						}
 						fxenv->stream_idx += samples;
 						SDL_UnlockAudio();
 						result->integer_value = samples;
 					} else {
-						ret = throw( vars, this, offset.integer_value, "Range out of bounds." );
+						ret = throw( vars, this, offset, "Range out of bounds." );
 					}
 				} else {
 					ret = throw( vars, this, 0, "Not an array." );
 				}	
-				dispose_variable( &count );
 			}
-			dispose_variable( &offset );
 		}
 		dispose_variable( &arr );
 	}
@@ -1670,13 +1659,13 @@ static int add_event_constants( struct fxenvironment *env, char *message ) {
 #endif
 	env->timer_event_type = user_event++;
 	event[ 0 ].name = "TIMER_EVENT";
-	event[ 0 ].integer_value = env->timer_event_type;
+	event[ 0 ].number_value = env->timer_event_type;
 	env->seq_event_type = user_event++;
 	event[ 1 ].name = "SEQUENCER_EVENT";
-	event[ 1 ].integer_value = env->seq_event_type;
+	event[ 1 ].number_value = env->seq_event_type;
 	env->midi_event_type = user_event++;
 	event[ 2 ].name = "MIDI_EVENT";
-	event[ 2 ].integer_value = env->midi_event_type;
+	event[ 2 ].number_value = env->midi_event_type;
 	return add_constants( &event[ 0 ], &env->env, message );
 }
 

@@ -184,7 +184,7 @@ struct operator {
 /* Named constant. */
 struct constant {
 	char *name;
-	int integer_value;
+	number number_value;
 	char *string_value;
 };
 
