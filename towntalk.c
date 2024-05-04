@@ -915,7 +915,7 @@ static int get_string_list_index( struct string_list *list, char *value ) {
 }
 
 /* Assign an uncatchable exception with the specified exit code and message to vars and return EXCEPTION. */
-enum result throw_exit( struct variables *vars, int exit_code, const char *message ) {
+enum result throw_exit( struct variables *vars, number exit_code, const char *message ) {
 	struct variable *exception = vars->exception;
 	struct environment *env = vars->func->env;
 	env->exit.reference_count = 2;
@@ -2843,31 +2843,32 @@ static enum result evaluate_load_expression( struct expression *this,
 	long len;
 	char message[ 64 ];
 	struct string *str;
+	struct variable file = { 0 };
+	int offset = 0, count = -1;
 	struct expression *parameter = this->parameters;
-	struct variable file = { 0, NULL }, offset = { 0, NULL }, count = { -1, NULL };
 	enum result ret = evaluate_string( parameter, vars, &file );
 	if( ret ) {
 		parameter = parameter->next;
 		if( parameter ) {
-			ret = parameter->evaluate( parameter, vars, &offset );
+			ret = evaluate_integer( parameter, vars, &offset );
 			parameter = parameter->next;
 		}
 		if( ret && parameter ) {
-			ret = parameter->evaluate( parameter, vars, &count );
+			ret = evaluate_integer( parameter, vars, &count );
 			if( ret && parameter->next ) {
 				ret = throw( vars, this, 0, "Too many parameters." );
 			}
 		}
 		if( ret ) {
-			len = load_file( file.string_value->string, NULL, offset.integer_value, 0, message );
+			len = load_file( file.string_value->string, NULL, offset, 0, message );
 			if( len >= 0 ) {
-				if( count.integer_value >= 0 && count.integer_value < len ) {
-					len = count.integer_value;
+				if( count >= 0 && count < len ) {
+					len = count;
 				}
 				if( len < MAX_INTEGER ) {
 					str = new_string( len );
 					if( str ) {
-						len = load_file( file.string_value->string, str->string, offset.integer_value, len, message );
+						len = load_file( file.string_value->string, str->string, offset, len, message );
 						if( len >= 0 ) {
 							str->length = len;
 							str->string[ len ] = 0;
@@ -2887,8 +2888,6 @@ static enum result evaluate_load_expression( struct expression *this,
 			}
 		}
 		dispose_temporary( &file );
-		dispose_temporary( &offset );
-		dispose_temporary( &count );
 	}
 	return ret;
 }

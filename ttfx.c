@@ -1317,7 +1317,7 @@ static enum result evaluate_seqmsg_expression( struct expression *this,
 	return OKAY;
 }
 
-static struct element *new_directory_element( char *name, off_t size, struct element *prev ) {
+static struct element *new_directory_element( char *name, int size, struct element *prev ) {
 	struct element *parent, *elem;
 	int len = strlen( name );
 	char num[ 24 ];
@@ -1328,7 +1328,7 @@ static struct element *new_directory_element( char *name, off_t size, struct ele
 		if( elem ) {
 			parent->child = elem;
 			write_byte_string( name, len, elem->str.string );
-			sprintf( num, "%ld", size );
+			sprintf( num, "%d", size );
 			elem = new_element( strlen( num ) ); 
 			if( elem ) {
 				parent->child->next = elem;

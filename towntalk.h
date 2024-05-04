@@ -288,7 +288,7 @@ enum result throw_stack_overflow( struct variables *vars, struct expression *sou
 enum result throw_interrupted( struct variables *vars, struct expression *source );
 
 /* Assign an uncatchable exception with the specified exit code and message to vars and return EXCEPTION. */
-enum result throw_exit( struct variables *vars, int exit_code, const char *message );
+enum result throw_exit( struct variables *vars, number exit_code, const char *message );
 
 /* Write the specified bytes as a string literal to output (if not null).
    The encoded length is returned. */
