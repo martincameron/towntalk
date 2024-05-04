@@ -71,7 +71,7 @@
 		let [ arr idx ] = expr;  Assign expression to array at specified index.
 		let struc.f(arr) = expr; Assign expression to array at named field of specified struct.
 		let var.field = expr;    Assign expr to array variable at named field of associated struct.
-		print expr;              Write integer or string to standard output.
+		print expr;              Write number or string to standard output.
 		write expr;              Same as print, but do not add a newline.
 		error expr;              Same as print, but write to standard error.
 		return expr;             Return from the current function.
@@ -223,7 +223,7 @@ struct element* parse_expression( struct element *elem, struct function *func,
 	struct variables *vars, struct expression *prev, char *message );
 static struct element* parse_expressions( struct element *elem, struct function *func,
 	struct variables *vars, char terminator, struct expression *prev, int *num_exprs, char *message );
-static struct element* value_to_element( number integer_value, struct string *string_value,
+static struct element* value_to_element( number number_value, struct string *string_value,
 	struct environment *env, int max_depth, char *message );
 
 /* Allocate and return a new element with the specified string length. */
@@ -247,8 +247,8 @@ struct array* new_array( struct environment *env, int length, int str_len ) {
 	struct array *arr = calloc( 1, sizeof( struct array ) + refs_size + nums_size + str_len + 1 );
 	if( arr ) {
 		arr->string_values = ( struct string ** ) &arr[ 1 ];
-		arr->integer_values = ( number * ) &arr->string_values[ length ];
-		arr->str.string = ( char * ) &arr->integer_values[ length ];
+		arr->number_values = ( number * ) &arr->string_values[ length ];
+		arr->str.string = ( char * ) &arr->number_values[ length ];
 		arr->str.length = str_len;
 		arr->str.reference_count = 1;
 		arr->str.type = ARRAY;
@@ -266,7 +266,7 @@ struct array* new_array( struct environment *env, int length, int str_len ) {
 static struct array* new_buffer( int length ) {
 	struct array *arr = calloc( 1, sizeof( struct array ) + sizeof( number ) * length );
 	if( arr ) {
-		arr->integer_values = ( number * ) &arr[ 1 ];
+		arr->number_values = ( number * ) &arr[ 1 ];
 		arr->str.string = "[Buffer]";
 		arr->str.length = 8;
 		arr->str.reference_count = 1;
@@ -630,7 +630,7 @@ static void dispose_string_list( struct string_list *list ) {
    deallocate if necessary, and assign null to the specified variable.
    This must be called for all variables assigned during program execution. */
 void dispose_variable( struct variable *var ) {
-	var->integer_value = 0;
+	var->number_value = 0;
 	if( var->string_value ) {
 		unref_string( var->string_value );
 		var->string_value = NULL;
@@ -650,7 +650,7 @@ void assign_variable( struct variable *src, struct variable *dest ) {
 	if( dest->string_value ) {
 		unref_string( dest->string_value );
 	}
-	dest->integer_value = src->integer_value;
+	dest->number_value = src->number_value;
 	dest->string_value = src->string_value;
 	if( dest->string_value ) {
 		dest->string_value->reference_count++;
@@ -660,9 +660,9 @@ void assign_variable( struct variable *src, struct variable *dest ) {
 static int compare_variables( struct variable *var1, struct variable *var2 ) {
 	int result;
 	struct string *str1, *str2;
-	if( var1->integer_value > var2->integer_value ) {
+	if( var1->number_value > var2->number_value ) {
 		result = 1;
-	} else if( var1->integer_value < var2->integer_value ) {
+	} else if( var1->number_value < var2->number_value ) {
 		result = -1;
 	} else if( var1->string_value != var2->string_value ) {
 		if( var1->string_value && var2->string_value ) {
@@ -707,13 +707,13 @@ static void dispose_operators( struct operator *operators ) {
 
 enum result evaluate_number_literal_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
-	result->integer_value = ( ( struct value_expression * ) this )->num;
+	result->number_value = ( ( struct value_expression * ) this )->num;
 	return OKAY;
 }
 
 enum result evaluate_string_literal_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
-	result->integer_value = ( ( struct value_expression * ) this )->num;
+	result->number_value = ( ( struct value_expression * ) this )->num;
 	result->string_value = ( ( struct value_expression * ) this )->str;
 	result->string_value->reference_count++;
 	return OKAY;
@@ -922,7 +922,7 @@ enum result throw_exit( struct variables *vars, number exit_code, const char *me
 	env->exit.type = EXIT;
 	env->exit.string = ( char * ) message;
 	dispose_temporary( exception );
-	exception->integer_value = exit_code;
+	exception->number_value = exit_code;
 	exception->string_value = &env->exit;
 	return EXCEPTION;
 }
@@ -934,7 +934,7 @@ static struct array* stack_trace( struct expression *expr, struct variables *var
 		while( vars && vars->func && idx < max_depth ) {
 			vars->func->str.reference_count++;
 			arr->string_values[ idx ] = &vars->func->str;
-			arr->integer_values[ idx++ ] = line;
+			arr->number_values[ idx++ ] = line;
 			line = vars->line;
 			vars = vars->parent;
 		}
@@ -956,7 +956,7 @@ enum result throw( struct variables *vars, struct expression *source, number num
 		}
 	}
 	dispose_temporary( exception );
-	exception->integer_value = num;
+	exception->number_value = num;
 	exception->string_value = &arr->str;
 	return EXCEPTION;
 }
@@ -1110,7 +1110,7 @@ static struct global_variable* new_global_variable( char *name,
 		qualify_name( init_function, name, nlen, global->str.string );
 		global->str.length = qlen;
 		global->str.type = GLOBAL;
-		global->value.integer_value = 0;
+		global->value.number_value = 0;
 		global->value.string_value = NULL;
 		global->type = type;
 		global->init_function = init_function;
@@ -1156,7 +1156,7 @@ int add_constants( struct constant *constants, struct environment *env, char *me
 		if( global ) {
 			if( add_global( global, 0, env, message ) ) {
 				global->str.type = CONST;
-				global->value.integer_value = constants->number_value;
+				global->value.number_value = constants->number_value;
 				if( constants->string_value ) {
 					global->value.string_value = new_string_literal( constants->string_value );
 					if( global->value.string_value == NULL ) {
@@ -1174,7 +1174,7 @@ int add_constants( struct constant *constants, struct environment *env, char *me
 enum result evaluate_local( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	struct variable *var = &vars->locals[ this->index ];
-	result->integer_value = var->integer_value;
+	result->number_value = var->number_value;
 	if( var->string_value ) {
 		result->string_value = var->string_value;
 		result->string_value->reference_count++;
@@ -1188,7 +1188,7 @@ enum result evaluate_local_post_inc( struct expression *this,
 	if( var->string_value ) {
 		return throw( vars, this, 0, "Not a number." );
 	} else {
-		result->integer_value = var->integer_value++;
+		result->number_value = var->number_value++;
 	}
 	return OKAY;
 }
@@ -1199,7 +1199,7 @@ enum result evaluate_local_post_dec( struct expression *this,
 	if( var->string_value ) {
 		return throw( vars, this, 0, "Not a number." );
 	} else {
-		result->integer_value = var->integer_value--;
+		result->number_value = var->number_value--;
 	}
 	return OKAY;
 }
@@ -1207,7 +1207,7 @@ enum result evaluate_local_post_dec( struct expression *this,
 enum result evaluate_global( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	struct variable *var = &( ( struct global_variable * ) ( ( struct value_expression * ) this )->str )->value;
-	result->integer_value = var->integer_value;
+	result->number_value = var->number_value;
 	if( var->string_value ) {
 		result->string_value = var->string_value;
 		result->string_value->reference_count++;
@@ -1221,7 +1221,7 @@ static enum result execute_global_assignment( struct statement *this,
 	enum result ret = this->source->evaluate( this->source, vars, &var );
 	if( ret ) {
 		dispose_temporary( dest );
-		dest->integer_value = var.integer_value;
+		dest->number_value = var.number_value;
 		dest->string_value = var.string_value;
 	}
 	return ret;
@@ -1233,7 +1233,7 @@ enum result execute_local_assignment( struct statement *this,
 	enum result ret = this->source->evaluate( this->source, vars, &var );
 	if( ret ) {
 		dispose_temporary( dest );
-		dest->integer_value = var.integer_value;
+		dest->number_value = var.number_value;
 		dest->string_value = var.string_value;
 	}
 	return ret;
@@ -1257,9 +1257,9 @@ static enum result write_string_expression( struct expression *expr, struct vari
 			fwrite( value.string_value->string, 1, value.string_value->length, output );
 		} else {
 #if defined( FLOATING_POINT )
-			fprintf( output, "%.16g", value.integer_value );
+			fprintf( output, "%.16g", value.number_value );
 #else
-			fprintf( output, "%d", value.integer_value );
+			fprintf( output, "%d", value.number_value );
 #endif
 		}
 		if( lf ) {
@@ -1290,7 +1290,7 @@ static enum result execute_throw_statement( struct statement *this,
 	struct variable exc = { 0, NULL };
 	this->source->evaluate( this->source, vars, &exc );
 	dispose_temporary( vars->exception );
-	vars->exception->integer_value = exc.integer_value;
+	vars->exception->number_value = exc.number_value;
 	vars->exception->string_value = exc.string_value;
 	return EXCEPTION;
 }
@@ -1305,7 +1305,7 @@ static enum result execute_exit_statement( struct statement *this,
 		if( vars->func->env->worker ) {
 			message = "Worker exited.";
 		}
-		ret = throw_exit( vars, exit_code.integer_value, message );
+		ret = throw_exit( vars, exit_code.number_value, message );
 		dispose_temporary( &exit_code );
 	}
 	return ret;
@@ -1399,7 +1399,7 @@ enum result is_instance( struct variable *var, struct structure *type, struct va
 	}
 	if( vars ) {
 		sprintf( msg, "Not an instance of '%.64s'.", type->str.string );
-		return throw( vars, source, var->integer_value, msg );
+		return throw( vars, source, var->number_value, msg );
 	}
 	return EXCEPTION;
 }
@@ -1423,7 +1423,7 @@ enum result evaluate_element( struct expression *expr, struct variables *vars, s
 			if( result->string_value->type == ELEMENT ) {
 				return ret;
 			}
-		} else if( allow_null && !result->integer_value ) {
+		} else if( allow_null && !result->number_value ) {
 			return ret;
 		}
 		ret = throw( vars, expr, 0, "Not an element." );
@@ -1446,7 +1446,7 @@ enum result to_int( struct variable *var, int *result, struct variables *vars, s
 			return throw( vars, source, 0, "Not a number." );
 		}
 	}
-	*result = ( ptrdiff_t ) var->integer_value;
+	*result = ( ptrdiff_t ) var->number_value;
 	return OKAY;
 }
 
@@ -1458,7 +1458,7 @@ enum result to_num( struct variable *var, number *result, struct variables *vars
 			return throw( vars, source, 0, "Not a number." );
 		}
 	}
-	*result = var->integer_value;
+	*result = var->number_value;
 	return OKAY;
 }
 
@@ -1466,7 +1466,7 @@ enum result to_num( struct variable *var, number *result, struct variables *vars
 enum result assign_array_variable( struct variable *src, struct array *arr, int idx, struct variables *vars, struct expression *source ) {
 	struct string *str;
 	if( arr->string_values ) {
-		arr->integer_values[ idx ] = src->integer_value;
+		arr->number_values[ idx ] = src->number_value;
 		str = arr->string_values[ idx ];
 		if( str ) {
 			unref_string( str );
@@ -1478,7 +1478,7 @@ enum result assign_array_variable( struct variable *src, struct array *arr, int 
 		}
 		return OKAY;
 	}
-	return to_num( src, &arr->integer_values[ idx ], vars, source );
+	return to_num( src, &arr->number_values[ idx ], vars, source );
 }
 
 /* Evaluate the specified expression into the specified number result. */
@@ -1493,10 +1493,10 @@ enum result evaluate_number( struct expression *expr, struct variables *vars, nu
 		if( local->string_value ) {
 			return to_num( local, result, vars, expr );
 		}
-		*result = local->integer_value;
+		*result = local->number_value;
 		return OKAY;
 	}
-	var.integer_value = 0;
+	var.number_value = 0;
 	var.string_value = NULL;
 	ret = expr->evaluate( expr, vars, &var );
 	if( ret ) {
@@ -1504,7 +1504,7 @@ enum result evaluate_number( struct expression *expr, struct variables *vars, nu
 			ret = to_num( &var, result, vars, expr );
 			dispose_temporary( &var );
 		} else {
-			*result = var.integer_value;
+			*result = var.number_value;
 		}
 	}
 	return ret;
@@ -1522,10 +1522,10 @@ enum result evaluate_integer( struct expression *expr, struct variables *vars, i
 		if( local->string_value ) {
 			return to_int( local, result, vars, expr );
 		}
-		*result = ( ptrdiff_t ) local->integer_value;
+		*result = ( ptrdiff_t ) local->number_value;
 		return OKAY;
 	}
-	var.integer_value = 0;
+	var.number_value = 0;
 	var.string_value = NULL;
 	ret = expr->evaluate( expr, vars, &var );
 	if( ret ) {
@@ -1533,7 +1533,7 @@ enum result evaluate_integer( struct expression *expr, struct variables *vars, i
 			ret = to_int( &var, result, vars, expr );
 			dispose_temporary( &var );
 		} else {
-			*result = ( ptrdiff_t ) var.integer_value;
+			*result = ( ptrdiff_t ) var.number_value;
 		}
 	}
 	return ret;
@@ -1667,7 +1667,7 @@ enum result execute_if_statement( struct statement *this,
 	if( ret ) {
 		if( condition.string_value ) {
 			dispose_temporary( &condition );
-		} else if( condition.integer_value == 0 ) {
+		} else if( condition.number_value == 0 ) {
 			stmt = ( ( struct block_statement * ) this )->else_block;
 		}
 		while( stmt && ( ret = stmt->execute( stmt, vars, result ) ) == OKAY ) {
@@ -1694,7 +1694,7 @@ static enum result execute_while_statement( struct statement *this,
 		} else if( parameter->evaluate == evaluate_global ) {
 			rhs = &( ( struct global_variable * ) ( ( struct value_expression * ) parameter )->str )->value;
 		} else if( parameter->evaluate == evaluate_number_literal_expression ) {
-			condition.integer_value = ( ( struct value_expression * ) parameter )->num;
+			condition.number_value = ( ( struct value_expression * ) parameter )->num;
 		} else {
 			oper = 0;
 		}
@@ -1704,18 +1704,18 @@ static enum result execute_while_statement( struct statement *this,
 			oper = 0;
 		}
 		switch( oper ) {
-			case '!': if( lhs->integer_value == rhs->integer_value ) return OKAY; break;
-			case '(': if( lhs->integer_value > rhs->integer_value ) return OKAY; break;
-			case ')': if( lhs->integer_value < rhs->integer_value ) return OKAY; break;
-			case '<': if( lhs->integer_value >= rhs->integer_value ) return OKAY; break;
-			case '=': if( lhs->integer_value != rhs->integer_value ) return OKAY; break;
-			case '>': if( lhs->integer_value <= rhs->integer_value ) return OKAY; break;
+			case '!': if( lhs->number_value == rhs->number_value ) return OKAY; break;
+			case '(': if( lhs->number_value > rhs->number_value ) return OKAY; break;
+			case ')': if( lhs->number_value < rhs->number_value ) return OKAY; break;
+			case '<': if( lhs->number_value >= rhs->number_value ) return OKAY; break;
+			case '=': if( lhs->number_value != rhs->number_value ) return OKAY; break;
+			case '>': if( lhs->number_value <= rhs->number_value ) return OKAY; break;
 			default:
 				if( this->source->evaluate( this->source, vars, &condition ) ) {
 					if( condition.string_value ) {
 						dispose_variable( &condition );
-					} else if( condition.integer_value ) {
-						condition.integer_value = 0;
+					} else if( condition.number_value ) {
+						condition.number_value = 0;
 					} else {
 						return OKAY;
 					}
@@ -1763,7 +1763,7 @@ static enum result execute_until_statement( struct statement *this,
 			}
 		}
 		if( this->source->evaluate( this->source, vars, &condition ) ) {
-			if( condition.string_value || condition.integer_value ) {
+			if( condition.string_value || condition.number_value ) {
 				dispose_temporary( &condition );
 				return OKAY;
 			}
@@ -1810,13 +1810,13 @@ enum result execute_array_assignment( struct statement *this,
 							if( arr->string_values[ idx ] ) {
 								unref_string( arr->string_values[ idx ] );
 							}
-							arr->integer_values[ idx ] = src.integer_value;
+							arr->number_values[ idx ] = src.number_value;
 							arr->string_values[ idx ] = src.string_value;
 						} else if( src.string_value ) {
-							ret = to_num( &src, &arr->integer_values[ idx ], vars, src_expr );
+							ret = to_num( &src, &arr->number_values[ idx ], vars, src_expr );
 							dispose_temporary( &src );
 						} else {
-							arr->integer_values[ idx ] = src.integer_value;
+							arr->number_values[ idx ] = src.number_value;
 						}
 					}
 				} else {
@@ -1843,7 +1843,7 @@ static enum result execute_struct_assignment( struct statement *this,
 			arr = ( struct array * ) obj.string_value;
 			ret = this->source->evaluate( this->source, vars, &var );
 			if( ret ) {
-				arr->integer_values[ this->local ] = var.integer_value;
+				arr->number_values[ this->local ] = var.number_value;
 				if( arr->string_values ) {
 					if( arr->string_values[ this->local ] ) {
 						unref_string( arr->string_values[ this->local ] );
@@ -1907,7 +1907,7 @@ enum result execute_increment_statement( struct statement *this,
 	if( local->string_value ) {
 		return throw( vars, this->source, 0, "Not a number." );
 	}
-	local->integer_value++;
+	local->number_value++;
 	return OKAY;
 }
 
@@ -1917,7 +1917,7 @@ enum result execute_decrement_statement( struct statement *this,
 	if( local->string_value ) {
 		return throw( vars, this->source, 0, "Not a number." );
 	}
-	local->integer_value--;
+	local->number_value--;
 	return OKAY;
 }
 
@@ -2008,7 +2008,7 @@ static enum result evaluate_refcall_expression( struct expression *this,
 				ret = throw( vars, this, this->index, "Incorrect number of parameters to function." );
 			}
 		} else {
-			ret = throw( vars, this, func.integer_value, "Not a function reference." );
+			ret = throw( vars, this, func.number_value, "Not a function reference." );
 		}
 		dispose_temporary( &func );
 	}
@@ -2049,7 +2049,7 @@ static enum result evaluate_thiscall_expression( struct expression *this,
 					ret = throw( vars, this, count, "Incorrect number of parameters to function." );
 				}
 			} else {
-				ret = throw( vars, this, arr->integer_values[ idx ], "Not a function reference." );
+				ret = throw( vars, this, arr->number_values[ idx ], "Not a function reference." );
 			}
 		}
 		dispose_temporary( &obj );
@@ -2063,7 +2063,7 @@ static enum result evaluate_type_expression( struct expression *this,
 	struct variable var = { 0, NULL };
 	enum result ret = this->parameters->evaluate( this->parameters, vars, &var );
 	if( ret && var.string_value ) {
-		result->integer_value = var.string_value->type + 1;
+		result->number_value = var.string_value->type + 1;
 		if( var.string_value->type == ARRAY ) {
 			struc = ( ( struct array * ) var.string_value )->structure;
 			if( struc ) {
@@ -2099,7 +2099,7 @@ static enum result evaluate_field_expression( struct expression *this,
 				}
 			}
 		} else {
-			ret = throw( vars, this, struc.integer_value, "Not a structure." );
+			ret = throw( vars, this, struc.number_value, "Not a structure." );
 		}
 		dispose_temporary( &struc );
 	}
@@ -2119,7 +2119,7 @@ static enum result evaluate_instanceof_expression( struct expression *this,
 					assign_variable( &arr, result );
 				}
 			} else {
-				ret = throw( vars, this, struc.integer_value, "Not a structure." );	
+				ret = throw( vars, this, struc.number_value, "Not a structure." );	
 			}
 			dispose_temporary( &struc );
 		}
@@ -2144,7 +2144,7 @@ static enum result evaluate_trace_expression( struct expression *this,
 		arr = stack_trace( this, vars, msg_len, 16 );
 		if( arr ) {
 			memcpy( arr->str.string, msg, msg_len );
-			result->integer_value = var.integer_value;
+			result->number_value = var.number_value;
 			result->string_value = &arr->str;
 		} else {
 			ret = throw_out_of_memory( vars, this );
@@ -2165,7 +2165,7 @@ static enum result evaluate_member_expression( struct expression *this,
 		ret = is_instance( &obj, struc, vars, this );
 		if( ret ) {
 			arr = ( struct array * ) obj.string_value;
-			result->integer_value = arr->integer_values[ this->index ];
+			result->number_value = arr->number_values[ this->index ];
 			if( arr->string_values && arr->string_values[ this->index ] ) {
 				result->string_value = arr->string_values[ this->index ];
 				result->string_value->reference_count++;
@@ -2217,7 +2217,7 @@ static enum result evaluate_array_expression( struct expression *this,
 				ret = to_int( &var, &len, vars, param );
 			}
 		} else {
-			len = var.integer_value;
+			len = var.number_value;
 		}
 	}
 	if( ret ) {
@@ -2255,7 +2255,7 @@ static enum result evaluate_array_expression( struct expression *this,
 				ret = throw_out_of_memory( vars, this );
 			}
 		} else {
-			ret = throw( vars, this, var.integer_value, "Invalid array length." );
+			ret = throw( vars, this, var.number_value, "Invalid array length." );
 		}
 	}
 	dispose_temporary( &var );
@@ -2283,7 +2283,7 @@ enum result evaluate_index_expression( struct expression *this,
 			ret = evaluate_integer( parameter->next, vars, &idx );
 			if( ret ) {
 				if( ( unsigned int ) idx < ( unsigned int ) arr->length ) {
-					result->integer_value = arr->integer_values[ idx ];
+					result->number_value = arr->number_values[ idx ];
 					if( arr->string_values && arr->string_values[ idx ] ) {
 						result->string_value = arr->string_values[ idx ];
 						result->string_value->reference_count++;
@@ -2483,7 +2483,7 @@ static enum result evaluate_bitwise_not_expression( struct expression *this,
 	struct variable var = { 0, NULL };
 	enum result ret = this->parameters->evaluate( this->parameters, vars, &var );
 	if( ret ) {
-		result->integer_value = ~( ( int ) var.integer_value );
+		result->number_value = ~( ( ptrdiff_t ) var.number_value );
 		dispose_temporary( &var );
 	}
 	return ret;
@@ -2496,7 +2496,7 @@ static enum result evaluate_logical_expression( struct expression *this,
 	struct expression *parameter = this->parameters;
 	enum result ret = parameter->evaluate( parameter, vars, &var );
 	if( ret ) {
-		value = var.integer_value || var.string_value;
+		value = var.number_value || var.string_value;
 		dispose_variable( &var );
 		if( this->index == '!' ) {
 			value = !value;
@@ -2507,7 +2507,7 @@ static enum result evaluate_logical_expression( struct expression *this,
 					if( value ) {
 						ret = parameter->evaluate( parameter, vars, &var );
 						if( ret ) {
-							value = var.integer_value || var.string_value;
+							value = var.number_value || var.string_value;
 							dispose_variable( &var );
 						} else {
 							return ret;
@@ -2521,7 +2521,7 @@ static enum result evaluate_logical_expression( struct expression *this,
 					} else {
 						ret = parameter->evaluate( parameter, vars, &var );
 						if( ret ) {
-							value = var.integer_value || var.string_value;
+							value = var.number_value || var.string_value;
 							dispose_temporary( &var );
 						} else {
 							return ret;
@@ -2530,7 +2530,7 @@ static enum result evaluate_logical_expression( struct expression *this,
 				}
 			}
 		}
-		result->integer_value = value;
+		result->number_value = value;
 	}
 	return ret;
 }
@@ -2542,7 +2542,7 @@ static enum result evaluate_ternary_expression( struct expression *this,
 	enum result ret = parameter->evaluate( parameter, vars, &condition );
 	if( ret ) {
 		parameter = parameter->next;
-		if( !( condition.integer_value || condition.string_value ) ) {
+		if( !( condition.number_value || condition.string_value ) ) {
 			parameter = parameter->next;
 		}
 		ret = parameter->evaluate( parameter, vars, result );
@@ -2597,7 +2597,7 @@ enum result evaluate_arithmetic_expression( struct expression *this,
 				return throw( vars, this, 0, "Unhandled integer operator." );
 		}
 	}
-	result->integer_value = lhs;
+	result->number_value = lhs;
 	return OKAY;
 }
 
@@ -2630,12 +2630,12 @@ static enum result evaluate_num_expression( struct expression *this,
 	if( ret ) {
 		if( str.string_value && str.string_value->type <= ELEMENT ) {
 			if( parse_number( str.string_value->string, &val ) ) {
-				result->integer_value = val;
+				result->number_value = val;
 			} else {
 				ret = throw( vars, this, 0, "Unable to convert string to number." );
 			}
 		} else {
-			ret = to_num( &str, &result->integer_value, vars, this->parameters );
+			ret = to_num( &str, &result->number_value, vars, this->parameters );
 		}
 		dispose_temporary( &str );
 	}
@@ -2659,7 +2659,7 @@ static enum result evaluate_int_expression( struct expression *this,
 			ret = to_int( &str, &val, vars, this->parameters );
 		}
 		if( ret ) {
-			result->integer_value = val;
+			result->number_value = val;
 		}
 		dispose_temporary( &str );
 	}
@@ -2691,9 +2691,9 @@ static enum result evaluate_str_expression( struct expression *this,
 				val = var.string_value->string;
 			} else {
 #if defined( FLOATING_POINT )
-				sprintf( num, "%.16g", var.integer_value );
+				sprintf( num, "%.16g", var.number_value );
 #else
-				sprintf( num, "%d", var.integer_value );
+				sprintf( num, "%d", var.number_value );
 #endif
 				len = strlen( num );
 				val = num;
@@ -2760,13 +2760,13 @@ static enum result evaluate_len_expression( struct expression *this,
 			switch( str->type ) {
 				default:
 				case STRING:
-					result->integer_value = str->length;
+					result->number_value = str->length;
 					break;
 				case ARRAY:
-					result->integer_value = ( ( struct array * ) str )->length;
+					result->number_value = ( ( struct array * ) str )->length;
 					break;
 				case STRUCT:
-					result->integer_value = ( ( struct structure * ) str )->length;
+					result->number_value = ( ( struct structure * ) str )->length;
 					break;
 			}
 		} else {
@@ -2785,18 +2785,18 @@ static enum result evaluate_tup_expression( struct expression *this,
 	if( ret ) {
 		parameter = parameter->next;
 		if( str.string_value ) {
-			ret = evaluate_number( parameter, vars, &str.integer_value );
+			ret = evaluate_number( parameter, vars, &str.number_value );
 			if( ret ) {
-				result->integer_value = str.integer_value;
+				result->number_value = str.number_value;
 				result->string_value = str.string_value;
 			} else {
 				dispose_temporary( &str );
 			}
 		} else {
-			str.integer_value = 0;
+			str.number_value = 0;
 			ret = parameter->evaluate( parameter, vars, &str );
 			if( ret ) {
-				result->integer_value = str.integer_value;
+				result->number_value = str.number_value;
 			}
 			dispose_temporary( &str );
 		}
@@ -2902,7 +2902,7 @@ static enum result evaluate_flen_expression( struct expression *this,
 		len = load_file( file.string_value->string, NULL, 0, 0, message );
 		if( len >= 0 ) {
 			if( len < MAX_INTEGER ) {
-				result->integer_value = len;
+				result->number_value = len;
 			} else {
 				ret = throw( vars, this, 0, "File too large." );
 			}
@@ -2923,7 +2923,7 @@ static enum result evaluate_cmp_expression( struct expression *this,
 		parameter = parameter->next;
 		ret = parameter->evaluate( parameter, vars, &var2 );
 		if( ret ) {
-			result->integer_value = compare_variables( &var1, &var2 );
+			result->number_value = compare_variables( &var1, &var2 );
 			dispose_temporary( &var2 );
 		}
 		dispose_temporary( &var1 );
@@ -2948,7 +2948,7 @@ enum result evaluate_chr_expression( struct expression *this,
 		ret = evaluate_integer( parameter->next, vars, &idx );
 		if( ret ) {
 			if( ( unsigned int ) idx < ( unsigned int ) str->length ) {
-				result->integer_value = ( signed char ) str->string[ idx ];
+				result->number_value = ( signed char ) str->string[ idx ];
 			} else {
 				ret = throw( vars, this, idx, "String index out of bounds." );
 			}
@@ -2987,7 +2987,7 @@ static enum result evaluate_sub_expression( struct expression *this,
 						if( str ) {
 							if( var.string_value->type == ARRAY ) {
 								data = str->string;
-								arr = ( ( struct array * ) var.string_value )->integer_values;
+								arr = ( ( struct array * ) var.string_value )->number_values;
 								offset = 0;
 								while( offset < len ) {
 									data[ offset ] = arr[ offset + idx ];
@@ -3040,7 +3040,7 @@ static struct element* new_string_element( struct string *value ) {
 	return elem;
 }
 
-static struct element* new_tuple_element( struct string *string_value, number integer_value,
+static struct element* new_tuple_element( struct string *string_value, number number_value,
 	struct environment *env, int max_depth, char *message ) {
 	struct element *elem = new_element( 4 ), *child = NULL;
 	if( elem ) {
@@ -3054,7 +3054,7 @@ static struct element* new_tuple_element( struct string *string_value, number in
 				while( child->next ) {
 					child = child->next;
 				}
-				child->next = new_number_element( integer_value );
+				child->next = new_number_element( number_value );
 				child = child->next;
 			}
 		}
@@ -3109,7 +3109,7 @@ static struct element* new_array_element( struct array *arr, struct environment 
 				elem->next->child = new_number_element( arr->length );
 			}
 			while( idx < arr->length ) {
-				if( arr->integer_values[ idx ] || ( arr->string_values && arr->string_values[ idx ] ) ) {
+				if( arr->number_values[ idx ] || ( arr->string_values && arr->string_values[ idx ] ) ) {
 					count = idx + 1;
 				}
 				idx++;
@@ -3123,7 +3123,7 @@ static struct element* new_array_element( struct array *arr, struct environment 
 				if( arr->string_values ) {
 					str = arr->string_values[ idx ];
 				}
-				tail->next = value_to_element( arr->integer_values[ idx++ ], str, env, max_depth - 1, message );
+				tail->next = value_to_element( arr->number_values[ idx++ ], str, env, max_depth - 1, message );
 				tail = tail->next;
 			}
 		}
@@ -3138,14 +3138,14 @@ static struct element* new_array_element( struct array *arr, struct environment 
 	return elem;
 }
 
-static struct element* value_to_element( number integer_value, struct string *string_value,
+static struct element* value_to_element( number number_value, struct string *string_value,
 	struct environment *env, int max_depth, char *message ) {
 	struct element *elem = NULL;
 	if( max_depth < 1 ) {
 		strcpy( message, "Maximum element depth exceeded." );
 	} else if( string_value ) {
-		if( integer_value ) {
-			elem = new_tuple_element( string_value, integer_value, env, max_depth, message );
+		if( number_value ) {
+			elem = new_tuple_element( string_value, number_value, env, max_depth, message );
 		} else {
 			switch( string_value->type ) {
 				case STRING:
@@ -3181,7 +3181,7 @@ static struct element* value_to_element( number integer_value, struct string *st
 			}
 		}
 	} else {
-		elem = new_number_element( integer_value );
+		elem = new_number_element( number_value );
 	}
 	if( elem == NULL && message[ 0 ] == 0 ) {
 		strcpy( message, OUT_OF_MEMORY );
@@ -3210,7 +3210,7 @@ static enum result evaluate_expr_expression( struct expression *this,
 		if( ( size_t ) &ret < env->stack_limit ) {
 			ret = throw_stack_overflow( vars, this );
 		} else {
-			elem = value_to_element( var.integer_value, var.string_value, env, env->element_depth, msg );
+			elem = value_to_element( var.number_value, var.string_value, env, env->element_depth, msg );
 			if( elem ) {
 				result->string_value = &elem->str;
 			} else {
@@ -3263,7 +3263,7 @@ static enum result evaluate_eval_expression( struct expression *this,
 
 static enum result evaluate_argc_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
-	result->integer_value = vars->func->env->argc;
+	result->number_value = vars->func->env->argc;
 	return OKAY;
 }
 
@@ -3306,7 +3306,7 @@ static enum result evaluate_time_expression( struct expression *this,
 		}
 	}
 	if( ret ) {
-		result->integer_value = seconds;
+		result->number_value = seconds;
 		result->string_value = str;
 	}
 	return ret;
@@ -3504,7 +3504,7 @@ static enum result evaluate_line_expression( struct expression *this,
 	struct variable elem = { 0, NULL };
 	enum result ret = evaluate_element( parameter, vars, &elem, 0 );
 	if( ret ) {
-		result->integer_value = ( ( struct element * ) elem.string_value )->line;
+		result->number_value = ( ( struct element * ) elem.string_value )->line;
 		dispose_temporary( &elem );
 	}
 	return ret;
@@ -3543,10 +3543,10 @@ static enum result evaluate_pack_expression( struct expression *this,
 	enum result ret = this->parameters->evaluate( this->parameters, vars, &val );
 	if( ret ) {
 		if( val.string_value && val.string_value && val.string_value->type == ARRAY ) {
-			src = ( ( struct array * ) val.string_value )->integer_values;
+			src = ( ( struct array * ) val.string_value )->number_values;
 			len = ( ( struct array * ) val.string_value )->length * 4;
 		} else {
-			src = &val.integer_value;
+			src = &val.number_value;
 			ret = to_num( &val, src, vars, this->parameters );
 			len = 4;
 		}
@@ -3591,7 +3591,7 @@ enum result evaluate_unpack_expression( struct expression *this,
 		ret = evaluate_integer( parameter->next, vars, &idx );
 		if( ret ) {
 			if( idx >= 0 && idx * 4 < str.string_value->length - 3 ) {
-				result->integer_value = unpack( str.string_value->string, idx );
+				result->number_value = unpack( str.string_value->string, idx );
 			} else {
 				ret = throw( vars, this, idx, "String index out of bounds." );
 			}
@@ -3617,7 +3617,7 @@ static enum result evaluate_same_expression( struct expression *this,
 		parameter = parameter->next;
 		ret = parameter->evaluate( parameter, vars, &rhs );
 		if( ret ) {
-			result->integer_value = ( lhs.integer_value == rhs.integer_value )
+			result->number_value = ( lhs.number_value == rhs.number_value )
 				&& ( lhs.string_value == rhs.string_value );
 			dispose_temporary( &rhs );
 		}
@@ -3635,7 +3635,7 @@ static enum result evaluate_eq_expression( struct expression *this,
 		parameter = parameter->next;
 		ret = parameter->evaluate( parameter, vars, &rhs );
 		if( ret ) {
-			result->integer_value = compare_variables( &lhs, &rhs ) == 0;
+			result->number_value = compare_variables( &lhs, &rhs ) == 0;
 			dispose_temporary( &rhs );
 		}
 		dispose_temporary( &lhs );
@@ -3661,7 +3661,7 @@ static enum result evaluate_stridx_expression( struct expression *this,
 			}
 			if( ret ) {
 				if( str.string_value->length > 0 && str.string_value->length > idx ) {
-					result->integer_value = str_idx( str.string_value->string, sep.string_value->string, idx );
+					result->number_value = str_idx( str.string_value->string, sep.string_value->string, idx );
 				} else {
 					ret = throw( vars, this, idx, "String index out of bounds." );
 				}
@@ -3676,7 +3676,7 @@ static enum result evaluate_stridx_expression( struct expression *this,
 static enum result evaluate_interrupted_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	struct environment *env = vars->func->env; 
-	result->integer_value = env->interrupted;
+	result->number_value = env->interrupted;
 	if( env->worker == NULL ) {
 		env->interrupted = 0;
 	}
@@ -3971,8 +3971,8 @@ static struct element* parse_thiscall_expression( struct element *elem,
 								this->evaluate = evaluate_local;
 							} else if( captured ) {
 								var = &vars->locals[ captured->index ];
-								this->index = ( ptrdiff_t ) var->integer_value;
-								( ( struct value_expression * ) this )->num = var->integer_value;
+								this->index = ( ptrdiff_t ) var->number_value;
+								( ( struct value_expression * ) this )->num = var->number_value;
 								if( var->string_value ) {
 									var->string_value->reference_count++;
 									( ( struct value_expression * ) this )->str = var->string_value;
@@ -4134,8 +4134,8 @@ static struct element* parse_capture_expression( struct element *elem,
 	if( expr ) {
 		prev->next = expr;
 		expr->line = elem->line;
-		expr->index = ( ptrdiff_t ) captured->integer_value;
-		( ( struct value_expression * ) expr )->num = captured->integer_value;
+		expr->index = ( ptrdiff_t ) captured->number_value;
+		( ( struct value_expression * ) expr )->num = captured->number_value;
 		if( captured->string_value ) {
 			captured->string_value->reference_count++;
 			( ( struct value_expression * ) expr )->str = captured->string_value;

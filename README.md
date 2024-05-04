@@ -68,13 +68,14 @@ int main( int argc, char **argv ) {
 	int exit_code = EXIT_FAILURE;
 	char message[ 256 ] = "";
 	struct environment env = { 0 };
+	struct string filename = { 1, "hello", 5, STRING };
 	struct operator operators[ 2 ] = { { "$upcase", '$', 1, evaluate_upcase_expression, NULL }, { NULL } };
 	struct variable result = { 0 }, except = { 0 };
 	struct function_expression expr = { 0 };
 	struct variables vars = { 0 };
 	vars.exception = &except;
 	if( initialize_environment( &env, 65536, message ) && add_operators( operators, &env, message )
-		&& parse_tt_program( "program hello { print $upcase( \"Hello, World!\" ); } ", "hello", &env, message ) ) {
+		&& parse_tt_program( "program hello { print $upcase( \"Hello, World!\" ); } ", &filename, &env, message ) ) {
 		initialize_entry_point( &expr, env.entry_point );
 		if( initialize_globals( &env, &except ) && expr.expr.evaluate( &expr.expr, &vars, &result ) ) {
 			exit_code = EXIT_SUCCESS;
@@ -83,9 +84,9 @@ int main( int argc, char **argv ) {
 				fputs( except.string_value->string, stderr );
 				fputc( '\n', stderr );
 			}
-			exit_code = except.integer_value;
+			exit_code = except.number_value;
 		} else {
-			fprintf( stderr, "Unhandled exception %d.\n", ( int ) except.integer_value );
+			fprintf( stderr, "Unhandled exception %d.\n", ( int ) except.number_value );
 			if( except.string_value && except.string_value->string ) {
 				fprintf( stderr, "%s\n", except.string_value->string );
 			}

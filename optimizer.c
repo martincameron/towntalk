@@ -289,12 +289,12 @@ static enum result execute_arithmetic_statement( struct statement *this,
 						return EXCEPTION;
 					}
 				} else {
-					*++top = local->integer_value;
+					*++top = local->number_value;
 				}
 				break;
 			case LOAD_LOCAL:
 				local = locals + insn->local;
-				var.integer_value = local->integer_value;
+				var.number_value = local->number_value;
 				var.string_value = local->string_value;
 				if( var.string_value ) {
 					var.string_value->reference_count++;
@@ -307,12 +307,12 @@ static enum result execute_arithmetic_statement( struct statement *this,
 						return EXCEPTION;
 					}
 				} else {
-					*++top = local->integer_value;
+					*++top = local->number_value;
 				}
 				break;
 			case LOAD_GLOBAL:
 				local = &( ( struct global_variable * ) ( ( struct value_expression * ) insn->expr )->str )->value;
-				var.integer_value = local->integer_value;
+				var.number_value = local->number_value;
 				var.string_value = local->string_value;
 				if( var.string_value ) {
 					var.string_value->reference_count++;
@@ -321,21 +321,21 @@ static enum result execute_arithmetic_statement( struct statement *this,
 			case INC_LOCAL:
 				local = locals + insn->local;
 				if( !local->string_value ) {
-					local->integer_value++;
+					local->number_value++;
 					break;
 				}
 				/* Fallthrough. */
 			case PUSH_LOCAL_PI:
 				local = locals + insn->local;
 				if( !local->string_value ) {
-					*++top = local->integer_value++;
+					*++top = local->number_value++;
 					break;
 				}
 				/* Fallthrough. */
 			case DEC_LOCAL: 
 				local = locals + insn->local;
 				if( !local->string_value ) {
-					local->integer_value--;
+					local->number_value--;
 					break;
 				}
 				/* Fallthrough. */
@@ -344,23 +344,23 @@ static enum result execute_arithmetic_statement( struct statement *this,
 				if( local->string_value ) {
 					return throw( vars, insn->expr, 0, "Not a number." );
 				}
-				*++top = local->integer_value--;
+				*++top = local->number_value--;
 				break;
 			case ASSIGN_EXPR:
-				var.integer_value = 0;
+				var.number_value = 0;
 				var.string_value = NULL;
 				if( !insn->expr->evaluate( insn->expr, vars, &var ) ) {
 					return EXCEPTION;
 				}
 				local = locals + insn->local;
-				local->integer_value = var.integer_value;
+				local->number_value = var.number_value;
 				if( local->string_value ) {
 					unref_string( local->string_value );
 				}
 				local->string_value = var.string_value;
 				break;
 			case PUSH_EXPR:
-				var.integer_value = 0;
+				var.number_value = 0;
 				var.string_value = NULL;
 				if( insn->expr->evaluate( insn->expr, vars, &var ) ) {
 					if( var.string_value ) {
@@ -370,14 +370,14 @@ static enum result execute_arithmetic_statement( struct statement *this,
 						}
 						unref_string( var.string_value );
 					} else {
-						*++top = var.integer_value;
+						*++top = var.number_value;
 					}
 				} else {
 					return EXCEPTION;
 				}
 				break;
 			case LOAD_EXPR:
-				var.integer_value = 0;
+				var.number_value = 0;
 				var.string_value = NULL;
 				if( !insn->expr->evaluate( insn->expr, vars, &var ) ) {
 					return EXCEPTION;
@@ -390,13 +390,13 @@ static enum result execute_arithmetic_statement( struct statement *this,
 					arr = ( struct array * ) local->string_value;
 					if( ( unsigned int ) index < ( unsigned int ) arr->length ) {
 						if( arr->string_values && arr->string_values[ index ] ) {
-							var.integer_value = arr->integer_values[ index ];
+							var.number_value = arr->number_values[ index ];
 							var.string_value = arr->string_values[ index ];
 							if( !to_num( &var, top, vars, insn->expr ) ) {
 								return EXCEPTION;
 							}
 						} else {
-							*top = arr->integer_values[ index ];
+							*top = arr->number_values[ index ];
 						}
 					} else {
 						return throw( vars, insn->expr, index, "Array index out of bounds." );
@@ -411,7 +411,7 @@ static enum result execute_arithmetic_statement( struct statement *this,
 					index = ( ptrdiff_t ) *top--;
 					arr = ( struct array * ) local->string_value;
 					if( ( unsigned int ) index < ( unsigned int ) arr->length ) {
-						var.integer_value = arr->integer_values[ index ];
+						var.number_value = arr->number_values[ index ];
 						if( arr->string_values && arr->string_values[ index ] ) {
 							var.string_value = arr->string_values[ index ];
 							var.string_value->reference_count++;
@@ -456,7 +456,7 @@ static enum result execute_arithmetic_statement( struct statement *this,
 				break;
 			case POP_LOCAL:
 				local = locals + insn->local;
-				local->integer_value = *top--;
+				local->number_value = *top--;
 				if( local->string_value ) {
 					unref_string( local->string_value );
 					local->string_value = NULL;
@@ -464,7 +464,7 @@ static enum result execute_arithmetic_statement( struct statement *this,
 				break;
 			case STORE_LOCAL:
 				local = locals + insn->local;
-				local->integer_value = var.integer_value;
+				local->number_value = var.number_value;
 				if( local->string_value ) {
 					unref_string( local->string_value );
 				}
@@ -485,7 +485,7 @@ static enum result execute_arithmetic_statement( struct statement *this,
 				top -= 2;
 				index = ( ptrdiff_t ) top[ 1 ];
 				arr = ( struct array * ) locals[ insn->local ].string_value;
-				arr->integer_values[ index ] = top[ 2 ];
+				arr->number_values[ index ] = top[ 2 ];
 				if( arr->string_values && arr->string_values[ index ] ) {
 					unref_string( arr->string_values[ index ] );
 					arr->string_values[ index ] = NULL;
@@ -498,16 +498,16 @@ static enum result execute_arithmetic_statement( struct statement *this,
 					if( arr->string_values[ index ] ) {
 						unref_string( arr->string_values[ index ] );
 					}
-					arr->integer_values[ index ] = var.integer_value;
+					arr->number_values[ index ] = var.number_value;
 					arr->string_values[ index ] = var.string_value;
 				} else if( var.string_value ) {
-					if( !to_num( &var, &arr->integer_values[ index ], vars, insn->expr ) ) {
+					if( !to_num( &var, &arr->number_values[ index ], vars, insn->expr ) ) {
 						unref_string( var.string_value );
 						return EXCEPTION;
 					}
 					unref_string( var.string_value );
 				} else {
-					arr->integer_values[ index ] = var.integer_value;
+					arr->number_values[ index ] = var.number_value;
 				}
 				break;
 			case AND_STACK: top--; *top = ( int ) ( ( ptrdiff_t ) *top & ( ptrdiff_t ) top[ 1 ] ); break;
@@ -553,7 +553,7 @@ static enum result execute_arithmetic_statement( struct statement *this,
 						return EXCEPTION;
 					}
 				} else {
-					*top = ( int ) ( ( ptrdiff_t ) *top & ( ptrdiff_t ) local->integer_value );
+					*top = ( int ) ( ( ptrdiff_t ) *top & ( ptrdiff_t ) local->number_value );
 				}
 				break;
 			case OR__LOCAL:
@@ -565,7 +565,7 @@ static enum result execute_arithmetic_statement( struct statement *this,
 						return EXCEPTION;
 					}
 				} else {
-					*top = ( int ) ( ( ptrdiff_t ) *top | ( ptrdiff_t ) local->integer_value );
+					*top = ( int ) ( ( ptrdiff_t ) *top | ( ptrdiff_t ) local->number_value );
 				}
 				break;
 			case XOR_LOCAL:
@@ -577,7 +577,7 @@ static enum result execute_arithmetic_statement( struct statement *this,
 						return EXCEPTION;
 					}
 				} else {
-					*top = ( int ) ( ( ptrdiff_t ) *top ^ ( ptrdiff_t ) local->integer_value );
+					*top = ( int ) ( ( ptrdiff_t ) *top ^ ( ptrdiff_t ) local->number_value );
 				}
 				break;
 			case ADD_LOCAL:
@@ -589,7 +589,7 @@ static enum result execute_arithmetic_statement( struct statement *this,
 						return EXCEPTION;
 					}
 				} else {
-					*top += local->integer_value;
+					*top += local->number_value;
 				}
 				break;
 			case SUB_LOCAL:
@@ -601,7 +601,7 @@ static enum result execute_arithmetic_statement( struct statement *this,
 						return EXCEPTION;
 					}
 				} else {
-					*top -= local->integer_value;
+					*top -= local->number_value;
 				}
 				break;
 			case MUL_LOCAL:
@@ -613,7 +613,7 @@ static enum result execute_arithmetic_statement( struct statement *this,
 						return EXCEPTION;
 					}
 				} else {
-					*top *= local->integer_value;
+					*top *= local->number_value;
 				}
 				break;
 			case FDI_LOCAL:
@@ -625,7 +625,7 @@ static enum result execute_arithmetic_statement( struct statement *this,
 						return EXCEPTION;
 					}
 				} else {
-					*top *= local->integer_value;
+					*top *= local->number_value;
 				}
 				break;
 			case DIV_LOCAL:
@@ -635,7 +635,7 @@ static enum result execute_arithmetic_statement( struct statement *this,
 						return EXCEPTION;
 					}
 				} else {
-					value = local->integer_value;
+					value = local->number_value;
 				}
 				if( !divide( top, value, vars, insn->expr ) ) {
 					return EXCEPTION;
@@ -648,7 +648,7 @@ static enum result execute_arithmetic_statement( struct statement *this,
 						return EXCEPTION;
 					}
 				} else {
-					value = local->integer_value;
+					value = local->number_value;
 				}
 				if( !modulo( top, value, vars, insn->expr ) ) {
 					return EXCEPTION;
@@ -663,7 +663,7 @@ static enum result execute_arithmetic_statement( struct statement *this,
 						return EXCEPTION;
 					}
 				} else {
-					*top = ( int ) ( ( ptrdiff_t ) *top << ( ptrdiff_t ) local->integer_value );
+					*top = ( int ) ( ( ptrdiff_t ) *top << ( ptrdiff_t ) local->number_value );
 				}
 				break;
 			case ASR_LOCAL:
@@ -675,7 +675,7 @@ static enum result execute_arithmetic_statement( struct statement *this,
 						return EXCEPTION;
 					}
 				} else {
-					*top = ( int ) ( ( ptrdiff_t ) *top >> ( ptrdiff_t ) local->integer_value );
+					*top = ( int ) ( ( ptrdiff_t ) *top >> ( ptrdiff_t ) local->number_value );
 				}
 				break;
 			case NE__LOCAL:
@@ -687,7 +687,7 @@ static enum result execute_arithmetic_statement( struct statement *this,
 						return EXCEPTION;
 					}
 				} else {
-					*top = *top != local->integer_value;
+					*top = *top != local->number_value;
 				}
 				break;
 			case LT__LOCAL:
@@ -699,7 +699,7 @@ static enum result execute_arithmetic_statement( struct statement *this,
 						return EXCEPTION;
 					}
 				} else {
-					*top = *top < local->integer_value;
+					*top = *top < local->number_value;
 				}
 				break;
 			case LTE_LOCAL:
@@ -711,7 +711,7 @@ static enum result execute_arithmetic_statement( struct statement *this,
 						return EXCEPTION;
 					}
 				} else {
-					*top = *top <= local->integer_value;
+					*top = *top <= local->number_value;
 				}
 				break;
 			case EQ__LOCAL:
@@ -723,7 +723,7 @@ static enum result execute_arithmetic_statement( struct statement *this,
 						return EXCEPTION;
 					}
 				} else {
-					*top = *top == local->integer_value;
+					*top = *top == local->number_value;
 				}
 				break;
 			case GTE_LOCAL:
@@ -735,7 +735,7 @@ static enum result execute_arithmetic_statement( struct statement *this,
 						return EXCEPTION;
 					}
 				} else {
-					*top = *top >= local->integer_value;
+					*top = *top >= local->number_value;
 				}
 				break;
 			case GT__LOCAL:
@@ -747,7 +747,7 @@ static enum result execute_arithmetic_statement( struct statement *this,
 						return EXCEPTION;
 					}
 				} else {
-					*top = *top > local->integer_value;
+					*top = *top > local->number_value;
 				}
 				break;
 		}

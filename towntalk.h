@@ -46,7 +46,7 @@ struct element {
 /* Reference-counted array. */
 struct array {
 	struct string str;
-	number *integer_values;
+	number *number_values;
 	struct string **string_values;
 	struct structure *structure;
 	struct array *prev, *next;
@@ -66,7 +66,7 @@ struct function {
 
 /* Variable value. */
 struct variable {
-	number integer_value;
+	number number_value;
 	struct string *string_value;
 };
 

@@ -275,8 +275,8 @@ enum result evaluate_execute_expression( struct expression *this,
 					dispose_variable( &work->args[ idx ] );
 					ret = parameter->evaluate( parameter, vars, &work->args[ idx ] );
 					if( ret ) {
-						work->parameters[ idx ].index = ( ptrdiff_t ) work->args[ idx ].integer_value;
-						( ( struct value_expression * ) work->parameters )[ idx ].num = work->args[ idx ].integer_value;
+						work->parameters[ idx ].index = ( ptrdiff_t ) work->args[ idx ].number_value;
+						( ( struct value_expression * ) work->parameters )[ idx ].num = work->args[ idx ].number_value;
 						str = work->args[ idx ].string_value;
 						if( str ) {
 							if( str->type == STRING || ( str->type == ARRAY && !( ( struct array * ) str )->string_values ) ) {
@@ -285,7 +285,7 @@ enum result evaluate_execute_expression( struct expression *this,
 								work->strings[ idx ].str.string = str->string;
 								work->strings[ idx ].str.length = str->length;
 								if( str->type == ARRAY ) {
-									work->strings[ idx ].integer_values = ( ( struct array * ) str )->integer_values;
+									work->strings[ idx ].number_values = ( ( struct array * ) str )->number_values;
 									work->strings[ idx ].length = ( ( struct array * ) str )->length;
 								}
 								( ( struct value_expression * ) work->parameters )[ idx ].str = &work->strings[ idx ].str;
@@ -361,7 +361,7 @@ enum result evaluate_result_expression( struct expression *this,
 					assign_variable( &work->result, result );
 				}
 			} else if( work->exception.string_value && work->exception.string_value->type > ELEMENT ) {
-				ret = throw( vars, this, work->exception.integer_value, work->exception.string_value->string );
+				ret = throw( vars, this, work->exception.number_value, work->exception.string_value->string );
 			} else {
 				assign_variable( &work->exception, vars->exception );
 				ret = EXCEPTION;

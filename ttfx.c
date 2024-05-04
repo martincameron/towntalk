@@ -687,7 +687,7 @@ static enum result execute_surface_statement( struct statement *this,
 					if( var.string_value ) {
 						if( var.string_value->type == ARRAY ) {
 							arr = ( struct array * ) var.string_value;
-							values = arr->integer_values;
+							values = arr->number_values;
 							pixels = malloc( arr->length * sizeof( Uint32 ) );
 							if( pixels ) {
 								idx = 0;
@@ -731,7 +731,7 @@ static enum result execute_surface_statement( struct statement *this,
 					if( var.string_value ) {
 						if( var.string_value->type == ARRAY ) {
 							arr = ( struct array * ) var.string_value;
-							values = arr->integer_values;
+							values = arr->number_values;
 							if( SDL_LockSurface( surface ) == 0 ) {
 								idx = 0;
 								len = arr->length;
@@ -1161,7 +1161,7 @@ static enum result handle_event_expression( struct expression *this, SDL_Event *
 			fxenv->wheel = event->wheel.y;
 #endif
 		}
-		result->integer_value = event->type;
+		result->number_value = event->type;
 	}
 	return ret;
 }
@@ -1169,16 +1169,16 @@ static enum result handle_event_expression( struct expression *this, SDL_Event *
 static enum result evaluate_winmsg_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 #if SDL_MAJOR_VERSION > 1
-	result->integer_value = ( ( struct fxenvironment * ) vars->func->env )->win_event;
+	result->number_value = ( ( struct fxenvironment * ) vars->func->env )->win_event;
 #else
-	result->integer_value = SDL_VIDEOEXPOSE;
+	result->number_value = SDL_VIDEOEXPOSE;
 #endif
 	return OKAY;
 }
 
 static enum result evaluate_midimsg_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
-	result->integer_value = ( ( struct fxenvironment * ) vars->func->env )->midi_msg;
+	result->number_value = ( ( struct fxenvironment * ) vars->func->env )->midi_msg;
 	return OKAY;
 }
 
@@ -1200,7 +1200,7 @@ static enum result evaluate_waitevent_expression( struct expression *this,
 
 static enum result evaluate_millis_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
-	result->integer_value = SDL_GetTicks();
+	result->number_value = SDL_GetTicks();
 	return OKAY;
 }
 
@@ -1208,7 +1208,7 @@ static enum result evaluate_xmouse_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	int x;
 	SDL_GetMouseState( &x, NULL );
-	result->integer_value = x;
+	result->number_value = x;
 	return OKAY;
 }
 
@@ -1216,44 +1216,44 @@ static enum result evaluate_ymouse_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	int y;
 	SDL_GetMouseState( NULL, &y );
-	result->integer_value = y;
+	result->number_value = y;
 	return OKAY;
 }
 
 static enum result evaluate_mousekey_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
-	result->integer_value = SDL_GetMouseState( NULL, NULL );
+	result->number_value = SDL_GetMouseState( NULL, NULL );
 	return OKAY;
 }
 
 static enum result evaluate_mousewheel_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
-	result->integer_value = ( ( struct fxenvironment * ) vars->func->env )->wheel;
+	result->number_value = ( ( struct fxenvironment * ) vars->func->env )->wheel;
 	return OKAY;
 }
 
 static enum result evaluate_keyboard_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
-	result->integer_value = ( ( struct fxenvironment * ) vars->func->env )->key;
+	result->number_value = ( ( struct fxenvironment * ) vars->func->env )->key;
 	return OKAY;
 }
 
 static enum result evaluate_keyshift_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
-	result->integer_value = SDL_GetModState();
+	result->number_value = SDL_GetModState();
 	return OKAY;
 }
 
 static enum result evaluate_keyheld_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
-	result->integer_value = ( ( struct fxenvironment * ) vars->func->env )->key_held;
+	result->number_value = ( ( struct fxenvironment * ) vars->func->env )->key_held;
 	return OKAY;
 }
 
 /* Returns a value incremented every sequencer tick while the audio device is running. */
 static enum result evaluate_seqtick_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
-	result->integer_value = ( ( struct fxenvironment * ) vars->func->env )->tick;
+	result->number_value = ( ( struct fxenvironment * ) vars->func->env )->tick;
 	return OKAY;
 }
 
@@ -1283,10 +1283,10 @@ static enum result evaluate_seqmix_expression( struct expression *this,
 				end = length;
 			}
 			while( idx < end ) {
-				var.integer_value = fxenv->audio[ idx ];
+				var.number_value = fxenv->audio[ idx ];
 				assign_array_variable( &var, ( struct array * ) arr.string_value, idx++, vars, this );
 			}
-			result->integer_value = fxenv->audio_end;
+			result->number_value = fxenv->audio_end;
 			SDL_UnlockAudio();
 		} else {
 			ret = throw( vars, this, 0, "Not an array." );
@@ -1301,7 +1301,7 @@ static enum result evaluate_seqrate_expression( struct expression *this,
 	struct variable var = { 0, NULL };
 	enum result ret = this->parameters->evaluate( this->parameters, vars, &var );
 	if( ret ) {
-		result->integer_value = key_to_freq( var.integer_value );
+		result->number_value = key_to_freq( var.number_value );
 		dispose_variable( &var );
 	}
 	return OKAY;
@@ -1313,7 +1313,7 @@ static enum result evaluate_seqrate_expression( struct expression *this,
 */
 static enum result evaluate_seqmsg_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
-	result->integer_value = ( ( struct fxenvironment * ) vars->func->env )->seq_msg;
+	result->number_value = ( ( struct fxenvironment * ) vars->func->env )->seq_msg;
 	return OKAY;
 }
 
@@ -1526,7 +1526,7 @@ static enum result evaluate_stream_expression( struct expression *this,
 			ret = evaluate_integer( parameter, vars, &count );
 			if( ret ) {
 				if( arr.string_value && arr.string_value->type == ARRAY ) {
-					values = ( ( struct array * ) arr.string_value )->integer_values;
+					values = ( ( struct array * ) arr.string_value )->number_values;
 					length = ( ( ( struct array * ) arr.string_value )->length ) >> 1;
 					if( offset >= 0 && count >= 0 && MAX_INTEGER - count >= offset && offset + count <= length ) {
 						SDL_LockAudio();
@@ -1542,7 +1542,7 @@ static enum result evaluate_stream_expression( struct expression *this,
 						}
 						fxenv->stream_idx += samples;
 						SDL_UnlockAudio();
-						result->integer_value = samples;
+						result->number_value = samples;
 					} else {
 						ret = throw( vars, this, offset, "Range out of bounds." );
 					}
@@ -1809,9 +1809,9 @@ int main( int argc, char **argv ) {
 							fputs( except.string_value->string, stderr );
 							fputc( '\n', stderr );
 						}
-						exit_code = except.integer_value;
+						exit_code = except.number_value;
 					} else {
-						fprintf( stderr, "Unhandled exception %d.\n", ( int ) except.integer_value );
+						fprintf( stderr, "Unhandled exception %d.\n", ( int ) except.number_value );
 						if( except.string_value && except.string_value->string ) {
 							if( except.string_value->type == ARRAY ) {
 								arr = ( struct array * ) except.string_value;
@@ -1821,7 +1821,7 @@ int main( int argc, char **argv ) {
 								}
 							}
 							if( func ) {
-								fprintf( stderr, "%s (on line %d of '%s')\n", arr->str.string, ( int ) arr->integer_values[ 0 ], func->file->string );
+								fprintf( stderr, "%s (on line %d of '%s')\n", arr->str.string, ( int ) arr->number_values[ 0 ], func->file->string );
 							} else {
 								fprintf( stderr, "%s\n", except.string_value->string );
 							}
