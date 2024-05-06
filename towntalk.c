@@ -2496,20 +2496,13 @@ static enum result evaluate_unary_expression( struct expression *this,
 	if( ret ) {
 #if defined( FLOATING_POINT )
 		switch( this->index ) {
-			case 1:
-				result->number_value = ~( ( ptrdiff_t ) var.number_value ); break;
-			case 2:
-				result->number_value = log( var.number_value ); break;
-			case 3:
-				result->number_value = exp( var.number_value ); break;
-			case 4:
-				result->number_value = sqrt( var.number_value ); break;
-			case 5:
-				result->number_value = sin( var.number_value ); break;
-			case 6:
-				result->number_value = cos( var.number_value ); break;
-			case 7:
-				result->number_value = tan( var.number_value ); break;
+			case 1: result->number_value = ~( ( ptrdiff_t ) var.number_value ); break;
+			case 2: result->number_value = log( var.number_value ); break;
+			case 3: result->number_value = exp( var.number_value ); break;
+			case 4: result->number_value = sqrt( var.number_value ); break;
+			case 5: result->number_value = sin( var.number_value ); break;
+			case 6: result->number_value = cos( var.number_value ); break;
+			case 7: result->number_value = tan( var.number_value ); break;
 		}
 #else
 		result->number_value = ~var.number_value;
@@ -3562,7 +3555,8 @@ static enum result evaluate_hex_expression( struct expression *this,
 
 static enum result evaluate_pack_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
-	int idx, len, in;
+	int idx, len;
+	ptrdiff_t in;
 	number *src;
 	char *out;
 	struct string *str;
