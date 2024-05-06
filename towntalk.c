@@ -4,6 +4,11 @@
 #else
 #include "alloca.h"
 #endif
+
+#if defined( FLOATING_POINT )
+#include "math.h"
+#endif
+
 #include "errno.h"
 #include "stddef.h"
 #include "stdio.h"
@@ -151,8 +156,8 @@
 		$sub(str off len)        Substring (or byte array to string).
 		$asc(int)                Character code to string.
 		$hex(int)                Integer to fixed-length signed hex string.
-		$int(str)                String or custom type to integer.
-		$num(str)                String or custom type to number.
+		$int(str)                String or value to integer.
+		$num(str)                String or value to number.
 		$len(str/arr)            Length of string, array or structure.
 		$tup(str num)            String/Number tuple.
 		$array(len ...)          Create array of specified length and values.
@@ -187,6 +192,12 @@
 		$field(struct idx)       Name of specified struct field.
 		$instanceof(arr struct)  Returns arr if an instance of struct, null otherwise.
 		$trace(message)          Return a stack-trace array of function and line-number tuples.
+		$log(num)                Floating-point natural-logarithm (if supported).
+		$exp(num)                Floating-point natural-exponent (if supported).
+		$sqrt(num)               Floating-point square-root (if supported).
+		$sin(rad)                Floating-point sine (if supported).
+		$cos(rad)                Floating-point cosine (if supported).
+		$tan(rad)                Floating-point tangent (if supported).
 */
 
 struct global_assignment_statement {
@@ -1439,7 +1450,7 @@ enum result to_int( struct variable *var, int *result, struct variables *vars, s
 		if( var->string_value->type == CUSTOM && ( ( struct custom * ) var->string_value )->type->to_num ) {
 			ret = ( ( struct custom * ) var->string_value )->type->to_num( var, &value, vars, source );
 			if( ret ) {
-				*result = value;
+				*result = ( ptrdiff_t ) value;
 			}
 			return ret;
 		} else {
@@ -2478,12 +2489,31 @@ static struct element* parse_local_declaration( struct element *elem,
 	return parse_variable_declaration( elem->next, func, vars, prev, add_local_variable, message);
 }
 
-static enum result evaluate_bitwise_not_expression( struct expression *this,
+static enum result evaluate_unary_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	struct variable var = { 0, NULL };
 	enum result ret = this->parameters->evaluate( this->parameters, vars, &var );
 	if( ret ) {
-		result->number_value = ~( ( ptrdiff_t ) var.number_value );
+#if defined( FLOATING_POINT )
+		switch( this->index ) {
+			case 1:
+				result->number_value = ~( ( ptrdiff_t ) var.number_value ); break;
+			case 2:
+				result->number_value = log( var.number_value ); break;
+			case 3:
+				result->number_value = exp( var.number_value ); break;
+			case 4:
+				result->number_value = sqrt( var.number_value ); break;
+			case 5:
+				result->number_value = sin( var.number_value ); break;
+			case 6:
+				result->number_value = cos( var.number_value ); break;
+			case 7:
+				result->number_value = tan( var.number_value ); break;
+		}
+#else
+		result->number_value = ~var.number_value;
+#endif
 		dispose_temporary( &var );
 	}
 	return ret;
@@ -2567,12 +2597,12 @@ enum result evaluate_arithmetic_expression( struct expression *this,
 			case '!': lhs = lhs != rhs; break;
 			case '%':
 				if( rhs != 0 ) {
-					lhs = ( int ) ( ( ptrdiff_t ) lhs % ( ptrdiff_t ) rhs );
+					lhs = ( ptrdiff_t ) lhs % ( ptrdiff_t ) rhs;
 				} else {
 					return throw( vars, this, 0, "Modulo division by zero." );
 				}
 				break;
-			case '&': lhs = ( int ) ( ( ptrdiff_t ) lhs & ( ptrdiff_t ) rhs ); break;
+			case '&': lhs = ( ptrdiff_t ) lhs & ( ptrdiff_t ) rhs; break;
 			case '(': lhs = lhs <= rhs; break;
 			case ')': lhs = lhs >= rhs; break;
 			case '*': lhs = lhs  * rhs; break;
@@ -2580,16 +2610,16 @@ enum result evaluate_arithmetic_expression( struct expression *this,
 			case '-': lhs = lhs  - rhs; break;
 			case '/':
 				if( rhs != 0 ) {
-					lhs = ( int ) ( ( ptrdiff_t ) lhs / ( ptrdiff_t ) rhs );
+					lhs = ( ptrdiff_t ) lhs / ( ptrdiff_t ) rhs;
 				} else {
 					return throw( vars, this, 0, "Integer division by zero." );
 				}
 				break;
 			case '0': lhs = lhs / rhs; break;
-			case '1': lhs = ( int ) ( ( ptrdiff_t ) lhs << ( ptrdiff_t ) rhs ); break;
-			case '2': lhs = ( int ) ( ( ptrdiff_t ) lhs >> ( ptrdiff_t ) rhs ); break;
-			case '3': lhs = ( int ) ( ( ptrdiff_t ) lhs  ^ ( ptrdiff_t ) rhs ); break;
-			case ':': lhs = ( int ) ( ( ptrdiff_t ) lhs  | ( ptrdiff_t ) rhs ); break;
+			case '1': lhs = ( ptrdiff_t ) lhs << ( ptrdiff_t ) rhs; break;
+			case '2': lhs = ( ptrdiff_t ) lhs >> ( ptrdiff_t ) rhs; break;
+			case '3': lhs = ( ptrdiff_t ) lhs  ^ ( ptrdiff_t ) rhs; break;
+			case ':': lhs = ( ptrdiff_t ) lhs  | ( ptrdiff_t ) rhs; break;
 			case '<': lhs = lhs  < rhs; break;
 			case '=': lhs = lhs == rhs; break;
 			case '>': lhs = lhs  > rhs; break;
@@ -2603,65 +2633,62 @@ enum result evaluate_arithmetic_expression( struct expression *this,
 
 int parse_number( char *str, number *result ) {
 	char *end;
-	int value;
+	number value;
+#if defined( FLOATING_POINT )
+	if( str[ 0 ] != '0' || str[ 1 ] == '.' ) {
+		errno = 0;
+		value = strtod( str, &end );
+		if( !( *end || errno ) ) {
+			*result = value;
+			return 1;
+		}
+	}
+#endif
 	errno = 0;
 	value = strtoul( str, &end, 0 );
-	if( *end || errno ) {
-#if defined( FLOATING_POINT )
-		errno = 0;
-		*result = strtod( str, &end );
-		if( *end || errno ) {
-			return 0;
-		}
-#else
-		return 0;
-#endif
-	} else {
+	if( !( *end || errno ) ) {
 		*result = value;
+		return 1;
 	}
-	return 1;
+	return 0;
 }
 
 static enum result evaluate_num_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
-	number val;
 	struct variable str = { 0, NULL };
 	enum result ret = this->parameters->evaluate( this->parameters, vars, &str );
 	if( ret ) {
-		if( str.string_value && str.string_value->type <= ELEMENT ) {
-			if( parse_number( str.string_value->string, &val ) ) {
-				result->number_value = val;
-			} else {
+		if( str.string_value ) {
+			if( str.string_value->type > ELEMENT ) {
+				ret = to_num( &str, &str.number_value, vars, this->parameters );
+			} else if( !( parse_number( str.string_value->string, &str.number_value ) ) ) {
 				ret = throw( vars, this, 0, "Unable to convert string to number." );
 			}
-		} else {
-			ret = to_num( &str, &result->number_value, vars, this->parameters );
+			dispose_temporary( &str );
 		}
-		dispose_temporary( &str );
+		if( ret ) {
+			result->number_value = str.number_value;
+		}
 	}
 	return ret;
 }
 
 static enum result evaluate_int_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
-	int val;
-	char *end;
 	struct variable str = { 0, NULL };
 	enum result ret = this->parameters->evaluate( this->parameters, vars, &str );
 	if( ret ) {
-		if( str.string_value && str.string_value->type <= ELEMENT ) {
-			errno = 0;
-			val = ( int ) strtoul( str.string_value->string, &end, 0 );
-			if( end[ 0 ] || errno ) {
+		if( str.string_value ) {
+			if( str.string_value->type > ELEMENT ) {
+				ret = to_num( &str, &str.number_value, vars, this->parameters );
+			} else if( !parse_number( str.string_value->string, &str.number_value ) ) {
 				ret = throw( vars, this, 0, "Unable to convert string to integer." );
 			}
-		} else {
-			ret = to_int( &str, &val, vars, this->parameters );
+			dispose_temporary( &str );
 		}
 		if( ret ) {
-			result->number_value = val;
+			result->number_value = ( ptrdiff_t ) str.number_value;
 		}
-		dispose_temporary( &str );
 	}
 	return ret;
 }
@@ -5609,16 +5636,22 @@ static struct operator operators[] = {
 	{ "<e",'(', 2, evaluate_arithmetic_expression, NULL },
 	{ ">", '>', 2, evaluate_arithmetic_expression, NULL },
 	{ ">e",')', 2, evaluate_arithmetic_expression, NULL },
-#if defined( FLOATING_POINT )
-	{ "//",'0',-2, evaluate_arithmetic_expression, NULL },
-#endif
 	{ "<<",'1', 2, evaluate_arithmetic_expression, NULL },
 	{ ">>",'2', 2, evaluate_arithmetic_expression, NULL },
 	{ "^", '3',-2, evaluate_arithmetic_expression, NULL },
 	{ "=", '=', 2, evaluate_arithmetic_expression, NULL },
 	{ "<>",'!', 2, evaluate_arithmetic_expression, NULL },
 	{ "|", ':',-2, evaluate_arithmetic_expression, NULL },
-	{ "~", '~', 1, evaluate_bitwise_not_expression, NULL },
+	{ "~", 1, 1, evaluate_unary_expression, NULL },
+#if defined( FLOATING_POINT )
+	{ "//",'0',-2, evaluate_arithmetic_expression, NULL },
+	{ "$log", 2, 1, evaluate_unary_expression, NULL },
+	{ "$exp", 3, 1, evaluate_unary_expression, NULL },
+	{ "$sqrt",4, 1, evaluate_unary_expression, NULL },
+	{ "$sin", 5, 1, evaluate_unary_expression, NULL },
+	{ "$cos", 6, 1, evaluate_unary_expression, NULL },
+	{ "$tan", 7, 1, evaluate_unary_expression, NULL },
+#endif
 	{ "!", '!', 1, evaluate_logical_expression, NULL },
 	{ "&&",'&',-2, evaluate_logical_expression, NULL },
 	{ "||",'|',-2, evaluate_logical_expression, NULL },

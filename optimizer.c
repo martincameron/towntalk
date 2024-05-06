@@ -246,7 +246,7 @@ static enum result divide( number *lhs, number rhs, struct variables *vars, stru
 	if( rhs == 0 ) {
 		return throw( vars, src, 0, "Integer division by zero." );
 	}
-	*lhs = ( int ) ( ( ptrdiff_t ) *lhs / ( ptrdiff_t ) rhs );
+	*lhs = ( ptrdiff_t ) *lhs / ( ptrdiff_t ) rhs;
 	return OKAY;
 }
 
@@ -254,7 +254,7 @@ static enum result modulo( number *lhs, number rhs, struct variables *vars, stru
 	if( rhs == 0 ) {
 		return throw( vars, src, 0, "Modulo division by zero." );
 	}
-	*lhs = ( int ) ( ( ptrdiff_t ) *lhs % ( ptrdiff_t ) rhs );
+	*lhs = ( ptrdiff_t ) *lhs % ( ptrdiff_t ) rhs;
 	return OKAY;
 }
 
@@ -510,34 +510,34 @@ static enum result execute_arithmetic_statement( struct statement *this,
 					arr->number_values[ index ] = var.number_value;
 				}
 				break;
-			case AND_STACK: top--; *top = ( int ) ( ( ptrdiff_t ) *top & ( ptrdiff_t ) top[ 1 ] ); break;
-			case OR__STACK: top--; *top = ( int ) ( ( ptrdiff_t ) *top | ( ptrdiff_t ) top[ 1 ] ); break;
-			case XOR_STACK: top--; *top = ( int ) ( ( ptrdiff_t ) *top ^ ( ptrdiff_t ) top[ 1 ] ); break;
+			case AND_STACK: top--; *top = ( ptrdiff_t ) *top & ( ptrdiff_t ) top[ 1 ]; break;
+			case OR__STACK: top--; *top = ( ptrdiff_t ) *top | ( ptrdiff_t ) top[ 1 ]; break;
+			case XOR_STACK: top--; *top = ( ptrdiff_t ) *top ^ ( ptrdiff_t ) top[ 1 ]; break;
 			case ADD_STACK: top--; *top  += top[ 1 ]; break;
 			case SUB_STACK: top--; *top  -= top[ 1 ]; break;
 			case MUL_STACK: top--; *top  *= top[ 1 ]; break;
 			case FDI_STACK: top--; *top  /= top[ 1 ]; break;
 			case DIV_STACK: top--; if( !divide( top, top[ 1 ], vars, insn->expr ) ) return EXCEPTION; break;
 			case MOD_STACK: top--; if( !modulo( top, top[ 1 ], vars, insn->expr ) ) return EXCEPTION; break;
-			case ASL_STACK: top--; *top = ( int ) ( ( ptrdiff_t ) *top << ( ptrdiff_t ) top[ 1 ] ); break;
-			case ASR_STACK: top--; *top = ( int ) ( ( ptrdiff_t ) *top >> ( ptrdiff_t ) top[ 1 ] ); break;
+			case ASL_STACK: top--; *top = ( ptrdiff_t ) *top << ( ptrdiff_t ) top[ 1 ]; break;
+			case ASR_STACK: top--; *top = ( ptrdiff_t ) *top >> ( ptrdiff_t ) top[ 1 ]; break;
 			case NE__STACK: top--; *top = *top != top[ 1 ]; break;
 			case LT__STACK: top--; *top = *top <  top[ 1 ]; break;
 			case LTE_STACK: top--; *top = *top <= top[ 1 ]; break;
 			case EQ__STACK: top--; *top = *top == top[ 1 ]; break;
 			case GTE_STACK: top--; *top = *top >= top[ 1 ]; break;
 			case GT__STACK: top--; *top = *top >  top[ 1 ]; break;
-			case AND_CONST: *top = ( int ) ( ( ptrdiff_t ) *top & ( ptrdiff_t ) insn->value ); break;
-			case OR__CONST: *top = ( int ) ( ( ptrdiff_t ) *top | ( ptrdiff_t ) insn->value ); break;
-			case XOR_CONST: *top = ( int ) ( ( ptrdiff_t ) *top ^ ( ptrdiff_t ) insn->value ); break;
+			case AND_CONST: *top = ( ptrdiff_t ) *top & ( ptrdiff_t ) insn->value; break;
+			case OR__CONST: *top = ( ptrdiff_t ) *top | ( ptrdiff_t ) insn->value; break;
+			case XOR_CONST: *top = ( ptrdiff_t ) *top ^ ( ptrdiff_t ) insn->value; break;
 			case ADD_CONST: *top  += insn->value; break;
 			case SUB_CONST: *top  -= insn->value; break;
 			case MUL_CONST: *top  *= insn->value; break;
 			case FDI_CONST: *top  /= insn->value; break;
 			case DIV_CONST: if( !divide( top, insn->value, vars, insn->expr ) ) return EXCEPTION; break;
 			case MOD_CONST: if( !modulo( top, insn->value, vars, insn->expr ) ) return EXCEPTION; break;
-			case ASL_CONST: *top = ( int ) ( ( ptrdiff_t ) *top << ( ptrdiff_t ) insn->value ); break;
-			case ASR_CONST: *top = ( int ) ( ( ptrdiff_t ) *top >> ( ptrdiff_t ) insn->value ); break;
+			case ASL_CONST: *top = ( ptrdiff_t ) *top << ( ptrdiff_t ) insn->value; break;
+			case ASR_CONST: *top = ( ptrdiff_t ) *top >> ( ptrdiff_t ) insn->value; break;
 			case NE__CONST: *top = *top != insn->value; break;
 			case LT__CONST: *top = *top <  insn->value; break;
 			case LTE_CONST: *top = *top <= insn->value; break;
@@ -548,36 +548,36 @@ static enum result execute_arithmetic_statement( struct statement *this,
 				local = locals + insn->local;
 				if( local->string_value ) {
 					if( to_num( local, &value, vars, insn->expr ) ) {
-						*top = ( int ) ( ( ptrdiff_t ) *top & ( ptrdiff_t ) value );
+						*top = ( ptrdiff_t ) *top & ( ptrdiff_t ) value;
 					} else {
 						return EXCEPTION;
 					}
 				} else {
-					*top = ( int ) ( ( ptrdiff_t ) *top & ( ptrdiff_t ) local->number_value );
+					*top = ( ptrdiff_t ) *top & ( ptrdiff_t ) local->number_value;
 				}
 				break;
 			case OR__LOCAL:
 				local = locals + insn->local;
 				if( local->string_value ) {
 					if( to_num( local, &value, vars, insn->expr ) ) {
-						*top = ( int ) ( ( ptrdiff_t ) *top | ( ptrdiff_t ) value );
+						*top = ( ptrdiff_t ) *top | ( ptrdiff_t ) value;
 					} else {
 						return EXCEPTION;
 					}
 				} else {
-					*top = ( int ) ( ( ptrdiff_t ) *top | ( ptrdiff_t ) local->number_value );
+					*top = ( ptrdiff_t ) *top | ( ptrdiff_t ) local->number_value;
 				}
 				break;
 			case XOR_LOCAL:
 				local = locals + insn->local;
 				if( local->string_value ) {
 					if( to_num( local, &value, vars, insn->expr ) ) {
-						*top = ( int ) ( ( ptrdiff_t ) *top ^ ( ptrdiff_t ) value );
+						*top = ( ptrdiff_t ) *top ^ ( ptrdiff_t ) value;
 					} else {
 						return EXCEPTION;
 					}
 				} else {
-					*top = ( int ) ( ( ptrdiff_t ) *top ^ ( ptrdiff_t ) local->number_value );
+					*top = ( ptrdiff_t ) *top ^ ( ptrdiff_t ) local->number_value;
 				}
 				break;
 			case ADD_LOCAL:
@@ -658,24 +658,24 @@ static enum result execute_arithmetic_statement( struct statement *this,
 				local = locals + insn->local;
 				if( local->string_value ) {
 					if( to_num( local, &value, vars, insn->expr ) ) {
-						*top = ( int ) ( ( ptrdiff_t ) *top << ( ptrdiff_t ) value );
+						*top = ( ptrdiff_t ) *top << ( ptrdiff_t ) value;
 					} else {
 						return EXCEPTION;
 					}
 				} else {
-					*top = ( int ) ( ( ptrdiff_t ) *top << ( ptrdiff_t ) local->number_value );
+					*top = ( ptrdiff_t ) *top << ( ptrdiff_t ) local->number_value;
 				}
 				break;
 			case ASR_LOCAL:
 				local = locals + insn->local;
 				if( local->string_value ) {
 					if( to_num( local, &value, vars, insn->expr ) ) {
-						*top = ( int ) ( ( ptrdiff_t ) *top >> ( ptrdiff_t ) value );
+						*top = ( ptrdiff_t ) *top >> ( ptrdiff_t ) value;
 					} else {
 						return EXCEPTION;
 					}
 				} else {
-					*top = ( int ) ( ( ptrdiff_t ) *top >> ( ptrdiff_t ) local->number_value );
+					*top = ( ptrdiff_t ) *top >> ( ptrdiff_t ) local->number_value;
 				}
 				break;
 			case NE__LOCAL:
