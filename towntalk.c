@@ -1450,14 +1450,14 @@ enum result to_int( struct variable *var, int *result, struct variables *vars, s
 		if( var->string_value->type == CUSTOM && ( ( struct custom * ) var->string_value )->type->to_num ) {
 			ret = ( ( struct custom * ) var->string_value )->type->to_num( var, &value, vars, source );
 			if( ret ) {
-				*result = ( ptrdiff_t ) value;
+				*result = ( long_int ) value;
 			}
 			return ret;
 		} else {
 			return throw( vars, source, 0, "Not a number." );
 		}
 	}
-	*result = ( ptrdiff_t ) var->number_value;
+	*result = ( long_int ) var->number_value;
 	return OKAY;
 }
 
@@ -1533,7 +1533,7 @@ enum result evaluate_integer( struct expression *expr, struct variables *vars, i
 		if( local->string_value ) {
 			return to_int( local, result, vars, expr );
 		}
-		*result = ( ptrdiff_t ) local->number_value;
+		*result = ( long_int ) local->number_value;
 		return OKAY;
 	}
 	var.number_value = 0;
@@ -1544,7 +1544,7 @@ enum result evaluate_integer( struct expression *expr, struct variables *vars, i
 			ret = to_int( &var, result, vars, expr );
 			dispose_temporary( &var );
 		} else {
-			*result = ( ptrdiff_t ) var.number_value;
+			*result = ( long_int ) var.number_value;
 		}
 	}
 	return ret;
@@ -2496,7 +2496,7 @@ static enum result evaluate_unary_expression( struct expression *this,
 	if( ret ) {
 #if defined( FLOATING_POINT )
 		switch( this->index ) {
-			case 1: result->number_value = ~( ( ptrdiff_t ) var.number_value ); break;
+			case 1: result->number_value = ~( ( long_int ) var.number_value ); break;
 			case 2: result->number_value = log( var.number_value ); break;
 			case 3: result->number_value = exp( var.number_value ); break;
 			case 4: result->number_value = sqrt( var.number_value ); break;
@@ -2590,12 +2590,12 @@ enum result evaluate_arithmetic_expression( struct expression *this,
 			case '!': lhs = lhs != rhs; break;
 			case '%':
 				if( rhs != 0 ) {
-					lhs = ( ptrdiff_t ) lhs % ( ptrdiff_t ) rhs;
+					lhs = ( long_int ) lhs % ( long_int ) rhs;
 				} else {
 					return throw( vars, this, 0, "Modulo division by zero." );
 				}
 				break;
-			case '&': lhs = ( ptrdiff_t ) lhs & ( ptrdiff_t ) rhs; break;
+			case '&': lhs = ( long_int ) lhs & ( long_int ) rhs; break;
 			case '(': lhs = lhs <= rhs; break;
 			case ')': lhs = lhs >= rhs; break;
 			case '*': lhs = lhs  * rhs; break;
@@ -2603,16 +2603,16 @@ enum result evaluate_arithmetic_expression( struct expression *this,
 			case '-': lhs = lhs  - rhs; break;
 			case '/':
 				if( rhs != 0 ) {
-					lhs = ( ptrdiff_t ) lhs / ( ptrdiff_t ) rhs;
+					lhs = ( long_int ) lhs / ( long_int ) rhs;
 				} else {
 					return throw( vars, this, 0, "Integer division by zero." );
 				}
 				break;
 			case '0': lhs = lhs / rhs; break;
-			case '1': lhs = ( ptrdiff_t ) lhs << ( ptrdiff_t ) rhs; break;
-			case '2': lhs = ( ptrdiff_t ) lhs >> ( ptrdiff_t ) rhs; break;
-			case '3': lhs = ( ptrdiff_t ) lhs  ^ ( ptrdiff_t ) rhs; break;
-			case ':': lhs = ( ptrdiff_t ) lhs  | ( ptrdiff_t ) rhs; break;
+			case '1': lhs = ( long_int ) lhs << ( long_int ) rhs; break;
+			case '2': lhs = ( long_int ) lhs >> ( long_int ) rhs; break;
+			case '3': lhs = ( long_int ) lhs  ^ ( long_int ) rhs; break;
+			case ':': lhs = ( long_int ) lhs  | ( long_int ) rhs; break;
 			case '<': lhs = lhs  < rhs; break;
 			case '=': lhs = lhs == rhs; break;
 			case '>': lhs = lhs  > rhs; break;
@@ -2680,7 +2680,7 @@ static enum result evaluate_int_expression( struct expression *this,
 			dispose_temporary( &str );
 		}
 		if( ret ) {
-			result->number_value = ( ptrdiff_t ) str.number_value;
+			result->number_value = ( long_int ) str.number_value;
 		}
 	}
 	return ret;
@@ -3556,7 +3556,7 @@ static enum result evaluate_hex_expression( struct expression *this,
 static enum result evaluate_pack_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	int idx, len;
-	ptrdiff_t in;
+	long_int in;
 	number *src;
 	char *out;
 	struct string *str;
@@ -3992,7 +3992,7 @@ static struct element* parse_thiscall_expression( struct element *elem,
 								this->evaluate = evaluate_local;
 							} else if( captured ) {
 								var = &vars->locals[ captured->index ];
-								this->index = ( ptrdiff_t ) var->number_value;
+								this->index = ( long_int ) var->number_value;
 								( ( struct value_expression * ) this )->num = var->number_value;
 								if( var->string_value ) {
 									var->string_value->reference_count++;
@@ -4155,7 +4155,7 @@ static struct element* parse_capture_expression( struct element *elem,
 	if( expr ) {
 		prev->next = expr;
 		expr->line = elem->line;
-		expr->index = ( ptrdiff_t ) captured->number_value;
+		expr->index = ( long_int ) captured->number_value;
 		( ( struct value_expression * ) expr )->num = captured->number_value;
 		if( captured->string_value ) {
 			captured->string_value->reference_count++;
@@ -4208,7 +4208,7 @@ static struct element* parse_number_literal_expression( struct element *elem, st
 		prev->next = &expr->expr;
 		expr->expr.line = elem->line;
 		if( parse_number( elem->str.string, &expr->num ) ) {
-			expr->expr.index = ( ptrdiff_t ) expr->num;
+			expr->expr.index = ( long_int ) expr->num;
 			expr->expr.evaluate = evaluate_number_literal_expression;
 		} else {
 			sprintf( message, "Invalid number literal '%.64s' on line %d.", elem->str.string, elem->line );
@@ -4224,7 +4224,7 @@ static struct expression* new_string_literal_expression( number number_value,
 	struct expression *expr = calloc( 1, sizeof( struct value_expression ) );
 	if( expr ) {
 		expr->line = line;
-		expr->index = ( ptrdiff_t ) number_value;
+		expr->index = ( long_int ) number_value;
 		( ( struct value_expression * ) expr )->num = number_value;
 		( ( struct value_expression * ) expr )->str = string_value;
 		expr->evaluate = evaluate_string_literal_expression;

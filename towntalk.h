@@ -2,14 +2,17 @@
 #ifndef _TOWNTALK_H
 #define _TOWNTALK_H 1
 
-#include "stdlib.h"
-
 /* Towntalk (c)2024 Martin Cameron. */
 
+#include "stdlib.h"
+
 #if defined( FLOATING_POINT )
+#include "stdint.h"
 typedef double number;
+typedef int_fast64_t long_int;
 #else
 typedef int number;
+typedef int long_int;
 #endif
 
 /* Return value of execute/evaluate functions. */

@@ -695,7 +695,7 @@ static enum result execute_surface_statement( struct statement *this,
 								if( len >= width * height ) {
 									len = width * height;
 									while( idx < len ) {
-										pixels[ idx ] = ( ptrdiff_t ) values[ idx ];
+										pixels[ idx ] = ( long_int ) values[ idx ];
 										idx++;
 									}
 									if( SDL_UpdateTexture( texture, NULL, pixels, width * sizeof( Uint32 ) ) ) {
@@ -739,7 +739,7 @@ static enum result execute_surface_statement( struct statement *this,
 									len = width * height;
 									pixels = ( Uint32 * ) surface->pixels;
 									while( idx < len ) {
-										pixels[ idx ] = ( ptrdiff_t ) values[ idx ];
+										pixels[ idx ] = ( long_int ) values[ idx ];
 										idx++;
 									}
 								} else {
@@ -1538,7 +1538,7 @@ static enum result evaluate_stream_expression( struct expression *this,
 						end = idx + ( samples << 1 );
 						offset = offset << 1;
 						while( idx < end ) {
-							fxenv->stream[ idx++ ] = ( ptrdiff_t ) values[ offset++ ];
+							fxenv->stream[ idx++ ] = ( long_int ) values[ offset++ ];
 						}
 						fxenv->stream_idx += samples;
 						SDL_UnlockAudio();

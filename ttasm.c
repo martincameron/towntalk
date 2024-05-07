@@ -937,7 +937,7 @@ static enum result execute_asm_statement( struct statement *this,
 			case LETV_DIV_VI:
 				/* letv_div_vi x y 0 imm : let x = /( y imm ); */
 				if( ins->imm ) {
-					locals[ ins->x ].number_value = ( ptrdiff_t ) locals[ ins->y ].number_value / ( ptrdiff_t ) ins->imm;
+					locals[ ins->x ].number_value = ( long_int ) locals[ ins->y ].number_value / ( long_int ) ins->imm;
 				} else {
 					return throw( vars, this->source, 0, "Integer division by zero." );
 				}
@@ -946,7 +946,7 @@ static enum result execute_asm_statement( struct statement *this,
 			case LETV_DIV_VV:
 				/* letv_div_vv x y z   0 : let x = /( y z ); */
 				if( locals[ ins->z ].number_value ) {
-					locals[ ins->x ].number_value = ( ptrdiff_t ) locals[ ins->y ].number_value / ( ptrdiff_t ) locals[ ins->z ].number_value;
+					locals[ ins->x ].number_value = ( long_int ) locals[ ins->y ].number_value / ( long_int ) locals[ ins->z ].number_value;
 				} else {
 					return throw( vars, this->source, 0, "Integer division by zero." );
 				}
@@ -955,7 +955,7 @@ static enum result execute_asm_statement( struct statement *this,
 			case LETV_MOD_VI:
 				/* letv_mod_vi x y 0 imm : let x = %( y imm ); */
 				if( ins->imm ) {
-					locals[ ins->x ].number_value = ( ptrdiff_t ) locals[ ins->y ].number_value % ( ptrdiff_t ) ins->imm;
+					locals[ ins->x ].number_value = ( long_int ) locals[ ins->y ].number_value % ( long_int ) ins->imm;
 				} else {
 					return throw( vars, this->source, 0, "Modulo division by zero." );
 				}
@@ -964,7 +964,7 @@ static enum result execute_asm_statement( struct statement *this,
 			case LETV_MOD_VV:
 				/* letv_mod_vv x y z   0 : let x = %( y z ); */
 				if( locals[ ins->z ].number_value ) {
-					locals[ ins->x ].number_value = ( ptrdiff_t ) locals[ ins->y ].number_value % ( ptrdiff_t ) locals[ ins->z ].number_value;
+					locals[ ins->x ].number_value = ( long_int ) locals[ ins->y ].number_value % ( long_int ) locals[ ins->z ].number_value;
 				} else {
 					return throw( vars, this->source, 0, "Modulo division by zero." );
 				}
@@ -982,52 +982,52 @@ static enum result execute_asm_statement( struct statement *this,
 				break;
 			case LETV_SHL_VI:
 				/* letv_shl_vi x y 0 imm : let x = <<( y imm ); */
-				locals[ ins->x ].number_value = ( ptrdiff_t ) locals[ ins->y ].number_value << ( ptrdiff_t ) ins->imm;
+				locals[ ins->x ].number_value = ( long_int ) locals[ ins->y ].number_value << ( long_int ) ins->imm;
 				ins++;
 				break;
 			case LETV_SHL_VV:
 				/* letv_shl_vv x y z   0 : let x = <<( y z ); */
-				locals[ ins->x ].number_value = ( ptrdiff_t ) locals[ ins->y ].number_value << ( ptrdiff_t ) locals[ ins->z ].number_value;
+				locals[ ins->x ].number_value = ( long_int ) locals[ ins->y ].number_value << ( long_int ) locals[ ins->z ].number_value;
 				ins++;
 				break;
 			case LETV_ASR_VI:
 				/* letv_asr_vi x y 0 imm : let x = >>( y imm ); */
-				locals[ ins->x ].number_value = ( ptrdiff_t ) locals[ ins->y ].number_value >> ( ptrdiff_t ) ins->imm;
+				locals[ ins->x ].number_value = ( long_int ) locals[ ins->y ].number_value >> ( long_int ) ins->imm;
 				ins++;
 				break;
 			case LETV_ASR_VV:
 				/* letv_asr_vv x y z   0 : let x = >>( y z ); */
-				locals[ ins->x ].number_value = ( ptrdiff_t ) locals[ ins->y ].number_value >> ( ptrdiff_t ) locals[ ins->z ].number_value;
+				locals[ ins->x ].number_value = ( long_int ) locals[ ins->y ].number_value >> ( long_int ) locals[ ins->z ].number_value;
 				ins++;
 				break;
 			case LETV_AND_VI:
 				/* letv_and_vi x y 0 imm : let x = &( y imm ); */
-				locals[ ins->x ].number_value = ( ptrdiff_t ) locals[ ins->y ].number_value & ( ptrdiff_t ) ins->imm;
+				locals[ ins->x ].number_value = ( long_int ) locals[ ins->y ].number_value & ( long_int ) ins->imm;
 				ins++;
 				break;
 			case LETV_AND_VV:
 				/* letv_and_vv x y z   0 : let x = &( y z ); */
-				locals[ ins->x ].number_value = ( ptrdiff_t ) locals[ ins->y ].number_value & ( ptrdiff_t ) locals[ ins->z ].number_value;
+				locals[ ins->x ].number_value = ( long_int ) locals[ ins->y ].number_value & ( long_int ) locals[ ins->z ].number_value;
 				ins++;
 				break;
 			case LETV_OR_VI:
 				/* letv_or_vi x y 0 imm : let x = |( y imm ); */
-				locals[ ins->x ].number_value = ( ptrdiff_t ) locals[ ins->y ].number_value | ( ptrdiff_t ) ins->imm;
+				locals[ ins->x ].number_value = ( long_int ) locals[ ins->y ].number_value | ( long_int ) ins->imm;
 				ins++;
 				break;
 			case LETV_OR_VV:
 				/* letv_or_vv  x y z   0 : let x = |( y z ); */
-				locals[ ins->x ].number_value = ( ptrdiff_t ) locals[ ins->y ].number_value | ( ptrdiff_t ) locals[ ins->z ].number_value;
+				locals[ ins->x ].number_value = ( long_int ) locals[ ins->y ].number_value | ( long_int ) locals[ ins->z ].number_value;
 				ins++;
 				break;
 			case LETV_XOR_VI:
 				/* letv_xor_vi x y 0 imm : let x = ^( y imm ); */
-				locals[ ins->x ].number_value = ( ptrdiff_t ) locals[ ins->y ].number_value ^ ( ptrdiff_t ) ins->imm;
+				locals[ ins->x ].number_value = ( long_int ) locals[ ins->y ].number_value ^ ( long_int ) ins->imm;
 				ins++;
 				break;
 			case LETV_XOR_VV:
 				/* letv_xor_vv x y z   0 : let x = ^( y z ); */
-				locals[ ins->x ].number_value = ( ptrdiff_t ) locals[ ins->y ].number_value ^ ( ptrdiff_t ) locals[ ins->z ].number_value;
+				locals[ ins->x ].number_value = ( long_int ) locals[ ins->y ].number_value ^ ( long_int ) locals[ ins->z ].number_value;
 				ins++;
 				break;
 			case LETV_CHR_VI:

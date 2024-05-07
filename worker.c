@@ -275,7 +275,7 @@ enum result evaluate_execute_expression( struct expression *this,
 					dispose_variable( &work->args[ idx ] );
 					ret = parameter->evaluate( parameter, vars, &work->args[ idx ] );
 					if( ret ) {
-						work->parameters[ idx ].index = ( ptrdiff_t ) work->args[ idx ].number_value;
+						work->parameters[ idx ].index = ( long_int ) work->args[ idx ].number_value;
 						( ( struct value_expression * ) work->parameters )[ idx ].num = work->args[ idx ].number_value;
 						str = work->args[ idx ].string_value;
 						if( str ) {
