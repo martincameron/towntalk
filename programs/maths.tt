@@ -1,0 +1,22 @@
+
+const E = $exp( 1 );
+const PI = $acos( -1 );
+
+# Round to integer (away from zero if possible).
+function round( value ) {
+	return $int( +( value ?( <( value 0 ) -0.5 0.5 ) ) );
+}
+
+# Raise the specified base to the specified exponent.
+function pow( base exp ) {
+	return $exp( *( $log( base ) exp ) );
+}
+
+# Calculate the exponent of base that results in the specified value.
+function log( base value ) {
+	return //( $log( value ) $log( base ) );
+}
+
+program maths_test {
+	print ?( =( round( log( PI pow( PI E ) ) ) 3 ) "Okay." "Failed." );
+}

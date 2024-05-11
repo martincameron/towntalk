@@ -43,7 +43,7 @@ function parse_words( file ) {
 	while <( idx filelen ) {
 		if <e( $chr( file idx ) 32 ) {
 			if >( idx offset ) {
-				set [words wordcount] = $sub( file offset -(idx offset) );
+				set [ words wordcount ] = $sub( file offset -( idx offset ) );
 				call calculate_stats( wordcount );
 				let wordcount = +( wordcount 1 );
 			}
@@ -63,7 +63,7 @@ function find_most_anagrams( wordcount ) {
 		# Calculate number of anagrams of current word.
 		let count = 0;
 		let wordstat = [ stats wordidx ];
-		let chainidx = [ index [ stats wordidx ] ];
+		let chainidx = [ index $tup( 0 [ stats wordidx ] ) ];
 		while '( chainidx > 0 ) {
 			let count = +( count !( $cmp( wordstat [ stats chainidx ] ) ) );
 			let chainidx = $tup( 0 [ words chainidx ] );
@@ -83,7 +83,7 @@ function list_anagrams( wordidx ) {
 	# List the anagrams of the word at the specified index.
 	var wordstat, chainidx;
 	let wordstat = [ stats wordidx ];
-	let chainidx = [ index [ stats wordidx ] ];
+	let chainidx = [ index $tup( 0 [ stats wordidx ] ) ];
 	while >( chainidx 0 ) {
 		if !( $cmp( wordstat [ stats chainidx ] ) ) {
 			print [ words chainidx ];

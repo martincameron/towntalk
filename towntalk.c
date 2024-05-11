@@ -198,6 +198,9 @@
 		$sin(rad)                Floating-point sine (if supported).
 		$cos(rad)                Floating-point cosine (if supported).
 		$tan(rad)                Floating-point tangent (if supported).
+		$asin(num)               Floating-point arc-sine (if supported).
+		$acos(num)               Floating-point arc-cosine (if supported).
+		$atan(num)               Floating-point arc-tangent (if supported).
 */
 
 struct global_assignment_statement {
@@ -2503,6 +2506,9 @@ static enum result evaluate_unary_expression( struct expression *this,
 			case 5: result->number_value = sin( var.number_value ); break;
 			case 6: result->number_value = cos( var.number_value ); break;
 			case 7: result->number_value = tan( var.number_value ); break;
+			case 8: result->number_value = asin( var.number_value ); break;
+			case 9: result->number_value = acos( var.number_value ); break;
+			case 10:result->number_value = atan( var.number_value ); break;
 		}
 #else
 		result->number_value = ~var.number_value;
@@ -5638,13 +5644,16 @@ static struct operator operators[] = {
 	{ "|", ':',-2, evaluate_arithmetic_expression, NULL },
 	{ "~", 1, 1, evaluate_unary_expression, NULL },
 #if defined( FLOATING_POINT )
-	{ "//",'0',-2, evaluate_arithmetic_expression, NULL },
+	{ "//",'0', -2, evaluate_arithmetic_expression, NULL },
 	{ "$log", 2, 1, evaluate_unary_expression, NULL },
 	{ "$exp", 3, 1, evaluate_unary_expression, NULL },
 	{ "$sqrt",4, 1, evaluate_unary_expression, NULL },
 	{ "$sin", 5, 1, evaluate_unary_expression, NULL },
 	{ "$cos", 6, 1, evaluate_unary_expression, NULL },
 	{ "$tan", 7, 1, evaluate_unary_expression, NULL },
+	{ "$asin",8, 1, evaluate_unary_expression, NULL },
+	{ "$acos",9, 1, evaluate_unary_expression, NULL },
+	{ "$atan",10,1, evaluate_unary_expression, NULL },
 #endif
 	{ "!", '!', 1, evaluate_logical_expression, NULL },
 	{ "&&",'&',-2, evaluate_logical_expression, NULL },
