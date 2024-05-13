@@ -33,31 +33,27 @@ Here's how you might add a native upper-case expression to an embedded program:
 
 ```C
 #include "stdio.h"
-#include "ctype.h"
-#include "string.h"
-
 #include "towntalk.h"
 
 static enum result evaluate_upcase_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	int idx, len;
-	enum result ret;
 	struct string *str;
+	char *input, *output;
 	struct variable var = { 0 };
-	ret = this->parameters->evaluate( this->parameters, vars, &var );
+	enum result ret = evaluate_string( this->parameters, vars, &var );
 	if( ret ) {
-		if( var.string_value ) {
-			str = new_string( strlen( var.string_value->string ) );
-			if( str ) {
-				for( idx = 0, len = var.string_value->length; idx < len; idx++ ) {
-					str->string[ idx ] = toupper( var.string_value->string[ idx ] );
-				}
-				result->string_value = str;
-			} else {
-				ret = throw( vars, this, 0, OUT_OF_MEMORY );
+		input = var.string_value->string;
+		len = var.string_value->length;
+		str = new_string( len );
+		if( str ) {
+			output = str->string;
+			for( idx = 0; idx < len; idx++ ) {
+				output[ idx ] = toupper( input[ idx ] );
 			}
+			result->string_value = str;
 		} else {
-			ret = throw( vars, this, 0, "Not a string." );
+			ret = throw_out_of_memory( vars, this );
 		}
 		dispose_variable( &var );
 	}

@@ -1452,13 +1452,13 @@ enum result to_int( struct variable *var, int *result, struct variables *vars, s
 	if( var->string_value ) {
 		if( var->string_value->type == CUSTOM && ( ( struct custom * ) var->string_value )->type->to_num ) {
 			ret = ( ( struct custom * ) var->string_value )->type->to_num( var, &value, vars, source );
-			if( ret ) {
-				*result = ( long_int ) value;
-			}
-			return ret;
 		} else {
-			return throw( vars, source, 0, "Not a number." );
+			ret = throw( vars, source, 0, "Not a number." );
 		}
+		if( ret ) {
+			*result = ( long_int ) value;
+		}
+		return ret;
 	}
 	*result = ( long_int ) var->number_value;
 	return OKAY;
