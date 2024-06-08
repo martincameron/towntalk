@@ -87,8 +87,8 @@
 		break;                   Exit current while statement.
 		continue;                Stop current iteration of while statement.
 		if expr {statements}     Execute statements if expr is not null.
-		   else if expr {stmts}  Equivalent to 'else { if expr { stmts } }'.
 		   else {statements}     Optional, execute if expr is null.
+		   else if expr {stmts}  Equivalent to 'else { if expr { stmts } }'.
 		switch expr {            Selection statement for numbers or strings.
 		   case 1,2 {statements} Execute statements if expr equals 1 or 2.
 		   case "a" {statements} Execute statements if expr equals "a".
@@ -1325,7 +1325,7 @@ static enum result execute_exit_statement( struct statement *this,
 	return ret;
 }
 
-static enum result execute_return_statement( struct statement *this,
+enum result execute_return_statement( struct statement *this,
 	struct variables *vars, struct variable *result ) {
 	if( this->source->evaluate( this->source, vars, result ) ) {
 		return RETURN;
@@ -1699,7 +1699,7 @@ static enum result execute_while_statement( struct statement *this,
 	int oper = this->local;
 	struct statement *stmt;
 	enum result ret;
-	if( oper ) {
+	if( oper > 1 ) {
 		parameter = this->source->parameters;
 		lhs = &vars->locals[ parameter->index ];
 		parameter = parameter->next;
@@ -1718,6 +1718,7 @@ static enum result execute_while_statement( struct statement *this,
 			oper = 0;
 		}
 		switch( oper ) {
+			case  1 : break;
 			case '!': if( lhs->number_value == rhs->number_value ) return OKAY; break;
 			case '(': if( lhs->number_value > rhs->number_value ) return OKAY; break;
 			case ')': if( lhs->number_value < rhs->number_value ) return OKAY; break;
@@ -4193,6 +4194,9 @@ static struct element* parse_global_expression( struct element *elem, struct fun
 			expr->index = global->initializer->index;
 			( ( struct value_expression * ) expr )->num = ( ( struct value_expression * ) global->initializer )->num;
 			expr->evaluate = evaluate_number_literal_expression;
+		} else if( global->str.type == CONST && !( global->initializer || global->value.string_value ) ) {
+			( ( struct value_expression * ) expr )->num = global->value.number_value;
+			expr->evaluate = evaluate_number_literal_expression;
 		} else {
 			( ( struct value_expression * ) expr )->str = &global->str;
 			expr->evaluate = evaluate_global;
@@ -5183,6 +5187,8 @@ static struct element* parse_while_statement( struct element *elem,
 				if( stmt->source->evaluate == evaluate_arithmetic_expression
 				&& stmt->source->parameters->evaluate == evaluate_local && stmt->source->parameters->next->next == NULL ) {
 					stmt->local = stmt->source->index;
+				} else if( stmt->source->evaluate == evaluate_number_literal_expression && ( ( struct value_expression * ) stmt->source )->num ) {
+					stmt->local = 1;
 				}
 				stmt->execute = execute_while_statement;
 				next = next->next;

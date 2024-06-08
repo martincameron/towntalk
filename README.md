@@ -33,6 +33,7 @@ Here's how you might add a native upper-case expression to an embedded program:
 
 ```C
 #include "stdio.h"
+#include "ctype.h"
 #include "towntalk.h"
 
 static enum result evaluate_upcase_expression( struct expression *this,
@@ -49,7 +50,7 @@ static enum result evaluate_upcase_expression( struct expression *this,
 		if( str ) {
 			output = str->string;
 			for( idx = 0; idx < len; idx++ ) {
-				output[ idx ] = toupper( input[ idx ] );
+				output[ idx ] = toupper( ( unsigned char ) input[ idx ] );
 			}
 			result->string_value = str;
 		} else {
