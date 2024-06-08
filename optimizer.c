@@ -12,6 +12,7 @@
 	
 	Sequential statements of the following forms are combined into a single subinterpreter statement:
 	
+		return arithmetic_expr;
 		if relational_expr { ... }
 		let local = arithmetic_expr;
 		let local = $chr( local expr );
@@ -53,6 +54,7 @@ enum result execute_local_assignment( struct statement *this, struct variables *
 enum result execute_increment_statement( struct statement *this, struct variables *vars, struct variable *result );
 enum result execute_decrement_statement( struct statement *this, struct variables *vars, struct variable *result );
 enum result execute_if_statement( struct statement *this, struct variables *vars, struct variable *result );
+enum result execute_return_statement( struct statement *this, struct variables *vars, struct variable *result );
 enum result execute_statements( struct statement *stmt, struct variables *vars, struct variable *result );
 enum result to_int( struct variable *var, int *result, struct variables *vars, struct expression *source );
 enum result to_num( struct variable *var, number *result, struct variables *vars, struct expression *source );
@@ -62,7 +64,7 @@ enum arithmetic_op {
 	HALT, IF, PUSH_CONST, PUSH_LOCAL, LOAD_LOCAL, PUSH_GLOBAL, LOAD_GLOBAL,
 	INC_LOCAL, PUSH_LOCAL_PI, DEC_LOCAL, PUSH_LOCAL_PD, ASSIGN_EXPR,
 	PUSH_EXPR, LOAD_EXPR, PUSH_ARRAY, LOAD_ARRAY, PUSH_STRING, PUSH_UNPACK,
-	POP_LOCAL, STORE_LOCAL, CHECK_ARRAY, POP_ARRAY, STORE_ARRAY,
+	POP_LOCAL, STORE_LOCAL, CHECK_ARRAY, POP_ARRAY, STORE_ARRAY, POP_RETURN,
 	AND_STACK, OR__STACK, XOR_STACK, ADD_STACK, SUB_STACK,
 	MUL_STACK, FDI_STACK, DIV_STACK, MOD_STACK, ASL_STACK, ASR_STACK,
 	NE__STACK, LT__STACK, LTE_STACK, EQ__STACK, GTE_STACK, GT__STACK,
@@ -79,7 +81,7 @@ static char* arithmetic_ops[] = {
 	"HALT", "IF", "PUSH_CONST", "PUSH_LOCAL", "LOAD_LOCAL", "PUSH_GLOBAL", "LOAD_GLOBAL",
 	"INC_LOCAL", "PUSH_LOCAL_PI", "DEC_LOCAL", "PUSH_LOCAL_PD", "ASSIGN_EXPR",
 	"PUSH_EXPR", "LOAD_EXPR", "PUSH_ARRAY", "LOAD_ARRAY", "PUSH_STRING", "PUSH_UNPACK",
-	"POP_LOCAL", "STORE_LOCAL", "CHECK_ARRAY", "POP_ARRAY", "STORE_ARRAY",
+	"POP_LOCAL", "STORE_LOCAL", "CHECK_ARRAY", "POP_ARRAY", "STORE_ARRAY", "POP_RETURN",
 	"AND_STACK", "OR__STACK", "XOR_STACK", "ADD_STACK", "SUB_STACK",
 	"MUL_STACK", "FDI_STACK", "DIV_STACK", "MOD_STACK", "ASL_STACK", "ASR_STACK",
 	"NE__STACK", "LT__STACK", "LTE_STACK", "EQ__STACK", "GTE_STACK", "GT__STACK",
@@ -510,6 +512,7 @@ static enum result execute_arithmetic_statement( struct statement *this,
 					arr->number_values[ index ] = var.number_value;
 				}
 				break;
+			case POP_RETURN: result->number_value = *top; return RETURN;
 			case AND_STACK: top--; *top = ( long_int ) *top & ( long_int ) top[ 1 ]; break;
 			case OR__STACK: top--; *top = ( long_int ) *top | ( long_int ) top[ 1 ]; break;
 			case XOR_STACK: top--; *top = ( long_int ) *top ^ ( long_int ) top[ 1 ]; break;
@@ -797,8 +800,8 @@ static struct arithmetic_statement* add_arithmetic_statement( struct statement *
 }
 
 static struct statement* optimize_local_assignment( struct statement *stmt, struct statement *prev, char *message ) {
-	struct expression *expr = stmt->source;
 	struct instruction *insn;
+	struct expression *expr = stmt->source;
 	int local = stmt->local, oper, dest = POP_LOCAL;
 	struct arithmetic_statement *arith = add_arithmetic_statement( stmt, prev, message );
 	if( arith ) {
@@ -856,15 +859,30 @@ static struct statement* optimize_increment( struct statement *stmt, struct stat
 }
 
 static struct statement* optimize_if( struct statement *stmt, struct statement *prev, char *message ) {
-	struct expression *expr = stmt->source;
 	struct arithmetic_statement *arith;
+	struct expression *expr = stmt->source;
 	struct block_statement *if_stmt = ( struct block_statement * ) stmt;
-	if( stmt->source->evaluate == evaluate_arithmetic_expression && if_stmt->else_block == NULL ) {
+	if( expr->evaluate == evaluate_arithmetic_expression && if_stmt->else_block == NULL ) {
 		arith = add_arithmetic_statement( stmt, prev, message );
 		if( arith ) {
 			stmt = &arith->stmt;
 			if( compile_arithmetic_expression( arith, expr, 0, message ) ) {
 				add_instruction( &arith->insns, IF, arith->blocs.count - 1, expr, message );
+			}
+		}
+	}
+	return stmt;
+}
+
+static struct statement* optimize_return( struct statement *stmt, struct statement *prev, char *message ) {
+	struct arithmetic_statement *arith;
+	struct expression *expr = stmt->source;
+	if( expr->evaluate == evaluate_arithmetic_expression ) {
+		arith = add_arithmetic_statement( stmt, prev, message );
+		if( arith ) {
+			stmt = &arith->stmt;
+			if( compile_arithmetic_expression( arith, expr, 0, message ) ) {
+				add_instruction( &arith->insns, POP_RETURN, 0, expr, message );
 			}
 		}
 	}
@@ -902,6 +920,8 @@ struct statement* optimize_statements( struct function *func, struct statement *
 			next = optimize_increment( next, prev, DEC_LOCAL, message );
 		} else if( next->execute == execute_if_statement ) {
 			next = optimize_if( next, prev, message );
+		} else if( next->execute == execute_return_statement ) {
+			next = optimize_return( next, prev, message );
 		}
 		if( message[ 0 ] ) {
 			return prev;
