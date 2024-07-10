@@ -13,7 +13,6 @@
 	Sequential statements of the following forms are combined into a single subinterpreter statement:
 	
 		return arithmetic_expr;
-		if relational_expr { ... }
 		let local = arithmetic_expr;
 		let local = $chr( local expr );
 		let local = $unpack( global/const expr );
@@ -31,11 +30,11 @@
 	
 	Best performance is achieved when used in loops of the following forms:
 	
-		while relational_expr( local local ) ...
-		while relational_expr( local global ) ...
-		while relational_expr( local number_literal ) ...
+		while relational_expression( local local ) { ... }
+		while relational_expression( local global ) { ... }
+		while relational_expression( local number_literal ) { ... }
 	
-	Relational expressions are one of "<", "<e", "=", "<>", ">e", or ">".
+	A relational expression is one of "<", "<e", "=", "<>", ">e", or ">".
 */
 
 /* Externals. */
@@ -53,9 +52,7 @@ enum result execute_array_assignment( struct statement *this, struct variables *
 enum result execute_local_assignment( struct statement *this, struct variables *vars, struct variable *result );
 enum result execute_increment_statement( struct statement *this, struct variables *vars, struct variable *result );
 enum result execute_decrement_statement( struct statement *this, struct variables *vars, struct variable *result );
-enum result execute_if_statement( struct statement *this, struct variables *vars, struct variable *result );
 enum result execute_return_statement( struct statement *this, struct variables *vars, struct variable *result );
-enum result execute_statements( struct statement *stmt, struct variables *vars, struct variable *result );
 enum result to_int( struct variable *var, int *result, struct variables *vars, struct expression *source );
 enum result to_num( struct variable *var, number *result, struct variables *vars, struct expression *source );
 void dispose_statements( struct statement *statements );
@@ -67,30 +64,24 @@ enum arithmetic_op {
 	POP_LOCAL, STORE_LOCAL, CHECK_ARRAY, POP_ARRAY, STORE_ARRAY, POP_RETURN,
 	AND_STACK, OR__STACK, XOR_STACK, ADD_STACK, SUB_STACK,
 	MUL_STACK, FDI_STACK, DIV_STACK, MOD_STACK, ASL_STACK, ASR_STACK,
-	NE__STACK, LT__STACK, LTE_STACK, EQ__STACK, GTE_STACK, GT__STACK,
 	AND_CONST, OR__CONST, XOR_CONST, ADD_CONST, SUB_CONST,
 	MUL_CONST, FDI_CONST, DIV_CONST, MOD_CONST, ASL_CONST, ASR_CONST,
-	NE__CONST, LT__CONST, LTE_CONST, EQ__CONST, GTE_CONST, GT__CONST,
 	AND_LOCAL, OR__LOCAL, XOR_LOCAL, ADD_LOCAL, SUB_LOCAL,
-	MUL_LOCAL, FDI_LOCAL, DIV_LOCAL, MOD_LOCAL, ASL_LOCAL, ASR_LOCAL,
-	NE__LOCAL, LT__LOCAL, LTE_LOCAL, EQ__LOCAL, GTE_LOCAL, GT__LOCAL
+	MUL_LOCAL, FDI_LOCAL, DIV_LOCAL, MOD_LOCAL, ASL_LOCAL, ASR_LOCAL
 };
 
 #if defined( PRINT_INSNS )
 static char* arithmetic_ops[] = {
-	"HALT", "IF", "PUSH_CONST", "PUSH_LOCAL", "LOAD_LOCAL", "PUSH_GLOBAL", "LOAD_GLOBAL",
+	"HALT", "PUSH_CONST", "PUSH_LOCAL", "LOAD_LOCAL", "PUSH_GLOBAL", "LOAD_GLOBAL",
 	"INC_LOCAL", "PUSH_LOCAL_PI", "DEC_LOCAL", "PUSH_LOCAL_PD", "ASSIGN_EXPR",
 	"PUSH_EXPR", "LOAD_EXPR", "PUSH_ARRAY", "LOAD_ARRAY", "PUSH_STRING", "PUSH_UNPACK",
 	"POP_LOCAL", "STORE_LOCAL", "CHECK_ARRAY", "POP_ARRAY", "STORE_ARRAY", "POP_RETURN",
 	"AND_STACK", "OR__STACK", "XOR_STACK", "ADD_STACK", "SUB_STACK",
 	"MUL_STACK", "FDI_STACK", "DIV_STACK", "MOD_STACK", "ASL_STACK", "ASR_STACK",
-	"NE__STACK", "LT__STACK", "LTE_STACK", "EQ__STACK", "GTE_STACK", "GT__STACK",
 	"AND_CONST", "OR__CONST", "XOR_CONST", "ADD_CONST", "SUB_CONST",
 	"MUL_CONST", "FDI_CONST", "DIV_CONST", "MOD_CONST", "ASL_CONST", "ASR_CONST",
-	"NE__CONST", "LT__CONST", "LTE_CONST", "EQ__CONST", "GTE_CONST", "GT__CONST",
 	"AND_LOCAL", "OR__LOCAL", "XOR_LOCAL", "ADD_LOCAL", "SUB_LOCAL",
-	"MUL_LOCAL", "FDI_LOCAL", "DIV_LOCAL", "MOD_LOCAL", "ASL_LOCAL", "ASR_LOCAL",
-	"NE__LOCAL", "LT__LOCAL", "LTE_LOCAL", "EQ__LOCAL", "GTE_LOCAL", "GT__LOCAL"
+	"MUL_LOCAL", "FDI_LOCAL", "DIV_LOCAL", "MOD_LOCAL", "ASL_LOCAL", "ASR_LOCAL"
 };
 #endif
 
@@ -113,7 +104,6 @@ struct blocks {
 struct arithmetic_statement {
 	struct statement stmt;
 	struct instructions insns;
-	struct blocks blocs;
 };
 
 static struct instruction* add_instruction( struct instructions *insns,
@@ -142,31 +132,9 @@ static struct instruction* add_instruction( struct instructions *insns,
 	return list;
 }
 
-static int add_block( struct blocks *blocs, struct statement *src, char *message ) {
-	struct statement **list;
-	int capacity = blocs->capacity;
-	if( capacity <= blocs->count ) {
-		capacity = ( capacity << 1 ) + 2;
-		list = calloc( capacity, sizeof( struct statement * ) );
-		if( list ) {
-			if( blocs->list ) {
-				memcpy( list, blocs->list, blocs->count * sizeof( struct statement * ) );
-				free( blocs->list );
-			}
-			blocs->list = list;
-			blocs->capacity = capacity;
-		} else {
-			strcpy( message, OUT_OF_MEMORY );
-			return 0;
-		}
-	}
-	blocs->list[ blocs->count++ ] = src;
-	return blocs->count;
-}
-
 static enum arithmetic_op get_arithmetic_op( struct expression *expr ) {
 	char *chr;
-	const char *OPS = "&:3+-*0/%12!<(=)>";
+	const char *OPS = "&:3+-*0/%12";
 	enum arithmetic_op oper = HALT;
 	if( expr->evaluate == evaluate_arithmetic_expression ) {
 		chr = strchr( OPS, expr->index );
@@ -235,11 +203,6 @@ static struct instruction* compile_arithmetic_expression( struct arithmetic_stat
 
 static void dispose_arithmetic_statement( struct statement *this ) {
 	struct arithmetic_statement *stmt = ( struct arithmetic_statement * ) this;
-	int idx = 0;
-	while( idx < stmt->blocs.count ) {
-		dispose_statements( stmt->blocs.list[ idx++ ] );
-	}
-	free( stmt->blocs.list );
 	free( stmt->insns.list );
 	free( this );
 }
@@ -266,21 +229,12 @@ static enum result execute_arithmetic_statement( struct statement *this,
 	number stack[ 9 ], *top = stack, value;
 	struct variable var, *locals = vars->locals, *local;
 	struct array *arr;
-	enum result ret;
 	int index;
 	char *chr;
 	while( 1 ) {
 		switch( insn->oper ) {
 			case HALT:
 				return OKAY;
-			case IF:
-				if( *top-- ) {
-					ret = execute_statements( ( ( struct arithmetic_statement * ) this )->blocs.list[ insn->local ], vars, result );
-					if( ret != OKAY ) {
-						return ret;
-					}
-				}
-				break;
 			case PUSH_CONST:
 				*++top = insn->value;
 				break;
@@ -524,12 +478,6 @@ static enum result execute_arithmetic_statement( struct statement *this,
 			case MOD_STACK: top--; if( !modulo( top, top[ 1 ], vars, insn->expr ) ) return EXCEPTION; break;
 			case ASL_STACK: top--; *top = ( long_int ) *top << ( long_int ) top[ 1 ]; break;
 			case ASR_STACK: top--; *top = ( long_int ) *top >> ( long_int ) top[ 1 ]; break;
-			case NE__STACK: top--; *top = *top != top[ 1 ]; break;
-			case LT__STACK: top--; *top = *top <  top[ 1 ]; break;
-			case LTE_STACK: top--; *top = *top <= top[ 1 ]; break;
-			case EQ__STACK: top--; *top = *top == top[ 1 ]; break;
-			case GTE_STACK: top--; *top = *top >= top[ 1 ]; break;
-			case GT__STACK: top--; *top = *top >  top[ 1 ]; break;
 			case AND_CONST: *top = ( long_int ) *top & ( long_int ) insn->value; break;
 			case OR__CONST: *top = ( long_int ) *top | ( long_int ) insn->value; break;
 			case XOR_CONST: *top = ( long_int ) *top ^ ( long_int ) insn->value; break;
@@ -541,12 +489,6 @@ static enum result execute_arithmetic_statement( struct statement *this,
 			case MOD_CONST: if( !modulo( top, insn->value, vars, insn->expr ) ) return EXCEPTION; break;
 			case ASL_CONST: *top = ( long_int ) *top << ( long_int ) insn->value; break;
 			case ASR_CONST: *top = ( long_int ) *top >> ( long_int ) insn->value; break;
-			case NE__CONST: *top = *top != insn->value; break;
-			case LT__CONST: *top = *top <  insn->value; break;
-			case LTE_CONST: *top = *top <= insn->value; break;
-			case EQ__CONST: *top = *top == insn->value; break;
-			case GTE_CONST: *top = *top >= insn->value; break;
-			case GT__CONST: *top = *top >  insn->value; break;
 			case AND_LOCAL:
 				local = locals + insn->local;
 				if( local->string_value ) {
@@ -681,78 +623,6 @@ static enum result execute_arithmetic_statement( struct statement *this,
 					*top = ( long_int ) *top >> ( long_int ) local->number_value;
 				}
 				break;
-			case NE__LOCAL:
-				local = locals + insn->local;
-				if( local->string_value ) {
-					if( to_num( local, &value, vars, insn->expr ) ) {
-						*top = *top != value;
-					} else {
-						return EXCEPTION;
-					}
-				} else {
-					*top = *top != local->number_value;
-				}
-				break;
-			case LT__LOCAL:
-				local = locals + insn->local;
-				if( local->string_value ) {
-					if( to_num( local, &value, vars, insn->expr ) ) {
-						*top = *top < value;
-					} else {
-						return EXCEPTION;
-					}
-				} else {
-					*top = *top < local->number_value;
-				}
-				break;
-			case LTE_LOCAL:
-				local = locals + insn->local;
-				if( local->string_value ) {
-					if( to_num( local, &value, vars, insn->expr ) ) {
-						*top = *top <= value;
-					} else {
-						return EXCEPTION;
-					}
-				} else {
-					*top = *top <= local->number_value;
-				}
-				break;
-			case EQ__LOCAL:
-				local = locals + insn->local;
-				if( local->string_value ) {
-					if( to_num( local, &value, vars, insn->expr ) ) {
-						*top = *top == value;
-					} else {
-						return EXCEPTION;
-					}
-				} else {
-					*top = *top == local->number_value;
-				}
-				break;
-			case GTE_LOCAL:
-				local = locals + insn->local;
-				if( local->string_value ) {
-					if( to_num( local, &value, vars, insn->expr ) ) {
-						*top = *top >= value;
-					} else {
-						return EXCEPTION;
-					}
-				} else {
-					*top = *top >= local->number_value;
-				}
-				break;
-			case GT__LOCAL:
-				local = locals + insn->local;
-				if( local->string_value ) {
-					if( to_num( local, &value, vars, insn->expr ) ) {
-						*top = *top > value;
-					} else {
-						return EXCEPTION;
-					}
-				} else {
-					*top = *top > local->number_value;
-				}
-				break;
 		}
 		insn++;
 	}
@@ -785,13 +655,6 @@ static struct arithmetic_statement* add_arithmetic_statement( struct statement *
 		} else {
 			strcpy( message, OUT_OF_MEMORY );
 			return NULL;
-		}
-	}
-	if( src->dispose == dispose_block_statement ) {
-		if( add_block( &arith->blocs, ( ( struct block_statement * ) src )->if_block, message ) ) {
-			( ( struct block_statement * ) src )->if_block = NULL;
-		} else {
-			arith = NULL;
 		}
 	}
 	src->next = NULL;
@@ -858,22 +721,6 @@ static struct statement* optimize_increment( struct statement *stmt, struct stat
 	return stmt;
 }
 
-static struct statement* optimize_if( struct statement *stmt, struct statement *prev, char *message ) {
-	struct arithmetic_statement *arith;
-	struct expression *expr = stmt->source;
-	struct block_statement *if_stmt = ( struct block_statement * ) stmt;
-	if( expr->evaluate == evaluate_arithmetic_expression && if_stmt->else_block == NULL ) {
-		arith = add_arithmetic_statement( stmt, prev, message );
-		if( arith ) {
-			stmt = &arith->stmt;
-			if( compile_arithmetic_expression( arith, expr, 0, message ) ) {
-				add_instruction( &arith->insns, IF, arith->blocs.count - 1, expr, message );
-			}
-		}
-	}
-	return stmt;
-}
-
 static struct statement* optimize_return( struct statement *stmt, struct statement *prev, char *message ) {
 	struct arithmetic_statement *arith;
 	struct expression *expr = stmt->source;
@@ -918,8 +765,6 @@ struct statement* optimize_statements( struct function *func, struct statement *
 			next = optimize_increment( next, prev, INC_LOCAL, message );
 		} else if( next->execute == execute_decrement_statement ) {
 			next = optimize_increment( next, prev, DEC_LOCAL, message );
-		} else if( next->execute == execute_if_statement ) {
-			next = optimize_if( next, prev, message );
 		} else if( next->execute == execute_return_statement ) {
 			next = optimize_return( next, prev, message );
 		}
