@@ -58,7 +58,7 @@ enum result to_num( struct variable *var, number *result, struct variables *vars
 void dispose_statements( struct statement *statements );
 
 enum arithmetic_op {
-	HALT, IF, PUSH_CONST, PUSH_LOCAL, LOAD_LOCAL, PUSH_GLOBAL, LOAD_GLOBAL,
+	HALT, PUSH_CONST, PUSH_LOCAL, LOAD_LOCAL, PUSH_GLOBAL, LOAD_GLOBAL,
 	INC_LOCAL, PUSH_LOCAL_PI, DEC_LOCAL, PUSH_LOCAL_PD, ASSIGN_EXPR,
 	PUSH_EXPR, LOAD_EXPR, PUSH_ARRAY, LOAD_ARRAY, PUSH_STRING, PUSH_UNPACK,
 	POP_LOCAL, STORE_LOCAL, CHECK_ARRAY, POP_ARRAY, STORE_ARRAY, POP_RETURN,
@@ -742,7 +742,7 @@ static void print_insns( struct function *func, struct arithmetic_statement *stm
 	struct instruction *insn = stmt->insns.list;
 	fprintf( stderr, "Compiled from function '%s' on line %d of '%s':\n", func->str.string, func->line, func->file->string );
 	while( insn->oper ) {
-		if( insn->oper < HALT || insn->oper > GT__LOCAL ) {
+		if( insn->oper < HALT || insn->oper > ASR_LOCAL ) {
 			name = "XXX";
 		} else {
 			name = arithmetic_ops[ insn->oper ];
