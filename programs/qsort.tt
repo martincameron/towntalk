@@ -1,0 +1,70 @@
+
+struct object {
+	to_string
+}
+
+struct comparable( object ) {
+	compare
+}
+
+struct number( comparable ) {
+	value;
+}
+
+function compare_numbers( ( number ) lhs, ( number ) rhs ) {
+	return -( lhs.value rhs.value );
+}
+
+function number_to_string( ( number ) this ) {
+	return $str( this.value );
+}
+
+function new_number( value ) {
+	return $new( number @number_to_string @compare_numbers value );
+}
+
+# Sort an array of comparable instances.
+function qsort( array offset len ) {
+	var idx = offset, pivot_idx = idx++;
+	var ( comparable ) pivot = [ array pivot_idx ];
+	while <( idx len ) {
+		if >( :pivot.compare( [ array idx ] ) 0 ) {
+			let [ array pivot_idx++ ] = [ array idx ];
+			let [ array idx ] = [ array pivot_idx ];
+			let [ array pivot_idx ] = pivot;
+		}
+		inc idx;
+	}
+	if >( -( pivot_idx offset ) 1 ) {
+		call qsort( array offset pivot_idx );
+	}
+	if >( -( len pivot_idx ) 2 ) {
+		call qsort( array +( pivot_idx 1 ) len );
+	}
+}
+
+function sorted( comparables ) {
+	var idx, len = $len( comparables );
+	var ( comparable ) prev = [ comparables idx++ ];
+	while <( idx len ) {
+		if >( :prev.compare( [ comparables idx++ ] ) 0 ) {
+			return FALSE;
+		}
+	}
+	return TRUE;
+}
+
+function numbers( array ) {
+	var idx, len = $len( array ), out = $array( len );
+	while <( idx len ) {
+		let [ out idx ] = new_number( [ array idx++ ] );
+	}
+	return out;
+}
+
+program test {
+	var array = numbers( $array( 20 9 0 8 1 7 2 6 3 5 4 4 5 6 3 7 2 8 1 9 0 ) );
+	print sorted( array );
+	call qsort( array 0, $len( array ) );
+	print sorted( array );
+}
