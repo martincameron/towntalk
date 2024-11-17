@@ -5431,7 +5431,7 @@ static struct element* add_function_parameter( struct function *func, struct ele
 		if( message[ 0 ] == 0 ) {
 			/*printf("Function parameter '%s'\n", name);*/
 			if( get_local_variable( func->variable_decls, elem->str.string, "" ) == NULL ) {
-				func->num_parameters = func->num_variables = func->num_parameters + 1;
+				func->num_variables++;
 				if( func->variable_decls ) {
 					func->variable_decls_tail->next = param;
 				} else {
@@ -5465,14 +5465,14 @@ struct function* parse_function( struct element *elem, char *name,
 			func->library = parent->library;
 			func->library->reference_count++;
 		}
-		func->body = elem->next;
+		func->body = elem;
 		func->env = parent->env;
 		child = elem->child;
-		while( child && message[ 0 ] == 0 ) {
-			child = add_function_parameter( func, child, message );
-			if( child && child->str.string[ 0 ] == ',' && message[ 0 ] == 0 ) {
-				child = child->next;
+		while( child ) {
+			if( child->str.string[ 0 ] >= 'A' ) {
+				func->num_parameters++;
 			}
+			child = child->next;
 		}
 		if( message[ 0 ] ) {
 			unref_string( &func->str );
@@ -5488,7 +5488,14 @@ int parse_function_body( struct function *func, struct variables *vars, char *me
 	struct statement prev = { 0 }, *stmt = NULL;
 	struct element *next = func->body->child;
 	struct expression *source;
-	if( next ) {
+	while( next && message[ 0 ] == 0 ) {
+		if( next->str.string[ 0 ] == ',' ) {
+			next = next->next;
+		}
+		next = add_function_parameter( func, next, message );
+	}
+	next = func->body->next->child;
+	if( message[ 0 ] == 0 && next ) {
 		prev.next = NULL;
 		stmt = parse_keywords_indexed( func->env->statements_index, next, func, vars, &prev, message );
 		func->statements = prev.next;
@@ -5573,7 +5580,7 @@ static struct element* parse_program_declaration( struct element *elem,
 			prog->library = func->library;
 			prog->library->reference_count++;
 		}
-		prog->body = next->next;
+		prog->body = next;
 		prog->env = env;
 		if( add_decl( &prog->str, next->line, env, message ) ) {
 			env->entry_point = prog;
