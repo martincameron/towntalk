@@ -25,8 +25,11 @@ function new_number( value ) {
 
 # Sort an array of comparable instances.
 function qsort( array offset end ) {
-	var idx = offset, pivot_idx = idx++;
+	var idx = offset, pivot_idx = >>( +( offset end ) 1 );
 	var ( comparable ) pivot = [ array pivot_idx ];
+	let [ array pivot_idx ] = [ array idx ];
+	let [ array idx ] = pivot;
+	let pivot_idx = idx++;
 	while <( idx end ) {
 		if >( :pivot.compare( [ array idx ] ) 0 ) {
 			let [ array pivot_idx++ ] = [ array idx ];
