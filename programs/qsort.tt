@@ -25,6 +25,9 @@ function new_number( value ) {
 
 # Sort an array of comparable instances.
 function qsort( array offset end ) {
+	if <( -( end offset ) 2 ) {
+		return array;
+	}
 	var idx = offset, pivot_idx = >>( +( offset end ) 1 );
 	var ( comparable ) pivot = [ array pivot_idx ];
 	let [ array pivot_idx ] = [ array idx ];
@@ -40,18 +43,15 @@ function qsort( array offset end ) {
 	}
 	# Select the smallest region for recursion.
 	if <( -( pivot_idx offset ) -( end pivot_idx ) ) {
-		if >( -( pivot_idx offset ) 1 ) {
-			call qsort( array offset pivot_idx );
-		}
+		call qsort( array offset pivot_idx );
 		let offset = +( pivot_idx 1 );
 	} else {
-		if >( -( end pivot_idx ) 2 ) {
-			call qsort( array +( pivot_idx 1 ) end );
-		}
+		call qsort( array +( pivot_idx 1 ) end );
 		let end = pivot_idx;
 	}
-	if <( -( end offset ) 2 ) {
-		return 0;
+	# Skip values equal to pivot.
+	while &&( <( offset end ) =( :pivot.compare( [ array offset ] ) 0 ) ) {
+		inc offset;
 	}
 	# Tail-call.
 	return qsort( array offset end );
@@ -78,20 +78,28 @@ function numbers( array ) {
 	return out;
 }
 
-function random( len ) {
+function random( len mul incr ) {
 	var array = $array( len ), idx, seed;
 	while <( idx len ) {
-		let seed = &( +( *( seed 65 ) 17 ) 0x1FFFFFFF );
-		#let [ array idx++ ] = -( len idx );
-		#let [ array idx ] = idx++;
+		let seed = &( +( *( seed mul ) incr ) 0x1FFFFFFF );
 		let [ array idx++ ] = seed;
 	}
 	return array;
 }
 
+function range( len start step ) {
+	var array = $array( len ), idx;
+	while <( idx len ) {
+		let [ array idx++ ] = start;
+		let start = +( start step );
+	}
+	return array;
+}
+
 program test {
-	var array = numbers( random( 65536 ) );
-	print sorted( array );
-	call qsort( array 0, $len( array ) );
-	print sorted( array );
+	var len = 65536;
+	print sorted( qsort( numbers( random( len 65 17 ) ) 0, len ) );
+	print sorted( qsort( numbers( range( len 0 1 ) ) 0, len ) );
+	print sorted( qsort( numbers( range( len -( len 1 ) -1 ) ) 0, len ) );
+	print sorted( qsort( numbers( range( len 1 0 ) ) 0, len ) );
 }
