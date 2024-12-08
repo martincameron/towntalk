@@ -28,7 +28,7 @@ struct statement* parse_keywords_indexed( struct keyword **index, struct element
 struct element* parse_expression( struct element *elem, struct function *func, struct variables *vars, struct expression *prev, char *message );
 struct function* parse_function( struct element *elem, char *name, struct function *parent, char *message );
 int parse_function_body( struct function *func, struct variables *vars, char *message );
-struct element* validate_syntax( char *syntax, struct element *elem, struct element *key, struct environment *env, char *message );
+struct element* validate_syntax( char *syntax, struct element *elem, struct element *prev, struct environment *env, char *message );
 
 #if !defined( MULTI_THREAD )
 /* Add thread-safe custom statements and operators to the specified worker.
@@ -213,7 +213,7 @@ static struct worker* parse_worker( struct element *elem, struct string *file, c
 enum result evaluate_worker_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	struct expression *parameter = this->parameters;
-	struct element *elem, key = { { 1, "$worker", 9, ELEMENT }, NULL, NULL, 0 };
+	struct element *elem, prev = { { 1, "$worker", 9, ELEMENT }, NULL, NULL, 0 };
 	struct environment *env = vars->func->env;
 	struct variable var = { 0, NULL };
 	char message[ 128 ] = "";
@@ -229,8 +229,8 @@ enum result evaluate_worker_expression( struct expression *this,
 		if( ( size_t ) &ret < env->stack_limit ) {
 			ret = throw_stack_overflow( vars, this );
 		} else {
-			key.line = this->line;
-			validate_syntax( "({0", elem, &key, env, message );
+			prev.line = this->line;
+			validate_syntax( "({0", elem, &prev, env, message );
 			if( message[ 0 ] == 0 ) {
 				work = parse_worker( elem, vars->func->file, message );
 				if( work ) {
