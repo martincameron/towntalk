@@ -5028,51 +5028,96 @@ struct element* validate_syntax( char *syntax, struct element *elem,
 	struct element *prev, struct environment *env, char *message ) {
 	int idx = 1, chr = syntax[ 0 ];
 	struct element *next;
-	while( chr && message[ 0 ] == 0 ) {
-		if( chr == '0' ) {
-			/* List end. */
-			if( elem ) {
-				sprintf( message, "Unexpected '%.64s' after '%.64s' on line %d.", elem->str.string, prev->str.string, elem->line );
-			}
-		} else if( strchr( "\",;={", chr ) ) {
-			/* Strings, separators or blocks. */
-			if( elem && elem->str.string[ 0 ] == chr ) {
-				prev = elem;
-				elem = elem->next;
-			} else {
-				sprintf( message, "Expected '%c' after '%.64s' on line %d.", chr, prev->str.string, prev->line );
-			}
-		} else if( chr == '(' ) {
-			/* Bracketed function parameter list. */
-			if( elem && elem->str.string[ 0 ] == '(' ) {
-				if( elem->child ) {
-					validate_syntax( "P0", elem->child, elem, env, message );
+	while( message[ 0 ] == 0 ) {
+		switch( chr ) {
+			case 0:
+				return elem;
+			case '0':
+				/* List end. */
+				if( elem ) {
+					sprintf( message, "Unexpected '%.64s' after '%.64s' on line %d.", elem->str.string, prev->str.string, elem->line );
 				}
-				prev = elem;
-				elem = elem->next;
-			} else {
-				sprintf( message, "Expected '(' after '%.64s' on line %d.", prev->str.string, prev->line );
-			}
-		} else if( chr == '[' ) {
-			/* Index expression. */
-			if( elem && elem->str.string[ 0 ] == '[' ) {
-				if( elem->child ) {
-					validate_syntax( "xx0", elem->child, elem, env, message );
-					prev = elem->child;
+				break;
+			case '"': case ',': case ';': case '=': case '{':
+				/* Strings, separators or blocks. */
+				if( elem && elem->str.string[ 0 ] == chr ) {
+					prev = elem;
 					elem = elem->next;
 				} else {
-					sprintf( message, "Invalid index expression after '%.64s' on line %d.", prev->str.string, elem->line );
+					sprintf( message, "Expected '%c' after '%.64s' on line %d.", chr, prev->str.string, prev->line );
 				}
-			} else {
-				sprintf( message, "Expected '[' after '%.64s' on line %d.", prev->str.string, prev->line );
-			}
-		} else if( chr == 'c' ) {
-			/* Catch or finally. */
-			if( elem && ( is_keyword( elem->str.string, "catch" ) || is_keyword( elem->str.string, "finally" ) ) ) {
-				chr = elem->str.string[ 0 ];
-				prev = elem;
-				elem = elem->next;
-				if( strchr( "Cc", chr ) ) {
+				break;
+			case '(':
+				/* Bracketed function parameter list. */
+				if( elem && elem->str.string[ 0 ] == '(' ) {
+					if( elem->child ) {
+						validate_syntax( "P0", elem->child, elem, env, message );
+					}
+					prev = elem;
+					elem = elem->next;
+				} else {
+					sprintf( message, "Expected '(' after '%.64s' on line %d.", prev->str.string, prev->line );
+				}
+				break;
+			case '[':
+				/* Index expression. */
+				if( elem && elem->str.string[ 0 ] == '[' ) {
+					if( elem->child ) {
+						validate_syntax( "xx0", elem->child, elem, env, message );
+						prev = elem;
+						elem = elem->next;
+					} else {
+						sprintf( message, "Invalid index expression after '%.64s' on line %d.", prev->str.string, elem->line );
+					}
+				} else {
+					sprintf( message, "Expected '[' after '%.64s' on line %d.", prev->str.string, prev->line );
+				}
+				break;
+			case 'c':
+				/* Catch or finally. */
+				if( elem && ( is_keyword( elem->str.string, "catch" ) || is_keyword( elem->str.string, "finally" ) ) ) {
+					chr = elem->str.string[ 0 ];
+					prev = elem;
+					elem = elem->next;
+					if( strchr( "Cc", chr ) ) {
+						if( elem && elem->str.string[ 0 ] == '(' ) {
+							validate_syntax( "n0", elem->child, elem, env, message );
+							prev = elem->child;
+							elem = elem->next;
+						}
+						if( message[ 0 ] == 0 ) {
+							next = validate_syntax( "n", elem, prev, env, message );
+							prev = elem;
+							elem = next;
+						}
+					}
+					if( message[ 0 ] == 0 ) {
+						next = validate_syntax( "{", elem, prev, env, message );
+						prev = elem;
+						elem = next;
+						if( message[ 0 ] == 0 && elem
+						&& ( is_keyword( elem->str.string, "catch" ) || is_keyword( elem->str.string, "finally" ) ) ) {
+							prev = elem;
+							elem = validate_syntax( "c", elem, prev, env, message );
+						}
+					}
+				} else {
+					sprintf( message, "Expected 'catch' or 'finally' after '%.64s' on line %d.", prev->str.string, prev->line );
+				}
+				break;
+			case 'n':
+				/* Name. */
+				if( elem && elem->str.string[ 0 ] != ';' ) {
+					validate_name( elem, message );
+					prev = elem;
+					elem = elem->next;
+				} else {
+					sprintf( message, "Expected name after '%.64s' on line %d.", prev->str.string, prev->line );
+				}
+				break;
+			case 'P':
+				/* Function parameter list. */
+				while( message[ 0 ] == 0 && elem ) {
 					if( elem && elem->str.string[ 0 ] == '(' ) {
 						validate_syntax( "n0", elem->child, elem, env, message );
 						prev = elem->child;
@@ -5082,123 +5127,92 @@ struct element* validate_syntax( char *syntax, struct element *elem,
 						next = validate_syntax( "n", elem, prev, env, message );
 						prev = elem;
 						elem = next;
+						if( elem && elem->str.string[ 0 ] == ',' && elem->next ) {
+							prev = elem;
+							elem = elem->next;
+						}
 					}
 				}
-				if( message[ 0 ] == 0 ) {
-					next = validate_syntax( "{", elem, prev, env, message );
+				break;
+			case 'x':
+				/* Expression. */
+				if( elem && strchr( ",;({", elem->str.string[ 0 ] ) == NULL ) {
+					if( elem->str.string[ 0 ] == '[' ) {
+						validate_syntax( "[", elem, prev, env, message );
+					} else if( elem->str.string[ 0 ] == '$' && elem->str.string[ 1 ] == 0 ) {
+						prev = elem;
+						elem = elem->next;
+						if( elem == NULL || elem->str.string[ 0 ] != '{' ) {
+							sprintf( message, "Expected '{' after '$' on line %d.", prev->line );
+						}
+					} else if( elem->next && elem->next->str.string[ 0 ] == '(' ) {
+						prev = elem;
+						elem = elem->next;
+					}
+					if( elem ) {
+						prev = elem;
+						elem = elem->next;
+						if( syntax[ idx ] == 'x' && elem && elem->str.string[ 0 ] == ',' ) {
+							prev = elem;
+							elem = elem->next;
+						}
+					}
+				} else {
+					sprintf( message, "Expected expression after '%.64s' on line %d.", prev->str.string, prev->line );
+				}
+				break;
+			case 'X':
+				/* Expression list, terminated by '{' or NULL. */
+				next = NULL;
+				while( message[ 0 ] == 0 && elem && elem->str.string[ 0 ] != '{' ) {
+					if( next && elem->str.string[ 0 ] == ',' ) {
+						prev = elem;
+						elem = elem->next;
+					}
+					next = validate_syntax( "x", elem, prev, env, message );
 					prev = elem;
 					elem = next;
-					if( message[ 0 ] == 0 && elem
-					&& ( is_keyword( elem->str.string, "catch" ) || is_keyword( elem->str.string, "finally" ) ) ) {
-						prev = elem;
-						elem = validate_syntax( "c", elem, prev, env, message );
-					}
 				}
-			} else {
-				sprintf( message, "Expected 'catch' or 'finally' after '%.64s' on line %d.", prev->str.string, prev->line );
-			}
-		} else if( chr == 'n' ) {
-			/* Name. */
-			if( elem && elem->str.string[ 0 ] != ';' ) {
-				validate_name( elem, message );
-				prev = elem;
-				elem = elem->next;
-			} else {
-				sprintf( message, "Expected name after '%.64s' on line %d.", prev->str.string, prev->line );
-			}
-		} else if( chr == 'P' ) {
-			/* Function parameter list. */
-			while( message[ 0 ] == 0 && elem ) {
+				break;
+			case 'v':
+				/* Variable declaration. */
 				if( elem && elem->str.string[ 0 ] == '(' ) {
 					validate_syntax( "n0", elem->child, elem, env, message );
 					prev = elem->child;
 					elem = elem->next;
 				}
 				if( message[ 0 ] == 0 ) {
-					next = validate_syntax( "n", elem, prev, env, message );
-					prev = elem;
-					elem = next;
-					if( elem && elem->str.string[ 0 ] == ',' && elem->next ) {
+					if( elem && elem->str.string[ 0 ] == '[' ) {
+						validate_syntax( "nx0", elem->child, elem, env, message );
+						prev = elem->child;
+						elem = elem->next;
+					} else {
+						next = validate_syntax( "n", elem, prev, env, message );
+						prev = elem;
+						elem = next;
+						if( message[ 0 ] == 0 && elem && elem->str.string[ 0 ] == '=' ) {
+							prev = elem;
+							elem = validate_syntax( "x", elem->next, prev, env, message );
+						}
+					}
+				}
+				break;
+			case 'V':
+				/* Variable declaration list, terminated by ';' or NULL. */
+				next = NULL;
+				while( message[ 0 ] == 0 && elem && elem->str.string[ 0 ] != ';' ) {
+					if( next && elem->str.string[ 0 ] == ',' ) {
 						prev = elem;
 						elem = elem->next;
 					}
-				}
-			}
-		} else if( chr == 'x' ) {
-			/* Expression. */
-			if( elem && strchr( ",;({", elem->str.string[ 0 ] ) == NULL ) {
-				if( elem->str.string[ 0 ] == '[' ) {
-					validate_syntax( "[", elem, prev, env, message );
-				} else if( elem->str.string[ 0 ] == '$' && elem->str.string[ 1 ] == 0 ) {
-					prev = elem;
-					elem = elem->next;
-					if( elem == NULL || elem->str.string[ 0 ] != '{' ) {
-						sprintf( message, "Expected '{' after '$' on line %d.", prev->line );
-					}
-				} else if( elem->next && elem->next->str.string[ 0 ] == '(' ) {
-					prev = elem;
-					elem = elem->next;
-				}
-				if( elem ) {
-					prev = elem;
-					elem = elem->next;
-					if( syntax[ idx ] == 'x' && elem && elem->str.string[ 0 ] == ',' ) {
-						prev = elem;
-						elem = elem->next;
-					}
-				}
-			} else {
-				sprintf( message, "Expected expression after '%.64s' on line %d.", prev->str.string, prev->line );
-			}
-		} else if( chr == 'X' ) {
-			/* Expression list, terminated by '{' or NULL. */
-			next = NULL;
-			while( message[ 0 ] == 0 && elem && elem->str.string[ 0 ] != '{' ) {
-				if( next && elem->str.string[ 0 ] == ',' ) {
-					prev = elem;
-					elem = elem->next;
-				}
-				next = validate_syntax( "x", elem, prev, env, message );
-				prev = elem;
-				elem = next;
-			}
-		} else if( chr == 'v' ) {
-			/* Variable declaration. */
-			if( elem && elem->str.string[ 0 ] == '(' ) {
-				validate_syntax( "n0", elem->child, elem, env, message );
-				prev = elem->child;
-				elem = elem->next;
-			}
-			if( message[ 0 ] == 0 ) {
-				if( elem && elem->str.string[ 0 ] == '[' ) {
-					validate_syntax( "nx0", elem->child, elem, env, message );
-					prev = elem->child;
-					elem = elem->next;
-				} else {
-					next = validate_syntax( "n", elem, prev, env, message );
+					next = validate_syntax( "v", elem, prev, env, message );
 					prev = elem;
 					elem = next;
-					if( message[ 0 ] == 0 && elem && elem->str.string[ 0 ] == '=' ) {
-						prev = elem;
-						elem = validate_syntax( "x", elem->next, prev, env, message );
-					}
 				}
-			}
-		} else if( chr == 'V' ) {
-			/* Variable declaration list, terminated by ';' or NULL. */
-			next = NULL;
-			while( message[ 0 ] == 0 && elem && elem->str.string[ 0 ] != ';' ) {
-				if( next && elem->str.string[ 0 ] == ',' ) {
-					prev = elem;
-					elem = elem->next;
-				}
-				next = validate_syntax( "v", elem, prev, env, message );
-				prev = elem;
-				elem = next;
-			}
-		} else {
-			/* Internal error. */
-			sprintf( message, "Internal error. Unknown specifier '%c' while parsing line.", chr, ( elem ? elem : prev )->line );
+				break;
+			default:
+				/* Internal error. */
+				sprintf( message, "Internal error. Unknown specifier '%c' while parsing line.", chr, ( elem ? elem : prev )->line );
 		}
 		chr = syntax[ idx++ ];
 	}
