@@ -45,13 +45,13 @@ function qsort( array offset end ) {
 	if <( -( pivot_idx offset ) -( end pivot_idx ) ) {
 		call qsort( array offset pivot_idx );
 		let offset = +( pivot_idx 1 );
+		# Skip values equal to pivot.
+		while &&( <( offset end ) =( :pivot.compare( [ array offset ] ) 0 ) ) {
+			inc offset;
+		}
 	} else {
 		call qsort( array +( pivot_idx 1 ) end );
 		let end = pivot_idx;
-	}
-	# Skip values equal to pivot.
-	while &&( <( offset end ) =( :pivot.compare( [ array offset ] ) 0 ) ) {
-		inc offset;
 	}
 	# Tail-call.
 	return qsort( array offset end );
