@@ -125,7 +125,7 @@
 		:struct.memb(this ...)   Call member-function. Equivalent to ":(struct.memb(this) this ...)", but this evaluated once.
 		:variable.member(...)    Call member-function using associated structure. Equivalent to ":struct.member(variable ...)".
 		variable:func(...)       Call static member-function using associated struct. Equivalent to "struct_func(variable ...)".
-		'(expr operator ...)     Infix operator, eg '( 1 + 2 ).
+		'(expr operator ...)     Infix expression, eg '( 1 + 2 ).
 		+(num num ...)           Addition.
 		-(num num ...)           Subtraction.
 		*(num num ...)           Multiplication.
@@ -239,6 +239,8 @@ static struct element* parse_expressions( struct element *elem, struct function 
 	struct variables *vars, char terminator, struct expression *prev, int *num_exprs, char *message );
 static struct element* value_to_element( number number_value, struct string *string_value,
 	struct environment *env, int max_depth, char *message );
+static struct element* parse_infix_expression( struct element *elem,
+	struct function *func, struct variables *vars, struct expression *prev, char *message );
 
 /* Allocate and return a new element with the specified string length. */
 struct element* new_element( int str_len ) {
@@ -3842,54 +3844,6 @@ static struct operator* get_operator( char *name, struct operator *oper ) {
 	return oper;
 }
 
-static struct element* parse_infix_expression( struct element *elem,
-	struct function *func, struct variables *vars, struct expression *prev, char *message ) {
-	int count;
-	struct operator *oper;
-	struct element *next = elem->next;
-	struct element *child = next->child;
-	struct expression param = { 0 }, *expr = calloc( 1, sizeof( struct expression ) );
-	if( expr ) {
-		prev->next = expr;
-		expr->line = elem->line;
-		if( child ) {
-			child = parse_expression( child, func, vars, &param, message );
-			expr->parameters = param.next;
-			if( message[ 0 ] == 0 ) {
-				if( child ) {
-					oper = get_operator( child->str.string, func->env->operators_index[ hash_code( child->str.string, 0 ) ] );
-					if( oper ) {
-						expr->index = oper->oper;
-						expr->evaluate = oper->evaluate;
-						if( oper->num_operands != 0 ) {
-							parse_expressions( child->next, func, vars, 0, expr->parameters, &count, message );
-							if( message[ 0 ] == 0 ) {
-								count++;
-								if( count == oper->num_operands || ( oper->num_operands < 0 && count >= -oper->num_operands ) ) {
-									next = next->next;
-								} else {
-									sprintf( message, "Wrong number of arguments to '%.64s()' on line %d.", oper->name, child->line );
-								}
-							}
-						} else {
-							sprintf( message, "Wrong number of arguments to '%.64s()' on line %d.", oper->name, child->line );
-						}
-					} else {
-						sprintf( message, "Unhandled operator '%.64s' on line %d.", child->str.string, child->line );
-					}
-				} else {
-					sprintf( message, "Expected operator after '( on line %d.", elem->line );
-				}
-			} 
-		} else {
-			sprintf( message, "Expected expression after '( on line %d.", elem->line );
-		}
-	} else {
-		strcpy( message, OUT_OF_MEMORY );
-	}
-	return next;
-}
-
 static struct element* parse_operator_expression( struct element *elem, struct operator *oper,
 	struct function *func, struct variables *vars, struct expression *prev, char *message ) {
 	int count;
@@ -5217,6 +5171,43 @@ struct element* validate_syntax( char *syntax, struct element *elem,
 		chr = syntax[ idx++ ];
 	}
 	return elem;
+}
+
+static struct element* parse_infix_expression( struct element *elem,
+	struct function *func, struct variables *vars, struct expression *prev, char *message ) {
+	struct element *copy, *oper, *child, *next = elem->next;
+	if( next && next->str.string[ 0 ] == '(' && next->child ) {
+		copy = new_element( next->str.length );
+		if( copy ) {
+			copy->line = next->line;
+			strcpy( copy->str.string, next->str.string );
+			copy->child = copy_element( next->child );
+			if( copy->child ) {
+				oper = validate_syntax( "x", copy->child, next, func->env, message );
+				if( message[ 0 ] == 0 ) {
+					if( oper ) {
+						child = copy->child;
+						while( child->next != oper ) {
+							child = child->next;
+						}
+						child->next = oper->next;
+						oper->next = copy;
+						copy = oper;
+					}
+					parse_expression( copy, func, vars, prev, message );
+					next = next->next;
+				}
+			} else {
+				strcpy( message, OUT_OF_MEMORY );
+			}
+			dispose_element( copy );
+		} else {
+			strcpy( message, OUT_OF_MEMORY );
+		}
+	} else {
+		sprintf( message, "Invalid infix expression on line %d.", elem->line );
+	}
+	return next;
 }
 
 static struct element* parse_keyword( struct keyword *key, struct element *elem,

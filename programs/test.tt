@@ -388,11 +388,10 @@ function testoper() {
 }
 
 function testinfix() {
-	call assert_equals( 3, '( ONE + ONE ONE ), ${-} );
-	call assert_throws( "Expected expression", ${ () { call '(); } } );
-	call assert_throws( "Expected operator", ${ () { call '( 1 ); } } );
-	call assert_throws( "Unhandled operator", ${ () { call '( 1 0 ); } } );
-	call assert_throws( "Wrong number of arguments", ${ () { call '( 1 $argc ); } } );
+	call assert_equals( 3, '( +( ONE 0 ) + ONE ONE ), ${-} );
+	call assert_throws( "Invalid", ${ () { call '(); } } );
+	call assert_throws( "Unhandled", ${ () { call '( 1 ); } } );
+	call assert_throws( "Unexpected", ${ () { call '( 1 0 ); } } );
 	call assert_throws( "Wrong number of arguments", ${ () { call '( 1 + ); } } );
 }
 
