@@ -5185,7 +5185,7 @@ static struct element* parse_infix_expression( struct element *elem,
 			if( copy->child ) {
 				oper = validate_syntax( "x", copy->child, next, func->env, message );
 				if( message[ 0 ] == 0 ) {
-					if( oper ) {
+					if( oper && strcmp( oper->str.string, elem->str.string ) ) {
 						child = copy->child;
 						while( child->next != oper ) {
 							child = child->next;
