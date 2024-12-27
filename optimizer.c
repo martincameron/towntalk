@@ -570,7 +570,7 @@ static enum result execute_arithmetic_statement( struct statement *this,
 						return EXCEPTION;
 					}
 				} else {
-					*top *= local->number_value;
+					*top /= local->number_value;
 				}
 				break;
 			case DIV_LOCAL:
