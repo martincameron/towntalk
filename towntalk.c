@@ -130,8 +130,8 @@
 		-(num num ...)           Subtraction.
 		*(num num ...)           Multiplication.
 		/(int int ...)           Integer division.
-		//(num num ...)          Floating-point division (if supported).
 		%(int int ...)           Integer modulo-division.
+		$div(num num ...)        Floating-point division (if supported).
 		<<(int int)              Integer arithmetic shift-left.
 		>>(int int)              Integer arithmetic shift-right.
 		=(num num)               Equality.
@@ -5816,7 +5816,7 @@ static struct operator operators[] = {
 	{ "|", ':',-2, evaluate_arithmetic_expression, NULL },
 	{ "~", 1, 1, evaluate_unary_expression, NULL },
 #if defined( FLOATING_POINT )
-	{ "//",'0', -2, evaluate_arithmetic_expression, NULL },
+	{ "$div",'0',-2, evaluate_arithmetic_expression, NULL },
 	{ "$log", 2, 1, evaluate_unary_expression, NULL },
 	{ "$exp", 3, 1, evaluate_unary_expression, NULL },
 	{ "$sqrt",4, 1, evaluate_unary_expression, NULL },

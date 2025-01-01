@@ -14,7 +14,7 @@ function pow( base exp ) {
 
 # Calculate the exponent of base that results in the specified value.
 function log( base value ) {
-	return //( $log( value ) $log( base ) );
+	return $div( $log( value ) $log( base ) );
 }
 
 program maths_test {
