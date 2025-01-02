@@ -18,10 +18,10 @@
 #include "towntalk.h"
 
 /*
-	Towntalk (c)2024 Martin Cameron.
+	Towntalk (c)2025 Martin Cameron.
 
 	A program file consists of a list of declarations.
-	When a '#' character is encountered, the rest of the line is ignored.
+	When an unquoted '#' character is encountered, the rest of the line is ignored.
 	Variable and function names must be alphanumeric.
 	Commas within name and argument lists are optional.
 	A value may be a number, a reference, or a tuple.
@@ -55,7 +55,7 @@
 		}
 
 	Declarations:
-		rem {}                   Comment (all brackets inside must be balanced).
+		rem {...} or //{...}     Comment (all brackets inside must be balanced).
 		include "file.tt";       Include declarations from specified file.
 		library name { decls }   Namespace prefix for specified declarations.
 		const name = expr;       Global constants.
@@ -68,7 +68,7 @@
 		program name{statements} Entry point function (no arguments).
 
 	Statements:
-		rem {}                   Comment.
+		rem {...} or //{...}     Comment.
 		var a, b, c = expr;      Local variables.
 		var ( struct ) a;        Local variable with associated struct.
 		var [ a expr ];          Local variable initialized with array of specified length.
@@ -125,11 +125,11 @@
 		:struct.memb(this ...)   Call member-function. Equivalent to ":(struct.memb(this) this ...)", but this evaluated once.
 		:variable.member(...)    Call member-function using associated structure. Equivalent to ":struct.member(variable ...)".
 		variable:func(...)       Call static member-function using associated struct. Equivalent to "struct_func(variable ...)".
-		'(expr operator ...)     Infix expression, eg '( 1 + 2 ).
+		`(expr operator ...)     Infix expression, eg `( 1 + 2 ). '(...) may also be used.
 		+(num num ...)           Addition.
 		-(num num ...)           Subtraction.
 		*(num num ...)           Multiplication.
-		/(int int ...)           Integer division.
+		/(int int...) or _/(...) Integer division.
 		%(int int ...)           Integer modulo-division.
 		$div(num num ...)        Floating-point division (if supported).
 		<<(int int)              Integer arithmetic shift-left.
@@ -4353,30 +4353,29 @@ static struct element* parse_element_literal_expression( struct element *elem,
 struct element* parse_expression( struct element *elem,
 	struct function *func, struct variables *vars, struct expression *prev, char *message ) {
 	struct element *next = elem->next;
-	char *value = elem->str.string;
+	char *value = elem->str.string, chr = value[ 0 ];
 	struct local_variable *local;
 	enum reference_type type = 0;
 	struct operator *oper;
 	struct string *decl;
-	if( ( value[ 0 ] >= '0' && value[ 0 ] <= '9' )
-		|| ( value[ 0 ] == '-' && ( value[ 1 ] >= '0' && value[ 1 ] <= '9' ) ) ) {
+	if( ( chr >= '0' && chr <= '9' ) || ( chr == '-' && ( value[ 1 ] >= '0' && value[ 1 ] <= '9' ) ) ) {
 		/* Number literal. */
 		next = parse_number_literal_expression( elem, prev, message );
-	} else if( value[ 0 ] == '"' ) {
+	} else if( chr == '"' ) {
 		/* String literal. */
 		next = parse_string_literal_expression( elem, prev, message );
-	} else if( value[ 0 ] == '$' && value[ 1 ] == 0 ) {
+	} else if( chr == '$' && value[ 1 ] == 0 ) {
 		/* Element literal. */
 		next = parse_element_literal_expression( elem, func->env, prev, message );
-	} else if( value[ 0 ] == '\'' && value[ 1 ] == 0 ) {
+	} else if( ( chr == '`' || chr == '\'' ) && value[ 1 ] == 0 ) {
 		/* Infix operator.*/
 		next = parse_infix_expression( elem, func, vars, prev, message );
-	} else if( value[ 0 ] == '[' ) {
+	} else if( chr == '[' ) {
 		/* Array index operator. */
 		next = parse_index_expression( elem, func, vars, prev, message );
 	} else if( elem->str.length > 128 ) {
 		sprintf( message, "Invalid expression '%.64s' on line %d.", value, elem->line );
-	} else if( value[ 0 ] == '@' ) {
+	} else if( chr == '@' ) {
 		if( value[ 1 ] ) {
 			/* Function reference operator. */
 			next = parse_func_ref_expression( elem, func, prev, message );
@@ -4901,8 +4900,9 @@ static struct element* parse_default_statement( struct element *elem,
 }
 
 static struct keyword switch_stmts[] = {
-	{ "rem", "{", parse_comment, &switch_stmts[ 1 ] },
-	{ "case", "X{", parse_case_statement, &switch_stmts[ 2 ] },
+	{ "//", "{", parse_comment, &switch_stmts[ 1 ] },
+	{ "rem", "{", parse_comment, &switch_stmts[ 2 ] },
+	{ "case", "X{", parse_case_statement, &switch_stmts[ 3 ] },
 	{ "default", "{", parse_default_statement, NULL }
 };
 
@@ -5772,6 +5772,7 @@ static struct element* parse_struct_declaration( struct element *elem,
 }
 
 static struct keyword statements[] = {
+	{ "//", "{", parse_comment, NULL },
 	{ "rem", "{", parse_comment, NULL },
 	{ "var", "V;", parse_local_declaration, NULL },
 	{ "let", "x=x;", parse_assignment_statement, NULL },
@@ -5804,6 +5805,7 @@ static struct operator operators[] = {
 	{ "+", '+',-2, evaluate_arithmetic_expression, NULL },
 	{ "-", '-',-2, evaluate_arithmetic_expression, NULL },
 	{ "/", '/',-2, evaluate_arithmetic_expression, NULL },
+	{ "_/",'/',-2, evaluate_arithmetic_expression, NULL },
 	{ "<", '<', 2, evaluate_arithmetic_expression, NULL },
 	{ "<e",'(', 2, evaluate_arithmetic_expression, NULL },
 	{ ">", '>', 2, evaluate_arithmetic_expression, NULL },
@@ -5878,10 +5880,11 @@ static struct operator operators[] = {
 };
 
 static struct keyword library_decls[] = {
-	{ "rem", "{", parse_comment, &library_decls[ 1 ] },
-	{ "function", "n({", parse_function_declaration, &library_decls[ 2 ] },
-	{ "global", "V;", parse_global_declaration, &library_decls[ 3 ] },
-	{ "const", "V;", parse_const_declaration, &library_decls[ 4 ] },
+	{ "//", "{", parse_comment, &library_decls[ 1 ] },
+	{ "rem", "{", parse_comment, &library_decls[ 2 ] },
+	{ "function", "n({", parse_function_declaration, &library_decls[ 3 ] },
+	{ "global", "V;", parse_global_declaration, &library_decls[ 4 ] },
+	{ "const", "V;", parse_const_declaration, &library_decls[ 5 ] },
 	{ "struct", "n", parse_struct_declaration, NULL }
 };
 

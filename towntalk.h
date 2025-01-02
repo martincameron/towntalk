@@ -2,7 +2,7 @@
 #ifndef _TOWNTALK_H
 #define _TOWNTALK_H 1
 
-/* Towntalk (c)2024 Martin Cameron. */
+/* Towntalk (c)2025 Martin Cameron. */
 
 #include "stdlib.h"
 
