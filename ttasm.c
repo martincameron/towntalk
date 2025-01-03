@@ -56,8 +56,8 @@
 	letv_div_vv x y z   0 : let x = /( y z );
 	letv_mod_vi x y 0 imm : let x = %( y imm );
 	letv_mod_vv x y z   0 : let x = %( y z );
-	letv_fdi_vi x y 0 imm : let x = //( y imm );
-	letv_fdi_vv x y z   0 : let x = //( y z );
+	letv_fdi_vi x y 0 imm : let x = $div( y imm );
+	letv_fdi_vv x y z   0 : let x = $div( y z );
 	letv_shl_vi x y 0 imm : let x = <<( y imm );
 	letv_shl_vv x y z   0 : let x = <<( y z );
 	letv_asr_vi x y 0 imm : let x = >>( y imm );
@@ -146,15 +146,19 @@ static struct asm_operator let_vi_operators[] = {
 	{ "-", LETV_SUB_VI },
 	{ "*", LETV_MUL_VI },
 	{ "/", LETV_DIV_VI },
+	{ "_/", LETV_DIV_VI },
 	{ "%", LETV_MOD_VI },
-	{ "//", LETV_FDI_VI },
+	{ "$div", LETV_FDI_VI },
+	{ "Div", LETV_FDI_VI },
 	{ "<<", LETV_SHL_VI },
 	{ ">>", LETV_ASR_VI },
 	{ "&", LETV_AND_VI },
 	{ "|", LETV_OR_VI },
 	{ "^", LETV_XOR_VI },
 	{ "$chr", LETV_CHR_VI },
+	{ "Chr", LETV_CHR_VI },
 	{ "$unpack", LETV_UNP_VI },
+	{ "Unpack", LETV_UNP_VI },
 	{ NULL }
 };
 
@@ -163,21 +167,27 @@ static struct asm_operator let_vv_operators[] = {
 	{ "-", LETV_SUB_VV },
 	{ "*", LETV_MUL_VV },
 	{ "/", LETV_DIV_VV },
+	{ "_/", LETV_DIV_VV },
 	{ "%", LETV_MOD_VV },
-	{ "//", LETV_FDI_VV },
+	{ "$div", LETV_FDI_VV },
+	{ "Div", LETV_FDI_VV },
 	{ "<<", LETV_SHL_VV },
 	{ ">>", LETV_ASR_VV },
 	{ "&", LETV_AND_VV },
 	{ "|", LETV_OR_VV },
 	{ "^", LETV_XOR_VV },
 	{ "$chr", LETV_CHR_VV },
+	{ "Chr", LETV_CHR_VV },
 	{ "$unpack", LETV_UNP_VV },
+	{ "Unpack", LETV_UNP_VV },
 	{ NULL }
 };
 
 static struct asm_operator let_vp_operators[] = {
 	{ "$chr", LETV_CHR_VP },
+	{ "Chr", LETV_CHR_VP },
 	{ "$unpack", LETV_UNP_VP },
+	{ "Unpack", LETV_UNP_VP },
 	{ NULL }
 };
 

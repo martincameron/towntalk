@@ -114,10 +114,10 @@ function testletv_opr() {
 	# letv_opr
 	call assert_throws( "Invalid local variable 'x'", ${ () { var a; asm { let a = +( x a ); } } } );
 	# letv_opr_vi
-	call assert_throws( "Integer division by zero.", ${ () { var a; asm { let a = /( a 0 ); } } } );
+	call assert_throws( "Integer division by zero.", ${ () { var a; asm { let a = _/( a 0 ); } } } );
 	call assert_throws( "Modulo division by zero.", ${ () { var a; asm { let a = %( a 0 ); } } } );
 	# letv_opr_vv
-	call assert_throws( "Integer division by zero.", ${ () { var a; asm { let a = /( a a ); } } } );
+	call assert_throws( "Integer division by zero.", ${ () { var a; asm { let a = _/( a a ); } } } );
 	call assert_throws( "Modulo division by zero.", ${ () { var a; asm { let a = %( a a ); } } } );
 	# letv_opr_v
 	call assert_throws( "Invalid local variable 'x'", ${ () { var a; asm { let x = +( a 1 ); } } } );
@@ -252,11 +252,11 @@ function testchr() {
 	call assert_equals( $chr( str, 0 ), b, ${-} );
 	call assert_equals( 1, a, ${-} );
 	# letv_chr_vi
-	call assert_throws( "Not a string or index", ${ () { var a; asm { let a = $chr( a 0 ); } } } );
+	call assert_throws( "Not a string or index", ${ () { var a; asm { let a = Chr( a 0 ); } } } );
 	# letv_chr_vv
-	call assert_throws( "Not a string or index", ${ () { var a = ""; asm { let a = $chr( a a ); } } } );
+	call assert_throws( "Not a string or index", ${ () { var a = ""; asm { let a = Chr( a a ); } } } );
 	# letv_chr_vp
-	call assert_throws( "Not a string or index", ${ () { var a = ""; asm { let a = $chr( a a++ ); } } } );
+	call assert_throws( "Not a string or index", ${ () { var a = ""; asm { let a = Chr( a a++ ); } } } );
 }
 
 function testunpack() {
@@ -274,11 +274,11 @@ function testunpack() {
 	call assert_equals( -1, b, ${-} );
 	call assert_equals( 1, a, ${-} );
 	# letv_unp_vi
-	call assert_throws( "Not a string or index", ${ () { var a; asm { let a = $unpack( a 0 ); } } } );
+	call assert_throws( "Not a string or index", ${ () { var a; asm { let a = Unpack( a 0 ); } } } );
 	# letv_unp_vv
-	call assert_throws( "Not a string or index", ${ () { var a = ""; asm { let a = $unpack( a a ); } } } );
+	call assert_throws( "Not a string or index", ${ () { var a = ""; asm { let a = Unpack( a a ); } } } );
 	# letv_unp_vp
-	call assert_throws( "Not a string or index", ${ () { var a = ""; asm { let a = $unpack( a a++ ); } } } );
+	call assert_throws( "Not a string or index", ${ () { var a = ""; asm { let a = Unpack( a a++ ); } } } );
 }
 
 program asmtest {
@@ -299,8 +299,8 @@ program asmtest {
 	asm {
 		let count = 1000;
 		loop_0:
-			let idx = +( idx 1 );
-			jump <( idx count ) loop_0;
+			Let idx = +( idx 1 );
+			Jump <( idx count ) loop_0;
 	}
 	call assert_equals( count, idx, ${-} );
 	
