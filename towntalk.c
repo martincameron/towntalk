@@ -5166,7 +5166,7 @@ struct element* validate_syntax( char *syntax, struct element *elem,
 				break;
 			default:
 				/* Internal error. */
-				sprintf( message, "Internal error. Unknown specifier '%c' while parsing line.", chr, ( elem ? elem : prev )->line );
+				sprintf( message, "Internal error. Unknown specifier '%c' while parsing line %d.", chr, ( elem ? elem : prev )->line );
 		}
 		chr = syntax[ idx++ ];
 	}
@@ -5931,7 +5931,7 @@ static struct keyword declarations[] = {
 
 static int validate_name( struct element *elem, char *message ) {
 	int chr = elem->str.string[ 0 ], idx = 1, len = elem->str.length;
-	int result = len < 65 && ( chr >= 'A' && chr <= 'Z') || ( chr >= 'a' && chr <= 'z' );
+	int result = len < 65 && ( ( chr >= 'A' && chr <= 'Z') || ( chr >= 'a' && chr <= 'z' ) );
 	if( result ) {
 		/* First character must be alphabetical.*/
 		while( idx < len ) {

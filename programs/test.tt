@@ -388,12 +388,12 @@ function testoper() {
 }
 
 function testinfix() {
-	call assert_equals( 3, '( +( ONE 0 ) + ONE ONE ), ${-} );
-	call assert_throws( "Invalid", ${ () { call '(); } } );
-	call assert_throws( "Unhandled", ${ () { call '( 1 ); } } );
+	call assert_equals( 3, `( +( ONE 0 ) + ONE ONE ), ${-} );
+	call assert_throws( "Invalid", ${ () { call `(); } } );
+	call assert_throws( "Unhandled", ${ () { call `( 1 ); } } );
 	call assert_throws( "Unhandled", ${ () { call '( 1 ' + 1 ); } } );
-	call assert_throws( "Unexpected", ${ () { call '( 1 0 ); } } );
-	call assert_throws( "Wrong number of arguments", ${ () { call '( 1 + ); } } );
+	call assert_throws( "Unexpected", ${ () { call `( 1 0 ); } } );
+	call assert_throws( "Wrong number of arguments", ${ () { call `( 1 + ); } } );
 }
 
 function testarith() {
@@ -408,9 +408,9 @@ function testarith() {
 	call assert_equals( 4, *( 2 TWO ), ${-} );
 	call assert_equals( 4, *( 2 2 ), ${-} );
 	call assert_equals( 4, *( 2 two ), ${-} );
-	call assert_equals( 3, /( 6 TWO ), ${-} );
-	call assert_equals( 3, /( 6 2 ), ${-} );
-	call assert_equals( 3, /( 6 two ), ${-} );
+	call assert_equals( 3, _/( 6 TWO ), ${-} );
+	call assert_equals( 3, _/( 6 2 ), ${-} );
+	call assert_equals( 3, _/( 6 two ), ${-} );
 	call assert_equals( 2, %( 6 *( TWO TWO ) ), ${-} );
 	call assert_equals( 1, %( 1 2 ), ${-} );
 	call assert_equals( 1, %( 1 two ), ${-} );

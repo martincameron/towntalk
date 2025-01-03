@@ -127,7 +127,8 @@ enum opcodes {
 };
 
 struct asm_operator {
-	char *name, opcode;
+	char *name;
+	unsigned char opcode;
 };
 
 static struct asm_operator jump_operators[] = {
@@ -181,7 +182,7 @@ static struct asm_operator let_vp_operators[] = {
 };
 
 struct instruction {
-	char opcode, x, y, z;
+	unsigned char opcode, x, y, z;
 	number imm;
 };
 
