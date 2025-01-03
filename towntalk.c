@@ -55,7 +55,7 @@
 		}
 
 	Declarations:
-		rem {...} or //{...}     Comment (all brackets inside must be balanced).
+		rem {...}                Comment (all brackets inside must be balanced).
 		include "file.tt";       Include declarations from specified file.
 		library name { decls }   Namespace prefix for specified declarations.
 		const name = expr;       Global constants.
@@ -68,7 +68,7 @@
 		program name{statements} Entry point function (no arguments).
 
 	Statements:
-		rem {...} or //{...}     Comment.
+		rem {...}                Comment.
 		var a, b, c = expr;      Local variables.
 		var ( struct ) a;        Local variable with associated struct.
 		var [ a expr ];          Local variable initialized with array of specified length.
@@ -2583,6 +2583,11 @@ static struct element* parse_variable_declaration( struct element *elem, struct 
 	return elem;
 }
 
+static struct element* ignore_keyword( struct element *elem,
+	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
+	return elem->next;
+}
+
 static struct element* parse_comment( struct element *elem,
 	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
 	return elem->next->next;
@@ -4900,10 +4905,12 @@ static struct element* parse_default_statement( struct element *elem,
 }
 
 static struct keyword switch_stmts[] = {
-	{ "//", "{", parse_comment, &switch_stmts[ 1 ] },
-	{ "rem", "{", parse_comment, &switch_stmts[ 2 ] },
-	{ "case", "X{", parse_case_statement, &switch_stmts[ 3 ] },
-	{ "default", "{", parse_default_statement, NULL }
+	{ "case", "X{", parse_case_statement, &switch_stmts[ 1 ] },
+	{ "default", "{", parse_default_statement, &switch_stmts[ 2 ] },
+	{ "rem", "{", parse_comment, &switch_stmts[ 3 ] },
+	{ "/*", "{", parse_comment, &switch_stmts[ 4 ] },
+	{ "//", "", ignore_keyword, &switch_stmts[ 5 ] },
+	{ "*/", "", ignore_keyword, NULL }
 };
 
 static struct element* parse_switch_statement( struct element *elem,
@@ -5772,8 +5779,10 @@ static struct element* parse_struct_declaration( struct element *elem,
 }
 
 static struct keyword statements[] = {
-	{ "//", "{", parse_comment, NULL },
 	{ "rem", "{", parse_comment, NULL },
+	{ "/*", "{", parse_comment, NULL },
+	{ "*/", "", ignore_keyword, NULL },
+	{ "//", "", ignore_keyword, NULL },
 	{ "var", "V;", parse_local_declaration, NULL },
 	{ "let", "x=x;", parse_assignment_statement, NULL },
 	{ "print", "x;", parse_print_statement, NULL },
@@ -5880,12 +5889,14 @@ static struct operator operators[] = {
 };
 
 static struct keyword library_decls[] = {
-	{ "//", "{", parse_comment, &library_decls[ 1 ] },
-	{ "rem", "{", parse_comment, &library_decls[ 2 ] },
-	{ "function", "n({", parse_function_declaration, &library_decls[ 3 ] },
+	{ "function", "n({", parse_function_declaration, &library_decls[ 1 ] },
+	{ "struct", "n", parse_struct_declaration, &library_decls[ 2 ] },
+	{ "const", "V;", parse_const_declaration, &library_decls[ 3 ] },
 	{ "global", "V;", parse_global_declaration, &library_decls[ 4 ] },
-	{ "const", "V;", parse_const_declaration, &library_decls[ 5 ] },
-	{ "struct", "n", parse_struct_declaration, NULL }
+	{ "rem", "{", parse_comment, &library_decls[ 5 ] },
+	{ "/*", "{", parse_comment, &library_decls[ 6 ] },
+	{ "*/", "", ignore_keyword, &library_decls[ 7 ] },
+	{ "//", "", ignore_keyword, NULL }
 };
 
 static struct element* parse_library_declaration( struct element *elem,

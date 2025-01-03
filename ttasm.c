@@ -686,7 +686,7 @@ static int parse_instructions( struct element *elem, struct function *func, stru
 					break;
 				}
 			}
-		} else {
+		} else if( strcmp( elem->str.string, "//" ) ) {
 			if( is_keyword( elem->str.string, "let" ) ) {
 				if( output ) {
 					elem = parse_let( elem, func, &output[ count ], message );

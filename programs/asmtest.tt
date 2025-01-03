@@ -297,6 +297,7 @@ program asmtest {
 
 	var time = $time, idx, count;
 	asm {
+		//# Test.
 		let count = 1000;
 		loop_0:
 			Let idx = +( idx 1 );
