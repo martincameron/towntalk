@@ -73,6 +73,7 @@
 		var ( struct ) a;        Local variable with associated struct.
 		var [ a expr ];          Local variable initialized with array of specified length.
 		let var = expr;          Assign expression to local or global variable.
+		let var! = expr;         Assign expression to global variable.
 		let [ arr idx ] = expr;  Assign expression to array at specified index.
 		let struc.f(arr) = expr; Assign expression to array at named field of specified struct.
 		let var.field = expr;    Assign expr to array variable at named field of associated struct.
@@ -111,19 +112,26 @@
 		"String"                 String literal.
 		${0,"1",$tup("2",3)}     Element literal.
 		variable                 Value of named local or global variable.
+		variable!                Value of named global variable.
 		local++                  Value of named local variable prior to increment.
 		local--                  Value of named local variable prior to decrement.
 		function(expr ...)       Call declared function with specified args.
+		function!(expr ...)      Call declared function. To be used when a local variable has the same name.
 		[arr idx]                Array element.
 		struct                   Structure reference.
-		struct.field             Index of named struct field.
-		struct.field(array)      Value of named field of specified array.
-		variable.field           Value of named field of associated structure of specified array variable.
+		struct.field             Index of struct field.
+		struct!field             Index of struct field. To be used when a local variable has the same name as a declared struct.
+		struct.field(array)      Value of specified field of structured array expression.
+		struct!field(array)      Value of specified field. To be used when a local variable has the same name as a declared struct.
+		variable.field           Value of specified field of associated structure of local or global variable.
+		variable!field           Value of specified field of associated structure of global variable.
 		@function                Reference to declared function.
 		@(expr ...)              Recursive function call.
 		:(func expr ...)         Call function reference with specified args.
 		:struct.memb(this ...)   Call member-function. Equivalent to ":(struct.memb(this) this ...)", but this evaluated once.
+		:struct!memb(this ...)   Call member-function. To be used when a local variable has the same name as a declared struct.
 		:variable.member(...)    Call member-function using associated structure. Equivalent to ":struct.member(variable ...)".
+		:variable!member(...)    Call member-function using associated structure of specified global variable.
 		variable:func(...)       Call static member-function using associated struct. Equivalent to "struct_func(variable ...)".
 		`(expr operator ...)     Infix expression, eg `( 1 + 2 ). '(...) may also be used.
 		+(num num ...)           Addition.
@@ -4280,12 +4288,10 @@ static struct element* parse_global_expression( struct element *elem, struct fun
 			( ( struct value_expression * ) expr )->str = &global->str;
 			expr->evaluate = evaluate_global;
 		}
-		if( field[ 0 ] == '.' ) {
+		if( field[ 0 ] == '.' || ( field[ 0 ] == '!' && field[ 1 ] ) ) {
 			next = parse_member_expression( global->type, expr, &field[ 1 ], elem, func, vars, prev, message );
 		} else if( field[ 0 ] == ':' ) {
 			next = parse_member_call_expression( global->type, expr, &field[ 1 ], elem, func, vars, prev, message );
-		} else if( field[ 0 ] == '!' && field[ 1 ] ) {
-			sprintf( message, "Invalid global expression '%.64s' on line %d.", elem->str.string, elem->line );
 		}
 	} else {
 		strcpy( message, OUT_OF_MEMORY );
@@ -4603,6 +4609,9 @@ static struct element* parse_struct_assignment( struct element *elem,
 		prev->next = stmt;
 		struc = ( struct structure * ) get_decl_indexed( func, next->str.string, STRUCT );
 		field = strchr( next->str.string, '.' );
+		if( !field ) {
+			field = strchr( next->str.string, '!' );
+		}
 		if( struc && field ) {
 			( ( struct structure_statement * ) stmt )->structure = struc;
 			idx = get_string_list_index( struc->fields, &field[ 1 ] );
@@ -4700,11 +4709,17 @@ static struct element* parse_local_assignment( struct element *elem,
 static struct element* parse_global_assignment( struct element *elem,
 	struct function *func, struct variables *vars, struct global_variable *global, struct statement *prev, char *message ) {
 	int idx;
+	struct statement *stmt;
 	struct expression expr;
 	struct element *next = elem->next;
 	struct structure *struc = global->type;
 	char *field = strchr( next->str.string, '.' );
-	struct statement *stmt;
+	if( !field ) {
+		field = strchr( next->str.string, '!' );
+		if( field && !field[ 1 ] ) {
+			field = NULL;
+		}
+	}
 	if( struc && field ) {
 		stmt = calloc( 1, sizeof( struct structure_statement ) );
 		if( stmt ) {

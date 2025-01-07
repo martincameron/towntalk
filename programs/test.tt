@@ -1232,15 +1232,19 @@ function teststack() {
 }
 
 function testscope() {
-	var struc = "s", TEN = "ten", fact = "f";
+	var struc = "s";
 	call assert_equals( "s", struc, ${-} );
 	call assert_equals( "struc", $str( struc! ), ${-} );
 	call assert_equals( 4, struc!e, ${-} );
 	call assert_equals( "a", struc!a( $new( struc! "a" ) ), ${-} );
 	call assert_equals( "a", :struc!a( $new( struc! $function( ${ ( this ) { return "a"; } } ) ) ), ${-} );
+	var ( struc ) s = $new( struc! );
+	let struc!a( s ) = 1;
+	call assert_equals( 1, s.a, ${-} );
+	var TEN = "ten";
 	call assert_equals( "ten", TEN, ${-} );
 	call assert_equals( 10, TEN!, ${-} );
-	call assert_throws( "Invalid global", ${ () { call TEN!!; } } );
+	var fact = "f";
 	call assert_equals( "f", fact, ${-} );
 	call assert_equals( 2, fact!( 0 2 ), ${-} );
 }
