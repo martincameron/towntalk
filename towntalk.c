@@ -228,6 +228,7 @@ static struct constant constants[] = {
 /* Forward declarations. */
 struct statement * optimize_statements( struct function *func, struct statement *prev, char *message );
 static int validate_name( struct element *elem, char *message );
+static int validate_local( struct string *decl, int line, struct environment *env, char *message );
 static int validate_decl( struct string *decl, int line, struct environment *env, char *message );
 static void parse_keywords( struct keyword *keywords, struct element *elem,
 	struct function *func, struct variables *vars, struct statement *stmt, char *message );
@@ -1100,7 +1101,7 @@ static struct local_variable* new_local_variable( struct function *func, struct 
 	struct local_variable *local = NULL;
 	if( func->num_variables >= 128 ) {
 		sprintf( message, "Too many local variables in function '%.64s' on line %d.", func->str.string, func->line );
-	} else if( validate_decl( &name->str, name->line, func->env, message ) ) {
+	} else if( validate_local( &name->str, name->line, func->env, message ) ) {
 		local = malloc( sizeof( struct local_variable ) + sizeof( char ) * ( name->str.length + 1 ) );
 		if( local ) {
 			local->index = func->num_variables;
@@ -2438,7 +2439,7 @@ static struct string* get_decl( struct string_list *list, char *name, int len, e
 static struct string* get_decl_indexed( struct function *func, char *name, enum reference_type type ) {
 	char qname[ 65 ];
 	struct string *str = NULL;
-	int qlen, flen = field_length( name, ".:" );
+	int qlen, flen = field_length( name, "!.:" );
 	if( func->library ) {
 		qlen = func->library->length;
 		if( qlen + 1 + flen < 65 ) {
@@ -3952,14 +3953,21 @@ static struct element* parse_index_expression( struct element *elem,
 
 static struct element* parse_struct_expression( struct element *elem,
 	struct function *func, struct variables *vars, struct structure *struc, struct expression *prev, char *message ) {
+	char *field;
 	int idx, count;
 	struct element *next = elem->next;
-	char *field = strchr( elem->str.string, '.' );
 	struct expression param = { 0 }, *expr = calloc( 1, sizeof( struct value_expression ) );
 	if( expr ) {
 		prev->next = expr;
 		expr->line = elem->line;
 		( ( struct value_expression * ) expr )->str = &struc->str;
+		field = strchr( elem->str.string, '.' );
+		if( !field ) {
+			field = strchr( elem->str.string, '!' );
+			if( field && !field[ 1 ] ) {
+				field = NULL;
+			}
+		}
 		if( field ) {
 			idx = get_string_list_index( struc->fields, &field[ 1 ] );
 			if( idx >= 0 ) {
@@ -4026,11 +4034,11 @@ static struct element* parse_refcall_expression( struct element *elem,
 
 static struct element* parse_thiscall_expression( struct element *elem,
 	struct function *func, struct variables *vars, struct expression *prev, char *message ) {
+	char *field;
 	int idx, count;
 	struct variable *var;
 	struct structure *struc;
 	struct element *next = elem->next;
-	char *field = strchr( elem->str.string, '.' );
 	struct local_variable *captured = NULL, *local = get_local_variable( func->variable_decls, &elem->str.string[ 1 ], "." );
 	struct global_variable *global = ( struct global_variable * ) get_decl_indexed( func, &elem->str.string[ 1 ], GLOBAL );
 	struct expression param = { 0 }, *this, *expr = calloc( 1, sizeof( struct value_expression ) );
@@ -4050,6 +4058,10 @@ static struct element* parse_thiscall_expression( struct element *elem,
 			} else {
 				struc = ( struct structure * ) get_decl_indexed( func, &elem->str.string[ 1 ], STRUCT );
 			}
+		}
+		field = strchr( elem->str.string, '.' );
+		if( !field ) {
+			field = strchr( elem->str.string, '!' );
 		}
 		if( struc && field ) {
 			( ( struct value_expression * ) expr )->str = &struc->str;
@@ -4252,7 +4264,7 @@ static struct element* parse_capture_expression( struct element *elem,
 static struct element* parse_global_expression( struct element *elem, struct function *func,
 	struct variables *vars, struct global_variable *global, struct expression *prev, char *message ) {
 	struct element *next = elem->next;
-	char *field = &elem->str.string[ field_length( elem->str.string, ".:" ) ];
+	char *field = &elem->str.string[ field_length( elem->str.string, "!.:" ) ];
 	struct expression *expr = calloc( 1, sizeof( struct value_expression ) );
 	if( expr ) {
 		prev->next = expr;
@@ -4272,6 +4284,8 @@ static struct element* parse_global_expression( struct element *elem, struct fun
 			next = parse_member_expression( global->type, expr, &field[ 1 ], elem, func, vars, prev, message );
 		} else if( field[ 0 ] == ':' ) {
 			next = parse_member_call_expression( global->type, expr, &field[ 1 ], elem, func, vars, prev, message );
+		} else if( field[ 0 ] == '!' && field[ 1 ] ) {
+			sprintf( message, "Invalid global expression '%.64s' on line %d.", elem->str.string, elem->line );
 		}
 	} else {
 		strcpy( message, OUT_OF_MEMORY );
@@ -4397,7 +4411,7 @@ struct element* parse_expression( struct element *elem,
 			next = parse_thiscall_expression( elem, func, vars, prev, message );
 		}
 	} else {
-		local = get_local_variable( func->variable_decls, value, ".:+-" );
+		local = get_local_variable( func->variable_decls, value, "+-.:" );
 		if( local ) {
 			/* Local variable reference.*/
 			next = parse_local_expression( elem, func, vars, local, prev, message );
@@ -5961,19 +5975,26 @@ static int validate_name( struct element *elem, char *message ) {
 	return result;
 }
 
-static int validate_decl( struct string *decl, int line, struct environment *env, char *message ) {
+static int validate_local( struct string *decl, int line, struct environment *env, char *message ) {
 	int hash = hash_code( decl->string, 0 );
 	if( decl->length > 64 ) {
 		sprintf( message, "Invalid name '%.64s' on line %d.", decl->string, line );
 	} else if( get_keyword( decl->string, declarations )
 	|| get_keyword( decl->string, env->statements_index[ hash ] )
-	|| get_operator( decl->string, env->operators_index[ hash ] )
-	|| get_decl( env->decls_index[ hash ], decl->string, decl->length, 0 ) ) {
+	|| get_operator( decl->string, env->operators_index[ hash ] ) ) {
 		sprintf( message, "Name '%.64s' already defined on line %d.", decl->string, line );
 	} else {
 		return hash + 1;
 	}
 	return 0;
+}
+
+static int validate_decl( struct string *decl, int line, struct environment *env, char *message ) {
+	int hash = validate_local( decl, line, env, message );
+	if( hash && get_decl( env->decls_index[ hash - 1 ], decl->string, decl->length, 0 ) ) {
+		sprintf( message, "Name '%.64s' already declared on line %d.", decl->string, line );
+	}
+	return hash;
 }
 
 /* Parse the specified program text into env. Returns zero and writes message on failure. */

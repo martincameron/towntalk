@@ -112,7 +112,7 @@ function testvars( x ) {
 	call assert_equals( x, g, ${-} );
 	call assert_equals( 1, TRUE, ${-} );
 	call assert_equals( 0, FALSE, ${-} );
-	call assert_throws( "Name 'a' already defined", ${ () { var a; } } );
+	call assert_throws( "Name 'var' already d", ${ () { var var; } } );
 	call assert_throws( "Undeclared variable 'xxx'", ${ () { let xxx = 0; } } );
 	call assert_throws( "Expected '=' after 'xxx'", ${ () { let xxx; } } );
 	call assert_throws( "Invalid local variable expression", ${ (x) { call x+; } } );
@@ -1231,6 +1231,20 @@ function teststack() {
 	} } );
 }
 
+function testscope() {
+	var struc = "s", TEN = "ten", fact = "f";
+	call assert_equals( "s", struc, ${-} );
+	call assert_equals( "struc", $str( struc! ), ${-} );
+	call assert_equals( 4, struc!e, ${-} );
+	call assert_equals( "a", struc!a( $new( struc! "a" ) ), ${-} );
+	call assert_equals( "a", :struc!a( $new( struc! $function( ${ ( this ) { return "a"; } } ) ) ), ${-} );
+	call assert_equals( "ten", TEN, ${-} );
+	call assert_equals( 10, TEN!, ${-} );
+	call assert_throws( "Invalid global", ${ () { call TEN!!; } } );
+	call assert_equals( "f", fact, ${-} );
+	call assert_equals( 2, fact!( 0 2 ), ${-} );
+}
+
 program test {
 	call hello();
 	call assert( =( testvoid() 0 ), ${-} );
@@ -1297,5 +1311,6 @@ program test {
 	call testlibrary();
 	call testoptimizer();
 	call teststack();
+	call testscope();
 	print "Tests passed.";
 }
