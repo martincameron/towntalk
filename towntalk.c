@@ -77,6 +77,7 @@
 		let [ arr idx ] = expr;  Assign expression to array at specified index.
 		let struc.f(arr) = expr; Assign expression to array at named field of specified struct.
 		let var.field = expr;    Assign expr to array variable at named field of associated struct.
+		let global!field = expr; Assign expr to array global. Only needed if a local variable has the same name a declared global.
 		print expr;              Write number or string to standard output.
 		write expr;              Same as print, but do not add a newline.
 		error expr;              Same as print, but write to standard error.
@@ -120,19 +121,20 @@
 		[arr idx]                Array element.
 		struct                   Structure reference.
 		struct.field             Index of struct field.
-		struct!field             Index of struct field. To be used when a local variable has the same name as a declared struct.
 		struct.field(array)      Value of specified field of structured array expression.
-		struct!field(array)      Value of specified field. To be used when a local variable has the same name as a declared struct.
 		variable.field           Value of specified field of associated structure of local or global variable.
-		variable!field           Value of specified field of associated structure of global variable.
+		struct!field             Index of struct field. Only needed when a local variable has the same name as a declared struct.
+		struct!field(array)      Value of specified field. Only needed when a local variable has the same name as a declared struct.
+		global!field             Value of specified field. Only needed when a local variable has the same name as a declared global.
 		@function                Reference to declared function.
 		@(expr ...)              Recursive function call.
 		:(func expr ...)         Call function reference with specified args.
 		:struct.memb(this ...)   Call member-function. Equivalent to ":(struct.memb(this) this ...)", but this evaluated once.
-		:struct!memb(this ...)   Call member-function. To be used when a local variable has the same name as a declared struct.
 		:variable.member(...)    Call member-function using associated structure. Equivalent to ":struct.member(variable ...)".
-		:variable!member(...)    Call member-function using associated structure of specified global variable.
-		variable:func(...)       Call static member-function using associated struct. Equivalent to "struct_func(variable ...)".
+		variable:func(...)       Call static member-function using associated structure. Equivalent to "struct_func(variable ...)".
+		:struct!memb(this ...)   Call member-function. Only needed when a local variable has the same name as a declared struct.
+		:global!member(...)      Call member-function. Only needed when a local variable has the same name as a declared global.
+		global!:func(...)        Call static member-function. Only needed when a local variable has the same name as a declared global.
 		`(expr operator ...)     Infix expression, eg `( 1 + 2 ). '(...) may also be used.
 		+(num num ...)           Addition.
 		-(num num ...)           Subtraction.
@@ -2444,10 +2446,10 @@ static struct string* get_decl( struct string_list *list, char *name, int len, e
 	return NULL;
 }
 
-static struct string* get_decl_indexed( struct function *func, char *name, enum reference_type type ) {
+static struct string* get_decl_indexed( struct function *func, char *name, enum reference_type type, char *terminators ) {
 	char qname[ 65 ];
 	struct string *str = NULL;
-	int qlen, flen = field_length( name, "!.:" );
+	int qlen, flen = terminators ? field_length( name, terminators ) : strlen( name );
 	if( func->library ) {
 		qlen = func->library->length;
 		if( qlen + 1 + flen < 65 ) {
@@ -2461,6 +2463,9 @@ static struct string* get_decl_indexed( struct function *func, char *name, enum 
 	}
 	if( str == NULL ) {
 		str = get_decl( func->env->decls_index[ hash_code( name, name[ flen ] ) ], name, flen, type );
+	}
+	if( name[ flen ] == '!' && name[ flen + 1 ] && str && str->type == FUNCTION ) {
+		str = NULL;
 	}
 	return str;
 }
@@ -2542,7 +2547,7 @@ static struct element* parse_variable_declaration( struct element *elem, struct 
 			prev = prev->next;
 		}
 		if( elem->str.string[ 0 ] == '(' ) {
-			type = ( struct structure * ) get_decl_indexed( func, elem->child->str.string, STRUCT );
+			type = ( struct structure * ) get_decl_indexed( func, elem->child->str.string, STRUCT, NULL );
 			if( type ) {
 				elem = elem->next;
 			} else {
@@ -3925,7 +3930,7 @@ static struct element* parse_func_ref_expression( struct element *elem,
 	if( expr ) {
 		prev->next = &expr->expr;
 		expr->expr.line = elem->line;
-		expr->function = ( struct function * ) get_decl_indexed( func, name, FUNCTION );
+		expr->function = ( struct function * ) get_decl_indexed( func, name, FUNCTION, NULL );
 		if( expr->function ) {
 			expr->expr.evaluate = evaluate_func_ref_expression;
 		} else {
@@ -4048,7 +4053,7 @@ static struct element* parse_thiscall_expression( struct element *elem,
 	struct structure *struc;
 	struct element *next = elem->next;
 	struct local_variable *captured = NULL, *local = get_local_variable( func->variable_decls, &elem->str.string[ 1 ], "." );
-	struct global_variable *global = ( struct global_variable * ) get_decl_indexed( func, &elem->str.string[ 1 ], GLOBAL );
+	struct global_variable *global = ( struct global_variable * ) get_decl_indexed( func, &elem->str.string[ 1 ], GLOBAL, "!." );
 	struct expression param = { 0 }, *this, *expr = calloc( 1, sizeof( struct value_expression ) );
 	if( expr ) {
 		prev->next = expr;
@@ -4064,7 +4069,7 @@ static struct element* parse_thiscall_expression( struct element *elem,
 			} else if( global ) {
 				struc = global->type;
 			} else {
-				struc = ( struct structure * ) get_decl_indexed( func, &elem->str.string[ 1 ], STRUCT );
+				struc = ( struct structure * ) get_decl_indexed( func, &elem->str.string[ 1 ], STRUCT, "!." );
 			}
 		}
 		field = strchr( elem->str.string, '.' );
@@ -4137,50 +4142,54 @@ static struct element* parse_member_call_expression( struct structure *struc, st
 	struct expression *expr;
 	struct function *decl = NULL;
 	struct element *next = elem->next;
-	while( struc ) {
-		name = malloc( struc->str.length + 1 + strlen( memb ) + 1 );
-		if( name ) {
-			strcpy( name, struc->str.string );
-			name[ struc->str.length ] = '_';
-			strcpy( &name[ struc->str.length + 1 ], memb );
-			decl = ( struct function * ) get_decl_indexed( func, name, FUNCTION );
-			if( decl ) {
-				struc = NULL;
-			} else {
-				struc = struc->super;
-				if( struc == NULL ) {
-					sprintf( message, "Member function not found for expression '%.64s' on line %d.", elem->str.string, elem->line );
-				}
-			}
-			free( name );
-		} else {
-			strcpy( message, OUT_OF_MEMORY );
-			struc = NULL;
-		}
-	}
-	if( decl ) {
-		expr = calloc( 1, sizeof( struct function_expression ) );
-		if( expr ) {
-			prev->next = expr;
-			expr->line = elem->line;
-			expr->parameters = this;
-			( ( struct function_expression * ) expr )->function = decl;
-			if( next && next->str.string[ 0 ] == '(' ) {
-				parse_expressions( next->child, func, vars, 0, this, &num_params, message );
-				if( message[ 0 ] == 0 ) {
-					if( num_params + 1 == ( ( struct function_expression * ) expr )->function->num_parameters ) {
-						expr->evaluate = evaluate_call_expression;
-						next = next->next;
-					} else {
-						sprintf( message, "Wrong number of arguments to '%.64s()' on line %d.", decl->str.string, next->line );
+	if( struc ) {
+		while( struc ) {
+			name = malloc( struc->str.length + 1 + strlen( memb ) + 1 );
+			if( name ) {
+				strcpy( name, struc->str.string );
+				name[ struc->str.length ] = '_';
+				strcpy( &name[ struc->str.length + 1 ], memb );
+				decl = ( struct function * ) get_decl_indexed( func, name, FUNCTION, NULL );
+				if( decl ) {
+					struc = NULL;
+				} else {
+					struc = struc->super;
+					if( struc == NULL ) {
+						sprintf( message, "Member function not found for expression '%.64s' on line %d.", elem->str.string, elem->line );
 					}
 				}
+				free( name );
 			} else {
-				sprintf( message, "Expected '(' after function name on line %d.", elem->line );
+				strcpy( message, OUT_OF_MEMORY );
+				struc = NULL;
 			}
-		} else {
-			strcpy( message, OUT_OF_MEMORY );
 		}
+		if( decl ) {
+			expr = calloc( 1, sizeof( struct function_expression ) );
+			if( expr ) {
+				prev->next = expr;
+				expr->line = elem->line;
+				expr->parameters = this;
+				( ( struct function_expression * ) expr )->function = decl;
+				if( next && next->str.string[ 0 ] == '(' ) {
+					parse_expressions( next->child, func, vars, 0, this, &num_params, message );
+					if( message[ 0 ] == 0 ) {
+						if( num_params + 1 == ( ( struct function_expression * ) expr )->function->num_parameters ) {
+							expr->evaluate = evaluate_call_expression;
+							next = next->next;
+						} else {
+							sprintf( message, "Wrong number of arguments to '%.64s()' on line %d.", decl->str.string, next->line );
+						}
+					}
+				} else {
+					sprintf( message, "Expected '(' after function name on line %d.", elem->line );
+				}
+			} else {
+				strcpy( message, OUT_OF_MEMORY );
+			}
+		}
+	} else {
+		sprintf( message, "Expression '%.64s' has no associated structure on line %d.", elem->str.string, elem->line );
 	}
 	return next;
 }
@@ -4288,10 +4297,12 @@ static struct element* parse_global_expression( struct element *elem, struct fun
 			( ( struct value_expression * ) expr )->str = &global->str;
 			expr->evaluate = evaluate_global;
 		}
-		if( field[ 0 ] == '.' || ( field[ 0 ] == '!' && field[ 1 ] ) ) {
+		if( field[ 0 ] == '.' || ( field[ 0 ] == '!' && field[ 1 ] && field[ 1 ] != ':' ) ) {
 			next = parse_member_expression( global->type, expr, &field[ 1 ], elem, func, vars, prev, message );
 		} else if( field[ 0 ] == ':' ) {
 			next = parse_member_call_expression( global->type, expr, &field[ 1 ], elem, func, vars, prev, message );
+		} else if( field[ 0 ] == '!' && field[ 1 ] == ':' ) {
+			next = parse_member_call_expression( global->type, expr, &field[ 2 ], elem, func, vars, prev, message );
 		}
 	} else {
 		strcpy( message, OUT_OF_MEMORY );
@@ -4435,7 +4446,7 @@ struct element* parse_expression( struct element *elem,
 					/* Operator. */
 					next = parse_operator_expression( elem, oper, func, vars, prev, message );
 				} else {
-					decl = get_decl_indexed( func, value, 0 );
+					decl = get_decl_indexed( func, value, 0, "!.:" );
 					if( decl ) {
 						type = decl->type;
 					}
@@ -4607,7 +4618,7 @@ static struct element* parse_struct_assignment( struct element *elem,
 	struct statement *stmt = calloc( 1, sizeof( struct structure_statement ) );
 	if( stmt ) {
 		prev->next = stmt;
-		struc = ( struct structure * ) get_decl_indexed( func, next->str.string, STRUCT );
+		struc = ( struct structure * ) get_decl_indexed( func, next->str.string, STRUCT, "!." );
 		field = strchr( next->str.string, '.' );
 		if( !field ) {
 			field = strchr( next->str.string, '!' );
@@ -4785,7 +4796,7 @@ static struct element* parse_assignment_statement( struct element *elem,
 		if( local ) {
 			return parse_local_assignment( elem, func, vars, local, prev, message );
 		} else {
-			global = ( struct global_variable * ) get_decl_indexed( func, next->str.string, GLOBAL );
+			global = ( struct global_variable * ) get_decl_indexed( func, next->str.string, GLOBAL, "!." );
 			if( global ) {
 				return parse_global_assignment( elem, func, vars, global, prev, message );
 			} else {
@@ -5478,7 +5489,7 @@ static struct element* add_function_parameter( struct function *func, struct ele
 	struct local_variable *param;
 	struct structure *type = NULL;
 	if( elem->str.string[ 0 ] == '(' ) {
-		type = ( struct structure * ) get_decl_indexed( func, elem->child->str.string, STRUCT );
+		type = ( struct structure * ) get_decl_indexed( func, elem->child->str.string, STRUCT, NULL );
 		if( type ) {
 			elem = elem->next;
 		} else {
@@ -5756,7 +5767,7 @@ static struct element* parse_struct_declaration( struct element *elem,
 			if( next && next->str.string[ 0 ] == '(' ) {
 				child = next->child;
 				if( child && child->next == NULL ) {
-					struc->super = ( struct structure * ) get_decl_indexed( func, child->str.string, STRUCT );
+					struc->super = ( struct structure * ) get_decl_indexed( func, child->str.string, STRUCT, NULL );
 				}
 				if( struc->super && struc->super != struc ) {
 					field = struc->super->fields;
@@ -5926,7 +5937,7 @@ static struct element* parse_library_declaration( struct element *elem,
 	struct element *next = elem->next;
 	struct string *library;
 	struct function *init;
-	if( get_decl_indexed( func, next->str.string, LIBRARY ) ) {
+	if( get_decl_indexed( func, next->str.string, LIBRARY, NULL ) ) {
 		next = next->next->next;
 	} else {
 		library = new_string_value( next->str.string );
