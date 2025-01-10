@@ -774,9 +774,9 @@ function teststruct() {
 	call assert_throws( "Expression 'a.xxx' has no", ${ () { call a.xxx; } } );
 	call assert_throws( "Field not declared", ${ () { call ext.xxx; } } );
 	call assert_throws( "Variable 'p' has no", ${ ( p ) { let p.xxx = 1; } } );
-	call assert_throws( "Field 'xxx' not declared", ${ ( ( exten ) p ) { let p.xxx = 1; } } );
+	call assert_throws( "Field 'p.xxx' not declared", ${ ( ( exten ) p ) { let p.xxx = 1; } } );
 	call assert_throws( "Variable 'a' has no", ${ () { let a.xxx = 1; } } );
-	call assert_throws( "Field 'xxx' not declared", ${ () { let ext.xxx = 1; } } );
+	call assert_throws( "Field 'ext.xxx' not declared", ${ () { let ext.xxx = 1; } } );
 }
 
 function testfuncref() {
@@ -1255,6 +1255,10 @@ function testscope() {
 	call assert_equals( 0, g!, ${-} );
 	let ext.a = 1;
 	call assert_equals( 1, ext!:geta(), ${-} );
+	call assert_throws( "Field", ${ ( ext ) { call :ext!xxx.a(); } } );
+	call assert_throws( "Field", ${ ( ext ) { call ext!xxx.a; } } );
+	call assert_throws( "Field", ${ ( ext ) { let ext!xxx.a = ext!a; } } );
+	call assert_throws( "Undeclared", ${ ( ext ) { let exten!xxx.a( ext! ) = ext!a; } } );
 }
 
 program test {

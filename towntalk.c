@@ -3966,20 +3966,21 @@ static struct element* parse_index_expression( struct element *elem,
 
 static struct element* parse_struct_expression( struct element *elem,
 	struct function *func, struct variables *vars, struct structure *struc, struct expression *prev, char *message ) {
-	char *field;
 	int idx, count;
 	struct element *next = elem->next;
+	char *field = strchr( elem->str.string, '.' ), *exclm = strchr( elem->str.string, '!' );
 	struct expression param = { 0 }, *expr = calloc( 1, sizeof( struct value_expression ) );
 	if( expr ) {
 		prev->next = expr;
 		expr->line = elem->line;
 		( ( struct value_expression * ) expr )->str = &struc->str;
-		field = strchr( elem->str.string, '.' );
 		if( !field ) {
-			field = strchr( elem->str.string, '!' );
+			field = exclm;
 			if( field && !field[ 1 ] ) {
 				field = NULL;
 			}
+		} else if( exclm ) {
+			field = field < exclm ? field : exclm;
 		}
 		if( field ) {
 			idx = get_string_list_index( struc->fields, &field[ 1 ] );
@@ -4047,13 +4048,14 @@ static struct element* parse_refcall_expression( struct element *elem,
 
 static struct element* parse_thiscall_expression( struct element *elem,
 	struct function *func, struct variables *vars, struct expression *prev, char *message ) {
-	char *field;
 	int idx, count;
+	char *field, *exclm;
 	struct variable *var;
-	struct structure *struc;
+	struct structure *struc = NULL;
 	struct element *next = elem->next;
+	struct global_variable *global = NULL;
+	struct string *decl = get_decl_indexed( func, &elem->str.string[ 1 ], 0, "!." );
 	struct local_variable *captured = NULL, *local = get_local_variable( func->variable_decls, &elem->str.string[ 1 ], "." );
-	struct global_variable *global = ( struct global_variable * ) get_decl_indexed( func, &elem->str.string[ 1 ], GLOBAL, "!." );
 	struct expression param = { 0 }, *this, *expr = calloc( 1, sizeof( struct value_expression ) );
 	if( expr ) {
 		prev->next = expr;
@@ -4066,15 +4068,21 @@ static struct element* parse_thiscall_expression( struct element *elem,
 			}
 			if( captured ) {
 				struc = captured->type;
-			} else if( global ) {
-				struc = global->type;
-			} else {
-				struc = ( struct structure * ) get_decl_indexed( func, &elem->str.string[ 1 ], STRUCT, "!." );
+			} else if( decl ) {
+				if( decl->type == GLOBAL ) {
+					global = ( struct global_variable * ) decl;
+					struc = global->type;
+				} else if( decl->type == STRUCT ) {
+					struc = ( struct structure * ) decl;
+				}
 			}
 		}
 		field = strchr( elem->str.string, '.' );
+		exclm = strchr( elem->str.string, '!' );
 		if( !field ) {
-			field = strchr( elem->str.string, '!' );
+			field = exclm;
+		} else if( exclm ) {
+			field = field < exclm ? field : exclm;
 		}
 		if( struc && field ) {
 			( ( struct value_expression * ) expr )->str = &struc->str;
@@ -4610,8 +4618,8 @@ static struct element* parse_array_assignment( struct element *elem,
 
 static struct element* parse_struct_assignment( struct element *elem,
 	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
-	char *field;
 	int idx, count;
+	char *field, *exclm;
 	struct expression expr;
 	struct structure *struc;
 	struct element *next = elem->next;
@@ -4620,8 +4628,11 @@ static struct element* parse_struct_assignment( struct element *elem,
 		prev->next = stmt;
 		struc = ( struct structure * ) get_decl_indexed( func, next->str.string, STRUCT, "!." );
 		field = strchr( next->str.string, '.' );
+		exclm = strchr( next->str.string, '!' );
 		if( !field ) {
-			field = strchr( next->str.string, '!' );
+			field = exclm;
+		} else if( exclm ) {
+			field = NULL;
 		}
 		if( struc && field ) {
 			( ( struct structure_statement * ) stmt )->structure = struc;
@@ -4690,7 +4701,7 @@ static struct element* parse_local_assignment( struct element *elem,
 						strcpy( message, OUT_OF_MEMORY );
 					}
 				} else {
-					sprintf( message, "Field '%.64s' not declared on line %d.", &field[ 1 ], elem->line );
+					sprintf( message, "Field '%.64s' not declared on line %d.", elem->next->str.string, elem->line );
 				}
 			}
 		} else {
@@ -4724,12 +4735,14 @@ static struct element* parse_global_assignment( struct element *elem,
 	struct expression expr;
 	struct element *next = elem->next;
 	struct structure *struc = global->type;
-	char *field = strchr( next->str.string, '.' );
+	char *field = strchr( next->str.string, '.' ), *exclm = strchr( next->str.string, '!' );
 	if( !field ) {
-		field = strchr( next->str.string, '!' );
+		field = exclm;
 		if( field && !field[ 1 ] ) {
 			field = NULL;
 		}
+	} else if( exclm ) {
+		field = field < exclm ? field : exclm;
 	}
 	if( struc && field ) {
 		stmt = calloc( 1, sizeof( struct structure_statement ) );
@@ -4755,7 +4768,7 @@ static struct element* parse_global_assignment( struct element *elem,
 						strcpy( message, OUT_OF_MEMORY );
 					}
 				} else {
-					sprintf( message, "Field '%.64s' not declared on line %d.", &field[ 1 ], elem->line );
+					sprintf( message, "Field '%.64s' not declared on line %d.", elem->next->str.string, elem->line );
 				}
 			}
 		} else {
