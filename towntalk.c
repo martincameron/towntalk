@@ -73,11 +73,11 @@
 		var ( struct ) a;        Local variable with associated struct.
 		var [ a expr ];          Local variable initialized with array of specified length.
 		let var = expr;          Assign expression to local or global variable.
-		let var! = expr;         Assign expression to global variable.
+		let var! = expr;         Assign expression to global variable. Only needed when a local variable has the same name.
 		let [ arr idx ] = expr;  Assign expression to array at specified index.
 		let struc.f(arr) = expr; Assign expression to array at named field of specified struct.
-		let var.field = expr;    Assign expr to array variable at named field of associated struct.
-		let global!field = expr; Assign expr to array global. Only needed if a local variable has the same name a declared global.
+		let var.field = expr;    Assign expr to local or global array variable at named field of associated struct.
+		let global!field = expr; Assign expr to global array variable. Only needed when a local variable has the same name.
 		print expr;              Write number or string to standard output.
 		write expr;              Same as print, but do not add a newline.
 		error expr;              Same as print, but write to standard error.
@@ -113,28 +113,29 @@
 		"String"                 String literal.
 		${0,"1",$tup("2",3)}     Element literal.
 		variable                 Value of named local or global variable.
-		variable!                Value of named global variable.
+		variable!                Value of named global variable. Only needed when a local variable has the same name.
 		local++                  Value of named local variable prior to increment.
 		local--                  Value of named local variable prior to decrement.
 		function(expr ...)       Call declared function with specified args.
-		function!(expr ...)      Call declared function. To be used when a local variable has the same name.
+		function!(expr ...)      Call declared function. Only needed when a local variable has the same name as a function.
 		[arr idx]                Array element.
 		struct                   Structure reference.
 		struct.field             Index of struct field.
 		struct.field(array)      Value of specified field of structured array expression.
 		variable.field           Value of specified field of associated structure of local or global variable.
-		struct!field             Index of struct field. Only needed when a local variable has the same name as a declared struct.
-		struct!field(array)      Value of specified field. Only needed when a local variable has the same name as a declared struct.
-		global!field             Value of specified field. Only needed when a local variable has the same name as a declared global.
+		struct!                  Structure reference. Only needed when a local variable has the same name as a struct.
+		struct!field             Index of struct field. Only needed when a local variable has the same name as a struct.
+		struct!field(array)      Value of specified field. Only needed when a local variable has the same name as a struct.
+		global!field             Value of specified field. Only needed when a local variable has the same name as a global.
 		@function                Reference to declared function.
 		@(expr ...)              Recursive function call.
 		:(func expr ...)         Call function reference with specified args.
 		:struct.memb(this ...)   Call member-function. Equivalent to ":(struct.memb(this) this ...)", but this evaluated once.
 		:variable.member(...)    Call member-function using associated structure. Equivalent to ":struct.member(variable ...)".
 		variable:func(...)       Call static member-function using associated structure. Equivalent to "struct_func(variable ...)".
-		:struct!memb(this ...)   Call member-function. Only needed when a local variable has the same name as a declared struct.
-		:global!member(...)      Call member-function. Only needed when a local variable has the same name as a declared global.
-		global!:func(...)        Call static member-function. Only needed when a local variable has the same name as a declared global.
+		:struct!memb(this ...)   Call member-function. Only needed when a local variable has the same name as a struct.
+		:global!member(...)      Call member-function. Only needed when a local variable has the same name as a global.
+		global!:func(...)        Call static member-function. Only needed when a local variable has the same name as a global.
 		`(expr operator ...)     Infix expression, eg `( 1 + 2 ). '(...) may also be used.
 		+(num num ...)           Addition.
 		-(num num ...)           Subtraction.
