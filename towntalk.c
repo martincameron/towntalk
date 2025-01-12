@@ -2465,7 +2465,7 @@ static struct string* get_decl_indexed( struct function *func, char *name, enum 
 	if( str == NULL ) {
 		str = get_decl( func->env->decls_index[ hash_code( name, name[ flen ] ) ], name, flen, type );
 	}
-	if( name[ flen ] == '!' && name[ flen + 1 ] && str && str->type == FUNCTION ) {
+	if( name[ flen ] && str && str->type == FUNCTION && ( name[ flen + 1 ] || name[ flen ] != '!' ) ) {
 		str = NULL;
 	}
 	return str;

@@ -1248,17 +1248,18 @@ function testscope() {
 	var fact = "f";
 	call assert_equals( "f", fact, ${-} );
 	call assert_equals( 2, fact!( 0 2 ), ${-} );
-	call assert_throws( "Unhandled expression", ${ ( fact ) { call fact!xxx(); } } );
+	call assert_throws( "Unhandled", ${ () { var fact; call fact!xxx(); } } );
+	call assert_throws( "Unhandled", ${ () { call hello:(); } } );
 	var g = 1;
 	let g! = 0;
 	call assert_equals( 1, g, ${-} );
 	call assert_equals( 0, g!, ${-} );
 	let ext.a = 1;
 	call assert_equals( 1, ext!:geta(), ${-} );
-	call assert_throws( "Field", ${ ( ext ) { call :ext!xxx.a(); } } );
-	call assert_throws( "Field", ${ ( ext ) { call ext!xxx.a; } } );
-	call assert_throws( "Field", ${ ( ext ) { let ext!xxx.a = ext!a; } } );
-	call assert_throws( "Undeclared", ${ ( ext ) { let exten!xxx.a( ext! ) = ext!a; } } );
+	call assert_throws( "Field", ${ () { var ext; call :ext!xxx.a(); } } );
+	call assert_throws( "Field", ${ () { var ext; call ext!xxx.a; } } );
+	call assert_throws( "Field", ${ () { var ext; let ext!xxx.a = ext!a; } } );
+	call assert_throws( "Undeclared", ${ () { var ext; let exten!xxx.a( ext! ) = ext!a; } } );
 }
 
 program test {
