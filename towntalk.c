@@ -336,32 +336,37 @@ static int hash_code( char *str, char terminator ) {
 	return hash & 0x1F;
 }
 
-/* Return the first index of a member of chars in str, starting from idx. 
-   If idx is negative, return the last index, starting from 0. */
-static int str_idx( char *str, const char *chars, int idx ) {
-	int last = 0, offset = -1, chr;
-	if( idx < 0 ) {
-		last = 1;
-		idx = 0;
+/* Return the length of str up to one of the terminators. */
+static size_t field_length( char *str, char *terminators ) {
+	char mask = 0, *end = terminators;
+	while( *end ) {
+		mask |= *end++;
 	}
-	chr = str[ idx++ ];
-	while( chr && ( offset < 0 || last ) ) {
-		if( strchr( chars, chr ) ) {
-			offset = idx - 1;
-		}
-		chr = str[ idx++ ];
+	end = str;
+	mask = ~mask;
+	while( *end && ( *end & mask || !strchr( terminators, *end ) ) ) {
+		end++;
 	}
-	return offset;
+	return end - str;
 }
 
-/* Return the length of str up to one the terminators. */
-static int field_length( char *str, char *terminators ) {
-	int len = 0;
-	char chr = str[ 0 ];
-	while( chr && strchr( terminators, chr ) == NULL ) {
-		chr = str[ ++len ];
+/* Return the first index of a member of chars in str, starting from idx. 
+   If idx is negative, return the last index, starting from 0. */
+static int str_idx( char *str, char *chars, int idx ) {
+	char *chr, *end;
+	if( idx < 0 ) {
+		chr = end = str + field_length( str, chars );
+		while( *end ) {
+			chr = end;
+			end += field_length( end + 1, chars ) + 1;
+		}
+	} else {
+		chr = str + idx + field_length( str + idx, chars );
 	}
-	return len;
+	if( *chr ) {
+		return chr - str;
+	}
+	return -1;
 }
 
 static int parse_string( char *input, int idx, char *output, int line, char *message ) {
