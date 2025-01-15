@@ -344,7 +344,7 @@ static size_t field_length( char *str, char *terminators ) {
 	}
 	end = str;
 	mask = ~mask;
-	while( *end && ( *end & mask || !strchr( terminators, *end ) ) ) {
+	while( *end & mask || ( *end && !strchr( terminators, *end ) ) ) {
 		end++;
 	}
 	return end - str;
