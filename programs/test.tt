@@ -764,6 +764,7 @@ function teststruct() {
 	call assert_throws( "Not an instance", ${ () { call struc.a( 0 ); } } );
 	call assert_throws( "Not an instance", ${ () { call exten.g( $new( struc ) ); } } );
 	call assert_throws( "Undeclared", ${ () { set struc( 0 ) = 0; } } );
+	call assert_throws( "Field 'struc.' not", ${ () { set struc.( 0 ) = 0; } } );
 	call assert_throws( "Field 'struc.xxx' not declared", ${ () { set struc.xxx( 0 ) = 0; } } );
 	call assert_throws( "Invalid", ${ () { set struc.a() = 0; } } );
 	call assert_throws( "Not an instance", ${ () { set struc.a( 0 ) = 0; } } );
@@ -1261,7 +1262,7 @@ function testscope() {
 	call assert_throws( "Field", ${ () { var ext; call :ext!xxx.a(); } } );
 	call assert_throws( "Field", ${ () { var ext; call ext!xxx.a; } } );
 	call assert_throws( "Field", ${ () { var ext; let ext!xxx.a = ext!a; } } );
-	call assert_throws( "Undeclared", ${ () { var ext; let exten!xxx.a( ext! ) = ext!a; } } );
+	call assert_throws( "Field", ${ () { var ext; let exten!xxx.a( ext! ) = ext!a; } } );
 }
 
 program test {

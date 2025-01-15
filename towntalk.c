@@ -336,8 +336,8 @@ static int hash_code( char *str, char terminator ) {
 	return hash & 0x1F;
 }
 
-/* Return the length of str up to one of the terminators. */
-static size_t field_length( char *str, char *terminators ) {
+/* Return a pointer to the first terminator in str, or the end. */
+static char* field_end( char *str, char *terminators ) {
 	char mask = 0, *end = terminators;
 	while( *end ) {
 		mask |= *end++;
@@ -347,7 +347,7 @@ static size_t field_length( char *str, char *terminators ) {
 	while( *end & mask || ( *end && !strchr( terminators, *end ) ) ) {
 		end++;
 	}
-	return end - str;
+	return end;
 }
 
 /* Return the first index of a member of chars in str, starting from idx. 
@@ -355,13 +355,13 @@ static size_t field_length( char *str, char *terminators ) {
 static int str_idx( char *str, char *chars, int idx ) {
 	char *chr, *end;
 	if( idx < 0 ) {
-		chr = end = str + field_length( str, chars );
+		chr = end = field_end( str, chars );
 		while( *end ) {
 			chr = end;
-			end += field_length( end + 1, chars ) + 1;
+			end = field_end( end + 1, chars );
 		}
 	} else {
-		chr = str + idx + field_length( str + idx, chars );
+		chr = field_end( str + idx, chars );
 	}
 	if( *chr ) {
 		return chr - str;
@@ -2455,7 +2455,7 @@ static struct string* get_decl( struct string_list *list, char *name, int len, e
 static struct string* get_decl_indexed( struct function *func, char *name, enum reference_type type, char *terminators ) {
 	char qname[ 65 ];
 	struct string *str = NULL;
-	int qlen, flen = terminators ? field_length( name, terminators ) : strlen( name );
+	int qlen, flen = terminators ? field_end( name, terminators ) - name : strlen( name );
 	if( func->library ) {
 		qlen = func->library->length;
 		if( qlen + 1 + flen < 65 ) {
@@ -2477,7 +2477,7 @@ static struct string* get_decl_indexed( struct function *func, char *name, enum 
 }
 
 static struct local_variable* get_local_variable( struct local_variable *locals, char *name, char *terminators ) {
-	size_t len = field_length( name, terminators );
+	size_t len = field_end( name, terminators ) - name;
 	while( locals && ( strncmp( locals->name, name, len ) || strlen( locals->name ) != len ) ) {
 		locals = locals->next;
 	}
@@ -3974,21 +3974,16 @@ static struct element* parse_struct_expression( struct element *elem,
 	struct function *func, struct variables *vars, struct structure *struc, struct expression *prev, char *message ) {
 	int idx, count;
 	struct element *next = elem->next;
-	char *field = strchr( elem->str.string, '.' ), *exclm = strchr( elem->str.string, '!' );
+	char *field = field_end( elem->str.string, "!." );
 	struct expression param = { 0 }, *expr = calloc( 1, sizeof( struct value_expression ) );
 	if( expr ) {
 		prev->next = expr;
 		expr->line = elem->line;
 		( ( struct value_expression * ) expr )->str = &struc->str;
-		if( !field ) {
-			field = exclm;
-			if( field && !field[ 1 ] ) {
-				field = NULL;
-			}
-		} else if( exclm ) {
-			field = field < exclm ? field : exclm;
+		if( field[ 0 ] == '!' && !field[ 1 ] ) {
+			field++;
 		}
-		if( field ) {
+		if( field[ 0 ] ) {
 			idx = get_string_list_index( struc->fields, &field[ 1 ] );
 			if( idx >= 0 ) {
 				expr->index = idx;
@@ -4054,8 +4049,8 @@ static struct element* parse_refcall_expression( struct element *elem,
 
 static struct element* parse_thiscall_expression( struct element *elem,
 	struct function *func, struct variables *vars, struct expression *prev, char *message ) {
+	char *field;
 	int idx, count;
-	char *field, *exclm;
 	struct variable *var;
 	struct structure *struc = NULL;
 	struct element *next = elem->next;
@@ -4083,14 +4078,8 @@ static struct element* parse_thiscall_expression( struct element *elem,
 				}
 			}
 		}
-		field = strchr( elem->str.string, '.' );
-		exclm = strchr( elem->str.string, '!' );
-		if( !field ) {
-			field = exclm;
-		} else if( exclm ) {
-			field = field < exclm ? field : exclm;
-		}
-		if( struc && field ) {
+		field = field_end( elem->str.string, "!." );
+		if( struc && field[ 0 ] ) {
 			( ( struct value_expression * ) expr )->str = &struc->str;
 			idx = get_string_list_index( struc->fields, &field[ 1 ] );
 			if( idx >= 0 ) {
@@ -4295,7 +4284,7 @@ static struct element* parse_capture_expression( struct element *elem,
 static struct element* parse_global_expression( struct element *elem, struct function *func,
 	struct variables *vars, struct global_variable *global, struct expression *prev, char *message ) {
 	struct element *next = elem->next;
-	char *field = &elem->str.string[ field_length( elem->str.string, "!.:" ) ];
+	char *field = field_end( elem->str.string, "!.:" );
 	struct expression *expr = calloc( 1, sizeof( struct value_expression ) );
 	if( expr ) {
 		prev->next = expr;
@@ -4624,8 +4613,8 @@ static struct element* parse_array_assignment( struct element *elem,
 
 static struct element* parse_struct_assignment( struct element *elem,
 	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
+	char *field;
 	int idx, count;
-	char *field, *exclm;
 	struct expression expr;
 	struct structure *struc;
 	struct element *next = elem->next;
@@ -4633,14 +4622,8 @@ static struct element* parse_struct_assignment( struct element *elem,
 	if( stmt ) {
 		prev->next = stmt;
 		struc = ( struct structure * ) get_decl_indexed( func, next->str.string, STRUCT, "!." );
-		field = strchr( next->str.string, '.' );
-		exclm = strchr( next->str.string, '!' );
-		if( !field ) {
-			field = exclm;
-		} else if( exclm ) {
-			field = NULL;
-		}
-		if( struc && field ) {
+		field = field_end( next->str.string, "!." );
+		if( struc && field[ 0 ] ) {
 			( ( struct structure_statement * ) stmt )->structure = struc;
 			idx = get_string_list_index( struc->fields, &field[ 1 ] );
 			if( idx >= 0 ) {
@@ -4741,16 +4724,11 @@ static struct element* parse_global_assignment( struct element *elem,
 	struct expression expr;
 	struct element *next = elem->next;
 	struct structure *struc = global->type;
-	char *field = strchr( next->str.string, '.' ), *exclm = strchr( next->str.string, '!' );
-	if( !field ) {
-		field = exclm;
-		if( field && !field[ 1 ] ) {
-			field = NULL;
-		}
-	} else if( exclm ) {
-		field = field < exclm ? field : exclm;
+	char *field = field_end( next->str.string, "!." );
+	if( field[ 0 ] == '!' && !field[ 1 ] ) {
+		field++;
 	}
-	if( struc && field ) {
+	if( struc && field[ 0 ] ) {
 		stmt = calloc( 1, sizeof( struct structure_statement ) );
 		if( stmt ) {
 			prev->next = stmt;
@@ -4780,7 +4758,7 @@ static struct element* parse_global_assignment( struct element *elem,
 		} else {
 			strcpy( message, OUT_OF_MEMORY );
 		}
-	} else if( field ) {
+	} else if( field[ 0 ] ) {
 		sprintf( message, "Variable '%.64s' has no associated structure on line %d.", global->str.string, elem->line );
 	} else {
 		stmt = calloc( 1, sizeof( struct global_assignment_statement ) );
