@@ -747,6 +747,11 @@ static void print_insns( struct function *func, struct arithmetic_statement *stm
 		} else {
 			name = arithmetic_ops[ insn->oper ];
 		}
+#if defined( FLOATING_POINT )
+		if( insn->value ) {
+			fprintf( stderr, "% 6d %s %.16g:\n", insn->expr->line, name, insn->value );
+		} else
+#endif
 		fprintf( stderr, "% 6d %s %d:\n", insn->expr->line, name, insn->local );
 		insn++;
 	}
