@@ -164,8 +164,8 @@ struct statement {
 struct block_statement {
 	struct statement stmt;
 	struct statement *if_block, *else_block;
-	number rhs;
-	int oper;
+	int oper, rhs;
+	number num;
 };
 
 /* Parser keyword. */

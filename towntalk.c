@@ -1705,7 +1705,7 @@ static enum result execute_if_statement( struct statement *this,
 static enum result execute_if_local_statement( struct statement *this,
 	struct variables *vars, struct variable *result ) {
 	struct variable *lhs = &vars->locals[ this->local ];
-	struct variable *rhs = &vars->locals[ ( int ) ( ( struct block_statement * ) this )->rhs ];
+	struct variable *rhs = &vars->locals[ ( ( struct block_statement * ) this )->rhs ];
 	struct statement *stmt = ( ( struct block_statement * ) this )->if_block;
 	enum result ret = OKAY;
 	if( lhs->string_value || rhs->string_value ) {
@@ -1729,7 +1729,7 @@ static enum result execute_if_local_statement( struct statement *this,
 static enum result execute_if_const_statement( struct statement *this,
 	struct variables *vars, struct variable *result ) {
 	struct variable *lhs = &vars->locals[ this->local ];
-	number rhs = ( ( struct block_statement * ) this )->rhs;
+	number rhs = ( ( struct block_statement * ) this )->num;
 	struct statement *stmt = ( ( struct block_statement * ) this )->if_block;
 	enum result ret = OKAY;
 	if( lhs->string_value ) {
@@ -1795,7 +1795,7 @@ static enum result execute_while_local_statement( struct statement *this,
 	struct variables *vars, struct variable *result ) {
 	struct environment *env = vars->func->env;
 	struct variable *lhs = &vars->locals[ this->local ];
-	struct variable *rhs = &vars->locals[ ( int ) ( ( struct block_statement * ) this )->rhs ];
+	struct variable *rhs = &vars->locals[ ( ( struct block_statement * ) this )->rhs ];
 	int oper = ( ( struct block_statement * ) this )->oper;
 	struct statement *stmt;
 	enum result ret;
@@ -1836,7 +1836,7 @@ static enum result execute_while_const_statement( struct statement *this,
 	struct variables *vars, struct variable *result ) {
 	struct environment *env = vars->func->env;
 	struct variable *lhs = &vars->locals[ this->local ];
-	number rhs = ( ( struct block_statement * ) this )->rhs;
+	number rhs = ( ( struct block_statement * ) this )->num;
 	int oper = ( ( struct block_statement * ) this )->oper;
 	struct statement *stmt;
 	enum result ret;
@@ -5309,7 +5309,7 @@ static struct element* parse_if_statement( struct element *elem,
 						stmt->execute = execute_if_local_statement;
 					} else if( expr.next->parameters->next->evaluate == evaluate_number_literal_expression ) {
 						stmt->local = expr.next->parameters->index;
-						( ( struct block_statement * ) stmt )->rhs = expr.next->parameters->next->index;
+						( ( struct block_statement * ) stmt )->num = ( ( struct value_expression * ) expr.next->parameters->next )->num;
 						( ( struct block_statement * ) stmt )->oper = expr.next->index;
 						stmt->execute = execute_if_const_statement;
 					}
@@ -5378,7 +5378,7 @@ static struct element* parse_while_statement( struct element *elem,
 						stmt->execute = execute_while_local_statement;
 					} else if( expr.next->parameters->next->evaluate == evaluate_number_literal_expression ) {
 						stmt->local = expr.next->parameters->index;
-						( ( struct block_statement * ) stmt )->rhs = expr.next->parameters->next->index;
+						( ( struct block_statement * ) stmt )->num = ( ( struct value_expression * ) expr.next->parameters->next )->num;
 						( ( struct block_statement * ) stmt )->oper = expr.next->index;
 						stmt->execute = execute_while_const_statement;
 					}
