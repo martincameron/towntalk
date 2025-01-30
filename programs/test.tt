@@ -133,9 +133,7 @@ function testarray() {
 	call assert_equals( 4, $len( arr ), ${-} );
 	set [ a, idx ] = "a";
 	call assert_equals( "a", [ a 0 ], ${-} );
-	set [ a 1 ] = 1;
-	set [ a 2 ] = [ a idx ];
-	set [ a 2 ] = [ a idx++ ];
+	set [ a 1 ] = 1, [ a 2 ] = [ a idx ], [ a 2 ] = [ a idx++ ];
 	call assert_equals( 1, idx, ${-} );
 	set [ a idx++ ] = 2;
 	call assert_equals( 2, [ a 1 ], ${-} );
@@ -610,6 +608,16 @@ function testint() {
 	call assert_throws( "Unable to convert", ${ () { call $int( "a" ); } } );
 }
 
+function testnum() {
+	call assert_equals( 1, $num( "1" ), ${-} );
+	call assert_equals( 10, $num( "0xA" ), ${-} );
+	call assert_equals( 8, $num( "010" ), ${-} );
+	call assert_equals( 0xFFFFFF00, $num( "0xFFFFFF00" ), ${-} );
+	call assert_equals( -0xFFFFFF00, $num( "-0xFFFFFF00" ), ${-} );
+	call assert_throws( "1", ${ () { call $num( except( ${ 1 } ) ); } } );
+	call assert_throws( "Unable to convert", ${ () { call $num( "a" ); } } );
+}
+
 function testlen() {
 	call assert_equals( 0, $len( "" ), ${-} );
 	call assert_equals( 1, $len( "a" ), ${-} );
@@ -983,8 +991,7 @@ function testthiscall() {
 
 function testmembercall() {
 	var ( exten ) obj = $new( exten );
-	let obj.a = 1;
-	let obj.g = 2;
+	let obj.a = 1, obj.g = 2;
 	call assert_equals( 1, obj:geta(), ${-} );
 	call assert_equals( 2, obj:getg(), ${-} );
 	call assert_equals( 0, ext:geta(), ${-} );
@@ -1290,6 +1297,7 @@ program test {
 	call testasc();
 	call testhex();
 	call testint();
+	call testnum();
 	call testlen();
 	call testtup();
 	call testsrc();

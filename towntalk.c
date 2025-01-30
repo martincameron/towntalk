@@ -4593,7 +4593,6 @@ static struct element* parse_array_assignment( struct element *elem,
 					expr.next->next = stmt->source;
 					stmt->source = expr.next;
 					stmt->execute = execute_array_assignment;
-					next = next->next;
 				}
 			}
 		}
@@ -4632,7 +4631,6 @@ static struct element* parse_struct_assignment( struct element *elem,
 							expr.next->next = stmt->source;
 							stmt->source = expr.next;
 							stmt->execute = execute_struct_assignment;
-							next = next->next;
 						}
 					} else {
 						sprintf( message, "Invalid structure assignment on line %d.", next->line );
@@ -4677,7 +4675,6 @@ static struct element* parse_local_assignment( struct element *elem,
 						expr.next->index = local->index;
 						expr.next->evaluate = evaluate_local;
 						stmt->execute = execute_struct_assignment;
-						next = next->next;
 					} else {
 						strcpy( message, OUT_OF_MEMORY );
 					}
@@ -4700,7 +4697,6 @@ static struct element* parse_local_assignment( struct element *elem,
 				stmt->source = expr.next;
 				stmt->local = local->index;
 				stmt->execute = execute_local_assignment;
-				next = next->next;
 			}
 		} else {
 			strcpy( message, OUT_OF_MEMORY );
@@ -4739,7 +4735,6 @@ static struct element* parse_global_assignment( struct element *elem,
 						expr.next->evaluate = evaluate_global;
 						( ( struct value_expression * ) expr.next )->str = &global->str;
 						stmt->execute = execute_struct_assignment;
-						next = next->next;
 					} else {
 						strcpy( message, OUT_OF_MEMORY );
 					}
@@ -4762,7 +4757,6 @@ static struct element* parse_global_assignment( struct element *elem,
 				stmt->source = expr.next;
 				( ( struct global_assignment_statement * ) stmt )->destination = &global->value;
 				stmt->execute = execute_global_assignment;
-				next = next->next;
 			}
 		} else {
 			strcpy( message, OUT_OF_MEMORY );
@@ -4775,25 +4769,29 @@ static struct element* parse_assignment_statement( struct element *elem,
 	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
 	struct local_variable *local;
 	struct global_variable *global;
-	struct element *next = elem->next;
-	if( next->str.string[ 0 ] == '[' ) {
-		return parse_array_assignment( elem, func, vars, prev, message );
-	} else if( next->next->str.string[ 0 ] == '(' ) {
-		return parse_struct_assignment( elem, func, vars, prev, message );
-	} else {
-		local = get_local_variable( func->variable_decls, next->str.string, "." );
-		if( local ) {
-			return parse_local_assignment( elem, func, vars, local, prev, message );
+	struct element *next;
+	while( message[ 0 ] == 0 && elem->str.string[ 0 ] != ';' ) {
+		next = elem->next;
+		if( next->str.string[ 0 ] == '[' ) {
+			elem = parse_array_assignment( elem, func, vars, prev, message );
+		} else if( next->next->str.string[ 0 ] == '(' ) {
+			elem = parse_struct_assignment( elem, func, vars, prev, message );
 		} else {
-			global = ( struct global_variable * ) get_decl_indexed( func, next->str.string, GLOBAL, "!." );
-			if( global ) {
-				return parse_global_assignment( elem, func, vars, global, prev, message );
+			local = get_local_variable( func->variable_decls, next->str.string, "." );
+			if( local ) {
+				elem = parse_local_assignment( elem, func, vars, local, prev, message );
 			} else {
-				sprintf( message, "Undeclared variable '%.64s' on line %d.", next->str.string, next->line );
+				global = ( struct global_variable * ) get_decl_indexed( func, next->str.string, GLOBAL, "!." );
+				if( global ) {
+					elem = parse_global_assignment( elem, func, vars, global, prev, message );
+				} else {
+					sprintf( message, "Undeclared variable '%.64s' on line %d.", next->str.string, next->line );
+				}
 			}
 		}
+		prev = prev->next;
 	}
-	return next;
+	return elem->next;
 }
 
 /* Parse a statement that expects one or more expressions after the keyword. */
@@ -5022,8 +5020,7 @@ struct element* validate_syntax( char *syntax, struct element *elem,
 		switch( chr ) {
 			case 0:
 				return elem;
-			case '0':
-				/* List end. */
+			case '0': /* List end. */
 				if( elem ) {
 					sprintf( message, "Unexpected '%.64s' after '%.64s' on line %d.", elem->str.string, prev->str.string, elem->line );
 				}
@@ -5037,8 +5034,7 @@ struct element* validate_syntax( char *syntax, struct element *elem,
 					sprintf( message, "Expected '%c' after '%.64s' on line %d.", chr, prev->str.string, prev->line );
 				}
 				break;
-			case '(':
-				/* Bracketed function parameter list. */
+			case '(': /* Bracketed function parameter list. */
 				if( elem && elem->str.string[ 0 ] == '(' ) {
 					if( elem->child ) {
 						validate_syntax( "P0", elem->child, elem, env, message );
@@ -5049,8 +5045,7 @@ struct element* validate_syntax( char *syntax, struct element *elem,
 					sprintf( message, "Expected '(' after '%.64s' on line %d.", prev->str.string, prev->line );
 				}
 				break;
-			case '[':
-				/* Index expression. */
+			case '[': /* Index expression. */
 				if( elem && elem->str.string[ 0 ] == '[' ) {
 					if( elem->child ) {
 						validate_syntax( "xx0", elem->child, elem, env, message );
@@ -5063,8 +5058,7 @@ struct element* validate_syntax( char *syntax, struct element *elem,
 					sprintf( message, "Expected '[' after '%.64s' on line %d.", prev->str.string, prev->line );
 				}
 				break;
-			case 'c':
-				/* Catch or finally. */
+			case 'c': /* Catch or finally. */
 				if( elem && ( is_keyword( elem->str.string, "catch" ) || is_keyword( elem->str.string, "finally" ) ) ) {
 					chr = elem->str.string[ 0 ];
 					prev = elem;
@@ -5095,8 +5089,7 @@ struct element* validate_syntax( char *syntax, struct element *elem,
 					sprintf( message, "Expected 'catch' or 'finally' after '%.64s' on line %d.", prev->str.string, prev->line );
 				}
 				break;
-			case 'n':
-				/* Name. */
+			case 'n': /* Name. */
 				if( elem && elem->str.string[ 0 ] != ';' ) {
 					validate_name( elem, message );
 					prev = elem;
@@ -5105,8 +5098,7 @@ struct element* validate_syntax( char *syntax, struct element *elem,
 					sprintf( message, "Expected name after '%.64s' on line %d.", prev->str.string, prev->line );
 				}
 				break;
-			case 'P':
-				/* Function parameter list. */
+			case 'P': /* Function parameter list. */
 				while( message[ 0 ] == 0 && elem ) {
 					if( elem && elem->str.string[ 0 ] == '(' ) {
 						validate_syntax( "n0", elem->child, elem, env, message );
@@ -5124,8 +5116,7 @@ struct element* validate_syntax( char *syntax, struct element *elem,
 					}
 				}
 				break;
-			case 'x':
-				/* Expression. */
+			case 'x': /* Expression. */
 				if( elem && strchr( ",;({", elem->str.string[ 0 ] ) == NULL ) {
 					if( elem->str.string[ 0 ] == '[' ) {
 						validate_syntax( "[", elem, prev, env, message );
@@ -5151,8 +5142,7 @@ struct element* validate_syntax( char *syntax, struct element *elem,
 					sprintf( message, "Expected expression after '%.64s' on line %d.", prev->str.string, prev->line );
 				}
 				break;
-			case 'X':
-				/* Expression list, terminated by '{' or NULL. */
+			case 'X': /* Expression list, terminated by '{' or NULL. */
 				next = NULL;
 				while( message[ 0 ] == 0 && elem && elem->str.string[ 0 ] != '{' ) {
 					if( next && elem->str.string[ 0 ] == ',' ) {
@@ -5164,8 +5154,7 @@ struct element* validate_syntax( char *syntax, struct element *elem,
 					elem = next;
 				}
 				break;
-			case 'v':
-				/* Variable declaration. */
+			case 'v': /* Variable declaration. */
 				if( elem && elem->str.string[ 0 ] == '(' ) {
 					validate_syntax( "n0", elem->child, elem, env, message );
 					prev = elem->child;
@@ -5187,8 +5176,7 @@ struct element* validate_syntax( char *syntax, struct element *elem,
 					}
 				}
 				break;
-			case 'V':
-				/* Variable declaration list, terminated by ';' or NULL. */
+			case 'V': /* Variable declaration list, terminated by ';' or NULL. */
 				next = NULL;
 				while( message[ 0 ] == 0 && elem && elem->str.string[ 0 ] != ';' ) {
 					if( next && elem->str.string[ 0 ] == ',' ) {
@@ -5200,8 +5188,19 @@ struct element* validate_syntax( char *syntax, struct element *elem,
 					elem = next;
 				}
 				break;
-			default:
-				/* Internal error. */
+			case 'A': /* Variable assignment list, terminated by ';' or NULL. */
+				next = NULL;
+				while( message[ 0 ] == 0 && elem && elem->str.string[ 0 ] != ';' ) {
+					if( next && elem->str.string[ 0 ] == ',' ) {
+						prev = elem;
+						elem = elem->next;
+					}
+					next = validate_syntax( "x=x", elem, prev, env, message );
+					prev = elem;
+					elem = next;
+				}
+				break;
+			default: /* Internal error. */
 				sprintf( message, "Internal error. Unknown specifier '%c' while parsing line %d.", chr, ( elem ? elem : prev )->line );
 		}
 		chr = syntax[ idx++ ];
@@ -5806,7 +5805,7 @@ static struct keyword statements[] = {
 	{ "*/", "", ignore_keyword, NULL },
 	{ "//", "", ignore_keyword, NULL },
 	{ "var", "V;", parse_local_declaration, NULL },
-	{ "let", "x=x;", parse_assignment_statement, NULL },
+	{ "let", "A;", parse_assignment_statement, NULL },
 	{ "print", "x;", parse_print_statement, NULL },
 	{ "write", "x;", parse_write_statement, NULL },
 	{ "error", "x;", parse_error_statement, NULL },
@@ -5820,7 +5819,7 @@ static struct keyword statements[] = {
 	{ "until", "x{", parse_until_statement, NULL },
 	{ "call", "x;", parse_call_statement, NULL },
 	{ "try", "{c", parse_try_statement, NULL },
-	{ "set", "x=x;", parse_assignment_statement, NULL },
+	{ "set", "A;", parse_assignment_statement, NULL },
 	{ "switch", "x{", parse_switch_statement, NULL },
 	{ "inc", "n;", parse_increment_statement, NULL },
 	{ "dec", "n;", parse_decrement_statement, NULL },
