@@ -4572,7 +4572,7 @@ static struct element* parse_append_statement( struct element *elem,
 static struct element* parse_array_assignment( struct element *elem,
 	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
 	struct expression expr;
-	struct element *next = elem->next, *child = next->child;
+	struct element *next = elem, *child = elem->child;
 	struct statement *stmt = calloc( 1, sizeof( struct statement ) );
 	if( stmt ) {
 		prev->next = stmt;
@@ -4608,7 +4608,7 @@ static struct element* parse_struct_assignment( struct element *elem,
 	int idx, count;
 	struct expression expr;
 	struct structure *struc;
-	struct element *next = elem->next;
+	struct element *next = elem;
 	struct statement *stmt = calloc( 1, sizeof( struct structure_statement ) );
 	if( stmt ) {
 		prev->next = stmt;
@@ -4653,7 +4653,7 @@ static struct element* parse_local_assignment( struct element *elem,
 	int idx;
 	struct statement *stmt;
 	struct expression expr;
-	struct element *next = elem->next;
+	struct element *next = elem;
 	struct structure *struc = local->type;
 	char *field = strchr( next->str.string, '.' );
 	if( struc && field ) {
@@ -4679,7 +4679,7 @@ static struct element* parse_local_assignment( struct element *elem,
 						strcpy( message, OUT_OF_MEMORY );
 					}
 				} else {
-					sprintf( message, "Field '%.64s' not declared on line %d.", elem->next->str.string, elem->line );
+					sprintf( message, "Field '%.64s' not declared on line %d.", elem->str.string, elem->line );
 				}
 			}
 		} else {
@@ -4710,7 +4710,7 @@ static struct element* parse_global_assignment( struct element *elem,
 	int idx;
 	struct statement *stmt;
 	struct expression expr;
-	struct element *next = elem->next;
+	struct element *next = elem;
 	struct structure *struc = global->type;
 	char *field = field_end( next->str.string, "!." );
 	if( field[ 0 ] == '!' && !field[ 1 ] ) {
@@ -4739,7 +4739,7 @@ static struct element* parse_global_assignment( struct element *elem,
 						strcpy( message, OUT_OF_MEMORY );
 					}
 				} else {
-					sprintf( message, "Field '%.64s' not declared on line %d.", elem->next->str.string, elem->line );
+					sprintf( message, "Field '%.64s' not declared on line %d.", elem->str.string, elem->line );
 				}
 			}
 		} else {
@@ -4769,29 +4769,34 @@ static struct element* parse_assignment_statement( struct element *elem,
 	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
 	struct local_variable *local;
 	struct global_variable *global;
-	struct element *next;
-	while( message[ 0 ] == 0 && elem->str.string[ 0 ] != ';' ) {
-		next = elem->next;
-		if( next->str.string[ 0 ] == '[' ) {
+	elem = elem->next;
+	while( message[ 0 ] == 0 && elem ) {
+		if( elem->str.string[ 0 ] == ';' ) {
+			elem = elem->next;
+			break;
+		} else if( elem->str.string[ 0 ] == ',' && elem->next ) {
+			elem = elem->next;
+		}
+		if( elem->str.string[ 0 ] == '[' ) {
 			elem = parse_array_assignment( elem, func, vars, prev, message );
-		} else if( next->next->str.string[ 0 ] == '(' ) {
+		} else if( elem->next && elem->next->str.string[ 0 ] == '(' ) {
 			elem = parse_struct_assignment( elem, func, vars, prev, message );
 		} else {
-			local = get_local_variable( func->variable_decls, next->str.string, "." );
+			local = get_local_variable( func->variable_decls, elem->str.string, "." );
 			if( local ) {
 				elem = parse_local_assignment( elem, func, vars, local, prev, message );
 			} else {
-				global = ( struct global_variable * ) get_decl_indexed( func, next->str.string, GLOBAL, "!." );
+				global = ( struct global_variable * ) get_decl_indexed( func, elem->str.string, GLOBAL, "!." );
 				if( global ) {
 					elem = parse_global_assignment( elem, func, vars, global, prev, message );
 				} else {
-					sprintf( message, "Undeclared variable '%.64s' on line %d.", next->str.string, next->line );
+					sprintf( message, "Undeclared variable '%.64s' on line %d.", elem->str.string, elem->line );
 				}
 			}
 		}
 		prev = prev->next;
 	}
-	return elem->next;
+	return elem;
 }
 
 /* Parse a statement that expects one or more expressions after the keyword. */

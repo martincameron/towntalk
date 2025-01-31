@@ -161,10 +161,7 @@ function testarray() {
 	let c = $array( ${ "a" 1 } );
 	call assert_equals( "a", [ c 0 ], ${-} );
 	call assert_equals( 1, [ c 1 ], ${-} );
-	set [ b 0 ] = b;
-	set [ b 1 ] = c;
-	set [ c 0 ] = c;
-	set [ c 1 ] = b;
+	set [ b 0 ] = b, [ b 1 ] = c, [ c 0 ] = c [ c 1 ] = b;
 	call assert_throws( "Invalid array length.", ${ () { call $array( -1 ); } } );
 	call assert_throws( "Unexpected expression.", ${ () { call $array( ${0} 0 ); } } );
 	call assert_throws( "Array index", ${ () { set [ $array( 0 ) -1 ] = except( ${ 0 } ); } } );
