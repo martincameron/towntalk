@@ -1,0 +1,70 @@
+
+rem {/*
+	Sinc-table generator for audiodata tool.
+*/}
+
+const FP_SHIFT = 8, FP_ONE = <<( 1 FP_SHIFT ), FP_MASK = -( FP_ONE 1 );
+const LOG_SINC_TAPS = 4, SINC_TAPS = <<( 1 LOG_SINC_TAPS ), SINC_ACCURACY = 2, SINC_SCALE = 14, NUM_TABLES = 5;
+const PI = $acos( -1 );
+
+function pow( base exp ) {
+	return $exp( *( $log( base ) exp ) );
+}
+
+function round( value ) {
+	return $int( +( value ?( <( value 0 ) -0.5 0.5 ) ) );
+}
+
+/*{ Generate sinc-table }*/
+function generate_sinc_table( taps accuracy bandwidth ) {
+	var samples = <<( 1 accuracy );
+	var len = *( _/( taps 2 ) samples );
+	var tab = $buffer( len );
+	let [ tab 0 ] = bandwidth;
+	var idx = 1;
+	while <( idx len ) {
+		var pit = $div( *( PI idx ) samples );
+		//# Blackman-Harris window function.
+		var w = *( 2 PI +( 0.5 $div( *( idx 0.5 ) len ) ) );
+		var y = +( 0.35875 *( -0.48829 $cos( w ) ) *( 0.14128 $cos( *( w 2 ) ) ) *( -0.01168 $cos( *( w 3 ) ) ) );
+		let [ tab idx++ ] = $div( *( y $sin( *( pit bandwidth ) ) ) pit );
+	}
+	return tab;
+}
+
+//# Generate frequency values for one octave.
+function generate_freq_table( entries scale ) {
+	var table = $buffer( +( entries 1 ) ), x;
+	while <( x entries ) {
+		let [ table x ] = round( *( pow( 2 $div( x++ entries ) ) scale ) );
+	}
+	let [ table entries ] = <<( scale 1 );
+	return table;
+}
+
+function scale_table( table scale ) {
+	var idx, len = $len( table );
+	while <( idx len ) {
+		let [ table idx ] = round( *( [ table idx++ ] scale ) );
+	}
+	return table;
+}
+
+function print_table( table off end ) {
+	while <( off end ) {
+		write $cat( [ table off++ ] " " );
+	}
+	print "";
+}
+
+program sinctable {
+	var cutoff = 1, delta = $div( 0.5 -( NUM_TABLES 1 ) ), tab;
+	while <( tab++ NUM_TABLES ) {
+		//# Generate 2 extra taps as the last pair are insignificant.
+		var sinc = scale_table( generate_sinc_table( +( SINC_TAPS 2 ) SINC_ACCURACY cutoff ) <<( 1 SINC_SCALE ) );
+		call print_table( sinc 0 <<( SINC_TAPS -( SINC_ACCURACY 1 ) ) );
+		let cutoff = -( cutoff delta );
+	}
+	print "";
+	call print_table( generate_freq_table( 8 FP_ONE ) 0 9 );
+}
