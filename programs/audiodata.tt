@@ -12,7 +12,7 @@ library audiodata {
 	) );
 	
 	struct waveform {
-		sample_rate sample_data
+		num_channels sample_rate sample_data
 	}
 	
 	struct input {
@@ -43,8 +43,8 @@ library audiodata {
 		return out;
 	}
 
-	function new_waveform( sample_rate, sample_data ) {
-		return $new( waveform sample_rate sample_data );
+	function new_waveform( num_channels, sample_rate, sample_data ) {
+		return $new( waveform num_channels sample_rate sample_data );
 	}
 
 	function raw_waveform( sample_rate, string, offset, length ) {
@@ -52,10 +52,10 @@ library audiodata {
 		while <( offset end ) {
 			let [ data offset ] = <<( $chr( string offset++ ) 8 );
 		}
-		return new_waveform( sample_rate data );
+		return new_waveform( 1 sample_rate data );
 	}
 	
-	function wav_waveform( wav channel ) {
+	function wav_waveform( wav ) {
 		var ( input ) input = $new( input wav );
 		if $cmp( "RIFF" input:read_string( 4 ) ) {
 			throw "Riff header not found.";
@@ -70,9 +70,6 @@ library audiodata {
 		let chunk_size = input:read_intle();
 		var format = input:read_shortle();
 		var num_channels = input:read_shortle();
-		if ||( <( channel 0 ) >e( channel num_channels ) ) {
-			throw $str( "No such channel: " channel );
-		}
 		var sample_rate = input:read_intle();
 		var bytes_per_sec = input:read_intle();
 		var bytes_per_sample = input:read_shortle();
@@ -97,23 +94,22 @@ library audiodata {
 			let chunk_size = input:read_intle();
 			let input.idx = +( input.idx chunk_size );
 		}
-		var num_samples = _/( input:read_intle() bytes_per_sample );
-		var sample_data = $buffer( num_samples ), sample_idx;
-		var input_buf = input.string, input_idx = +( input.idx *( channel bytes_per_channel ) );
-		switch bytes_per_sample {
+		var data_len = *( _/( input:read_intle() bytes_per_sample ) num_channels );
+		var input_buf = input.string, input_idx = input.idx, sample_data = $buffer( data_len ), data_idx;
+		switch bytes_per_channel {
 			case 1 { //# Unsigned 8-bit.
-				while <( sample_idx num_samples ) {
-					let [ sample_data sample_idx++ ] = <<( -( &( $chr( input_buf input_idx++ ) 0xFF ) 128 ) 8 );
+				while <( data_idx data_len ) {
+					let [ sample_data data_idx++ ] = <<( -( &( $chr( input_buf input_idx++ ) 0xFF ) 128 ) 8 );
 				}
 			}
 			case 2 { //# Signed 16-bit little-endian.
-				while <( sample_idx num_samples ) {
-					let [ sample_data sample_idx++ ] = |( &( $chr( input_buf input_idx++ ) 0xFF ) <<( $chr( input_buf input_idx++ ) 8 ) );
+				while <( data_idx data_len ) {
+					let [ sample_data data_idx++ ] = |( &( $chr( input_buf input_idx++ ) 0xFF ) <<( $chr( input_buf input_idx++ ) 8 ) );
 				}
 			}
 			case 3 { //# Signed 24-bit little-endian.
-				while <( sample_idx num_samples ) {
-					let [ sample_data sample_idx++ ] = |( &( $chr( input_buf input_idx++ ) 0xFF ) <<( $chr( input_buf input_idx++ ) 8 ) );
+				while <( data_idx data_len ) {
+					let [ sample_data data_idx++ ] = |( &( $chr( input_buf input_idx++ ) 0xFF ) <<( $chr( input_buf input_idx++ ) 8 ) );
 					inc input_idx;
 				}
 			}
@@ -121,15 +117,16 @@ library audiodata {
 				throw "Unsupported bit depth.";
 			}
 		}
-		return new_waveform( sample_rate sample_data );
+		return new_waveform( num_channels sample_rate sample_data );
 	}
 
 	function waveform_crop( ( waveform ) this, offset, length ) {
+		let offset = *( offset this.num_channels ), length = *( length this.num_channels );
 		var data = $buffer( length ), orig = this.sample_data, idx;
 		while <( idx length ) {
 			let [ data idx++ ] = [ orig offset++ ];
 		}
-		return new_waveform( this.sample_rate data );
+		return new_waveform( this.num_channels this.sample_rate data );
 	}
 
 	function waveform_scale( ( waveform ) this, scale ) {
@@ -140,7 +137,7 @@ library audiodata {
 			if >( sam 32767 ) { let sam = 32767; }
 			let [ data idx++ ] = sam;
 		}
-		return new_waveform( this.sample_rate data );
+		return new_waveform( this.num_channels this.sample_rate data );
 	}
 
 	function swab( x ) {
@@ -149,21 +146,22 @@ library audiodata {
 	}
 
 	function waveform_write_wav( ( waveform ) this ) {
-		var sample_data = this.sample_data, num_samples = &( $len( sample_data ) -2 );
-		var output = $buffer( +( 11 /( num_samples 2 ) ) );
+		var num_channels = this.num_channels, sample_data = this.sample_data;
+		var num_samples = &( _/( $len( sample_data ) num_channels ) -2 ), bytes_per_sample = <<( num_channels 1 );
+		var output = $buffer( +( 11 >>( *( num_samples num_channels ) 1 ) ) );
 		let [ output 0 ] = $unpack( "RIFF" 0 );
-		let [ output 1 ] = swab( +( *( num_samples 2 ) 36 ) );
+		let [ output 1 ] = swab( +( *( num_samples bytes_per_sample ) 36 ) );
 		let [ output 2 ] = $unpack( "WAVE" 0 );
 		let [ output 3 ] = $unpack( "fmt " 0 );
 		let [ output 4 ] = swab( 16 );
-		let [ output 5 ] = swab( 0x00010001 );
+		let [ output 5 ] = swab( +( <<( num_channels 16 ) 1 ) );
 		let [ output 6 ] = swab( this.sample_rate );
-		let [ output 7 ] = swab( *( this.sample_rate 2 ) );
-		let [ output 8 ] = swab( 0x00100002 );
+		let [ output 7 ] = swab( *( this.sample_rate bytes_per_sample ) );
+		let [ output 8 ] = swab( +( 0x100000 bytes_per_sample ) );
 		let [ output 9 ] = $unpack( "data" 0 );
-		let [ output 10 ] = swab( *( num_samples 2 ) );
-		var idx, offset = 11;
-		while <( idx num_samples ) {
+		let [ output 10 ] = swab( *( num_samples bytes_per_sample ) );
+		var idx, offset = 11, end = *( num_samples num_channels );
+		while <( idx end ) {
 			var sam = [ sample_data idx++ ];
 			var out = |( <<( sam 24 ) <<( &( sam 0xFF00 ) 8 ) );
 			let sam = [ sample_data idx++ ];
@@ -217,28 +215,32 @@ library audiodata {
 		return resampling_table;
 	}
 	
-	//# Return a new waveform instance at the specified sampling rate.
-	function waveform_resample( ( waveform ) this, rate ) {
+	//# Return a new waveform instance for the specified channel at the specified sampling rate.
+	function waveform_resample( ( waveform ) this, channel, rate ) {
 		if <( rate >>( this.sample_rate 1 ) ) {
 			//# Downsample to improve anti-aliasing.
-			let this = waveform_resample( this >>( this.sample_rate 1 ) );
+			let this = waveform_resample( this channel >>( this.sample_rate 1 ) );
+			let channel = 0;
 		}
 		if >( rate <<( this.sample_rate 2 ) ) {
 			//# Upsample to improve pitch accuracy.
-			let this = waveform_resample( this <<( this.sample_rate 2 ) );
+			let this = waveform_resample( this channel <<( this.sample_rate 2 ) );
+			let channel = 0;
 		}
 		//# Compensate for filter delay.
-		var input_sample_data = this.sample_data, in_len = $len( input_sample_data );
-		var out_idx = -( >>( SINC_TAPS 1 ) 1 ), out_len = +( out_idx in_len ), in_idx;
-		var output_sample_data = $buffer( +( in_len SINC_TAPS ) );
+		var input_sample_data = this.sample_data, num_channels = this.num_channels;
+		var num_samples = _/( $len( input_sample_data ) num_channels );
+		var in_idx = channel, out_idx = -( >>( SINC_TAPS 1 ) 1 ), out_len = +( out_idx num_samples );
+		var output_sample_data = $buffer( +( num_samples SINC_TAPS ) );
 		while <( out_idx out_len ) {
-			let [ output_sample_data out_idx++ ] = [ input_sample_data in_idx++ ];
+			let [ output_sample_data out_idx++ ] = [ input_sample_data in_idx ];
+			let in_idx = +( in_idx num_channels );
 		}
 		let input_sample_data = output_sample_data;
 		//# Generate table and perform resampling.
 		var step = _/( <<( this.sample_rate FP_SHIFT ) rate );
 		var resampling_table = generate_resampling_table( step );
-		let out_len = _/( <<( $len( this.sample_data ) FP_SHIFT ) step );
+		let out_len = _/( <<( num_samples FP_SHIFT ) step );
 		let output_sample_data = $buffer( out_len );
 		let in_idx = 0, out_idx = 0;
 		while <( out_idx out_len ) {
@@ -253,7 +255,7 @@ library audiodata {
 			let [ output_sample_data out_idx++ ] = sam;
 			let in_idx = +( in_idx step );
 		}
-		return new_waveform( rate output_sample_data );
+		return new_waveform( 1 rate output_sample_data );
 	}
 	
 	const FREQ_TABLE = $pack( interpolate( $buffer( 9 256 279 304 332 362 395 431 470 512 ), $buffer( FP_ONE ), 0, FP_ONE, 8 ) );
@@ -287,12 +289,15 @@ program test_audiodata {
 	while <( idx len ) {
 		let [ sample_data idx ] = <<( -( &( idx++ 0x7F ) 0x80 ) 6 );
 	}
-	let waveform = audiodata_new_waveform( 44100 sample_data );
-	let waveform = waveform:resample( 16000 );
-	let waveform = waveform:resample( 48000 );
+	let waveform = audiodata_new_waveform( 1 44100 sample_data );
+	let waveform = waveform:resample( 0 16000 );
+	let waveform = waveform:resample( 0 48000 );
 	var wav = waveform:write_wav();
-	//# save wav "test.wav";
-	let waveform = audiodata_wav_waveform( wav 0 );
+	//#save wav "test.wav";
+	let waveform = audiodata_wav_waveform( wav );
 	print waveform.sample_rate;
 	print $cmp( wav waveform:write_wav() );
+	
+	//#let waveform = audiodata_wav_waveform( $load( $argv( 1 ) ) );
+	//#save waveform:write_wav() "out.wav";
 }
