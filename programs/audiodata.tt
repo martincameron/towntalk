@@ -43,10 +43,12 @@ library audiodata {
 		return out;
 	}
 
+	//# Return a new waveform for the specified array containing 16-bit sample data.
 	function new_waveform( num_channels, sample_rate, sample_data ) {
 		return $new( waveform num_channels sample_rate sample_data );
 	}
 
+	//# Return a new mono waveform for the specified string containing signed 8-bit sample data.
 	function raw_waveform( sample_rate, string, offset, length ) {
 		var data = $buffer( length ), end = +( offset length );
 		while <( offset end ) {
@@ -55,6 +57,7 @@ library audiodata {
 		return new_waveform( 1 sample_rate data );
 	}
 	
+	//# Return a new waveform for the specified WAV-format string.
 	function wav_waveform( wav ) {
 		var ( input ) input = $new( input wav );
 		if $cmp( "RIFF" input:read_string( 4 ) ) {
@@ -119,7 +122,13 @@ library audiodata {
 		}
 		return new_waveform( num_channels sample_rate sample_data );
 	}
+	
+	//# Return the length of the specified waveform instance in samples.
+	function waveform_get_num_samples( ( waveform ) this ) {
+		return _/( $len( this.sample_data ) this.num_channels );
+	}
 
+	//# Return a new waveform containing the specified sample-range of the specified waveform.
 	function waveform_crop( ( waveform ) this, offset, length ) {
 		let offset = *( offset this.num_channels ), length = *( length this.num_channels );
 		var data = $buffer( length ), orig = this.sample_data, idx;
@@ -129,6 +138,7 @@ library audiodata {
 		return new_waveform( this.num_channels this.sample_rate data );
 	}
 
+	//# Adjust the amplitude of the specified waveform (fixed-point).
 	function waveform_scale( ( waveform ) this, scale ) {
 		var orig = this.sample_data, length = $len( orig ), data = $buffer( length ), idx;
 		while <( idx length ) {
@@ -145,6 +155,7 @@ library audiodata {
 		return |( &( <<( x 8 ) 0xFF00FF00 ) &( >>( x 8 ) 0xFF00FF ) );
 	}
 
+	//# Return a string containing a 16-bit WAV file for the specified waveform.
 	function waveform_write_wav( ( waveform ) this ) {
 		var num_channels = this.num_channels, sample_data = this.sample_data;
 		var num_samples = &( _/( $len( sample_data ) num_channels ) -2 ), bytes_per_sample = <<( num_channels 1 );
@@ -273,6 +284,20 @@ library audiodata {
 		}
 		let this.sample_rate = >>( *( rate $unpack( FREQ_TABLE pitch ) ) FP_SHIFT );
 	}
+
+	//# Copy a section of the specified channel into the specified waveform instance.
+	function waveform_copy_channel( ( waveform ) this, channel, offset, ( waveform ) output, output_channel, output_offset, count ) {
+		var input_data = this.sample_data, output_data = output.sample_data, idx;
+		var input_channels = this.num_channels, output_channels = output.num_channels;
+		let output_offset = +( *( output_offset output_channels ) output_channel );
+		let offset = +( *( offset input_channels ) channel );
+		var end = +( offset *( count input_channels ) );
+		while <( offset end ) {
+			let [ output_data output_offset ] = [ input_data offset ];
+			let output_offset = +( output_offset output_channels );
+			let offset = +( offset input_channels );
+		}
+	}
 }
 
 program test_audiodata {
@@ -296,8 +321,6 @@ program test_audiodata {
 	//#save wav "test.wav";
 	let waveform = audiodata_wav_waveform( wav );
 	print waveform.sample_rate;
+	print waveform:get_num_samples();
 	print $cmp( wav waveform:write_wav() );
-	
-	//#let waveform = audiodata_wav_waveform( $load( $argv( 1 ) ) );
-	//#save waveform:write_wav() "out.wav";
 }
