@@ -257,12 +257,14 @@ library audiodata {
 		while <( out_idx out_len ) {
 			var res_idx = <<( &( in_idx FP_MASK ) LOG_SINC_TAPS ), isd_idx = >>( in_idx FP_SHIFT ), res_end = +( res_idx SINC_TAPS ), sam = 0;
 			while <( res_idx res_end ) {
-				let sam = +( sam >>( *( [ resampling_table res_idx++ ] [ input_sample_data isd_idx++ ] ) SINC_SCALE ) );
-				let sam = +( sam >>( *( [ resampling_table res_idx++ ] [ input_sample_data isd_idx++ ] ) SINC_SCALE ) );
-				let sam = +( sam >>( *( [ resampling_table res_idx++ ] [ input_sample_data isd_idx++ ] ) SINC_SCALE ) );
-				let sam = +( sam >>( *( [ resampling_table res_idx++ ] [ input_sample_data isd_idx++ ] ) SINC_SCALE ) );
+				let sam = +( sam *( [ resampling_table res_idx++ ] [ input_sample_data isd_idx++ ] ) );
+				let sam = +( sam *( [ resampling_table res_idx++ ] [ input_sample_data isd_idx++ ] ) );
+				let sam = +( sam *( [ resampling_table res_idx++ ] [ input_sample_data isd_idx++ ] ) );
+				let sam = +( sam *( [ resampling_table res_idx++ ] [ input_sample_data isd_idx++ ] ) );
 			}
-			if <( sam -32768 ) { let sam = -32768; } else if >( sam 32767 ) { let sam = 32767; }
+			let sam = >>( sam SINC_SCALE );
+			if >( sam 32767 ) { let sam = 32767; }
+			if <( sam -32768 ) { let sam = -32768; }
 			let [ output_sample_data out_idx++ ] = sam;
 			let in_idx = +( in_idx step );
 		}
@@ -298,6 +300,17 @@ library audiodata {
 			let offset = +( offset input_channels );
 		}
 	}
+	
+	//# Return a string containing 8-bit samples for the specified channel.
+	function waveform_quantize( ( waveform ) this, channel ) {
+		var num_channels = this.num_channels, input_data = this.sample_data;
+		var idx, len = this:get_num_samples(), output = $buffer( len ), offset = channel;
+		while <( idx len ) {
+			let [ output idx++ ] = -( >>( +( [ input_data offset ] 32768 ) 8 ) 128 );
+			let offset = +( offset num_channels );
+		}
+		return $sub( output 0 len );
+	}
 }
 
 program test_audiodata {
@@ -314,13 +327,19 @@ program test_audiodata {
 	while <( idx len ) {
 		let [ sample_data idx ] = <<( -( &( idx++ 0x7F ) 0x80 ) 6 );
 	}
-	let waveform = audiodata_new_waveform( 1 44100 sample_data );
-	let waveform = waveform:resample( 0 16000 );
-	let waveform = waveform:resample( 0 48000 );
+	let waveform = audiodata_new_waveform( 1 8000 sample_data );
 	var wav = waveform:write_wav();
-	//#save wav "test.wav";
+	#save wav "test.wav";
+
 	let waveform = audiodata_wav_waveform( wav );
 	print waveform.sample_rate;
 	print waveform:get_num_samples();
 	print $cmp( wav waveform:write_wav() );
+
+	#let waveform = audiodata_wav_waveform( $load( $argv( 1 ) ) );
+	#print waveform:get_num_samples();
+	#let waveform = waveform:resample( 0 48000 );
+	#var str = waveform:quantize( 0 );
+	#let waveform = audiodata_raw_waveform( waveform.sample_rate str 0 $len( str ) );
+	#save waveform:write_wav() "out.wav";
 }
