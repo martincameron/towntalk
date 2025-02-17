@@ -25,12 +25,30 @@ library audiodata {
 		return str;
 	}
 	
+	function input_read_int( ( input ) this ) {
+		var str = this.string, idx = this.idx;
+		var out = <<( $chr( str idx++ ) 24 );
+		let out = |( out <<( &( $chr( str idx++ ) 0xFF ) 16 ) );
+		let out = |( out <<( &( $chr( str idx++ ) 0xFF ) 8 ) );
+		let out = |( out &( $chr( str idx++ ) 0xFF ) );
+		let this.idx = idx;
+		return out;
+	}
+	
 	function input_read_intle( ( input ) this ) {
 		var str = this.string, idx = this.idx;
 		var out = &( $chr( str idx++ ) 0xFF );
 		let out = |( out <<( &( $chr( str idx++ ) 0xFF ) 8 ) );
 		let out = |( out <<( &( $chr( str idx++ ) 0xFF ) 16 ) );
-		let out = |( out <<( &( $chr( str idx++ ) 0xFF ) 24 ) );
+		let out = |( out <<( $chr( str idx++ ) 24 ) );
+		let this.idx = idx;
+		return out;
+	}
+	
+	function input_read_short( ( input ) this ) {
+		var str = this.string, idx = this.idx;
+		var out = <<( $chr( str idx++ ) 8 );
+		let out = |( out &( $chr( str idx++ ) 0xFF ) );
 		let this.idx = idx;
 		return out;
 	}
@@ -38,7 +56,13 @@ library audiodata {
 	function input_read_shortle( ( input ) this ) {
 		var str = this.string, idx = this.idx;
 		var out = &( $chr( str idx++ ) 0xFF );
-		let out = |( out <<( &( $chr( str idx++ ) 0xFF ) 8 ) );
+		let out = |( out <<( $chr( str idx++ ) 8 ) );
+		let this.idx = idx;
+		return out;
+	}
+	
+	function input_read_byte( ( input ) this ) {
+		var idx = this.idx, out = $chr( this.string idx++ );
 		let this.idx = idx;
 		return out;
 	}
@@ -123,6 +147,42 @@ library audiodata {
 		return new_waveform( num_channels sample_rate sample_data );
 	}
 	
+	//# Return a new waveform for the specified IFF-8SVX-format string.
+	function iff_waveform( iff ) {
+		var ( input ) input = $new( input iff );
+		if $cmp( "FORM" input:read_string( 4 ) ) {
+			throw "FORM chunk not found.";
+		}
+		var chunk_size = input:read_int();
+		if $cmp( "8SVX" input:read_string( 4 ) ) {
+			throw "8SVX chunk not found.";
+		}
+		if $cmp( "VHDR" input:read_string( 4 ) ) {
+			throw "VHDR chunk not found.";
+		}
+		let chunk_size = input:read_int();
+		var attack_len = input:read_int();
+		var sustain_len = input:read_int();
+		var samples_high = input:read_int();
+		var sample_rate = &( input:read_short() 0xFFFF );
+		var num_octaves = input:read_byte();
+		var compression = input:read_byte();
+		if <>( compression 0 ) {
+			throw "Compressed IFF not supported.";
+		}
+		var volume = input:read_int();
+		while $cmp( "BODY" input:read_string( 4 ) ) {
+			let chunk_size = input:read_int();
+			let input.idx = +( input.idx chunk_size );
+		}
+		var num_samples = input:read_int();
+		var input_buf = input.string, input_idx = input.idx, sample_data = $buffer( num_samples ), sample_idx;
+		while <( sample_idx num_samples ) {
+			let [ sample_data sample_idx++ ] = <<( $chr( input_buf input_idx++ ) 8 );
+		}
+		return new_waveform( 1 sample_rate sample_data );
+	}
+	
 	//# Return the length of the specified waveform instance in samples.
 	function waveform_get_num_samples( ( waveform ) this ) {
 		return _/( $len( this.sample_data ) this.num_channels );
@@ -138,14 +198,11 @@ library audiodata {
 		return new_waveform( this.num_channels this.sample_rate data );
 	}
 
-	//# Adjust the amplitude of the specified waveform (fixed-point).
-	function waveform_scale( ( waveform ) this, scale ) {
+	//# Return a new waveform adjusted by the specified amplitude (fixed-point).
+	function waveform_amplify( ( waveform ) this, amplitude ) {
 		var orig = this.sample_data, length = $len( orig ), data = $buffer( length ), idx;
 		while <( idx length ) {
-			var sam = >>( *( scale [ orig idx ] ) FP_SHIFT );
-			if <( sam -32768 ) { let sam = -32768; }
-			if >( sam 32767 ) { let sam = 32767; }
-			let [ data idx++ ] = sam;
+			let [ data idx ] = >>( *( amplitude [ orig idx++ ] ) FP_SHIFT );
 		}
 		return new_waveform( this.num_channels this.sample_rate data );
 	}
@@ -174,8 +231,12 @@ library audiodata {
 		var idx, offset = 11, end = *( num_samples num_channels );
 		while <( idx end ) {
 			var sam = [ sample_data idx++ ];
+			if <( sam -32768 ) { let sam = -32768; }
+			if >( sam  32767 ) { let sam =  32767; }
 			var out = |( <<( sam 24 ) <<( &( sam 0xFF00 ) 8 ) );
 			let sam = [ sample_data idx++ ];
+			if <( sam -32768 ) { let sam = -32768; }
+			if >( sam  32767 ) { let sam =  32767; }
 			let [ output offset++ ] = |( out <<( &( sam 0xFF ) 8 ) >>( &( sam 0xFF00 ) 8 ) );
 		}
 		return $pack( output );
@@ -225,7 +286,7 @@ library audiodata {
 		}
 		return resampling_table;
 	}
-	
+
 	//# Return a new waveform instance for the specified channel at the specified sampling rate.
 	function waveform_resample( ( waveform ) this, channel, rate ) {
 		if <( rate >>( this.sample_rate 1 ) ) {
@@ -262,17 +323,14 @@ library audiodata {
 				let sam = +( sam *( [ resampling_table res_idx++ ] [ input_sample_data isd_idx++ ] ) );
 				let sam = +( sam *( [ resampling_table res_idx++ ] [ input_sample_data isd_idx++ ] ) );
 			}
-			let sam = >>( sam SINC_SCALE );
-			if >( sam 32767 ) { let sam = 32767; }
-			if <( sam -32768 ) { let sam = -32768; }
-			let [ output_sample_data out_idx++ ] = sam;
+			let [ output_sample_data out_idx++ ] = >>( sam SINC_SCALE );
 			let in_idx = +( in_idx step );
 		}
 		return new_waveform( 1 rate output_sample_data );
 	}
-	
+
 	const FREQ_TABLE = $pack( interpolate( $buffer( 9 256 279 304 332 362 395 431 470 512 ), $buffer( FP_ONE ), 0, FP_ONE, 8 ) );
-	
+
 	//# Adjust the sampling-rate by the specified number of octaves (fixed-point).
 	function waveform_adjust_pitch( ( waveform ) this, pitch ) {
 		var rate = this.sample_rate;
@@ -303,11 +361,16 @@ library audiodata {
 	
 	//# Return a string containing 8-bit samples for the specified channel.
 	function waveform_quantize( ( waveform ) this, channel ) {
-		var num_channels = this.num_channels, input_data = this.sample_data;
-		var idx, len = this:get_num_samples(), output = $buffer( len ), offset = channel;
+		var num_channels = this.num_channels, sample_data = this.sample_data;
+		var err, idx, len = this:get_num_samples(), output = $buffer( len ), offset = channel;
 		while <( idx len ) {
-			let [ output idx++ ] = -( >>( +( [ input_data offset ] 32768 ) 8 ) 128 );
+			var sam = -( [ sample_data offset ] err );
+			let err = sam, sam = _/( +( sam &( sam 0x80 ) ) 256 );
+			let err = -( <<( sam 8 ) err );
+			if <( sam -128 ) { let sam = -128; }
+			if >( sam  127 ) { let sam =  127; }
 			let offset = +( offset num_channels );
+			let [ output idx++ ] = sam;
 		}
 		return $sub( output 0 len );
 	}
@@ -317,8 +380,8 @@ program test_audiodata {
 	var ( audiodata_waveform ) waveform = audiodata_raw_waveform( 8000 "abc" 0 3 );
 	
 	let waveform = waveform:crop( 1 1 );
-	let waveform = waveform:scale( >>( audiodata_FP_ONE 1 ) );
-	let waveform = waveform:scale( <<( audiodata_FP_ONE 1 ) );
+	let waveform = waveform:amplify( >>( audiodata_FP_ONE 1 ) );
+	let waveform = waveform:amplify( <<( audiodata_FP_ONE 1 ) );
 	
 	print waveform.sample_rate;
 	print $asc( >>( [ waveform.sample_data 0 ] 8 ) );
@@ -338,7 +401,7 @@ program test_audiodata {
 
 	#let waveform = audiodata_wav_waveform( $load( $argv( 1 ) ) );
 	#print waveform:get_num_samples();
-	#let waveform = waveform:resample( 0 48000 );
+	#let waveform = waveform:resample( 0 16000 );
 	#var str = waveform:quantize( 0 );
 	#let waveform = audiodata_raw_waveform( waveform.sample_rate str 0 $len( str ) );
 	#save waveform:write_wav() "out.wav";
