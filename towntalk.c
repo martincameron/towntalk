@@ -2852,23 +2852,30 @@ static enum result evaluate_str_expression( struct expression *this,
 				len = strlen( num );
 				val = num;
 			}
-			if( MAX_INTEGER - len > str_len ) {
-				new = new_string( str_len + len );
-				if( new ) {
-					if( str ) {
-						memcpy( new->string, str->string, sizeof( char ) * str_len );
-						unref_string( str );
-					}
-					memcpy( &new->string[ str_len ], val, sizeof( char ) * len );
-					str_len += len;
-					str = new;
-				} else {
-					ret = throw_out_of_memory( vars, this );
-				}
+			if( str == NULL && var.string_value && var.string_value->type == STRING ) {
+				str = var.string_value;
+				var.string_value = NULL;
+				var.number_value = 0;
+				str_len = len;
 			} else {
-				ret = throw( vars, this, len, "String too large." );
+				if( MAX_INTEGER - len > str_len ) {
+					new = new_string( str_len + len );
+					if( new ) {
+						if( str ) {
+							memcpy( new->string, str->string, sizeof( char ) * str_len );
+							unref_string( str );
+						}
+						memcpy( &new->string[ str_len ], val, sizeof( char ) * len );
+						str_len += len;
+						str = new;
+					} else {
+						ret = throw_out_of_memory( vars, this );
+					}
+				} else {
+					ret = throw( vars, this, len, "String too large." );
+				}
+				dispose_variable( &var );
 			}
-			dispose_variable( &var );
 			parameter = parameter->next;
 		}
 	}
