@@ -403,6 +403,12 @@ static int unquote_string( char *string, char *output ) {
 							chr = ( chr << 3 ) | ( string[ offset++ ] - '0' );
 						}
 					}
+				} else if( chr == 'n' ) {
+					chr = '\n';
+				} else if( chr == 'r' ) {
+					chr = '\r';
+				} else if( chr == 't' ) {
+					chr = '\t';
 				}
 				if( output ) {
 					output[ length++ ] = chr;

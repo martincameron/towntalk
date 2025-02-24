@@ -725,7 +725,7 @@ function testquote() {
 }
 
 function testunquote() {
-	call assert_equals( "\\~", $unquote( "\"\\\\\\176\"" ), ${-} );
+	call assert_equals( "\\~\n\r\t", $unquote( "\"\\\\\\176\\n\\r\\t\"" ), ${-} );
 	call assert_throws( "1", ${ () { call $unquote( except( ${ 1 } ) ); } } );
 	call assert_throws( "Not a string", ${ () { call $unquote( 0 ); } } );
 }
