@@ -110,6 +110,7 @@
 		-123                     Decimal number literal.
 		0x100                    Hexadecimal number literal.
 		0888                     Octal integer literal.
+		'A'                      Integer character literal.
 		"String"                 String literal.
 		${0,"1",$tup("2",3)}     Element literal.
 		variable or global!      Value of named local or global variable.
