@@ -1269,6 +1269,15 @@ function testscope() {
 	call assert_throws( "Field", ${ () { var ext; let exten!xxx.a( ext! ) = ext!a; } } );
 }
 
+function testcharacters() {
+	call assert_equals( 65, 'A', ${-} );
+	call assert_equals( -1, '\377', ${-} );
+	call assert_throws( "Invalid", ${ () { call ''; } } );
+	call assert_throws( "Invalid", ${ () { call '123456'; } } );
+	call assert_throws( "Invalid", ${ () { call 'a'b; } } );
+	call assert_throws( "Invalid", ${ () { call 'aa'; } } );
+}
+
 program test {
 	call hello();
 	call assert( =( testvoid() 0 ), ${-} );
@@ -1337,5 +1346,6 @@ program test {
 	call testoptimizer();
 	call teststack();
 	call testscope();
+	call testcharacters();
 	print "Tests passed.";
 }

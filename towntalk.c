@@ -388,7 +388,7 @@ static int parse_string( char *input, int idx, char *output, int line, char *mes
 	return idx;
 }
 
-static int unquote_string( char *string, char *output ) {
+static int unquote_string( char *string, char *output, char quote ) {
 	int chr, offset = 0, length = 0;
 	if( string ) {
 		chr = string[ offset++ ];
@@ -415,7 +415,7 @@ static int unquote_string( char *string, char *output ) {
 				} else {
 					length++;
 				}
-			} else if( chr != '"' ) {
+			} else if( chr != quote ) {
 				if( output ) {
 					output[ length++ ] = chr;
 				} else {
@@ -432,9 +432,9 @@ static int unquote_string( char *string, char *output ) {
 }
 
 static struct string* new_string_literal( char *source ) {
-	struct string *str = new_string( unquote_string( source, NULL ) );
+	struct string *str = new_string( unquote_string( source, NULL, '"' ) );
 	if( str ) {
-		str->length = unquote_string( source, str->string );
+		str->length = unquote_string( source, str->string, '"' );
 	}
 	return str;
 }
@@ -4335,6 +4335,26 @@ static struct element* parse_number_literal_expression( struct element *elem, st
 	return elem->next;
 }
 
+static struct element* parse_character_literal_expression( struct element *elem, struct expression *prev, char *message ) {
+	struct value_expression *expr = calloc( 1, sizeof( struct value_expression ) );
+	int len = elem->str.length;
+	char *str = elem->str.string, out[ 8 ];
+	if( expr ) {
+		prev->next = &expr->expr;
+		expr->expr.line = elem->line;
+		if( len > 0 && len < 7 && str[ len - 1 ] == '\'' && unquote_string( str, out, '\'' ) == 1 ) {
+			expr->num = out[ 0 ];
+			expr->expr.index = out[ 0 ];
+			expr->expr.evaluate = evaluate_number_literal_expression;
+		} else {
+			sprintf( message, "Invalid character literal '%.64s' on line %d.", elem->str.string, elem->line );
+		}
+	} else {
+		strcpy( message, OUT_OF_MEMORY );
+	}
+	return elem->next;
+}
+
 static struct expression* new_string_literal_expression( number number_value,
 	struct string *string_value, int line, char *message ) {
 	struct expression *expr = calloc( 1, sizeof( struct value_expression ) );
@@ -4414,6 +4434,9 @@ struct element* parse_expression( struct element *elem,
 	} else if( ( chr == '`' || chr == '\'' ) && value[ 1 ] == 0 ) {
 		/* Infix operator.*/
 		next = parse_infix_expression( elem, func, vars, prev, message );
+	} else if( chr == '\'' && value[ 1 ] ) {
+		/* Character literal. */
+		next = parse_character_literal_expression( elem, prev, message );
 	} else if( chr == '[' ) {
 		/* Array index operator. */
 		next = parse_index_expression( elem, func, vars, prev, message );
@@ -5700,14 +5723,14 @@ static struct element* parse_include( struct element *elem,
 	struct element *next = elem->next;
 	struct string_list *include;
 	int path_len = str_idx( func->file->string, "/:\\", -1 ) + 1;
-	int name_len = unquote_string( next->str.string, NULL );
+	int name_len = unquote_string( next->str.string, NULL, '"' );
 	struct string *path = new_string( path_len + name_len );
 	if( path ) {
 		memcpy( path->string, func->file->string, sizeof( char ) * path_len );
-		unquote_string( next->str.string, &path->string[ path_len ] );
+		unquote_string( next->str.string, &path->string[ path_len ], '"' );
 		if( strchr( "/\\", path->string[ path_len ] ) || strchr( &path->string[ path_len ], ':' ) ) {
 			/* Absolute path. */
-			unquote_string( next->str.string, path->string );
+			unquote_string( next->str.string, path->string, '"' );
 		}
 		if( get_string_list_index( func->env->include_paths, next->str.string ) < 0 ) {
 			include = new_string_list( &next->str, func->env->include_paths );
