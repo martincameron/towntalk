@@ -110,7 +110,7 @@
 		-123                     Decimal number literal.
 		0x100                    Hexadecimal number literal.
 		0888                     Octal integer literal.
-		'A'                      Integer character literal.
+		'A' or \"A"              Integer character literal.
 		"String"                 String literal.
 		${0,"1",$tup("2",3)}     Element literal.
 		variable or global!      Value of named local or global variable.
@@ -4338,12 +4338,12 @@ static struct element* parse_number_literal_expression( struct element *elem, st
 
 static struct element* parse_character_literal_expression( struct element *elem, struct expression *prev, char *message ) {
 	struct value_expression *expr = calloc( 1, sizeof( struct value_expression ) );
+	char *str = elem->str.string, out[ 8 ], quote = str[ 0 ];
 	int len = elem->str.length;
-	char *str = elem->str.string, out[ 8 ];
 	if( expr ) {
 		prev->next = &expr->expr;
 		expr->expr.line = elem->line;
-		if( len > 0 && len < 7 && str[ len - 1 ] == '\'' && unquote_string( str, out, '\'' ) == 1 ) {
+		if( len > 0 && len < 7 && str[ len - 1 ] == quote && unquote_string( str, out, quote ) == 1 ) {
 			expr->num = out[ 0 ];
 			expr->expr.index = out[ 0 ];
 			expr->expr.evaluate = evaluate_number_literal_expression;
@@ -4438,6 +4438,9 @@ struct element* parse_expression( struct element *elem,
 	} else if( chr == '\'' && value[ 1 ] ) {
 		/* Character literal. */
 		next = parse_character_literal_expression( elem, prev, message );
+	} else if( chr == '\\' && value[ 1 ] == 0 && elem->next && elem->next->str.string[ 0 ] == '"' ) {
+		/* Escaped character literal. */
+		next = parse_character_literal_expression( elem->next, prev, message );
 	} else if( chr == '[' ) {
 		/* Array index operator. */
 		next = parse_index_expression( elem, func, vars, prev, message );
@@ -5162,12 +5165,14 @@ struct element* validate_syntax( char *syntax, struct element *elem,
 				if( elem && strchr( ",;({", elem->str.string[ 0 ] ) == NULL ) {
 					if( elem->str.string[ 0 ] == '[' ) {
 						validate_syntax( "[", elem, prev, env, message );
+					} else if( elem->str.string[ 0 ] == '\\' && elem->str.string[ 1 ] == 0 ) {
+						prev = elem;
+						elem = elem->next;
+						validate_syntax( "\"", elem, prev, env, message );
 					} else if( elem->str.string[ 0 ] == '$' && elem->str.string[ 1 ] == 0 ) {
 						prev = elem;
 						elem = elem->next;
-						if( elem == NULL || elem->str.string[ 0 ] != '{' ) {
-							sprintf( message, "Expected '{' after '$' on line %d.", prev->line );
-						}
+						validate_syntax( "{", elem, prev, env, message );
 					} else if( elem->next && elem->next->str.string[ 0 ] == '(' ) {
 						prev = elem;
 						elem = elem->next;

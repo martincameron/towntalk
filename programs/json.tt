@@ -4,19 +4,6 @@ rem {
 }
 
 library json {
-	struct ascii {
-		# Enumerated ASCII character codes.
-		nul soh stx etx eot enq ack bel bs  tab lf  vt  ff cr so si
-		dle dc1 dc2 dc3 dc4 nak syn etb can em  sub esc fs gs rs us
-		space exclam quote hash dollar percent amp squote
-		lparen rparen star plus comma minus dot slash
-		d0 d1 d2 d3 d4 d5 d6 d7 d8 d9 colon semicolon lt equals gt question at
-		A B C D E F G H I J K L M N O P Q R S T U V W X Y Z
-		lbracket backslash rbracket caret underscore backquote
-		a b c d e f g h i j k l m n o p q r s t u v w x y z
-		lbrace pipe rbrace tilde del
-	}
-
 	struct tuple {
 		# Value with associated key, such as a named attribute.
 		key, value
@@ -105,7 +92,7 @@ library json {
 
 	# Return the next character from the specified parser, or -1 if no more are available.
 	function parser_next_char( ( parser ) this ) {
-		if =( this.current ascii.lf ) {
+		if =( this.current '\n' ) {
 			let this.line = +( this.line 1 );
 		}
 		let this.idx = +( this.idx 1 );
@@ -133,7 +120,7 @@ library json {
 		let this.idx = end;
 		var idx, len = $len( str );
 		while <( idx len ) {
-			let idx = $stridx( str, "\12", idx );
+			let idx = $stridx( str, "\n", idx );
 			if <( idx 0 ) {
 				break;
 			}
@@ -145,25 +132,25 @@ library json {
 
 	# Return an instance of json_string from the specified parser.
 	function parse_string_value( ( parser ) p ) {
-		call p:expect( ascii.quote );
+		call p:expect( \"\"" );
 		call p:next_char();
 		var str = p:parse_string( "\\\"" );
-		while =( p.current ascii.backslash ) {
+		while =( p.current '\\' ) {
 			let str = $cat( str "\\" $asc( p:next_char() ) );
 			call p:next_char();
 			let str = $cat( str p:parse_string( "\\\"" ) );
 		}
-		call p:expect( ascii.quote );
+		call p:expect( \"\"" );
 		call p:next_char();
 		return $new( string @write_string str );
 	}
 	
 	# Return an instance of json_string from the specified parser.
 	function parse_char_value( ( parser ) p ) {
-		call p:expect( ascii.squote );
+		call p:expect( '\'' );
 		call p:next_char();
 		var str = p:parse_string( "'" );
-		call p:expect( ascii.squote );
+		call p:expect( '\'' );
 		call p:next_char();
 		return $new( string @write_chars str );
 	}
@@ -190,20 +177,19 @@ library json {
 			if idx {
 				call :output.write( "," );
 			}
-			var ( node ) node = [ values.array idx++ ];
-			call :node.write( output );
+			call :node.write( [ values.array idx++ ] output );
 		}
 		call :output.write( "]" );
 	}
 	
 	function parse_array( ( parser ) p ) {
-		call p:expect( ascii.lbracket );
+		call p:expect( \"[" );
 		var ( array ) arr = $new( array @write_array $new( list $array( 1 ) ) );
 		call p:next_char();
 		call p:skip_space();
-		while <>( p.current ascii.rbracket ) {
+		while <>( p.current \"]" ) {
 			if list.len( arr.values ) {
-				call p:expect( ascii.comma );
+				call p:expect( \"," );
 				call p:next_char();
 				call p:skip_space();
 			}
@@ -230,19 +216,19 @@ library json {
 	}
 	
 	function parse_object( ( parser ) p ) {
-		call p:expect( ascii.lbrace );
+		call p:expect( \"{" );
 		var ( object ) obj = $new( object @write_object $new( list $array( 1 ) ) );
 		call p:next_char();
 		call p:skip_space();
-		while <>( p.current ascii.rbrace ) {
+		while <>( p.current \"}" ) {
 			if list.len( obj.tuples ) {
-				call p:expect( ascii.comma );
+				call p:expect( \"," );
 				call p:next_char();
 				call p:skip_space();
 			}
 			var key = parse_node( p );
 			call p:skip_space();
-			call p:expect( ascii.colon );
+			call p:expect( ':' );
 			call p:next_char();
 			call p:skip_space();
 			call list_add( obj.tuples $new( tuple key parse_node( p ) ) );
@@ -271,20 +257,20 @@ library json {
 	function parse_node( ( parser ) p ) {
 		call p:skip_space();
 		switch p.current {
-			case ascii.lbracket {
+			case \"[" {
 				return parse_array( p );
 			}
-			case ascii.lbrace {
+			case \"{" {
 				return parse_object( p );
 			}
-			case ascii.quote {
+			case \"\"" {
 				return parse_string_value( p );
 			}
-			case ascii.squote {
+			case \"'" {
 				return parse_char_value( p );
 			}
-			case ascii.minus ascii.d0 ascii.d1 ascii.d2 ascii.d3 ascii.d4 ascii.d5 ascii.d6 ascii.d7 ascii.d8 ascii.d9 ascii.f ascii.n ascii.t {
-				return $new( value @write_value p:parse_string( "\11\12\13 ,:]}" ) );
+			case '-' '0' '1' '2' '3' '4' '5' '6' '7' '8' '9' 'f' 'n' 't' {
+				return $new( value @write_value p:parse_string( "\t\n\r ,:]}" ) );
 			}
 			default {
 				throw $trace( $cat( "Unexpected character '" $asc( p.current ) "' on line " p.line "." ) );
@@ -311,7 +297,7 @@ library json {
 program json_test {
 	var ( json_node ) node;
 	if <( $argc 2 ) {
-		let node = json_parse_node( json_new_parser( "[ { \"a\":1, 'b':{ \"c\": \"\\\\d\\\"\" }, 3:[[],4], 5:{6:7},-8:null}, \"str\", 1 ]" ) );
+		let node = json_parse_node( json_new_parser( "[ { \"a\":1, 'b':{ \"c\": \"\\\\d\\\"\" }, \n3:[[],4], 5:{6:7},-8:null}, \"str\", 1 ]" ) );
 		
 		# Write the parsed data to standard output.
 		call :node.write( $new( json_writer $function( ${ ( this, str ) { write str; } } ) ) );
