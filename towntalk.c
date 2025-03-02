@@ -479,14 +479,14 @@ static struct element* copy_element( struct element *source ) {
 static int parse_child_element( char *buffer, int idx, struct element *parent, int depth, char *message ) {
 	struct element *elem = NULL;
 	int offset = idx, length = 0, line = parent->line, len;
-	char *bracket, chr = '\n';
+	char *bracket = NULL, chr = '\n';
 	if( depth < 1 ) {
 		sprintf( message, "Maximum element depth exceeded on line %d.", line );
 		return -5;
 	}
 	while( chr ) {
 		chr = buffer[ idx++ ];
-		if( chr <= 32 || strchr( "\"#(),;=[]{}", chr ) ) {
+		if( chr <= 32 || ( ( chr < '0' || ( chr & 0x1F ) > 26 ) && ( bracket = strchr( "\"#(),;=[]{}", chr ) ) ) ) {
 			if( length > 0 ) {
 				if( elem == NULL ) {
 					elem = new_element( length );
@@ -509,7 +509,10 @@ static int parse_child_element( char *buffer, int idx, struct element *parent, i
 					chr = buffer[ idx++ ];
 				}
 				line++;
-			} else if( chr && strchr( "\"(,;=[{", chr ) ) {
+			} else if( chr == ')' || chr == ']' || chr == '}' ) {
+				parent->line = line;
+				return idx;
+			} else if( chr > 32 ) {
 				if( chr == '"' ) {
 					len = parse_string( buffer, idx - 1, NULL, line, message );
 					if( len < 0 ) {
@@ -534,37 +537,31 @@ static int parse_child_element( char *buffer, int idx, struct element *parent, i
 						if( idx < 0 ) {
 							return idx;
 						}
-					} else {
-						bracket = strchr( "()[]{}", chr );
-						if( bracket ) {
-							elem->str.string[ 0 ] = bracket[ 0 ];
-							elem->str.string[ 1 ] = bracket[ 1 ];
-							idx = parse_child_element( buffer, idx, elem, depth - 1, message );
-							if( idx > 0 ) {
-								/* Exchange line and elem->line. */
-								len = elem->line;
-								elem->line = line;
-								line = len;
-								if( buffer[ idx - 1 ] != bracket[ 1 ] ) {
-									sprintf( message, "Unclosed element on line %d.", line );
-									return -2;
-								}
-							} else {
-								return idx;
+					} else if( chr == '(' || chr == '[' || chr == '{' ) {
+						elem->str.string[ 0 ] = bracket[ 0 ];
+						elem->str.string[ 1 ] = bracket[ 1 ];
+						idx = parse_child_element( buffer, idx, elem, depth - 1, message );
+						if( idx > 0 ) {
+							/* Exchange line and elem->line. */
+							len = elem->line;
+							elem->line = line;
+							line = len;
+							if( buffer[ idx - 1 ] != bracket[ 1 ] ) {
+								sprintf( message, "Unclosed element on line %d.", line );
+								return -2;
 							}
 						} else {
-							elem->str.string[ 0 ] = chr;
-							elem->str.string[ 1 ] = 0;
-							elem->str.length = 1;
+							return idx;
 						}
+					} else {
+						elem->str.string[ 0 ] = chr;
+						elem->str.string[ 1 ] = 0;
+						elem->str.length = 1;
 					}
 				} else {
 					strcpy( message, OUT_OF_MEMORY );
 					return -1;
 				}
-			} else if( chr == ')' || chr == ']' || chr == '}' ) {
-				parent->line = line;
-				return idx;
 			}
 			offset = idx;
 			length = 0;
