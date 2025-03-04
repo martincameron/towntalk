@@ -23,19 +23,20 @@ library lib {
 		h;
 	}
 	global global = :( $function( ${ () { return $len( struct ); } } ) );
-	function function() {
-		return global;
-	}
 }
 
 library lib {
-	*** ignored ***
+	function function() {
+		return global;
+	}
 }
 
 global g, g1 = 1, g2 = +( g1 1 );
 global [ a 3 ], a1 = $array( 1 ), [ a2 g2 ] [ a3 ${ 1, 2, 3 } ], ( exten ) ext = $new( exten );
 
 include "hello.tt";
+
+import lib from "hello.tt";
 
 function assert( value, elem ) {
 	if !( value ) {

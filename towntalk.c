@@ -59,6 +59,7 @@
 		rem {...}                Comment (all brackets inside must be balanced).
 		include "file.tt";       Include declarations from specified file.
 		library name { decls }   Namespace prefix for specified declarations.
+		import name from "f.tt"; Include declarations from file if library not already declared.
 		const name = expr;       Global constants.
 		global a, b = expr;      Global variables.
 		global ( struct ) a;     Global variable with associated struct.
@@ -5131,6 +5132,14 @@ struct element* validate_syntax( char *syntax, struct element *elem,
 					sprintf( message, "Expected 'catch' or 'finally' after '%.64s' on line %d.", prev->str.string, prev->line );
 				}
 				break;
+			case 'f': /* From. */
+				if( elem && is_keyword( elem->str.string, "from" ) ) {
+					prev = elem;
+					elem = elem->next;
+				} else {
+					sprintf( message, "Expected 'from' after '%.64s' on line %d.", prev->str.string, prev->line );
+				}
+				break;
 			case 'n': /* Name. */
 				if( elem && elem->str.string[ 0 ] != ';' ) {
 					validate_name( elem, message );
@@ -5758,6 +5767,20 @@ static struct element* parse_include( struct element *elem,
 	return next;
 }
 
+static struct element* parse_import( struct element *elem,
+	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
+	struct element *next = elem->next, *lib = next;
+	if( get_decl_indexed( func, lib->str.string, LIBRARY, NULL ) ) {
+		next = next->next->next->next->next;
+	} else {
+		next = parse_include( next->next, func, vars, prev, message );
+		if( message[ 0 ] == 0 && !get_decl_indexed( func, lib->str.string, LIBRARY, NULL ) ) {
+			sprintf( message, "Library '%.32s' not found in file %.64s on line %d.\n", lib->str.string, lib->next->next->str.string, elem->line );
+		}
+	}
+	return next;
+}
+
 static int add_structure_field( struct structure *struc, struct element *elem, char *message ) {
 	struct string *field;
 	if( validate_name( elem, message ) ) {
@@ -5966,42 +5989,44 @@ static struct keyword library_decls[] = {
 
 static struct element* parse_library_declaration( struct element *elem,
 	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
-	struct element *next = elem->next;
-	struct string *library;
 	struct function *init;
-	if( get_decl_indexed( func, next->str.string, LIBRARY, NULL ) ) {
-		next = next->next->next;
+	struct element *next = elem->next;
+	struct string *library = get_decl_indexed( func, next->str.string, LIBRARY, NULL );
+	if( library ) {
+		library->reference_count++;
 	} else {
 		library = new_string_value( next->str.string );
 		if( library ) {
 			library->type = LIBRARY;
-			init = new_function( "[Init]", NULL );
-			if( init ) {
-				init->file = func->file;
-				init->file->reference_count++;
-				init->library = library;
-				library->reference_count++;
-				init->env = func->env;
-				if( add_decl( library, next->line, func->env, message ) ) {
-					next = next->next;
-					parse_keywords( library_decls, next->child, init, NULL, NULL, message );
-					next = next->next;
-				}
-				unref_string( &init->str );
-			} else {
-				strcpy( message, OUT_OF_MEMORY );
-			}
-			unref_string( library );
+			add_decl( library, next->line, func->env, message );
 		} else {
 			strcpy( message, OUT_OF_MEMORY );
 		}
+	}
+	if( message[ 0 ] == 0 ) {
+		init = new_function( "[Init]", NULL );
+		if( init ) {
+			init->file = func->file;
+			init->file->reference_count++;
+			init->library = library;
+			library->reference_count++;
+			init->env = func->env;
+			next = next->next;
+			parse_keywords( library_decls, next->child, init, NULL, NULL, message );
+			next = next->next;
+			unref_string( &init->str );
+		} else {
+			strcpy( message, OUT_OF_MEMORY );
+		}
+		unref_string( library );
 	}
 	return next;
 }
 
 static struct keyword declarations[] = {
-	{ "include", "\";", parse_include, &declarations[ 1 ] },
-	{ "library", "n{", parse_library_declaration, &declarations[ 2 ] },
+	{ "import", "nf\";", parse_import, &declarations[ 1 ] },
+	{ "include", "\";", parse_include, &declarations[ 2 ] },
+	{ "library", "n{", parse_library_declaration, &declarations[ 3 ] },
 	{ "program", "n{", parse_program_declaration, library_decls }
 };
 
