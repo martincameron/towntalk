@@ -298,6 +298,18 @@ static struct array* new_buffer( int length ) {
 	return arr;
 }
 
+struct source* new_source( int str_len ) {
+	struct source *src = malloc( sizeof( struct source ) + sizeof( char ) * ( str_len + 1 ) );
+	if( src ) {
+		memset( src, 0, sizeof( struct source ) );
+		src->str.string = ( char * ) &src[ 1 ];
+		src->str.reference_count = 1;
+		src->str.length = str_len;
+		src->str.type = SOURCE;
+	}
+	return src;
+}
+
 /* Allocate and return a string of the specified length and reference count of 1. */
 struct string* new_string( int length ) {
 	struct string *str = malloc( sizeof( struct string ) + sizeof( char ) * ( length + 1 ) );
@@ -853,6 +865,11 @@ static void dispose_function( struct function *func ) {
 	free( func );
 }
 
+static void dispose_source( struct source *src ) {
+	dispose_string_list( src->imports );
+	free( src );
+}
+
 /* Decrement the reference count of the specified value and deallocate if necessary. */
 void unref_string( struct string *str ) {
 	if( str->reference_count == 1 ) {
@@ -875,6 +892,9 @@ void unref_string( struct string *str ) {
 				break;
 			case FUNCTION:
 				dispose_function( ( struct function * ) str );
+				break;
+			case SOURCE:
+				dispose_source( ( struct source * ) str );
 				break;
 			case CUSTOM:
 				( ( struct custom * ) str )->type->dispose( str );
@@ -2449,20 +2469,29 @@ static struct string* get_decl( struct string_list *list, char *name, int len, e
 	return NULL;
 }
 
-static struct string* get_decl_indexed( struct function *func, char *name, enum reference_type type, char *terminators ) {
+static struct string* get_decl_indexed( struct function *func, char *name, int len, enum reference_type type ) {
+	return get_decl( func->env->decls_index[ hash_code( name, 0 ) ], name, len, type );
+}
+
+static struct string* find_decl( struct function *func, char *name, enum reference_type type, char *terminators ) {
 	char qname[ 65 ];
 	struct string *str = NULL;
+	struct string_list *imports = NULL;
 	int qlen, flen = terminators ? field_end( name, terminators ) - name : strlen( name );
-	if( func->library ) {
-		qlen = func->library->length;
+	if( func->file->type == SOURCE ) {
+		imports = ( ( struct source * ) func->file )->imports;
+	}
+	while( imports && str == NULL ) {
+		qlen = imports->str->length;
 		if( qlen + 1 + flen < 65 ) {
-			strcpy( qname, func->library->string );
+			strcpy( qname, imports->str->string );
 			qname[ qlen++ ] = '_';
 			strncpy( &qname[ qlen ], name, flen );
 			qlen += flen;
 			qname[ qlen ] = 0;
 			str = get_decl( func->env->decls_index[ hash_code( qname, 0 ) ], qname, qlen, type );
 		}
+		imports = imports->next;
 	}
 	if( str == NULL ) {
 		str = get_decl( func->env->decls_index[ hash_code( name, name[ flen ] ) ], name, flen, type );
@@ -2550,7 +2579,7 @@ static struct element* parse_variable_declaration( struct element *elem, struct 
 			prev = prev->next;
 		}
 		if( elem->str.string[ 0 ] == '(' ) {
-			type = ( struct structure * ) get_decl_indexed( func, elem->child->str.string, STRUCT, NULL );
+			type = ( struct structure * ) find_decl( func, elem->child->str.string, STRUCT, NULL );
 			if( type ) {
 				elem = elem->next;
 			} else {
@@ -3940,7 +3969,7 @@ static struct element* parse_func_ref_expression( struct element *elem,
 	if( expr ) {
 		prev->next = &expr->expr;
 		expr->expr.line = elem->line;
-		expr->function = ( struct function * ) get_decl_indexed( func, name, FUNCTION, NULL );
+		expr->function = ( struct function * ) find_decl( func, name, FUNCTION, NULL );
 		if( expr->function ) {
 			expr->expr.evaluate = evaluate_func_ref_expression;
 		} else {
@@ -4059,7 +4088,7 @@ static struct element* parse_thiscall_expression( struct element *elem,
 	struct structure *struc = NULL;
 	struct element *next = elem->next;
 	struct global_variable *global = NULL;
-	struct string *decl = get_decl_indexed( func, &elem->str.string[ 1 ], 0, "!." );
+	struct string *decl = find_decl( func, &elem->str.string[ 1 ], 0, "!." );
 	struct local_variable *captured = NULL, *local = get_local_variable( func->variable_decls, &elem->str.string[ 1 ], "." );
 	struct expression param = { 0 }, *this, *expr = calloc( 1, sizeof( struct value_expression ) );
 	if( expr ) {
@@ -4144,32 +4173,21 @@ static struct element* parse_thiscall_expression( struct element *elem,
 
 static struct element* parse_member_call_expression( struct structure *struc, struct expression *this,
 	char *memb, struct element *elem, struct function *func, struct variables *vars, struct expression *prev, char *message ) {
-	char *name;
-	int num_params;
+	char qname[ 65 ];
+	int num_params, qlen, mlen = strlen( memb );
 	struct expression *expr;
 	struct function *decl = NULL;
 	struct element *next = elem->next;
 	if( struc ) {
-		while( struc ) {
-			name = malloc( struc->str.length + 1 + strlen( memb ) + 1 );
-			if( name ) {
-				strcpy( name, struc->str.string );
-				name[ struc->str.length ] = '_';
-				strcpy( &name[ struc->str.length + 1 ], memb );
-				decl = ( struct function * ) get_decl_indexed( func, name, FUNCTION, NULL );
-				if( decl ) {
-					struc = NULL;
-				} else {
-					struc = struc->super;
-					if( struc == NULL ) {
-						sprintf( message, "Member function not found for expression '%.64s' on line %d.", elem->str.string, elem->line );
-					}
-				}
-				free( name );
-			} else {
-				strcpy( message, OUT_OF_MEMORY );
-				struc = NULL;
+		while( struc && decl == NULL ) {
+			qlen = struc->str.length + 1 + mlen;
+			if( qlen < 65 ) {
+				strcpy( qname, struc->str.string );
+				qname[ struc->str.length ] = '_';
+				strcpy( &qname[ struc->str.length + 1 ], memb );
+				decl = ( struct function * ) get_decl_indexed( func, qname, qlen, FUNCTION );
 			}
+			struc = struc->super;
 		}
 		if( decl ) {
 			expr = calloc( 1, sizeof( struct function_expression ) );
@@ -4194,6 +4212,8 @@ static struct element* parse_member_call_expression( struct structure *struc, st
 			} else {
 				strcpy( message, OUT_OF_MEMORY );
 			}
+		} else {
+			sprintf( message, "Member function not found for expression '%.64s' on line %d.", elem->str.string, elem->line );
 		}
 	} else {
 		sprintf( message, "Expression '%.64s' has no associated structure on line %d.", elem->str.string, elem->line );
@@ -4479,7 +4499,7 @@ struct element* parse_expression( struct element *elem,
 					/* Operator. */
 					next = parse_operator_expression( elem, oper, func, vars, prev, message );
 				} else {
-					decl = get_decl_indexed( func, value, 0, "!.:" );
+					decl = find_decl( func, value, 0, "!.:" );
 					if( decl ) {
 						type = decl->type;
 					}
@@ -4650,7 +4670,7 @@ static struct element* parse_struct_assignment( struct element *elem,
 	struct statement *stmt = calloc( 1, sizeof( struct structure_statement ) );
 	if( stmt ) {
 		prev->next = stmt;
-		struc = ( struct structure * ) get_decl_indexed( func, next->str.string, STRUCT, "!." );
+		struc = ( struct structure * ) find_decl( func, next->str.string, STRUCT, "!." );
 		field = field_end( next->str.string, "!." );
 		if( struc && field[ 0 ] ) {
 			( ( struct structure_statement * ) stmt )->structure = struc;
@@ -4824,7 +4844,7 @@ static struct element* parse_assignment_statement( struct element *elem,
 			if( local ) {
 				elem = parse_local_assignment( elem, func, vars, local, prev, message );
 			} else {
-				global = ( struct global_variable * ) get_decl_indexed( func, elem->str.string, GLOBAL, "!." );
+				global = ( struct global_variable * ) find_decl( func, elem->str.string, GLOBAL, "!." );
 				if( global ) {
 					elem = parse_global_assignment( elem, func, vars, global, prev, message );
 				} else {
@@ -5530,7 +5550,7 @@ static struct element* add_function_parameter( struct function *func, struct ele
 	struct local_variable *param;
 	struct structure *type = NULL;
 	if( elem->str.string[ 0 ] == '(' ) {
-		type = ( struct structure * ) get_decl_indexed( func, elem->child->str.string, STRUCT, NULL );
+		type = ( struct structure * ) find_decl( func, elem->child->str.string, STRUCT, NULL );
 		if( type ) {
 			elem = elem->next;
 		} else {
@@ -5736,7 +5756,7 @@ static struct element* parse_include( struct element *elem,
 	struct string_list *include;
 	int path_len = str_idx( func->file->string, "/:\\", -1 ) + 1;
 	int name_len = unquote_string( next->str.string, NULL, '"' );
-	struct string *path = new_string( path_len + name_len );
+	struct string *path = ( struct string * ) new_source( path_len + name_len );
 	if( path ) {
 		memcpy( path->string, func->file->string, sizeof( char ) * path_len );
 		unquote_string( next->str.string, &path->string[ path_len ], '"' );
@@ -5767,15 +5787,42 @@ static struct element* parse_include( struct element *elem,
 	return next;
 }
 
+static int import_library( struct string *library, struct string *source, char *message ) {
+	struct string_list *imports;
+	if( source->type == SOURCE ) {
+		imports = ( ( struct source * ) source )->imports;
+		while( imports ) {
+			if( imports->str == library ) {
+				return 1;
+			}
+			imports = imports->next;
+		}
+		imports = new_string_list( library, ( ( struct source * ) source )->imports );
+		if( imports ) {
+			( ( struct source * ) source )->imports = imports;
+		} else {
+			strcpy( message, OUT_OF_MEMORY );
+			return 0;
+		}
+	}
+	return 1;
+}
+
 static struct element* parse_import( struct element *elem,
 	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
-	struct element *next = elem->next, *lib = next;
-	if( get_decl_indexed( func, lib->str.string, LIBRARY, NULL ) ) {
+	struct element *next = elem->next, *name = next;
+	struct string *library = get_decl_indexed( func, name->str.string, name->str.length, LIBRARY );
+	if( library ) {
 		next = next->next->next->next->next;
 	} else {
 		next = parse_include( next->next, func, vars, prev, message );
-		if( message[ 0 ] == 0 && !get_decl_indexed( func, lib->str.string, LIBRARY, NULL ) ) {
-			sprintf( message, "Library '%.32s' not found in file %.64s on line %d.\n", lib->str.string, lib->next->next->str.string, elem->line );
+		library = get_decl_indexed( func, name->str.string, name->str.length, LIBRARY );
+	}
+	if( message[ 0 ] == 0 ) {
+		if( library ) {
+			import_library( library, func->file, message );
+		} else {
+			sprintf( message, "Library '%.32s' not found in file %.64s on line %d.\n", name->str.string, name->next->next->str.string, elem->line );
 		}
 	}
 	return next;
@@ -5822,7 +5869,7 @@ static struct element* parse_struct_declaration( struct element *elem,
 			if( next && next->str.string[ 0 ] == '(' ) {
 				child = next->child;
 				if( child && child->next == NULL ) {
-					struc->super = ( struct structure * ) get_decl_indexed( func, child->str.string, STRUCT, NULL );
+					struc->super = ( struct structure * ) find_decl( func, child->str.string, STRUCT, NULL );
 				}
 				if( struc->super && struc->super != struc ) {
 					field = struc->super->fields;
@@ -5991,7 +6038,7 @@ static struct element* parse_library_declaration( struct element *elem,
 	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
 	struct function *init;
 	struct element *next = elem->next;
-	struct string *library = get_decl_indexed( func, next->str.string, LIBRARY, NULL );
+	struct string *library = get_decl_indexed( func, next->str.string, next->str.length, LIBRARY );
 	if( library ) {
 		library->reference_count++;
 	} else {
@@ -6003,7 +6050,7 @@ static struct element* parse_library_declaration( struct element *elem,
 			strcpy( message, OUT_OF_MEMORY );
 		}
 	}
-	if( message[ 0 ] == 0 ) {
+	if( message[ 0 ] == 0 && import_library( library, func->file, message ) ) {
 		init = new_function( "[Init]", NULL );
 		if( init ) {
 			init->file = func->file;
@@ -6116,8 +6163,9 @@ int parse_tt_program( char *program, struct string *file, struct environment *en
    Returns zero and writes up to 256 bytes to message on failure. */
 int parse_tt_file( char *file_name, struct environment *env, char *message ) {
 	int success = 0;
-	struct string *path = new_string_value( file_name );
+	struct string *path = ( struct string * ) new_source( strlen( file_name ) );
 	if( path ) {
+		strcpy( path->string, file_name );
 		success = include_tt_file( path, env, message );
 		unref_string( path );
 	} else {

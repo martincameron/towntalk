@@ -1733,7 +1733,7 @@ static int initialize_fxenvironment( struct fxenvironment *fxenv, char *message 
 
 static int parse_ttfx_file( char *path, struct fxenvironment *env, char *message ) {
 	long file_length, bank_length, success = 0;
-	struct string *program_buffer, *file_name;
+	struct string *program_buffer, *program_source;
 	/* Load program file into string.*/
 	file_length = load_file( path, NULL, 0, 0, message );
 	if( file_length >= MAX_INTEGER ) {
@@ -1757,11 +1757,12 @@ static int parse_ttfx_file( char *path, struct fxenvironment *env, char *message
 		}
 		if( program_buffer ) {
 			if( file_length >= 0 ) {
-				file_name = new_string_value( path );
-				if( file_name ) {
+				program_source = ( struct string * ) new_source( strlen( path ) );
+				if( program_source ) {
+					strcpy( program_source->string, path );
 					/* Parse program structure.*/
-					success = parse_tt_program( program_buffer->string, file_name, &env->env, message );
-					unref_string( file_name );
+					success = parse_tt_program( program_buffer->string, program_source, &env->env, message );
+					unref_string( program_source );
 				} else {
 					strcpy( message, OUT_OF_MEMORY );
 				}

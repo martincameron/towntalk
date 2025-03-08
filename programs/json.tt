@@ -295,27 +295,27 @@ library json {
 }
 
 program json_test {
-	var ( json_node ) node;
+	var ( node ) node;
 	if <( $argc 2 ) {
-		let node = json_parse_node( json_new_parser( "[ { \"a\":1, 'b':{ \"c\": \"\\\\d\\\"\" }, \n3:[[],4], 5:{6:7},-8:null}, \"str\", 1 ]" ) );
+		let node = parse_node( new_parser( "[ { \"a\":1, 'b':{ \"c\": \"\\\\d\\\"\" }, \n3:[[],4], 5:{6:7},-8:null}, \"str\", 1 ]" ) );
 		
 		# Write the parsed data to standard output.
-		call :node.write( $new( json_writer $function( ${ ( this, str ) { write str; } } ) ) );
+		call :node.write( $new( writer $function( ${ ( this, str ) { write str; } } ) ) );
 		
 		# Print some values from the tree.
-		print json_value.value( json_object_get( json_array_get( node 0 ) "a" ) );
-		var ( json_array ) arr = node;
-		var ( json_object ) obj = arr:get( 0 );
+		print value.value( object_get( array_get( node 0 ) "a" ) );
+		var ( array ) arr = node;
+		var ( object ) obj = arr:get( 0 );
 		let obj = obj:get( "b" );
-		var ( json_value ) val = obj:get( "c" );
+		var ( value ) val = obj:get( "c" );
 		print val.value;
 	} else {
-		let node = json_parse_node( json_new_parser( $load( $argv( 1 ) ) ) );
+		let node = parse_node( new_parser( $load( $argv( 1 ) ) ) );
 	}
 	
 	# Create an array list and a writer that appends each character.
-	var ( json_list ) list = $new( json_list $buffer( 1 ) );
-	var ( json_writer ) writer = $new( json_writer $function( ${ ( this, str ) {
+	var ( list ) list = $new( list $buffer( 1 ) );
+	var ( writer ) writer = $new( writer $function( ${ ( this, str ) {
 		var idx, len = $len( str );
 		while <( idx len ) {
 			call list:add( $chr( str idx++ ) );
@@ -328,7 +328,7 @@ program json_test {
 	var str = $sub( list.array 0 list.len );
 	
 	# Reparse the string.
-	let node = json_parse_node( json_new_parser( str ) );
+	let node = parse_node( new_parser( str ) );
 	
 	# Truncate the array list and write the reparsed data back to it.
 	let list.len = 0;

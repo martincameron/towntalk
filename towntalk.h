@@ -22,7 +22,7 @@ enum result {
 
 /* Reference type. */
 enum reference_type {
-	STRING, ELEMENT, ARRAY, STRUCT, GLOBAL, CONST, FUNCTION, LIBRARY, CUSTOM, EXIT
+	STRING, ELEMENT, ARRAY, STRUCT, GLOBAL, CONST, FUNCTION, LIBRARY, SOURCE, CUSTOM, EXIT
 };
 
 /* String list. */
@@ -71,6 +71,12 @@ struct function {
 struct variable {
 	number number_value;
 	struct string *string_value;
+};
+
+/* Reference-counted source-file. */
+struct source {
+	struct string str;
+	struct string_list *imports;
 };
 
 /* Execution environment. */
@@ -229,7 +235,7 @@ int add_constants( struct constant *constants, struct environment *env, char *me
 int parse_tt_file( char *file_name, struct environment *env, char *message );
 
 /* Parse the specified program text into env. Returns zero and writes message on failure. */
-int parse_tt_program( char *program, struct string *file_name, struct environment *env, char *message );
+int parse_tt_program( char *program, struct string *file, struct environment *env, char *message );
 
 /* Initialize expr to call the specified entry-point function when evaluated. */
 void initialize_entry_point( struct function_expression *expr, struct function *func );
@@ -264,6 +270,9 @@ struct string_list* add_decl( struct string *decl, int line, struct environment 
 
 /* Allocate and return a string of the specified length and reference count of 1. */
 struct string* new_string( int length );
+
+/* Allocate and return source file reference of the specified length and reference count of 1. */
+struct source* new_source( int str_len );
 
 /* Allocate and return a new element with the specified string length. */
 struct element* new_element( int str_len );

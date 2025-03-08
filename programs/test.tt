@@ -1042,6 +1042,7 @@ function testeval() {
 
 function testlibrary() {
 	call assert_equals( 8, lib_function(), ${-} );
+	call assert_equals( 7, struct.h, ${-} );
 }
 
 function testoptimizer() {
