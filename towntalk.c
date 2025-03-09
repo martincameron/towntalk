@@ -2475,13 +2475,14 @@ static struct string* get_decl_indexed( struct function *func, char *name, int l
 
 static struct string* find_decl( struct function *func, char *name, enum reference_type type, char *terminators ) {
 	char qname[ 65 ];
-	struct string *str = NULL;
+	struct string *str;
 	struct string_list *imports = NULL;
 	int qlen, flen = terminators ? field_end( name, terminators ) - name : strlen( name );
 	if( func->file->type == SOURCE ) {
 		imports = ( ( struct source * ) func->file )->imports;
 	}
-	while( imports && str == NULL ) {
+	str = get_decl( func->env->decls_index[ hash_code( name, name[ flen ] ) ], name, flen, type );
+	while( str == NULL && imports ) {
 		qlen = imports->str->length;
 		if( qlen + 1 + flen < 65 ) {
 			strcpy( qname, imports->str->string );
@@ -2492,9 +2493,6 @@ static struct string* find_decl( struct function *func, char *name, enum referen
 			str = get_decl( func->env->decls_index[ hash_code( qname, 0 ) ], qname, qlen, type );
 		}
 		imports = imports->next;
-	}
-	if( str == NULL ) {
-		str = get_decl( func->env->decls_index[ hash_code( name, name[ flen ] ) ], name, flen, type );
 	}
 	if( name[ flen ] && str && str->type == FUNCTION && ( name[ flen + 1 ] || name[ flen ] != '!' ) ) {
 		str = NULL;
