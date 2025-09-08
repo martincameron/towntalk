@@ -225,8 +225,9 @@ const int MAX_INTEGER = ( 1 << ( sizeof( int ) * 8 - 1 ) ) - 1u;
 const char *OUT_OF_MEMORY = "Out of memory.";
 
 static struct constant constants[] = {
-	{ "FALSE", 0, NULL },
 	{  "TRUE", 1, NULL },
+	{ "FALSE", 0, NULL },
+	{  "NULL", 0, NULL },
 	{ NULL }
 };
 
@@ -6048,20 +6049,22 @@ static struct element* parse_library_declaration( struct element *elem,
 			strcpy( message, OUT_OF_MEMORY );
 		}
 	}
-	if( message[ 0 ] == 0 && import_library( library, func->file, message ) ) {
-		init = new_function( "[Init]", NULL );
-		if( init ) {
-			init->file = func->file;
-			init->file->reference_count++;
-			init->library = library;
-			library->reference_count++;
-			init->env = func->env;
-			next = next->next;
-			parse_keywords( library_decls, next->child, init, NULL, NULL, message );
-			next = next->next;
-			unref_string( &init->str );
-		} else {
-			strcpy( message, OUT_OF_MEMORY );
+	if( message[ 0 ] == 0 ) {
+		if( import_library( library, func->file, message ) ) {
+			init = new_function( "[Init]", NULL );
+			if( init ) {
+				init->file = func->file;
+				init->file->reference_count++;
+				init->library = library;
+				library->reference_count++;
+				init->env = func->env;
+				next = next->next;
+				parse_keywords( library_decls, next->child, init, NULL, NULL, message );
+				next = next->next;
+				unref_string( &init->str );
+			} else {
+				strcpy( message, OUT_OF_MEMORY );
+			}
 		}
 		unref_string( library );
 	}
