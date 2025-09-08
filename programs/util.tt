@@ -1,0 +1,168 @@
+
+library util {
+	//# Array-backed list.
+	struct list {
+		array, len
+	}
+
+	//# Simple hash-map with string keys.
+	struct map {
+		entries
+	}
+
+	//# Map entry.
+	struct entry {
+		key value
+	}
+
+	//# Return a new list with an initial capacity of 8.
+	function new_list() {
+		return $new( list $array( 8 ) );
+	}
+
+	//# Add the specified value to the end of the list.
+	function list_add( ( list ) this, value ) {
+		var arr = this.array, len = this.len;
+		if >e( len $len( arr ) ) {
+			var idx, old = arr;
+			let arr = $array( *( len 2 ) );
+			while <( idx len ) {
+				let [ arr idx ] = [ old idx++ ];
+			}
+			let this.array = arr;
+		}
+		let [ arr len++ ] = value;
+		let this.len = len;
+	}
+	
+	//# Insert the specified value into the specified list at the specified index.
+	function list_insert( ( list ) this, value, idx ) {
+		call list_add( this, value );
+		var arr = this.array, len = this.len;
+		while <( idx len ) {
+			var tmp = [ arr idx ];
+			let [ arr idx++ ] = value;
+			let value = tmp;
+		}
+	}
+
+	//# Remove the value at the specified index from the specified list.
+	function list_remove( ( list ) this, idx ) {
+		var arr = this.array, len = this.len, off = idx, value = [ arr idx++ ];
+		while <( idx len ) {
+			let [ arr off++ ] = [ arr idx++ ];
+		}
+		let this.len = -( len 1 );
+		return value;
+	}
+
+	//# Call the specified function once for each item in the list.
+	function list_for_each( ( list ) this, func ) {
+		var arr = this.array, len = this.len, idx;
+		while <( idx len ) {
+			call :( func [ arr idx++ ] );
+		}
+	}
+
+	//# Find the entry instance with the specified key in the list.
+	function list_find_entry( ( list ) this, key ) {
+		var arr = this.array, len = this.len, idx;
+		while <( idx len ) {
+			var ( entry ) entry = [ arr idx++ ];
+			if $eq( key entry.key ) {
+				return entry;
+			}
+		}
+		return NULL;
+	}
+	
+	//# Remove the entry with the specified key from the list if present.
+	function list_remove_entry( ( list ) this, key ) {
+		var arr = this.array, len = this.len, idx;
+		while <( idx len ) {
+			var ( entry ) entry = [ arr idx++ ];
+			if $eq( key entry.key ) {
+				if <( idx len ) {
+					let [ arr -( idx 1 ) ] = [ arr -( len 1 ) ];
+				}
+				let this.len = -( this.len 1 );
+				return entry;
+			}
+		}
+	}
+
+	//# Create a new hash-map.
+	function new_map() {
+		var entries = $array( 32 ), idx;
+		while <( idx 32 ) {
+			let [ entries idx++ ] = new_list();
+		}
+		return $new( map entries );
+	}
+
+	//# Calculate a 5-bit hash-code for the specified string.
+	function hash_code( str ) {
+		var hash, len = $len( str ), idx;
+		while <( idx len ) {
+			let hash = ^( hash $chr( str idx++ ) );
+		}
+		return &( hash 0x1F );
+	}
+
+	//# Return the map entry for the specified key, or NULL.
+	function map_get_entry( ( map ) this, key ) {
+		return list_find_entry( [ this.entries hash_code( key ) ] key );
+	}
+
+	//# Return the value for the specified key, or NULL.
+	function map_get( ( map ) this, key ) {
+		var ( entry ) entry = this:get_entry( key );
+		if entry {
+			return entry.value;
+		}
+		return NULL;
+	}
+	
+	//# Remove the specified entry from the map, if present.
+	function map_remove( ( map ) this, key ) {
+		return list_remove_entry( [ this.entries hash_code( key ) ], key );
+	}
+
+	//# Put the specified value into the map under the specified string key.
+	function map_put( ( map ) this, key, value ) {
+		var hash = hash_code( key );
+		var ( list ) list = [ this.entries hash ];
+		var ( entry ) entry = list:find_entry( key );
+		if entry {
+			let entry.value = value;
+		} else {
+			call list:add( $new( entry! key value ) );
+		}
+	}
+
+	//# Call the specified function once for each entry instance in the map.
+	function map_for_each( ( map ) this, func ) {
+		var entries = this.entries, len = $len( entries ), idx;
+		while <( idx len ) {
+			call list_for_each( [ entries idx++ ], func );
+		}
+	}
+}
+
+program test_util {
+	var ( list ) list = new_list(), idx;
+	while <( idx 10 ) {
+		call list:insert( idx++ 0 );
+	}
+	call list:remove( 0 );
+	call list:for_each( $function( ${ ( value ) { print value; } } ) );
+	
+	var ( map ) map = new_map(), chrs = "abcdefABC";
+	let idx = 0;
+	while <( idx $len( chrs ) ) {
+		call map:put( $sub( chrs idx 1 ), idx++ );
+	}
+	call map:remove( "C" );
+	call map:remove( "c" );
+	call map:for_each( $function( ${ ( ( entry ) entry ) { print $cat( entry.key " = " entry.value ); } } ) );
+}
