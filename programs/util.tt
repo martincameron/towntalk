@@ -7,7 +7,7 @@ library util {
 	//# Marker struct for array functions.
 	struct array {
 	}
-	
+
 	//# Array-backed list.
 	struct list {
 		array, len
@@ -42,7 +42,7 @@ library util {
 		let [ arr len++ ] = value;
 		let this.len = len;
 	}
-	
+
 	//# Insert the specified value into the specified list at the specified index.
 	function list_insert( ( list ) this, value, idx ) {
 		call list_add( this, value );
@@ -83,17 +83,15 @@ library util {
 		}
 		return NULL;
 	}
-	
+
 	//# Remove the entry with the specified key from the list if present.
 	function list_remove_entry( ( list ) this, key ) {
-		var arr = this.array, len = this.len, idx;
-		while <( idx len ) {
+		var arr = this.array, end = -( this.len 1 ), idx;
+		while <e( idx end ) {
 			var ( entry ) entry = [ arr idx++ ];
 			if $eq( key entry.key ) {
-				if <( idx len ) {
-					let [ arr -( idx 1 ) ] = [ arr -( len 1 ) ];
-				}
-				let this.len = -( this.len 1 );
+				let [ arr -( idx 1 ) ] = [ arr end ];
+				let this.len = end;
 				return entry;
 			}
 		}
@@ -130,7 +128,7 @@ library util {
 		}
 		return NULL;
 	}
-	
+
 	//# Remove the specified entry from the map, if present.
 	function map_remove( ( map ) this, key ) {
 		return list_remove_entry( [ this.entries hash_code( key ) ], key );
@@ -163,12 +161,12 @@ library util {
 			call :( func [ arr idx++ ] );
 		}
 	}
-	
+
 	//# Return a new list instance backed by the specified array.
 	function array_as_list( arr ) {
 		return $new( list arr $len( arr ) );
 	}
-	
+
 	//# Return a new array instance containing the specified range.
 	function array_slice( arr, offset, len ) {
 		var slice = $array( len ), idx;
@@ -177,7 +175,7 @@ library util {
 		}
 		return slice;
 	}
-	
+
 	//# Copy the specified range from the source array to the dest array.
 	function array_copy( src src_offset dest dest_offset len ) {
 		var src_end = +( src_offset len );
@@ -210,7 +208,7 @@ library util {
 		}
 		return "";
 	}
-	
+
 	//# Return an upper-case representation of the specified ASCII string.
 	function string_upper( this ) {
 		var idx, len = $len( this ), arr = $buffer( len );
@@ -240,7 +238,7 @@ library util {
 		}
 		return $sub( arr 0 len );
 	}
-	
+
 	//# Return a list instance containing the text between the specified separator characters.
 	function string_split( this, separators ) {
 		var ( list ) list = new_list();
