@@ -1,5 +1,13 @@
 
 library util {
+	//# Marker struct for string functions.
+	struct string {
+	}
+
+	//# Marker struct for array functions.
+	struct array {
+	}
+	
 	//# Array-backed list.
 	struct list {
 		array, len
@@ -147,16 +155,119 @@ library util {
 			call list_for_each( [ entries idx++ ], func );
 		}
 	}
+
+	//# Call the specified function once for each value in the array.
+	function array_for_each( arr, func ) {
+		var idx, len = $len( arr );
+		while <( idx len ) {
+			call :( func [ arr idx++ ] );
+		}
+	}
+	
+	//# Return a new list instance backed by the specified array.
+	function array_as_list( arr ) {
+		return $new( list arr $len( arr ) );
+	}
+	
+	//# Return a new array instance containing the specified range.
+	function array_slice( arr, offset, len ) {
+		var slice = $array( len ), idx;
+		while <( offset len ) {
+			let [ slice idx++ ] = [ arr offset++ ];
+		}
+		return slice;
+	}
+	
+	//# Copy the specified range from the source array to the dest array.
+	function array_copy( src src_offset dest dest_offset len ) {
+		var src_end = +( src_offset len );
+		var dest_end = +( dest_offset len );
+		if <( src_end dest_end ) {
+			dec src_end;
+			dec dest_end;
+			while >e( src_end src_offset ) {
+				let [ dest dest_end-- ] = [ src src_end-- ];
+			}
+		} else {
+			while <( src_offset src_end ) {
+				let [ dest dest_offset++ ] = [ src src_offset++ ];
+			}
+		}
+	}
+
+	//# Return the content of the specified string with leading and trailing spaces removed.
+	function string_trim( this ) {
+		var idx, end = -( $len( this ) 1 );
+		while <e( idx end ) {
+			if >( $chr( this idx++ ) 32 ) {
+				dec idx;
+				while >e( end idx ) {
+					if >( $chr( this end-- ) 32 ) {
+						return $sub( this idx -( end idx -2 ) );
+					}
+				}
+			}
+		}
+		return "";
+	}
+	
+	//# Return an upper-case representation of the specified ASCII string.
+	function string_upper( this ) {
+		var idx, len = $len( this ), arr = $buffer( len );
+		while <( idx len ) {
+			var chr = $chr( this idx );
+			if >( chr 96 ) {
+				if <( chr 123 ) {
+					let chr = -( chr 32 );
+				}
+			}
+			let [ arr idx++ ] = chr;
+		}
+		return $sub( arr 0 len );
+	}
+
+	//# Return a lower-case representation of the specified ASCII string.
+	function string_lower( this ) {
+		var idx, len = $len( this ), arr = $buffer( len );
+		while <( idx len ) {
+			var chr = $chr( this idx );
+			if >( chr 64 ) {
+				if <( chr 91 ) {
+					let chr = +( chr 32 );
+				}
+			}
+			let [ arr idx++ ] = chr;
+		}
+		return $sub( arr 0 len );
+	}
+	
+	//# Return a list instance containing the text between the specified separator characters.
+	function string_split( this, separators ) {
+		var ( list ) list = new_list();
+		var offset, len = $len( this ), end = $stridx( this separators 0 );
+		while >e( end 0 ) {
+			call list:add( $sub( this offset -( end++ offset ) ) );
+			let offset = end;
+			let end = ?( <( offset len ) $stridx( this separators offset ) -1 );
+		}
+		call list:add( $sub( this offset -( len offset ) ) );
+		return list;
+	}
 }
 
 program test_util {
+	var ( string ) str = " @az{ ";
+	print $cat( "[" str:trim() "]" );
+	print string_lower( str:upper() );
+	call list_for_each( string_split( "abc", "a" ) $function( ${ ( value ) { write value; write ","; } } ) );
+	print "";
 	var ( list ) list = new_list(), idx;
 	while <( idx 10 ) {
 		call list:insert( idx++ 0 );
 	}
 	call list:remove( 0 );
-	call list:for_each( $function( ${ ( value ) { print value; } } ) );
-	
+	call list:for_each( $function( ${ ( value ) { write value; write ","; } } ) );
+	print "";
 	var ( map ) map = new_map(), chrs = "abcdefABC";
 	let idx = 0;
 	while <( idx $len( chrs ) ) {
@@ -164,5 +275,14 @@ program test_util {
 	}
 	call map:remove( "C" );
 	call map:remove( "c" );
-	call map:for_each( $function( ${ ( ( entry ) entry ) { print $cat( entry.key " = " entry.value ); } } ) );
+	call map:for_each( $function( ${ ( ( entry ) entry ) { print $cat( entry.key "=>" entry.value ); } } ) );
+	var ( array ) arr = $array( 4 1 2 3 4 );
+	let arr = arr:slice( 0 3 );
+	call arr:copy( 0 arr 1 2 );
+	call arr:for_each( $function( ${ ( value ) { write value; write ","; } } ) );
+	print "";
+	let list = arr:as_list();
+	call list:add( 4 );
+	call list:for_each( $function( ${ ( value ) { write value; write ","; } } ) );
+	print "";
 }
