@@ -43,6 +43,23 @@ library util {
 		let this.len = len;
 	}
 
+	//# Add the specified range from the specified array to the specified list.
+	function list_add_array( ( list ) this, arr, idx, len ) {
+		var dest = this.array, offset = this.len, end = +( offset len );
+		if >( end $len( dest ) ) {
+			var old_idx, old = dest;
+			let dest = $array( *( end 2 ) );
+			while <( old_idx offset ) {
+				let [ dest old_idx ] = [ old old_idx++ ];
+			}
+			let this.array = dest;
+		}
+		while <( offset end ) {
+			let [ dest offset++ ] = [ arr idx++ ];
+		}
+		let this.len = end;
+	}
+
 	//# Insert the specified value into the specified list at the specified index.
 	function list_insert( ( list ) this, value, idx ) {
 		call list_add( this, value );
@@ -251,6 +268,37 @@ library util {
 		call list:add( $sub( this offset -( len offset ) ) );
 		return list;
 	}
+
+	//# Return a UTF-8 encoded string containing the characters in the specified array.
+	function array_utf8_encode( this ) {
+		var idx, offset, len = $len( this ), ( list ) list = new_list();
+		while <( idx len ) {
+			var chr = [ this idx++ ];
+			if >( chr 127 ) {
+				call list:add_array( this offset -( idx offset 1 ) );
+				var shift = 6;
+				if >>( chr 12 ) {
+					let shift = 12;
+					if >>( chr 18 ) {
+						let shift = 18;
+					}
+				}
+				call list:add( |( 0xC0 &( >>( chr shift ) 0x3F ) ) );
+				while shift {
+					let shift = -( shift 6 );
+					call list:add( |( 0x80 &( >>( chr shift ) 0x3F ) ) );
+				}
+				let offset = idx;
+			}
+		}
+		if offset {
+			if <( offset len ) {
+				call list:add_array( this offset -( len offset ) );
+			}
+			return $sub( list.array 0 list.len );
+		}
+		return $sub( this 0 len );
+	}
 }
 
 program test_util {
@@ -283,4 +331,8 @@ program test_util {
 	call list:add( 4 );
 	call list:for_each( $function( ${ ( value ) { write value; write ","; } } ) );
 	print "";
+	let arr = $array( 12 48 49 50 51 52 53 54 55 56 0xA3 0x220AC 57 );
+	print arr:utf8_encode();
+	print array_utf8_encode( arr:slice( 0 10 ) );
+	print array_utf8_encode( arr:slice( 0 9 ) );
 }
