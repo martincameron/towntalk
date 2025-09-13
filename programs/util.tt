@@ -268,10 +268,31 @@ library util {
 		call list:add( $sub( this offset -( len offset ) ) );
 		return list;
 	}
+	
+	//# Return the first index of the specified substring within the specified string, or -1.
+	function string_find( this, substr, offset ) {
+		var sublen = $len( substr ), strend = -( $len( this ) sublen ), firstchr = $sub( substr 0 1 );
+		while <e( offset strend ) {
+			var idx = $stridx( this firstchr offset );
+			if ||( <( idx 0 ) >( idx strend ) ) {
+				return -1;
+			}
+			var end = +( idx++ sublen ), subidx = 1;
+			let offset = idx;
+			while &&( <( idx end ) =( $chr( this idx ) $chr( substr subidx ) ) ) {
+				inc subidx;
+				inc idx;
+			}
+			if >e( idx end ) {
+				return -( idx sublen );
+			}
+		}
+		return -1;
+	}
 
 	//# Return a UTF-8 encoded string containing the characters in the specified array.
 	function array_utf8_encode( this ) {
-		var idx, offset, len = $len( this ), ( list ) list = new_list();
+		var idx, offset, len = $len( this ), ( list ) list = $new( list $buffer( len ) );
 		while <( idx len ) {
 			var chr = [ this idx++ ];
 			if >( chr 127 ) {
@@ -335,4 +356,5 @@ program test_util {
 	print arr:utf8_encode();
 	print array_utf8_encode( arr:slice( 0 10 ) );
 	print array_utf8_encode( arr:slice( 0 9 ) );
+	print string_find( "abc" "bc" 0 );
 }
