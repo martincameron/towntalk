@@ -268,7 +268,7 @@ library util {
 		call list:add( $sub( this offset -( len offset ) ) );
 		return list;
 	}
-	
+
 	//# Return the first index of the specified substring within the specified string, or -1.
 	function string_find( this, substr, offset ) {
 		var sublen = $len( substr ), strend = -( $len( this ) sublen ), firstchr = $sub( substr 0 1 );
@@ -290,35 +290,64 @@ library util {
 		return -1;
 	}
 
-	//# Return a UTF-8 encoded string containing the characters in the specified array.
-	function array_utf8_encode( this ) {
-		var idx, offset, len = $len( this ), ( list ) list = $new( list $buffer( len ) );
-		while <( idx len ) {
-			var chr = [ this idx++ ];
-			if >( chr 127 ) {
-				call list:add_array( this offset -( idx offset 1 ) );
-				var shift = 6;
-				if >>( chr 12 ) {
-					let shift = 12;
-					if >>( chr 18 ) {
-						let shift = 18;
+	//# Decode the specified UTF-8 encoded string into the specified array.
+	//# The array should be the same length as the string to prevent overflow.
+	//# The number of characters decoded is returned.
+	function string_utf8_decode( this, array ) {
+		var offset, len = $len( this ), count;
+		while <( offset len ) {
+			var chr = $chr( this offset++ );
+			if <( chr 0 ) {
+				var shift = 6, mask = 0x1F;
+				if &( chr 0x20 ) {
+					let shift = 12, mask = 0xF;
+					if &( chr 0x10 ) {
+						let shift = 18, mask = 0x7;
 					}
 				}
-				call list:add( |( 0xC0 &( >>( chr shift ) 0x3F ) ) );
+				let chr = <<( &( chr mask ) shift );
+				while shift {
+					let shift = -( shift 6 );
+					let chr = |( chr <<( &( $chr( this offset++ ) 0x3F ) shift ) );
+				}
+				if <( chr 128 ) {
+					let chr = 0;
+				}
+			}
+			let [ array count++ ] = chr;
+		}
+		return count;
+	}
+
+	//# Return a UTF-8 encoded string containing the characters in the specified array.
+	function array_utf8_encode( this, offset, len ) {
+		var start = offset, ( list ) list = $new( list $buffer( *( len 2 ) ) );
+		while <( offset len ) {
+			var chr = [ this offset++ ];
+			if >( chr 127 ) {
+				call list:add_array( this start -( offset start 1 ) );
+				var shift = 6, prefix = 0xC0;
+				if >( chr 0x7FF ) {
+					let shift = 12, prefix = 0xE0;
+					if >( chr 0xFFFF ) {
+						let shift = 18, prefix = 0xF0;
+					}
+				}
+				call list:add( |( prefix &( >>( chr shift ) 0x3F ) ) );
 				while shift {
 					let shift = -( shift 6 );
 					call list:add( |( 0x80 &( >>( chr shift ) 0x3F ) ) );
 				}
-				let offset = idx;
+				let start = offset;
 			}
 		}
-		if offset {
-			if <( offset len ) {
-				call list:add_array( this offset -( len offset ) );
+		if start {
+			if <( start len ) {
+				call list:add_array( this start -( len start ) );
 			}
 			return $sub( list.array 0 list.len );
 		}
-		return $sub( this 0 len );
+		return $sub( this offset len );
 	}
 }
 
@@ -352,9 +381,12 @@ program test_util {
 	call list:add( 4 );
 	call list:for_each( $function( ${ ( value ) { write value; write ","; } } ) );
 	print "";
-	let arr = $array( 12 48 49 50 51 52 53 54 55 56 0xA3 0x220AC 57 );
-	print arr:utf8_encode();
-	print array_utf8_encode( arr:slice( 0 10 ) );
-	print array_utf8_encode( arr:slice( 0 9 ) );
 	print string_find( "abc" "bc" 0 );
+	let arr = $array( 12 48 49 50 51 52 53 54 55 0xA3 0x20AC 0x1F600 57 );
+	var ( string ) utf = arr:utf8_encode( 0 $len( arr ) );
+	print utf;
+	print array_utf8_encode( arr 0 11 );
+	print array_utf8_encode( arr 0 9 );
+	call utf:utf8_decode( arr );
+	print arr:utf8_encode( 0 $len( arr ) );
 }
