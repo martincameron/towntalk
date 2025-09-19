@@ -3945,11 +3945,11 @@ static struct element* parse_call_expression( struct element *elem,
 			parse_expressions( next->child, func, vars, 0, &param, &num_params, message );
 			expr->parameters = param.next;
 			if( message[ 0 ] == 0 ) {
-				if( num_params == ( ( struct function_expression * ) expr )->function->num_parameters ) {
+				if( num_params == decl->num_parameters ) {
 					expr->evaluate = evaluate_call_expression;
 					next = next->next;
 				} else {
-					sprintf( message, "Wrong number of arguments to '%.64s()' on line %d.", elem->str.string, next->line );
+					sprintf( message, "Wrong number of arguments to '%.64s()' on line %d.", decl->str.string, next->line );
 				}
 			}
 		} else {
