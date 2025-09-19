@@ -701,31 +701,35 @@ void assign_variable( struct variable *src, struct variable *dest ) {
 }
 
 static int compare_variables( struct variable *var1, struct variable *var2 ) {
-	int result;
+	int result, len1, len2;
 	struct string *str1, *str2;
-	if( var1->number_value > var2->number_value ) {
-		result = 1;
-	} else if( var1->number_value < var2->number_value ) {
-		result = -1;
-	} else if( var1->string_value != var2->string_value ) {
-		if( var1->string_value && var2->string_value ) {
-			str1 = var1->string_value;
-			str2 = var2->string_value;
-			if( str1->length > str2->length ) {
-				result = memcmp( str1->string, str2->string, sizeof( char ) * str2->length );
+	if( var1->number_value == var2->number_value ) {
+		str1 = var1->string_value;
+		str2 = var2->string_value;
+		if( str1 == str2 ) {
+			result = 0;
+		} else if( str1 ) {
+			if( str2 ) {
+				len1 = str1->length;
+				len2 = str2->length;
+				if( len1 > len2 ) {
+					result = memcmp( str1->string, str2->string, sizeof( char ) * len2 );
+				} else {
+					result = memcmp( str1->string, str2->string, sizeof( char ) * len1 );
+				}
+				if( result == 0 ) {
+					result = len1 - len2;
+				}
 			} else {
-				result = memcmp( str1->string, str2->string, sizeof( char ) * str1->length );
+				result = 1;
 			}
-			if( result == 0 ) {
-				result = str1->length - str2->length;
-			}
-		} else if( var2->string_value ) {
-			result = -var2->string_value->length;
 		} else {
-			result = var1->string_value->length;
+			result = -1;
 		}
+	} else if( var1->number_value > var2->number_value ) {
+		result = 1;
 	} else {
-		result = 0;
+		result = -1;
 	}
 	return result;
 }
