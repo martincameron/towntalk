@@ -1,0 +1,92 @@
+
+import util from "util.tt";
+
+const ASSERTION_FAILED = "Assertion failed";
+
+function test_assert() {
+	var err;
+	call assert_throws( "0" $function( ${ () { throw 0; } } ) );
+	call assert_throws( "A" $function( ${ () { throw "ABC"; } } ) );
+	try {
+		call assert_throws( "0" $function( ${ () {} } ) );
+		throw ASSERTION_FAILED;
+	} catch err {}
+	try {
+		call assert_throws( "ABC" $function( ${ () { throw "AB"; } } ) );
+		throw ASSERTION_FAILED;
+	} catch err {}
+	call assert( TRUE );
+	call assert_throws( ASSERTION_FAILED $function( ${ () { call assert( FALSE ); } } ) );
+	call assert_equals( 1 1 );
+	call assert_equals( "" "" );
+	call assert_throws( ASSERTION_FAILED $function( ${ () { call assert_equals( "" 0 ); } } ) );
+	call assert_equals( $str( "Assertion failed on line 0 of '" $src( @assert ) "'. Expected '0', actual '1'." ) assertion_failed( 0 1 @assert ) );
+}
+
+function test_string() {
+	call assert_equals( "@az{" string_trim( string_trim( " @az{ " ) ) );
+	call assert_equals( "1AZ" string_upper( "1az" ) );
+	call assert_equals( 0xC7 &( $chr( string_upper_latin( $asc( 0xE7 ) ) 0 ) 0xFF ) );
+	call assert_equals( "1az" string_lower( "1AZ" ) );
+	call assert_equals( 0xE7 &( $chr( string_lower_latin( $asc( 0xC7 ) ) 0 ) 0xFF ) );
+	var ( list ) list = string_split( "1,2,3." ",." );
+	call assert_equals( 4 list.len );
+	call assert_equals( "1" [ list.array 0 ] );
+	call assert_equals( "" [ list.array 3 ] );
+	call assert_equals( 1 string_find( "abc" "bc" 0 ) );
+	var str = array_utf8_encode( $buffer( 5 49 0xA3 0x20AC 0x1F600 53 ) 0 5 );
+	var arr = $buffer( $len( str ) );
+	call assert_equals( 5 string_utf8_decode( str arr ) ) ;
+	call assert_equals( 49 [ arr 0 ] );
+	call assert_equals( 0x1F600 [ arr 3 ] );
+	call assert_throws( "Invalid UTF" $function( ${ () { call string_utf8_decode( $asc( 0xAE ) $buffer( 1 ) ); } } ) );
+}
+
+function test_list() {
+	var ( list ) list = new_list(), idx;
+	while <( idx 10 ) {
+		call list:add( idx++ );
+	}
+	var ( list ) list2 = new_list();
+	call list:for_each( $function( ${ ( value ) { call list2:insert( +( 'A' value ) 0 ); } } ) );
+	call list2:remove( 0 );
+	call assert_equals( "IHGFEDCBA" $sub( list2.array 0 list2.len ) );
+}
+
+function test_map() {
+	var ( map ) map = new_map(), chrs = "abcdefABC";
+	var idx = 0;
+	while <( idx $len( chrs ) ) {
+		call map:put( $sub( chrs idx 1 ), idx++ );
+	}
+	call map:remove( "C" );
+	call map:remove( "c" );
+	var ( list ) list = new_list();
+	call map:for_each( $function( ${ ( ( entry ) entry ) {
+			call list:add( $chr( entry.key 0 ) );
+			call list:add( +( '0' entry.value ) );
+		} } ) );
+	call assert_equals( "a0A6b1B7d3e4f5" $sub( list.array 0 list.len ) );
+}
+
+function test_array() {
+	var ( array ) arr = $array( 4 '1' '2' '3' '4' );
+	let arr = arr:slice( 0 3 );
+	call arr:copy( 0 arr 1 2 );
+	call assert_equals( "112" $sub( arr 0 3 ) );
+	var ( list ) list = new_list();
+	call arr:for_each( $function( ${ ( value ) { call list:add( value ); } } ) );
+	call assert_equals( "112" $sub( list.array 0 list.len ) );
+	let list = arr:as_list();
+	call list:add( '3' );
+	call assert_equals( "1123" $sub( list.array 0 list.len ) );
+}
+
+program utiltest {
+	call test_assert();
+	call test_string();
+	call test_list();
+	call test_map();
+	call test_array();
+	print trace_to_string( :( $function( ${ () { return $trace( "Okay." ); } } ) ) );
+}

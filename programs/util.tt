@@ -28,54 +28,66 @@ library util {
 		return $new( list $array( 8 ) );
 	}
 
+	//# Increase the capacity of the specified list by the specified amount and return the new backing-array.
+	function list_expand( ( list ) this, amount ) {
+		var idx, old = this.array, len = this.len, arr = $array( +( $len( old ) amount ) );
+		while <( idx len ) {
+			let [ arr idx ] = [ old idx++ ];
+		}
+		let this.array = arr;
+		return arr;
+	}
+
 	//# Add the specified value to the end of the list.
 	function list_add( ( list ) this, value ) {
 		var arr = this.array, len = this.len;
 		if >e( len $len( arr ) ) {
-			var idx, old = arr;
-			let arr = $array( *( len 2 ) );
-			while <( idx len ) {
-				let [ arr idx ] = [ old idx++ ];
-			}
-			let this.array = arr;
+			let arr = this:expand( +( len 1 ) );
 		}
 		let [ arr len++ ] = value;
 		let this.len = len;
 	}
 
 	//# Add the specified range from the specified array to the specified list.
-	function list_add_array( ( list ) this, arr, idx, len ) {
-		var dest = this.array, offset = this.len, end = +( offset len );
+	function list_add_array( ( list ) this, arr, offset, len ) {
+		var dest = this.array, idx = this.len, end = +( idx len );
 		if >( end $len( dest ) ) {
-			var old_idx, old = dest;
-			let dest = $array( *( end 2 ) );
-			while <( old_idx offset ) {
-				let [ dest old_idx ] = [ old old_idx++ ];
-			}
-			let this.array = dest;
+			let dest = this:expand( end );
 		}
-		while <( offset end ) {
-			let [ dest offset++ ] = [ arr idx++ ];
+		while <( idx end ) {
+			let [ dest idx++ ] = [ arr offset++ ];
+		}
+		let this.len = end;
+	}
+
+	//# Add the specified characters from the specified string to the specified list.
+	function list_add_chars( ( list ) this, str, offset, len ) {
+		var dest = this.array, idx = this.len, end = +( idx len );
+		if >( end $len( dest ) ) {
+			let dest = this:expand( end );
+		}
+		while <( idx end ) {
+			let [ dest idx++ ] = $chr( str offset++ );
 		}
 		let this.len = end;
 	}
 
 	//# Insert the specified value into the specified list at the specified index.
-	function list_insert( ( list ) this, value, idx ) {
+	function list_insert( ( list ) this, value, index ) {
 		call list_add( this, value );
 		var arr = this.array, len = this.len;
-		while <( idx len ) {
-			var tmp = [ arr idx ];
-			let [ arr idx++ ] = value;
+		while <( index len ) {
+			var tmp = [ arr index ];
+			let [ arr index++ ] = value;
 			let value = tmp;
 		}
 	}
 
 	//# Remove the value at the specified index from the specified list.
-	function list_remove( ( list ) this, idx ) {
-		var arr = this.array, len = this.len, off = idx, value = [ arr idx++ ];
-		while <( idx len ) {
-			let [ arr off++ ] = [ arr idx++ ];
+	function list_remove( ( list ) this, index ) {
+		var arr = this.array, len = this.len, offset = index, value = [ arr index++ ];
+		while <( index len ) {
+			let [ arr offset++ ] = [ arr index++ ];
 		}
 		let this.len = -( len 1 );
 		return value;
@@ -226,33 +238,80 @@ library util {
 		return "";
 	}
 
-	//# Return an upper-case representation of the specified ASCII string.
-	function string_upper( this ) {
-		var idx, len = $len( this ), arr = $buffer( len );
-		while <( idx len ) {
-			var chr = $chr( this idx );
-			if >( chr 96 ) {
-				if <( chr 123 ) {
-					let chr = -( chr 32 );
+	//# Add the specified value to the specified characters in the array within the specified range.
+	//# The returned value will be over 127 if the string contains non-ASCII characters.
+	function array_shift_case( this offset len start end add ) {
+		var bits;
+		while <( offset len ) {
+			var chr = [ this offset ];
+			if >e( chr start ) {
+				if <e( chr end ) {
+					let chr = +( chr add );
 				}
 			}
-			let [ arr idx++ ] = chr;
+			let [ this offset++ ] = chr;
+			let bits = |( bits chr );
 		}
+		return bits;
+	}
+
+	//# Upper-case the specified latin characters within the specified array.
+	function array_upper( ( array ) this len ) {
+		var bits = this:shift_case( 0 len 97 122 -32 );
+		if &( bits 0x80 ) {
+			call this:shift_case( 0 len 224 246 -32 );
+			call this:shift_case( 0 len 248 255 -32 );
+		}
+		return bits;
+	}
+
+	//# Lower-case the specified latin characters within the specified array.
+	function array_lower( ( array ) this len ) {
+		var bits = this:shift_case( 0 len 65 90 32 );
+		if &( bits 0x80 ) {
+			call this:shift_case( 0 len 192 214 32 );
+			call this:shift_case( 0 len 216 223 32 );
+		}
+		return bits;
+	}
+
+	//# Copy the specified unsigned characters from the specified string into the specified array.
+	function string_get_chars( this offset len array ) {
+		var idx;
+		while <( offset len ) {
+			let [ array idx++ ] = &( $chr( this offset++ ) 0xFF );
+		}
+	}
+
+	//# Return an upper-case representation of the specified ASCII string.
+	function string_upper( ( string ) this ) {
+		var len = $len( this ), ( array ) arr = $buffer( len );
+		call this:get_chars( 0 len arr );
+		call arr:shift_case( 0 len 97 122 -32 );
+		return $sub( arr 0 len );
+	}
+
+	//# Return an upper-case representation of the specified ASCII or ISO-8859-1 encoded string.
+	function string_upper_latin( ( string ) this ) {
+		var len = $len( this ), ( array ) arr = $buffer( len );
+		call this:get_chars( 0 len arr );
+		call arr:upper( len );
 		return $sub( arr 0 len );
 	}
 
 	//# Return a lower-case representation of the specified ASCII string.
-	function string_lower( this ) {
-		var idx, len = $len( this ), arr = $buffer( len );
-		while <( idx len ) {
-			var chr = $chr( this idx );
-			if >( chr 64 ) {
-				if <( chr 91 ) {
-					let chr = +( chr 32 );
-				}
-			}
-			let [ arr idx++ ] = chr;
-		}
+	function string_lower( ( string ) this ) {
+		var len = $len( this ), ( array ) arr = $buffer( len );
+		call this:get_chars( 0 len arr );
+		call arr:shift_case( 0 len 65 90 32 );
+		return $sub( arr 0 len );
+	}
+
+	//# Return a lower-case representation of the specified ASCII or ISO-8859-1 encoded string.
+	function string_lower_latin( ( string ) this ) {
+		var len = $len( this ), ( array ) arr = $buffer( len );
+		call this:get_chars( 0 len arr );
+		call arr:lower( len );
 		return $sub( arr 0 len );
 	}
 
@@ -298,20 +357,22 @@ library util {
 		while <( offset len ) {
 			var chr = $chr( this offset++ );
 			if <( chr 0 ) {
-				var shift = 6, mask = 0x1F;
-				if &( chr 0x20 ) {
-					let shift = 12, mask = 0xF;
-					if &( chr 0x10 ) {
-						let shift = 18, mask = 0x7;
+				if &( chr 0x40 ) {
+					var shift = 6, mask = 0x1F;
+					if &( chr 0x20 ) {
+						let shift = 12, mask = 0xF;
+						if &( chr 0x10 ) {
+							let shift = 18, mask = 0x7;
+						}
+					}
+					let chr = <<( &( chr mask ) shift );
+					while shift {
+						let shift = -( shift 6 );
+						let chr = |( chr <<( &( $chr( this offset++ ) 0x3F ) shift ) );
 					}
 				}
-				let chr = <<( &( chr mask ) shift );
-				while shift {
-					let shift = -( shift 6 );
-					let chr = |( chr <<( &( $chr( this offset++ ) 0x3F ) shift ) );
-				}
 				if <( chr 128 ) {
-					let chr = 0;
+					throw $str( "Invalid UTF-8 encoding at offset " -( offset 1 ) );
 				}
 			}
 			let [ array count++ ] = chr;
@@ -349,44 +410,64 @@ library util {
 		}
 		return $sub( this offset len );
 	}
-}
 
-program test_util {
-	var ( string ) str = " @az{ ";
-	print $cat( "[" str:trim() "]" );
-	print string_lower( str:upper() );
-	call list_for_each( string_split( "abc", "a" ) $function( ${ ( value ) { write value; write ","; } } ) );
-	print "";
-	var ( list ) list = new_list(), idx;
-	while <( idx 10 ) {
-		call list:insert( idx++ 0 );
+	//# Encode the specified ISO-8859-1 encoded string as UTF-8.
+	function string_utf8_encode( ( string ) this ) {
+		var len = $len( this ), ( array ) arr = $buffer( len );
+		call this:get_chars( 0 len arr );
+		return arr:utf8_encode( 0 len );
 	}
-	call list:remove( 0 );
-	call list:for_each( $function( ${ ( value ) { write value; write ","; } } ) );
-	print "";
-	var ( map ) map = new_map(), chrs = "abcdefABC";
-	let idx = 0;
-	while <( idx $len( chrs ) ) {
-		call map:put( $sub( chrs idx 1 ), idx++ );
+
+	//# Return a string representation of the specified stack-trace array (or other value).
+	function trace_to_string( trace ) {
+		var ( list ) list = new_list(), msg = $str( trace );
+		call list:add_chars( msg 0 $len( msg ) );
+		if >( $type( trace ) 1 ) {
+			var idx, len = $len( trace );
+			while <( idx len ) {
+				var func = [ trace idx++ ];
+				let msg = $cat( "\nOn line " $tup( 0 func ) " of '" func "()' in file '" $src( func ) "'." );
+				call list:add_chars( msg 0 $len( msg ) );
+			}
+		}
+		return $sub( list.array 0 list.len );
 	}
-	call map:remove( "C" );
-	call map:remove( "c" );
-	call map:for_each( $function( ${ ( ( entry ) entry ) { print $cat( entry.key "=>" entry.value ); } } ) );
-	var ( array ) arr = $array( 4 1 2 3 4 );
-	let arr = arr:slice( 0 3 );
-	call arr:copy( 0 arr 1 2 );
-	call arr:for_each( $function( ${ ( value ) { write value; write ","; } } ) );
-	print "";
-	let list = arr:as_list();
-	call list:add( 4 );
-	call list:for_each( $function( ${ ( value ) { write value; write ","; } } ) );
-	print "";
-	print string_find( "abc" "bc" 0 );
-	let arr = $array( 12 48 49 50 51 52 53 54 55 0xA3 0x20AC 0x1F600 57 );
-	var ( string ) utf = arr:utf8_encode( 0 $len( arr ) );
-	print utf;
-	print array_utf8_encode( arr 0 11 );
-	print array_utf8_encode( arr 0 9 );
-	call utf:utf8_decode( arr );
-	print arr:utf8_encode( 0 $len( arr ) );
+
+	//# Return an assertion failed message for the specified trace element.
+	function assertion_failed( expected, actual, caller ) {
+		return $str( "Assertion failed on line " $tup( NULL caller ) " of '"
+			$src( caller ) "'. Expected '" expected "', actual '" actual "'." );
+	}
+
+	//# Throw an exception if the specified value is FALSE/NULL.
+	function assert( value ) {
+		if !( value ) {
+			throw assertion_failed( "TRUE" "NULL" [ $trace( NULL ) 1 ] );
+		}
+	}
+
+	//# Throw an exception if the specified values are not equivalent.
+	function assert_equals( expected, value ) {
+		if $cmp( expected value ) {
+			throw assertion_failed( expected value [ $trace( NULL ) 1 ] );
+		}
+	}
+
+	//# Throw an exception if the specified no-argument function does not throw an
+	//# exception with a message that starts with the specified string when compiled and invoked.
+	function assert_throws( expected, func ) {
+		var err;
+		try {
+			call :( func );
+			let err = "(No exception thrown)";
+		} catch err {
+			let err = $str( err );
+			if <e( $len( expected ) $len( err ) ) {
+				let err = $sub( err 0 $len( expected ) );
+			}
+		}
+		if $cmp( expected err ) {
+			throw assertion_failed( expected err [ $trace( NULL ) 1 ] );
+		}
+	}
 }
