@@ -34,6 +34,7 @@ function test_string() {
 	call assert_equals( "1" [ list.array 0 ] );
 	call assert_equals( "" [ list.array 3 ] );
 	call assert_equals( 1 string_find( "abc" "bc" 0 ) );
+	call assert_equals( "abc" string_insert( "ac" "b" 1 ) );
 	var str = array_utf8_encode( $buffer( 5 49 0xA3 0x20AC 0x1F600 53 ) 0 5 );
 	var arr = $buffer( $len( str ) );
 	call assert_equals( 5 string_utf8_decode( str arr ) ) ;
@@ -50,7 +51,9 @@ function test_list() {
 	var ( list ) list2 = new_list();
 	call list:for_each( $function( ${ ( value ) { call list2:insert( +( 'A' value ) 0 ); } } ) );
 	call list2:remove( 0 );
-	call assert_equals( "IHGFEDCBA" $sub( list2.array 0 list2.len ) );
+	call list2:add_chars( "BC" 0 2 );
+	call list2:add_array( $array( 2 'D' 'E' ) 0 2 );
+	call assert_equals( "IHGFEDCBABCDE" $sub( list2.array 0 list2.len ) );
 }
 
 function test_map() {
