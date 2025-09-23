@@ -20,6 +20,7 @@ function test_assert() {
 	call assert_equals( 1 1 );
 	call assert_equals( "" "" );
 	call assert_throws( ASSERTION_FAILED $function( ${ () { call assert_equals( "" 0 ); } } ) );
+	call assert_equals( $str( "Assertion failed on line 0 of '" $src( @assert ) "'." ) assertion_failed( 0 0 @assert ) );
 	call assert_equals( $str( "Assertion failed on line 0 of '" $src( @assert ) "'. Expected '0', actual '1'." ) assertion_failed( 0 1 @assert ) );
 }
 

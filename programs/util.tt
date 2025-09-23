@@ -450,14 +450,17 @@ library util {
 
 	//# Return an assertion failed message for the specified trace element.
 	function assertion_failed( expected, actual, caller ) {
-		return $str( "Assertion failed on line " $tup( NULL caller ) " of '"
-			$src( caller ) "'. Expected '" expected "', actual '" actual "'." );
+		var msg = $str( "Assertion failed on line " $tup( NULL caller ) " of '" $src( caller ) "'." );
+		if ||( expected actual ) {
+			return $str( msg " Expected '" expected "', actual '" actual "'." );
+		}
+		return msg;
 	}
 
 	//# Throw an exception if the specified value is FALSE/NULL.
 	function assert( value ) {
 		if !( value ) {
-			throw assertion_failed( "TRUE" "NULL" [ $trace( NULL ) 1 ] );
+			throw assertion_failed( 0 0 [ $trace( NULL ) 1 ] );
 		}
 	}
 

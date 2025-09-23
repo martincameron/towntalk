@@ -2391,8 +2391,13 @@ static enum result evaluate_array_expression( struct expression *this,
 			} else {
 				arr = new_array( vars->func->env, len, 0 );
 				if( arr ) {
-					arr->str.string = "[Array]";
-					arr->str.length = 7;
+					if( struc ) {
+						arr->str.string = struc->instance_name;
+						arr->str.length = struc->instance_name_len;
+					} else {
+						arr->str.string = "[Array]";
+						arr->str.length = 7;
+					}
 				}
 			}
 			if( arr ) {
@@ -5859,13 +5864,18 @@ static struct element* parse_struct_declaration( struct element *elem,
 	struct environment *env = func->env;
 	struct element *child, *next = elem->next;
 	int qlen = qualify_name( func, next->str.string, next->str.length, NULL );
-	struct structure *struc = calloc( 1, sizeof( struct structure ) + sizeof( char ) * ( qlen + 1 ) );
+	struct structure *struc = calloc( 1, sizeof( struct structure ) + sizeof( char ) * ( qlen + 2 ) * 2 );
 	if( struc ) {
 		struc->str.reference_count = 1;
 		struc->str.string = ( char * ) &struc[ 1 ];
 		qualify_name( func, next->str.string, next->str.length, struc->str.string );
 		struc->str.length = qlen;
 		struc->str.type = STRUCT;
+		struc->instance_name = struc->str.string + qlen + 1;
+		struc->instance_name[ 0 ] = '[';
+		strcpy( &struc->instance_name[ 1 ], struc->str.string );
+		struc->instance_name[ qlen + 1 ] = ']';
+		struc->instance_name_len = qlen + 2;
 		tail = add_decl( &struc->str, next->line, env, message );
 		if( tail ) {
 			next = next->next;

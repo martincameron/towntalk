@@ -104,7 +104,8 @@ struct custom {
 /* Reference-counted structure declaration.*/
 struct structure {
 	struct string str;
-	int length;
+	char *instance_name;
+	int length, instance_name_len;
 	struct string_list *fields, *fields_tail;
 	struct structure *super;
 };
