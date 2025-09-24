@@ -344,8 +344,7 @@ library util {
 			}
 			var end = +( idx++ sublen ), subidx = 1;
 			let offset = idx;
-			while &&( <( idx end ) =( $chr( this idx ) $chr( substr subidx ) ) ) {
-				inc subidx;
+			while &&( <( idx end ) =( $chr( this idx ) $chr( substr subidx++ ) ) ) {
 				inc idx;
 			}
 			if >e( idx end ) {

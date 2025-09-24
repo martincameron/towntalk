@@ -34,7 +34,7 @@ function test_string() {
 	call assert_equals( 4 list.len );
 	call assert_equals( "1" [ list.array 0 ] );
 	call assert_equals( "" [ list.array 3 ] );
-	call assert_equals( 1 string_find( "abc" "bc" 0 ) );
+	call assert_equals( 2 string_find( "abbcd" "bcd" 0 ) );
 	call assert_equals( "abc" string_insert( "ac" "b" 1 ) );
 	var str = array_utf8_encode( $buffer( 5 49 0xA3 0x20AC 0x1F600 53 ) 0 5 );
 	var arr = $buffer( $len( str ) );
