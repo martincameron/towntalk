@@ -1104,10 +1104,10 @@ static int qualify_name( struct function *func, char *name, int len, char *outpu
 	}
 	if( output ) {
 		if( llen ) {
-			strncpy( output, func->library->string, llen );
+			memcpy( output, func->library->string, sizeof( char ) * llen );
 			output[ llen++ ] = '_';
 		}
-		strncpy( &output[ llen ], name, len );
+		memcpy( &output[ llen ], name, sizeof( char ) * len );
 		output[ qlen ] = 0;
 	}
 	return qlen;
@@ -1118,9 +1118,9 @@ static struct function* new_function( char *name, struct function *parent ) {
 	struct function *func;
 	if( name ) {
 		nlen = strlen( name );
-		qlen = qualify_name( parent, name, nlen, NULL ) + 1;
+		qlen = qualify_name( parent, name, nlen, NULL );
 	}
-	func = calloc( 1, sizeof( struct function ) + sizeof( char ) * qlen );
+	func = calloc( 1, sizeof( struct function ) + sizeof( char ) * ( qlen + 1 ) );
 	if( func ) {
 		func->str.string = ( char * ) &func[ 1 ];
 		if( name ) {
@@ -2497,7 +2497,7 @@ static struct string* find_decl( struct function *func, char *name, enum referen
 		if( qlen + 1 + flen < 65 ) {
 			strcpy( qname, imports->str->string );
 			qname[ qlen++ ] = '_';
-			strncpy( &qname[ qlen ], name, flen );
+			memcpy( &qname[ qlen ], name, sizeof( char ) * flen );
 			qlen += flen;
 			qname[ qlen ] = 0;
 			str = get_decl( func->env->decls_index[ hash_code( qname, 0 ) ], qname, qlen, type );

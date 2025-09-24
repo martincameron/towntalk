@@ -266,7 +266,7 @@ static struct label* new_label( struct element *elem, int idx, char *message ) {
 		if( label ) {
 			label->idx = idx;
 			label->name = ( char * ) &label[ 1 ];
-			strncpy( label->name, elem->str.string, len );
+			memcpy( label->name, elem->str.string, sizeof( char ) * len );
 			label->name[ len ] = 0;
 			label->next = NULL;
 		} else {
