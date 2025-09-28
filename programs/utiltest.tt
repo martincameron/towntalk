@@ -36,8 +36,10 @@ function test_string() {
 	call assert_equals( "" [ list.array 3 ] );
 	call assert_equals( 2 string_find( "abbcd" "bcd" 0 ) );
 	call assert_equals( "abc" string_insert( "ac" "b" 1 ) );
-	var str = array_utf8_encode( $buffer( 5 49 0xA3 0x20AC 0x1F600 53 ) 0 5 );
-	var arr = $buffer( $len( str ) );
+	var arr = $buffer( 5 49 0xA3 0x20AC 0x1F600 53 );
+	call assert_equals( "5" array_utf8_encode( arr 4 1 ) );
+	var str = array_utf8_encode( arr 0 5 );
+	let arr = $buffer( $len( str ) );
 	call assert_equals( 5 string_utf8_decode( str arr ) ) ;
 	call assert_equals( 49 [ arr 0 ] );
 	call assert_equals( 0x1F600 [ arr 3 ] );

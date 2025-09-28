@@ -392,31 +392,35 @@ library util {
 
 	//# Return a UTF-8 encoded string containing the characters in the specified array.
 	function array_utf8_encode( this, offset, len ) {
-		var start = offset, ( list ) list = $new( list $buffer( *( len 2 ) ) );
+		var start = offset;
 		while <( offset len ) {
-			var chr = [ this offset++ ];
-			if >( chr 127 ) {
-				call list:add_array( this start -( offset start 1 ) );
-				var shift = 6, prefix = 0xC0;
-				if >( chr 0x7FF ) {
-					let shift = 12, prefix = 0xE0;
-					if >( chr 0xFFFF ) {
-						let shift = 18, prefix = 0xF0;
+			if >( [ this offset++ ] 127 ) {
+				dec offset;
+				var ( list ) list = $new( list $buffer( *( len 2 ) ) );
+				while <( offset len ) {
+					var chr = [ this offset++ ];
+					if >( chr 127 ) {
+						call list:add_array( this start -( offset start 1 ) );
+						var shift = 6, prefix = 0xC0;
+						if >( chr 0x7FF ) {
+							let shift = 12, prefix = 0xE0;
+							if >( chr 0xFFFF ) {
+								let shift = 18, prefix = 0xF0;
+							}
+						}
+						call list:add( |( prefix &( >>( chr shift ) 0x3F ) ) );
+						while shift {
+							let shift = -( shift 6 );
+							call list:add( |( 0x80 &( >>( chr shift ) 0x3F ) ) );
+						}
+						let start = offset;
 					}
 				}
-				call list:add( |( prefix &( >>( chr shift ) 0x3F ) ) );
-				while shift {
-					let shift = -( shift 6 );
-					call list:add( |( 0x80 &( >>( chr shift ) 0x3F ) ) );
+				if <( start len ) {
+					call list:add_array( this start -( len start ) );
 				}
-				let start = offset;
+				return $sub( list.array 0 list.len );
 			}
-		}
-		if start {
-			if <( start len ) {
-				call list:add_array( this start -( len start ) );
-			}
-			return $sub( list.array 0 list.len );
 		}
 		return $sub( this offset len );
 	}
