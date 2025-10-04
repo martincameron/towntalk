@@ -97,8 +97,8 @@
 		   case "a" {statements} Execute statements if expr equals "a".
 		   default {statements}} Execute statements if no valid cases.
 		try {statements}         Execute statements unless exception thrown.
-		   catch a {statements}  Assign exception to declared local var and execute.
-		   catch (exc) e {stmts} Catch with inline structured local variable declaration.
+		   catch e {statements}  Assign thrown value to local variable and execute statements.
+		   catch (strc) e {...}  As above, but only handle instances of the specified struct.
 		   finally {statements}  Always execute even if exception thrown.
 		call expr;               Evaluate expression and discard result.
 		set [ arr idx ] = expr;  Variable/Array assignment (same as let).
@@ -5486,30 +5486,30 @@ static struct element* parse_until_statement( struct element *elem,
 
 static struct element* parse_catch_block( struct element *elem,
 	struct function *func, struct variables *vars, struct block_statement *try_stmt, char *message ) {
-	struct local_variable *local;
+	struct local_variable *local = NULL;
 	struct statement block = { 0 };
 	if( strchr( "Cc", elem->str.string[ 0 ] ) ) {
 		elem = elem->next;
-		if( elem->str.string[ 0 ] == '(' ) {
-			parse_variable_declaration( elem, func, vars, NULL, add_local_variable, message );
+		if( elem->str.string[ 0 ] != '(' ) {
+			local = get_local_variable( func->variable_decls, elem->str.string, "" );
+		}
+		if( local ) {
+			elem = elem->next;
+		} else {
+			elem = parse_variable_declaration( elem, func, vars, NULL, add_local_variable, message );
 			if( message[ 0 ] == 0 ) {
-				elem = elem->next;
+				local = func->variable_decls_tail;
 			}
 		}
-		if( message[ 0 ] == 0 ) {
-			local = get_local_variable( func->variable_decls, elem->str.string, "" );
-			if( local ) {
-				try_stmt->stmt.local = local->index;
-				try_stmt->stmt.execute = execute_try_catch_statement;
-			} else {
-				sprintf( message, "Undeclared local variable '%.64s' on line %d.", elem->str.string, elem->line );
-			}
+		if( local ) {
+			try_stmt->stmt.local = local->index;
+			try_stmt->stmt.execute = execute_try_catch_statement;
 		}
 	} else {
+		elem = elem->next;
 		try_stmt->stmt.execute = execute_try_finally_statement;
 	}
 	if( message[ 0 ] == 0 ) {
-		elem = elem->next;
 		if( elem->child ) {
 			parse_keywords_indexed( func->env->statements_index, elem->child, func, vars, &block, message );
 			try_stmt->else_block = block.next;

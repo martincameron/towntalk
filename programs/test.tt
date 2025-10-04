@@ -337,7 +337,7 @@ function testuntil() {
 }
 
 function testtry() {
-	var e, ( struc ) s;
+	var ( struc ) s;
 	try {} catch e { call assert( FALSE, ${-} ); }
 	try {
 		call 0;
@@ -366,7 +366,6 @@ function testtry() {
 	call assert_throws( "a", ${ () { try { return "x"; } finally { throw "a"; } } });
 	call assert_throws( "a", ${ () { try { throw "a"; } finally { return "x"; } } });
 	call assert_throws( "a", ${ () { try { throw "a"; } finally { throw "x"; } } } );
-	call assert_throws( "Undeclared local variable 'a'", ${ () { try {} catch a {} } } );
 	call assert_throws( "Expected 'catch'", ${ () { try {} } } );
 	try { try { return 0; } catch e {} } catch e {}
 	call assert( FALSE, ${-} );
