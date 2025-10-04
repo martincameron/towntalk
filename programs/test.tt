@@ -337,7 +337,7 @@ function testuntil() {
 }
 
 function testtry() {
-	var ( struc ) s;
+	var e;
 	try {} catch e { call assert( FALSE, ${-} ); }
 	try {
 		call 0;
@@ -348,7 +348,7 @@ function testtry() {
 		throw $new( struc 2 );
 	} catch ( exten ) x {
 		call assert( FALSE, ${-} );
-	} catch s {
+	} catch ( struc ) s {
 	}
 	call assert_equals( 2, s.a, ${-} );
 	try {

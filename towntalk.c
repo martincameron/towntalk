@@ -37,7 +37,6 @@
 	Elements may contain spaces and separators by enclosing them in quotes.
 	Child elements are enclosed in parentheses, square brackets or braces.
 	If the program has been interrupted, while loops will throw an exception.
-	Try statements only catch instances of the associated struct of the destination.
 	An '!' may be used in place of '.' to specify a declaration when a local variable has the same name.
 
 	Example:
@@ -97,7 +96,7 @@
 		   case "a" {statements} Execute statements if expr equals "a".
 		   default {statements}} Execute statements if no valid cases.
 		try {statements}         Execute statements unless exception thrown.
-		   catch e {statements}  Assign thrown value to local variable and execute statements.
+		   catch e {statements}  Assign any thrown value to local variable and execute statements.
 		   catch (strc) e {...}  As above, but only handle instances of the specified struct.
 		   finally {statements}  Always execute even if exception thrown.
 		call expr;               Evaluate expression and discard result.
@@ -5493,7 +5492,7 @@ static struct element* parse_catch_block( struct element *elem,
 		if( elem->str.string[ 0 ] != '(' ) {
 			local = get_local_variable( func->variable_decls, elem->str.string, "" );
 		}
-		if( local ) {
+		if( local && !local->type ) {
 			elem = elem->next;
 		} else {
 			elem = parse_variable_declaration( elem, func, vars, NULL, add_local_variable, message );
