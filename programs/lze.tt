@@ -1,100 +1,90 @@
 
-rem {
+/*{
 	Simplified LZ77 compression using single-entry lookup table.
-}
+}*/
 
-# Return a 16-bit hash-code from 3 characters at the specified index.
-function lze_hash( input, idx ) {
-	return ^( <<( &( $chr( input idx ) 0xFF ) 8 ) ^( <<( &( $chr( input +( idx 1 ) ) 0xFF ) 4 ) &( $chr( input +( idx 2 ) ) 0xFF ) ) );
-}
-
-# Return the encoded length and encode to output if not null.
+//# Return the encoded length and encode to output if not null.
 function lze_encode( input, output ) {
-	var hash, in_idx, out_idx, lit, off, len, max;
-	let hash = $buffer( 65536 );
-	while <e( in_idx $len( input ) ) {
-		let len = 1;
-		if >( -( $len( input ) in_idx ) 2 ) {
-			let off = -( in_idx [ hash lze_hash( input in_idx ) ] );
-			if &&( off &&( <( off 65536 ) =( $chr( input -( in_idx off ) ) $chr( input in_idx ) ) ) ) {
-				while &&( <( +( in_idx len ) $len( input ) ) =( $chr( input +( -( in_idx off ) len ) ) $chr( input +( in_idx len ) ) ) ) {
+	var hash = $buffer( 65536 ), code, in_idx, in_len = $len( input ), in_end = -( in_len 4 ), out_idx, lit, off, len;
+	while <e( in_idx in_end ) {
+		if <( in_idx in_end ) {
+			let len = 1;
+			let code = ^( <<( &( $chr( input in_idx ) 0xFF ) 8 ) ^( <<( &( $chr( input +( in_idx 1 ) ) 0xFF ) 4 ) &( $chr( input +( in_idx 2 ) ) 0xFF ) ) );
+			let off = -( in_idx [ hash code ] );
+			set [ hash code ] = in_idx;
+			if &&( off <( off 65536 ) =( $chr( input -( in_idx off ) ) $chr( input in_idx ) ) ) {
+				while &&( <( +( in_idx len ) in_end ) =( $chr( input +( -( in_idx off ) len ) ) $chr( input +( in_idx len ) ) ) ) {
 					inc len;
 				}
 			}
+		} else {
+			let off = 0, len = 4, lit = +( lit 4 ), in_idx = in_len;
 		}
-		if ||( >( len 3 ) =( in_idx $len( input ) ) ) {
-			while lit {
-				let max = lit;
-				if >( max 127 ) {
-					let max = 127;
+		if ||( >( len 3 ) &&( >( len 2 ) <( lit 1 ) ) ) {
+			while >( lit 0 ) {
+				var count = lit;
+				if >( count 127 ) {
+					let count = 127;
 				}
-				let lit = -( lit max );
+				let lit = -( lit count );
 				if output {
-					set [ output out_idx ] = max;
-					inc out_idx;
-					while max {
-						set[ output out_idx ] = $chr( input -( in_idx +( lit max ) ) );
-						inc out_idx;
-						dec max;
+					set [ output out_idx++ ] = count;
+					var end = -( in_idx lit ), idx = -( end count );
+					while <( idx end ) {
+						set [ output out_idx++ ] = $chr( input idx++ );
 					}
 				} else {
-					let out_idx = +( out_idx +( 1 max ) );
+					let out_idx = +( out_idx +( 1 count ) );
 				}
 			}
-		}
-		if &&( >( len 2 ) =( lit 0 ) ) {
-			if >( len 127 ) {
-				let len = 127;
+			if >( off 0 ) {
+				if >( len 127 ) {
+					let len = 127;
+				}
+				if output {
+					set [ output out_idx++ ] = |( 0x80 len );
+					set [ output out_idx++ ] = >>( off 8 );
+					set [ output out_idx++ ] = &( off 0xFF );
+				} else {
+					let out_idx = +( out_idx 3 );
+				}
 			}
-			if output {
-				set [ output out_idx ] = |( 0x80 len );
-				set [ output +( out_idx 1 ) ] = >>( off 8 );
-				set [ output +( out_idx 2 ) ] = &( off 0xFF );
-			}
-			let out_idx = +( out_idx 3 );
+			let in_idx = +( in_idx len );
 		} else {
-			let lit = +( lit len );
-		}
-		while len {
-			if <( +( in_idx 2 ) $len( input ) ) {
-				set [ hash lze_hash( input in_idx ) ] = in_idx;
-			}
 			inc in_idx;
-			dec len;
+			inc lit;
 		}
 	}
 	return out_idx;
 }
 
-# Return the decoded length and decode to output if not null.
+//# Return the decoded length and decode to output if not null.
 function lze_decode( input, output ) {
-	var in_idx, out_idx, len, off;
-	while <( in_idx $len( input ) ) {
-		let len = &( $chr( input in_idx ) 0xFF );
-		inc in_idx;
-		if <( len 128 ) {
-			if output {
-				while len {
-					set [ output out_idx ] = $chr( input in_idx );
-					inc out_idx;
-					inc in_idx;
-					dec len;
+	var in_idx, in_end = $len( input ), out_idx, len, off, end;
+	if output {
+		while <( in_idx in_end ) {
+			let len = $chr( input in_idx++ );
+			if <( len 0 ) {
+				let off = |( <<( &( $chr( input in_idx++ ) 0xFF ) 8 ) &( $chr( input in_idx++ ) 0xFF ) );
+				let end = +( out_idx &( len 0x7F ) );
+				while <( out_idx end ) {
+					set [ output out_idx ] = [ output -( out_idx++ off ) ];
 				}
+			} else {
+				let end = +( out_idx len );
+				while <( out_idx end ) {
+					set [ output out_idx++ ] = $chr( input in_idx++ );
+				}
+			}
+		}
+	} else {
+		while <( in_idx in_end ) {
+			let len = $chr( input in_idx++ );
+			if <( len 0 ) {
+				let in_idx = +( in_idx 2 );
+				let out_idx = +( out_idx &( len 0x7F ) );
 			} else {
 				let in_idx = +( in_idx len );
-				let out_idx = +( out_idx len );
-			}
-		} else {
-			let off = |( <<( &( $chr( input in_idx ) 0xFF ) 8 ) &( $chr( input +( in_idx 1 ) ) 0xFF ) );
-			let in_idx = +( in_idx 2 );
-			let len = &( len 0x7F );
-			if output {
-				while len {
-					set [ output out_idx ] = [ output -( out_idx off ) ];
-					inc out_idx;
-					dec len;
-				}
-			} else {
 				let out_idx = +( out_idx len );
 			}
 		}

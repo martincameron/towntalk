@@ -142,7 +142,7 @@ library util {
 	}
 
 	//# Calculate a 5-bit hash-code for the specified string.
-	function hash_code( str ) {
+	function string_hash_code( str ) {
 		var hash, len = $len( str ), idx;
 		while <( idx len ) {
 			let hash = ^( hash $chr( str idx++ ) );
@@ -152,7 +152,7 @@ library util {
 
 	//# Return the map entry for the specified key, or NULL.
 	function map_get_entry( ( map ) this, key ) {
-		return list_find_entry( [ this.entries hash_code( key ) ] key );
+		return list_find_entry( [ this.entries string_hash_code( key ) ] key );
 	}
 
 	//# Return the value for the specified key, or NULL.
@@ -166,12 +166,12 @@ library util {
 
 	//# Remove the specified entry from the map, if present.
 	function map_remove( ( map ) this, key ) {
-		return list_remove_entry( [ this.entries hash_code( key ) ], key );
+		return list_remove_entry( [ this.entries string_hash_code( key ) ], key );
 	}
 
 	//# Put the specified value into the map under the specified string key.
 	function map_put( ( map ) this, key, value ) {
-		var hash = hash_code( key );
+		var hash = string_hash_code( key );
 		var ( list ) list = [ this.entries hash ];
 		var ( entry ) entry = list:find_entry( key );
 		if entry {
