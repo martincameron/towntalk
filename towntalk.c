@@ -1713,7 +1713,7 @@ static enum result execute_try_catch_statement( struct statement *this,
 	return ret;
 }
 
-static enum result execute_if_statement( struct statement *this,
+enum result execute_if_statement( struct statement *this,
 	struct variables *vars, struct variable *result ) {
 	struct statement *stmt = ( ( struct block_statement * ) this )->if_block;
 	struct variable condition = { 0 };
@@ -1731,59 +1731,7 @@ static enum result execute_if_statement( struct statement *this,
 	return ret;
 }
 
-static enum result execute_if_local_statement( struct statement *this,
-	struct variables *vars, struct variable *result ) {
-	struct variable *lhs = &vars->locals[ this->local ];
-	struct variable *rhs = &vars->locals[ ( ( struct block_statement * ) this )->rhs ];
-	struct statement *stmt = ( ( struct block_statement * ) this )->if_block;
-	enum result ret = OKAY;
-	if( lhs->string_value || rhs->string_value ) {
-		return execute_if_statement( this, vars, result );
-	}
-	switch( ( ( struct block_statement * ) this )->oper ) {
-		case '!': if( lhs->number_value == rhs->number_value ) stmt = ( ( struct block_statement * ) this )->else_block; break;
-		case '(': if( lhs->number_value >  rhs->number_value ) stmt = ( ( struct block_statement * ) this )->else_block; break;
-		case ')': if( lhs->number_value <  rhs->number_value ) stmt = ( ( struct block_statement * ) this )->else_block; break;
-		case '<': if( lhs->number_value >= rhs->number_value ) stmt = ( ( struct block_statement * ) this )->else_block; break;
-		case '=': if( lhs->number_value != rhs->number_value ) stmt = ( ( struct block_statement * ) this )->else_block; break;
-		case '>': if( lhs->number_value <= rhs->number_value ) stmt = ( ( struct block_statement * ) this )->else_block; break;
-		default: return execute_if_statement( this, vars, result );
-	}
-	while( stmt && ( ret = stmt->execute( stmt, vars, result ) ) == OKAY ) {
-		stmt = stmt->next;
-	}
-	return ret;
-}
-
-static enum result execute_if_const_statement( struct statement *this,
-	struct variables *vars, struct variable *result ) {
-	struct variable *lhs = &vars->locals[ this->local ];
-	number rhs = ( ( struct block_statement * ) this )->num;
-	struct statement *stmt = ( ( struct block_statement * ) this )->if_block;
-	enum result ret = OKAY;
-	if( lhs->string_value ) {
-		if( ( ( struct block_statement * ) this )->oper ) {
-			return execute_if_statement( this, vars, result );
-		}
-	} else {
-		switch( ( ( struct block_statement * ) this )->oper ) {
-			case  0 : if( lhs->number_value == 0 ) stmt = ( ( struct block_statement * ) this )->else_block; break;
-			case '!': if( lhs->number_value == rhs ) stmt = ( ( struct block_statement * ) this )->else_block; break;
-			case '(': if( lhs->number_value >  rhs ) stmt = ( ( struct block_statement * ) this )->else_block; break;
-			case ')': if( lhs->number_value <  rhs ) stmt = ( ( struct block_statement * ) this )->else_block; break;
-			case '<': if( lhs->number_value >= rhs ) stmt = ( ( struct block_statement * ) this )->else_block; break;
-			case '=': if( lhs->number_value != rhs ) stmt = ( ( struct block_statement * ) this )->else_block; break;
-			case '>': if( lhs->number_value <= rhs ) stmt = ( ( struct block_statement * ) this )->else_block; break;
-			default: return execute_if_statement( this, vars, result );
-		}
-	}
-	while( stmt && ( ret = stmt->execute( stmt, vars, result ) ) == OKAY ) {
-		stmt = stmt->next;
-	}
-	return ret;
-}
-
-static enum result execute_while_statement( struct statement *this,
+enum result execute_while_statement( struct statement *this,
 	struct variables *vars, struct variable *result ) {
 	struct environment *env = vars->func->env;
 	struct variable condition = { 0 };
@@ -1800,91 +1748,6 @@ static enum result execute_while_statement( struct statement *this,
 			}
 		} else {
 			return EXCEPTION;
-		}
-		stmt = ( ( struct block_statement * ) this )->if_block;
-		while( stmt && ( ret = stmt->execute( stmt, vars, result ) ) == OKAY ) {
-			stmt = stmt->next;
-		}
-		if( stmt ) {
-			if( ret == RETURN ) {
-				return RETURN;
-			} else if( ret == BREAK ) {
-				return OKAY;
-			} else if( ret == EXCEPTION ) {
-				return EXCEPTION;
-			}
-		}
-		if( env->interrupted ) {
-			return throw_interrupted( vars, this->source );
-		}
-	}
-}
-
-static enum result execute_while_local_statement( struct statement *this,
-	struct variables *vars, struct variable *result ) {
-	struct environment *env = vars->func->env;
-	struct variable *lhs = &vars->locals[ this->local ];
-	struct variable *rhs = &vars->locals[ ( ( struct block_statement * ) this )->rhs ];
-	int oper = ( ( struct block_statement * ) this )->oper;
-	struct statement *stmt;
-	enum result ret;
-	while( 1 ) {
-		if( lhs->string_value || rhs->string_value ) {
-			return execute_while_statement( this, vars, result );
-		} else {
-			switch( oper ) {
-				case '!': if( lhs->number_value == rhs->number_value ) return OKAY; break;
-				case '(': if( lhs->number_value >  rhs->number_value ) return OKAY; break;
-				case ')': if( lhs->number_value <  rhs->number_value ) return OKAY; break;
-				case '<': if( lhs->number_value >= rhs->number_value ) return OKAY; break;
-				case '=': if( lhs->number_value != rhs->number_value ) return OKAY; break;
-				case '>': if( lhs->number_value <= rhs->number_value ) return OKAY; break;
-				default: return execute_while_statement( this, vars, result );
-			}
-		}
-		stmt = ( ( struct block_statement * ) this )->if_block;
-		while( stmt && ( ret = stmt->execute( stmt, vars, result ) ) == OKAY ) {
-			stmt = stmt->next;
-		}
-		if( stmt ) {
-			if( ret == RETURN ) {
-				return RETURN;
-			} else if( ret == BREAK ) {
-				return OKAY;
-			} else if( ret == EXCEPTION ) {
-				return EXCEPTION;
-			}
-		}
-		if( env->interrupted ) {
-			return throw_interrupted( vars, this->source );
-		}
-	}
-}
-
-static enum result execute_while_const_statement( struct statement *this,
-	struct variables *vars, struct variable *result ) {
-	struct environment *env = vars->func->env;
-	struct variable *lhs = &vars->locals[ this->local ];
-	number rhs = ( ( struct block_statement * ) this )->num;
-	int oper = ( ( struct block_statement * ) this )->oper;
-	struct statement *stmt;
-	enum result ret;
-	while( 1 ) {
-		if( lhs->string_value ) {
-			if( oper ) {
-				return execute_while_statement( this, vars, result );
-			}
-		} else {
-			switch( oper ) {
-				case  0 : if( lhs->number_value == 0 ) return OKAY; break;
-				case '!': if( lhs->number_value == rhs ) return OKAY; break;
-				case '(': if( lhs->number_value >  rhs ) return OKAY; break;
-				case ')': if( lhs->number_value <  rhs ) return OKAY; break;
-				case '<': if( lhs->number_value >= rhs ) return OKAY; break;
-				case '=': if( lhs->number_value != rhs ) return OKAY; break;
-				case '>': if( lhs->number_value <= rhs ) return OKAY; break;
-				default: return execute_while_statement( this, vars, result );
-			}
 		}
 		stmt = ( ( struct block_statement * ) this )->if_block;
 		while( stmt && ( ret = stmt->execute( stmt, vars, result ) ) == OKAY ) {
@@ -5379,23 +5242,6 @@ static struct element* parse_if_statement( struct element *elem,
 		if( expr.next ) {
 			stmt->source = expr.next;
 			stmt->execute = execute_if_statement;
-			if( expr.next->evaluate == evaluate_arithmetic_expression
-				&& strchr( "!<(=)>", expr.next->index ) && expr.next->parameters->evaluate == evaluate_local ) {
-					if( expr.next->parameters->next->evaluate == evaluate_local ) {
-						stmt->local = expr.next->parameters->index;
-						( ( struct block_statement * ) stmt )->rhs = expr.next->parameters->next->index;
-						( ( struct block_statement * ) stmt )->oper = expr.next->index;
-						stmt->execute = execute_if_local_statement;
-					} else if( expr.next->parameters->next->evaluate == evaluate_number_literal_expression ) {
-						stmt->local = expr.next->parameters->index;
-						( ( struct block_statement * ) stmt )->num = ( ( struct value_expression * ) expr.next->parameters->next )->num;
-						( ( struct block_statement * ) stmt )->oper = expr.next->index;
-						stmt->execute = execute_if_const_statement;
-					}
-			} else if( expr.next->evaluate == evaluate_local ) {
-				stmt->local = expr.next->index;
-				stmt->execute = execute_if_const_statement;
-			}
 			if( next->child ) {
 				parse_keywords_indexed( func->env->statements_index, next->child, func, vars, &block, message );
 				( ( struct block_statement * ) stmt )->if_block = block.next;
@@ -5448,23 +5294,6 @@ static struct element* parse_while_statement( struct element *elem,
 			}
 			if( message[ 0 ] == 0 ) {
 				stmt->execute = execute_while_statement;
-				if( expr.next->evaluate == evaluate_arithmetic_expression
-				&& strchr( "!<(=)>", expr.next->index ) && expr.next->parameters->evaluate == evaluate_local ) {
-					if( expr.next->parameters->next->evaluate == evaluate_local ) {
-						stmt->local = expr.next->parameters->index;
-						( ( struct block_statement * ) stmt )->rhs = expr.next->parameters->next->index;
-						( ( struct block_statement * ) stmt )->oper = expr.next->index;
-						stmt->execute = execute_while_local_statement;
-					} else if( expr.next->parameters->next->evaluate == evaluate_number_literal_expression ) {
-						stmt->local = expr.next->parameters->index;
-						( ( struct block_statement * ) stmt )->num = ( ( struct value_expression * ) expr.next->parameters->next )->num;
-						( ( struct block_statement * ) stmt )->oper = expr.next->index;
-						stmt->execute = execute_while_const_statement;
-					}
-				} else if( expr.next->evaluate == evaluate_local ) {
-					stmt->local = expr.next->index;
-					stmt->execute = execute_while_const_statement;
-				}
 				next = next->next;
 			}
 		}
