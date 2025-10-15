@@ -9,7 +9,7 @@ function lze_encode( input, output ) {
 	while <e( in_idx in_end ) {
 		if <( in_idx in_end ) {
 			let len = 1;
-			let code = ^( <<( &( $chr( input in_idx ) 0xFF ) 8 ) ^( <<( &( $chr( input +( in_idx 1 ) ) 0xFF ) 4 ) &( $chr( input +( in_idx 2 ) ) 0xFF ) ) );
+			let code = ^( <<( &( $chr( input in_idx ) 0xFF ) 8 ) <<( &( $chr( input +( in_idx 1 ) ) 0xFF ) 4 ) &( $chr( input +( in_idx 2 ) ) 0xFF ) );
 			let off = -( in_idx [ hash code ] );
 			set [ hash code ] = in_idx;
 			if &&( off <( off 65536 ) =( $chr( input -( in_idx off ) ) $chr( input in_idx ) ) ) {

@@ -72,6 +72,28 @@ enum arithmetic_op {
 	MUL_LOCAL, FDI_LOCAL, DIV_LOCAL, MOD_LOCAL, ASL_LOCAL, ASR_LOCAL
 };
 
+enum compilable_stmt {
+	STMT_NOT_COMPILABLE,
+	LOCAL_ASSIGNMENT,
+	ARRAY_ASSIGNMENT,
+	LOCAL_INCREMENT,
+	LOCAL_DECREMENT,
+	RETURN_EXPRESSION
+};
+
+enum compilable_expr {
+	EXPR_NOT_COMPILABLE,
+	NUMBER_LITERAL,
+	LOCAL_VARIABLE,
+	LOCAL_VARIABLE_PI,
+	LOCAL_VARIABLE_PD,
+	GLOBAL_VARIABLE,
+	ARITHMETIC_OPERATOR,
+	ARRAY_ELEMENT,
+	STRING_CHARACTER,
+	STRING_UNPACK
+};
+
 #if defined( PRINT_INSNS )
 static char* arithmetic_ops[] = {
 	"HALT", "PUSH_CONST", "PUSH_LOCAL", "LOAD_LOCAL", "PUSH_GLOBAL", "LOAD_GLOBAL",
@@ -107,6 +129,56 @@ struct arithmetic_statement {
 	struct statement stmt;
 	struct instructions insns;
 };
+
+static enum compilable_stmt can_compile_stmt( struct statement *stmt ) {
+	if( stmt ) {
+		if( stmt->execute == execute_local_assignment ) {
+			return LOCAL_ASSIGNMENT;
+		} else if( stmt->execute == execute_array_assignment ) {
+			if( stmt->source->next->evaluate == evaluate_local ) {
+				return ARRAY_ASSIGNMENT;
+			}
+		} else if( stmt->execute == execute_increment_statement ) {
+			return LOCAL_INCREMENT;
+		} else if( stmt->execute == execute_decrement_statement ) {
+			return LOCAL_DECREMENT;
+		} else if( stmt->execute == execute_return_statement ) {
+			if( stmt->source->evaluate == evaluate_arithmetic_expression ) {
+				return RETURN_EXPRESSION;
+			}
+		}
+	}
+	return STMT_NOT_COMPILABLE;
+}
+
+static enum compilable_expr can_compile_expr( struct expression *expr ) {
+	if( expr->evaluate == evaluate_arithmetic_expression ) {
+		return ARITHMETIC_OPERATOR;
+	} else if( expr->evaluate == evaluate_number_literal_expression ) {
+		return NUMBER_LITERAL;
+	} else if( expr->evaluate == evaluate_local ) {
+		return LOCAL_VARIABLE;
+	} else if( expr->evaluate == evaluate_local_post_inc ) {
+		return LOCAL_VARIABLE_PI;
+	} else if( expr->evaluate == evaluate_local_post_dec ) {
+		return LOCAL_VARIABLE_PD;
+	} else if( expr->evaluate == evaluate_index_expression ) {
+		if( expr->parameters->evaluate == evaluate_local ) {
+			return ARRAY_ELEMENT;
+		}
+	} else if( expr->evaluate == evaluate_chr_expression ) {
+		if( expr->parameters->evaluate == evaluate_local ) {
+			return STRING_CHARACTER;
+		}
+	} else if( expr->evaluate == evaluate_unpack_expression ) {
+		if( expr->parameters->evaluate == evaluate_global ) {
+			return STRING_UNPACK;
+		}
+	} else if( expr->evaluate == evaluate_global ) {
+		return GLOBAL_VARIABLE;
+	}
+	return EXPR_NOT_COMPILABLE;
+}
 
 static struct instruction* add_instruction( struct instructions *insns,
 	enum arithmetic_op oper, int local, struct expression *expr, char *message ) {
@@ -150,55 +222,71 @@ static enum arithmetic_op get_arithmetic_op( struct expression *expr ) {
 static struct instruction* compile_arithmetic_expression( struct arithmetic_statement *stmt, struct expression *expr, int top, char *message ) {
 	struct instruction *insn;
 	struct expression *parameter;
-	enum arithmetic_op oper = get_arithmetic_op( expr );
+	enum arithmetic_op oper;
 	if( top > 6 ) {
 		insn = add_instruction( &stmt->insns, PUSH_EXPR, 0, expr, message );
-	} else if( oper ) {
-		parameter = expr->parameters;
-		insn = compile_arithmetic_expression( stmt, parameter, top, message );
-		while( insn && parameter->next ) {
-			parameter = parameter->next;
-			insn = compile_arithmetic_expression( stmt, parameter, top + 1, message );
-			if( insn ) {
-				if( insn->oper == PUSH_CONST ) {
-					insn->oper = oper + AND_CONST - AND_STACK;
-				} else if( insn->oper == PUSH_LOCAL ) {
-					insn->oper = oper + AND_LOCAL - AND_STACK;
-				} else {
-					insn = add_instruction( &stmt->insns, oper, 0, parameter, message );
+	} else switch( can_compile_expr( expr ) ) {
+		case ARITHMETIC_OPERATOR:
+			oper = get_arithmetic_op( expr );
+			if( oper ) {
+				parameter = expr->parameters;
+				insn = compile_arithmetic_expression( stmt, parameter, top, message );
+				while( insn && parameter->next ) {
+					parameter = parameter->next;
+					insn = compile_arithmetic_expression( stmt, parameter, top + 1, message );
+					if( insn ) {
+						if( insn->oper == PUSH_CONST ) {
+							insn->oper = oper + AND_CONST - AND_STACK;
+						} else if( insn->oper == PUSH_LOCAL ) {
+							insn->oper = oper + AND_LOCAL - AND_STACK;
+						} else {
+							insn = add_instruction( &stmt->insns, oper, 0, parameter, message );
+						}
+					}
 				}
+			} else {
+				insn = add_instruction( &stmt->insns, PUSH_EXPR, 0, expr, message );
 			}
-		}
-	} else if( expr->evaluate == evaluate_number_literal_expression ) {
-		insn = add_instruction( &stmt->insns, PUSH_CONST, expr->index, expr, message );
-		if( insn ) {
-			insn->value = ( ( struct value_expression * ) expr )->num;
-		}
-	} else if( expr->evaluate == evaluate_local ) {
-		insn = add_instruction( &stmt->insns, PUSH_LOCAL, expr->index, expr, message );
-	} else if( expr->evaluate == evaluate_local_post_inc ) {
-		insn = add_instruction( &stmt->insns, PUSH_LOCAL_PI, expr->index, expr, message );
-	} else if( expr->evaluate == evaluate_local_post_dec ) {
-		insn = add_instruction( &stmt->insns, PUSH_LOCAL_PD, expr->index, expr, message );
-	} else if( expr->evaluate == evaluate_index_expression && expr->parameters->evaluate == evaluate_local ) {
-		insn = compile_arithmetic_expression( stmt, expr->parameters->next, top, message );
-		if( insn ) {
-			insn = add_instruction( &stmt->insns, PUSH_ARRAY, expr->parameters->index, expr, message );
-		}
-	} else if( expr->evaluate == evaluate_chr_expression && expr->parameters->evaluate == evaluate_local ) {
-		insn = compile_arithmetic_expression( stmt, expr->parameters->next, top, message );
-		if( insn ) {
-			insn = add_instruction( &stmt->insns, PUSH_STRING, expr->parameters->index, expr, message );
-		}
-	} else if( expr->evaluate == evaluate_unpack_expression && expr->parameters->evaluate == evaluate_global ) {
-		insn = compile_arithmetic_expression( stmt, expr->parameters->next, top, message );
-		if( insn ) {
-			insn = add_instruction( &stmt->insns, PUSH_UNPACK, 0, expr->parameters, message );
-		}
-	} else if( expr->evaluate == evaluate_global ) {
-		insn = add_instruction( &stmt->insns, PUSH_GLOBAL, 0, expr, message );
-	} else {
-		insn = add_instruction( &stmt->insns, PUSH_EXPR, 0, expr, message );
+			break;
+		case NUMBER_LITERAL:
+			insn = add_instruction( &stmt->insns, PUSH_CONST, expr->index, expr, message );
+			if( insn ) {
+				insn->value = ( ( struct value_expression * ) expr )->num;
+			}
+			break;
+		case LOCAL_VARIABLE:
+			insn = add_instruction( &stmt->insns, PUSH_LOCAL, expr->index, expr, message );
+			break;
+		case LOCAL_VARIABLE_PI:
+			insn = add_instruction( &stmt->insns, PUSH_LOCAL_PI, expr->index, expr, message );
+			break;
+		case LOCAL_VARIABLE_PD:
+			insn = add_instruction( &stmt->insns, PUSH_LOCAL_PD, expr->index, expr, message );
+			break;
+		case ARRAY_ELEMENT:
+			insn = compile_arithmetic_expression( stmt, expr->parameters->next, top, message );
+			if( insn ) {
+				insn = add_instruction( &stmt->insns, PUSH_ARRAY, expr->parameters->index, expr, message );
+			}
+			break;
+		case STRING_CHARACTER:
+			insn = compile_arithmetic_expression( stmt, expr->parameters->next, top, message );
+			if( insn ) {
+				insn = add_instruction( &stmt->insns, PUSH_STRING, expr->parameters->index, expr, message );
+			}
+			break;
+		case STRING_UNPACK:
+			insn = compile_arithmetic_expression( stmt, expr->parameters->next, top, message );
+			if( insn ) {
+				insn = add_instruction( &stmt->insns, PUSH_UNPACK, 0, expr->parameters, message );
+			}
+			break;
+		case GLOBAL_VARIABLE:
+			insn = add_instruction( &stmt->insns, PUSH_GLOBAL, 0, expr, message );
+			break;
+		default:
+			insn = add_instruction( &stmt->insns, PUSH_EXPR, 0, expr, message );
+			break;
 	}
 	return insn;
 }
@@ -805,21 +893,24 @@ static struct statement* optimize_local_assignment( struct statement *stmt, stru
 	struct instruction *insn;
 	struct expression *expr = stmt->source;
 	int local = stmt->local, oper, dest = POP_LOCAL;
-	struct arithmetic_statement *arith = add_arithmetic_statement( stmt, prev, message );
-	if( arith ) {
-		stmt = &arith->stmt;
-		if( compile_arithmetic_expression( arith, expr, 0, message ) ) {
-			insn = &arith->insns.list[ arith->insns.count - 1 ];
-			oper = insn->oper;
-			if( oper == PUSH_EXPR ) {
-				insn->oper = ASSIGN_EXPR;
-				insn->local = local;
-			} else {
-				if( oper == PUSH_LOCAL || oper == PUSH_GLOBAL || oper == PUSH_ARRAY ) {
-					dest = STORE_LOCAL;
-					insn->oper++;
+	struct arithmetic_statement *arith;
+	if( prev->execute == execute_arithmetic_statement || can_compile_stmt( stmt->next ) || can_compile_expr( expr ) >= ARITHMETIC_OPERATOR ) {
+		arith = add_arithmetic_statement( stmt, prev, message );
+		if( arith ) {
+			stmt = &arith->stmt;
+			if( compile_arithmetic_expression( arith, expr, 0, message ) ) {
+				insn = &arith->insns.list[ arith->insns.count - 1 ];
+				oper = insn->oper;
+				if( oper == PUSH_EXPR ) {
+					insn->oper = ASSIGN_EXPR;
+					insn->local = local;
+				} else {
+					if( oper == PUSH_LOCAL || oper == PUSH_GLOBAL || oper == PUSH_ARRAY ) {
+						dest = STORE_LOCAL;
+						insn->oper++;
+					}
+					add_instruction( &arith->insns, dest, local, expr, message );
 				}
-				add_instruction( &arith->insns, dest, local, expr, message );
 			}
 		}
 	}
@@ -827,49 +918,46 @@ static struct statement* optimize_local_assignment( struct statement *stmt, stru
 }
 
 static struct statement* optimize_array_assignment( struct statement *stmt, struct statement *prev, char *message ) {
-	struct expression *src = stmt->source, *arr = src->next, *idx = arr->next;
-	struct arithmetic_statement *arith;
 	int *oper, dest = POP_ARRAY;
-	if( arr->evaluate == evaluate_local ) {
-		arith = add_arithmetic_statement( stmt, prev, message );
-		if( arith ) {
-			stmt = &arith->stmt;
-			if( compile_arithmetic_expression( arith, idx, 0, message )
-			&& add_instruction( &arith->insns, CHECK_ARRAY, arr->index, idx, message )
-			&& compile_arithmetic_expression( arith, src, 1, message ) ) {
-				oper = &arith->insns.list[ arith->insns.count - 1 ].oper;
-				if( *oper == PUSH_LOCAL || *oper == PUSH_GLOBAL || *oper == PUSH_EXPR || *oper == PUSH_ARRAY ) {
-					dest = STORE_ARRAY;
-					(*oper)++;
-				}
-				add_instruction( &arith->insns, dest, arr->index, arr, message );
+	struct expression *src = stmt->source, *arr = src->next, *idx = arr->next;
+	struct arithmetic_statement *arith = add_arithmetic_statement( stmt, prev, message );
+	if( arith ) {
+		stmt = &arith->stmt;
+		if( compile_arithmetic_expression( arith, idx, 0, message )
+		&& add_instruction( &arith->insns, CHECK_ARRAY, arr->index, idx, message )
+		&& compile_arithmetic_expression( arith, src, 1, message ) ) {
+			oper = &arith->insns.list[ arith->insns.count - 1 ].oper;
+			if( *oper == PUSH_LOCAL || *oper == PUSH_GLOBAL || *oper == PUSH_EXPR || *oper == PUSH_ARRAY ) {
+				dest = STORE_ARRAY;
+				(*oper)++;
 			}
+			add_instruction( &arith->insns, dest, arr->index, arr, message );
 		}
 	}
 	return stmt;
 }
 
 static struct statement* optimize_increment( struct statement *stmt, struct statement *prev, enum arithmetic_op oper, char *message ) {
-	if( prev->execute == execute_arithmetic_statement && add_instruction( &( ( struct arithmetic_statement * ) prev )->insns, oper, stmt->local, stmt->source, message ) ) {
-		stmt->source->next = prev->source;
-		prev->source = stmt->source;
-		prev->next = stmt->next;
-		free( stmt );
-		return prev;
+	int local = stmt->local;
+	struct expression *expr = stmt->source;
+	struct arithmetic_statement *arith;
+	if( prev->execute == execute_arithmetic_statement || can_compile_stmt( stmt->next ) ) {
+		arith = add_arithmetic_statement( stmt, prev, message );
+		if( arith ) {
+			stmt = &arith->stmt;
+			add_instruction( &arith->insns, oper, local, expr, message );
+		}
 	}
 	return stmt;
 }
 
 static struct statement* optimize_return( struct statement *stmt, struct statement *prev, char *message ) {
-	struct arithmetic_statement *arith;
 	struct expression *expr = stmt->source;
-	if( expr->evaluate == evaluate_arithmetic_expression ) {
-		arith = add_arithmetic_statement( stmt, prev, message );
-		if( arith ) {
-			stmt = &arith->stmt;
-			if( compile_arithmetic_expression( arith, expr, 0, message ) ) {
-				add_instruction( &arith->insns, POP_RETURN, 0, expr, message );
-			}
+	struct arithmetic_statement *arith = add_arithmetic_statement( stmt, prev, message );
+	if( arith ) {
+		stmt = &arith->stmt;
+		if( compile_arithmetic_expression( arith, expr, 0, message ) ) {
+			add_instruction( &arith->insns, POP_RETURN, 0, expr, message );
 		}
 	}
 	return stmt;
@@ -902,54 +990,62 @@ struct statement* optimize_statements( struct function *func, struct statement *
 	struct statement *stmt = prev, *next = stmt->next;
 	struct expression *param;
 	while( next ) {
-		if( next->execute == execute_local_assignment ) {
-			next = optimize_local_assignment( next, prev, message );
-		} else if( next->execute == execute_array_assignment ) {
-			next = optimize_array_assignment( next, prev, message );
-		} else if( next->execute == execute_increment_statement ) {
-			next = optimize_increment( next, prev, INC_LOCAL, message );
-		} else if( next->execute == execute_decrement_statement ) {
-			next = optimize_increment( next, prev, DEC_LOCAL, message );
-		} else if( next->execute == execute_return_statement ) {
-			next = optimize_return( next, prev, message );
-		} else if( next->execute == execute_while_statement ) {
-			param = next->source;
-			if( param->evaluate == evaluate_arithmetic_expression
-			&& strchr( "!<(=)>", param->index ) && param->parameters->evaluate == evaluate_local ) {
-				if( param->parameters->next->evaluate == evaluate_local ) {
-					next->local = param->parameters->index;
-					( ( struct block_statement * ) next )->rhs = param->parameters->next->index;
-					( ( struct block_statement * ) next )->oper = param->index;
-					next->execute = execute_while_local_statement;
-				} else if( param->parameters->next->evaluate == evaluate_number_literal_expression ) {
-					next->local = param->parameters->index;
-					( ( struct block_statement * ) next )->num = ( ( struct value_expression * ) param->parameters->next )->num;
-					( ( struct block_statement * ) next )->oper = param->index;
-					next->execute = execute_while_const_statement;
+		switch( can_compile_stmt( next ) ) {
+			case LOCAL_ASSIGNMENT:
+				next = optimize_local_assignment( next, prev, message );
+				break;
+			case ARRAY_ASSIGNMENT:
+				next = optimize_array_assignment( next, prev, message );
+				break;
+			case LOCAL_INCREMENT:
+				next = optimize_increment( next, prev, INC_LOCAL, message );
+				break;
+			case LOCAL_DECREMENT:
+				next = optimize_increment( next, prev, DEC_LOCAL, message );
+				break;
+			case RETURN_EXPRESSION:
+				next = optimize_return( next, prev, message );
+				break;
+			default:
+				if( next->execute == execute_while_statement ) {
+					param = next->source;
+					if( param->evaluate == evaluate_arithmetic_expression
+					&& strchr( "!<(=)>", param->index ) && param->parameters->evaluate == evaluate_local ) {
+						if( param->parameters->next->evaluate == evaluate_local ) {
+							next->local = param->parameters->index;
+							( ( struct block_statement * ) next )->rhs = param->parameters->next->index;
+							( ( struct block_statement * ) next )->oper = param->index;
+							next->execute = execute_while_local_statement;
+						} else if( param->parameters->next->evaluate == evaluate_number_literal_expression ) {
+							next->local = param->parameters->index;
+							( ( struct block_statement * ) next )->num = ( ( struct value_expression * ) param->parameters->next )->num;
+							( ( struct block_statement * ) next )->oper = param->index;
+							next->execute = execute_while_const_statement;
+						}
+					} else if( param->evaluate == evaluate_local ) {
+						next->local = param->index;
+						next->execute = execute_while_const_statement;
+					}
+				} else if( next->execute == execute_if_statement ) {
+					param = next->source;
+					if( param->evaluate == evaluate_arithmetic_expression
+					&& strchr( "!<(=)>", param->index ) && param->parameters->evaluate == evaluate_local ) {
+						if( param->parameters->next->evaluate == evaluate_local ) {
+							next->local = param->parameters->index;
+							( ( struct block_statement * ) next )->rhs = param->parameters->next->index;
+							( ( struct block_statement * ) next )->oper = param->index;
+							next->execute = execute_if_local_statement;
+						} else if( param->parameters->next->evaluate == evaluate_number_literal_expression ) {
+							next->local = param->parameters->index;
+							( ( struct block_statement * ) next )->num = ( ( struct value_expression * ) param->parameters->next )->num;
+							( ( struct block_statement * ) next )->oper = param->index;
+							next->execute = execute_if_const_statement;
+						}
+					} else if( param->evaluate == evaluate_local ) {
+						next->local = param->index;
+						next->execute = execute_if_const_statement;
+					}
 				}
-			} else if( param->evaluate == evaluate_local ) {
-				next->local = param->index;
-				next->execute = execute_while_const_statement;
-			}
-		} else if( next->execute == execute_if_statement ) {
-			param = next->source;
-			if( param->evaluate == evaluate_arithmetic_expression
-			&& strchr( "!<(=)>", param->index ) && param->parameters->evaluate == evaluate_local ) {
-				if( param->parameters->next->evaluate == evaluate_local ) {
-					next->local = param->parameters->index;
-					( ( struct block_statement * ) next )->rhs = param->parameters->next->index;
-					( ( struct block_statement * ) next )->oper = param->index;
-					next->execute = execute_if_local_statement;
-				} else if( param->parameters->next->evaluate == evaluate_number_literal_expression ) {
-					next->local = param->parameters->index;
-					( ( struct block_statement * ) next )->num = ( ( struct value_expression * ) param->parameters->next )->num;
-					( ( struct block_statement * ) next )->oper = param->index;
-					next->execute = execute_if_const_statement;
-				}
-			} else if( param->evaluate == evaluate_local ) {
-				next->local = param->index;
-				next->execute = execute_if_const_statement;
-			}
 		}
 		if( message[ 0 ] ) {
 			return prev;

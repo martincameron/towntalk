@@ -1051,8 +1051,9 @@ function testoptimizer() {
 	call assert_equals( 8, acc, ${-} );
 	let acc = +( 1 val++ );
 	inc acc;
-	call assert_equals( 2, acc, ${-} );
 	call assert_equals( 1, val, ${-} );
+	call assert_equals( 2, acc, ${-} );
+	call assert_equals( 3, :( $function( ${ () { return +( 1 2 ); } } ) ), ${-} );
 	call assert_throws( "Not a number", ${ () { var s = ""; let s = +( s 1 ); } } );
 	call assert_throws( "Not a number", ${ () { var s = ""; let s = +( STR 1 ); } } );
 	call assert_throws( "Not a number", ${ () { var s = ""; let s = +( s++ 1 ); } } );
