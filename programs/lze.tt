@@ -5,11 +5,11 @@
 
 //# Return the encoded length and encode to output if not null.
 function lze_encode( input, output ) {
-	var hash = $buffer( 65536 ), code, in_idx, in_len = $len( input ), in_end = -( in_len 4 ), out_idx, lit, off, len;
+	var hash = $buffer( 65536 ), code, in_idx, in_len = $len( input ), in_end = -( in_len 8 ), out_idx, lit, off, len;	
 	while <e( in_idx in_end ) {
 		if <( in_idx in_end ) {
 			let len = 1;
-			let code = ^( <<( &( $chr( input in_idx ) 0xFF ) 8 ) <<( &( $chr( input +( in_idx 1 ) ) 0xFF ) 4 ) &( $chr( input +( in_idx 2 ) ) 0xFF ) );
+			let code = ^( <<( &( $chr( input in_idx ) 0xFF ) 8 ) <<( &( $chr( input +( in_idx 3 ) ) 0xFF ) 4 ) &( $chr( input +( in_idx 6 ) ) 0xFF ) );
 			let off = -( in_idx [ hash code ] );
 			set [ hash code ] = in_idx;
 			if &&( off <( off 65536 ) =( $chr( input -( in_idx off ) ) $chr( input in_idx ) ) ) {
@@ -18,9 +18,9 @@ function lze_encode( input, output ) {
 				}
 			}
 		} else {
-			let off = 0, len = 4, lit = +( lit 4 ), in_idx = in_len;
+			let off = 0, len = 8, lit = +( lit 8 ), in_idx = in_len;
 		}
-		if ||( >( len 3 ) &&( >( len 2 ) <( lit 1 ) ) ) {
+		if >( len 3 ) {
 			while >( lit 0 ) {
 				var count = lit;
 				if >( count 127 ) {
