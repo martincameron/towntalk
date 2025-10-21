@@ -63,12 +63,12 @@ enum arithmetic_op {
 	HALT, PUSH_CONST, PUSH_LOCAL, LOAD_LOCAL, PUSH_GLOBAL, LOAD_GLOBAL,
 	INC_LOCAL, PUSH_LOCAL_PI, DEC_LOCAL, PUSH_LOCAL_PD, ASSIGN_EXPR,
 	PUSH_EXPR, LOAD_EXPR, PUSH_ARRAY, LOAD_ARRAY, PUSH_STRING, PUSH_UNPACK,
-	POP_LOCAL, STORE_LOCAL, CHECK_ARRAY, POP_ARRAY, STORE_ARRAY, POP_RETURN,
-	AND_STACK, OR__STACK, XOR_STACK, ADD_STACK, SUB_STACK,
+	POP_LOCAL, SAVE_LOCAL, STORE_LOCAL, CHECK_ARRAY, POP_ARRAY, STORE_ARRAY, POP_RETURN,
+	AND_STACK, OR_STACK,  XOR_STACK, ADD_STACK, SUB_STACK,
 	MUL_STACK, FDI_STACK, DIV_STACK, MOD_STACK, ASL_STACK, ASR_STACK,
-	AND_CONST, OR__CONST, XOR_CONST, ADD_CONST, SUB_CONST,
+	AND_CONST, OR_CONST,  XOR_CONST, ADD_CONST, SUB_CONST,
 	MUL_CONST, FDI_CONST, DIV_CONST, MOD_CONST, ASL_CONST, ASR_CONST,
-	AND_LOCAL, OR__LOCAL, XOR_LOCAL, ADD_LOCAL, SUB_LOCAL,
+	AND_LOCAL, OR_LOCAL,  XOR_LOCAL, ADD_LOCAL, SUB_LOCAL,
 	MUL_LOCAL, FDI_LOCAL, DIV_LOCAL, MOD_LOCAL, ASL_LOCAL, ASR_LOCAL
 };
 
@@ -99,12 +99,12 @@ static char* arithmetic_ops[] = {
 	"HALT", "PUSH_CONST", "PUSH_LOCAL", "LOAD_LOCAL", "PUSH_GLOBAL", "LOAD_GLOBAL",
 	"INC_LOCAL", "PUSH_LOCAL_PI", "DEC_LOCAL", "PUSH_LOCAL_PD", "ASSIGN_EXPR",
 	"PUSH_EXPR", "LOAD_EXPR", "PUSH_ARRAY", "LOAD_ARRAY", "PUSH_STRING", "PUSH_UNPACK",
-	"POP_LOCAL", "STORE_LOCAL", "CHECK_ARRAY", "POP_ARRAY", "STORE_ARRAY", "POP_RETURN",
-	"AND_STACK", "OR__STACK", "XOR_STACK", "ADD_STACK", "SUB_STACK",
+	"POP_LOCAL", "SAVE_LOCAL", "STORE_LOCAL", "CHECK_ARRAY", "POP_ARRAY", "STORE_ARRAY", "POP_RETURN",
+	"AND_STACK", "OR_STACK",  "XOR_STACK", "ADD_STACK", "SUB_STACK",
 	"MUL_STACK", "FDI_STACK", "DIV_STACK", "MOD_STACK", "ASL_STACK", "ASR_STACK",
-	"AND_CONST", "OR__CONST", "XOR_CONST", "ADD_CONST", "SUB_CONST",
+	"AND_CONST", "OR_CONST",  "XOR_CONST", "ADD_CONST", "SUB_CONST",
 	"MUL_CONST", "FDI_CONST", "DIV_CONST", "MOD_CONST", "ASL_CONST", "ASR_CONST",
-	"AND_LOCAL", "OR__LOCAL", "XOR_LOCAL", "ADD_LOCAL", "SUB_LOCAL",
+	"AND_LOCAL", "OR_LOCAL",  "XOR_LOCAL", "ADD_LOCAL", "SUB_LOCAL",
 	"MUL_LOCAL", "FDI_LOCAL", "DIV_LOCAL", "MOD_LOCAL", "ASL_LOCAL", "ASR_LOCAL"
 };
 #endif
@@ -255,6 +255,13 @@ static struct instruction* compile_arithmetic_expression( struct arithmetic_stat
 			}
 			break;
 		case LOCAL_VARIABLE:
+			if( stmt->insns.count > 1 ) {
+				insn = &stmt->insns.list[ stmt->insns.count - 1 ];
+				if( insn->oper == POP_LOCAL && insn->local == expr->index ) {
+					insn->oper = SAVE_LOCAL;
+					break;
+				}
+			}
 			insn = add_instruction( &stmt->insns, PUSH_LOCAL, expr->index, expr, message );
 			break;
 		case LOCAL_VARIABLE_PI:
@@ -508,6 +515,14 @@ static enum result execute_arithmetic_statement( struct statement *this,
 					local->string_value = NULL;
 				}
 				break;
+			case SAVE_LOCAL:
+				local = locals + insn->local;
+				local->number_value = *top;
+				if( local->string_value ) {
+					unref_string( local->string_value );
+					local->string_value = NULL;
+				}
+				break;
 			case STORE_LOCAL:
 				local = locals + insn->local;
 				local->number_value = var.number_value;
@@ -558,7 +573,7 @@ static enum result execute_arithmetic_statement( struct statement *this,
 				break;
 			case POP_RETURN: result->number_value = *top; return RETURN;
 			case AND_STACK: top--; *top = ( long_int ) *top & ( long_int ) top[ 1 ]; break;
-			case OR__STACK: top--; *top = ( long_int ) *top | ( long_int ) top[ 1 ]; break;
+			case OR_STACK:  top--; *top = ( long_int ) *top | ( long_int ) top[ 1 ]; break;
 			case XOR_STACK: top--; *top = ( long_int ) *top ^ ( long_int ) top[ 1 ]; break;
 			case ADD_STACK: top--; *top  += top[ 1 ]; break;
 			case SUB_STACK: top--; *top  -= top[ 1 ]; break;
@@ -569,7 +584,7 @@ static enum result execute_arithmetic_statement( struct statement *this,
 			case ASL_STACK: top--; *top = ( long_int ) *top << ( long_int ) top[ 1 ]; break;
 			case ASR_STACK: top--; *top = ( long_int ) *top >> ( long_int ) top[ 1 ]; break;
 			case AND_CONST: *top = ( long_int ) *top & ( long_int ) insn->value; break;
-			case OR__CONST: *top = ( long_int ) *top | ( long_int ) insn->value; break;
+			case OR_CONST:  *top = ( long_int ) *top | ( long_int ) insn->value; break;
 			case XOR_CONST: *top = ( long_int ) *top ^ ( long_int ) insn->value; break;
 			case ADD_CONST: *top  += insn->value; break;
 			case SUB_CONST: *top  -= insn->value; break;
@@ -591,7 +606,7 @@ static enum result execute_arithmetic_statement( struct statement *this,
 					*top = ( long_int ) *top & ( long_int ) local->number_value;
 				}
 				break;
-			case OR__LOCAL:
+			case OR_LOCAL:
 				local = locals + insn->local;
 				if( local->string_value ) {
 					if( to_num( local, &value, vars, insn->expr ) ) {
