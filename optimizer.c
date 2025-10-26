@@ -5,13 +5,14 @@
 
 #include "towntalk.h"
 
-/* #define PRINT_INSNS */
+/* #define PRINT_OPTIMIZATIONS */
 
 /*
 	Stack-machine for fast arithmetic and assignment.
 	
 	Sequential statements of the following forms are combined into a single subinterpreter statement:
 	
+		call expr;
 		return arithmetic_expr;
 		let local = arithmetic_expr;
 		let local = $chr( local expr );
@@ -53,6 +54,7 @@ enum result execute_local_assignment( struct statement *this, struct variables *
 enum result execute_increment_statement( struct statement *this, struct variables *vars, struct variable *result );
 enum result execute_decrement_statement( struct statement *this, struct variables *vars, struct variable *result );
 enum result execute_return_statement( struct statement *this, struct variables *vars, struct variable *result );
+enum result execute_call_statement( struct statement *this, struct variables *vars, struct variable *result );
 enum result execute_while_statement( struct statement *this, struct variables *vars, struct variable *result );
 enum result execute_if_statement( struct statement *this, struct variables *vars, struct variable *result );
 enum result to_int( struct variable *var, int *result, struct variables *vars, struct expression *source );
@@ -61,7 +63,7 @@ void dispose_statements( struct statement *statements );
 
 enum arithmetic_op {
 	HALT, PUSH_CONST, PUSH_LOCAL, LOAD_LOCAL, PUSH_GLOBAL, LOAD_GLOBAL,
-	INC_LOCAL, PUSH_LOCAL_PI, DEC_LOCAL, PUSH_LOCAL_PD, ASSIGN_EXPR,
+	INC_LOCAL, PUSH_LOCAL_PI, DEC_LOCAL, PUSH_LOCAL_PD, ASSIGN_EXPR, CALL_EXPR,
 	PUSH_EXPR, LOAD_EXPR, PUSH_ARRAY, LOAD_ARRAY, PUSH_STRING, PUSH_UNPACK,
 	POP_LOCAL, SAVE_LOCAL, STORE_LOCAL, CHECK_ARRAY, POP_ARRAY, STORE_ARRAY, POP_RETURN,
 	AND_STACK, OR_STACK,  XOR_STACK, ADD_STACK, SUB_STACK,
@@ -78,7 +80,8 @@ enum compilable_stmt {
 	ARRAY_ASSIGNMENT,
 	LOCAL_INCREMENT,
 	LOCAL_DECREMENT,
-	RETURN_EXPRESSION
+	CALL_STATEMENT,
+	RETURN_STATEMENT
 };
 
 enum compilable_expr {
@@ -94,10 +97,10 @@ enum compilable_expr {
 	STRING_UNPACK
 };
 
-#if defined( PRINT_INSNS )
+#if defined( PRINT_OPTIMIZATIONS )
 static char* arithmetic_ops[] = {
 	"HALT", "PUSH_CONST", "PUSH_LOCAL", "LOAD_LOCAL", "PUSH_GLOBAL", "LOAD_GLOBAL",
-	"INC_LOCAL", "PUSH_LOCAL_PI", "DEC_LOCAL", "PUSH_LOCAL_PD", "ASSIGN_EXPR",
+	"INC_LOCAL", "PUSH_LOCAL_PI", "DEC_LOCAL", "PUSH_LOCAL_PD", "ASSIGN_EXPR", "CALL_EXPR",
 	"PUSH_EXPR", "LOAD_EXPR", "PUSH_ARRAY", "LOAD_ARRAY", "PUSH_STRING", "PUSH_UNPACK",
 	"POP_LOCAL", "SAVE_LOCAL", "STORE_LOCAL", "CHECK_ARRAY", "POP_ARRAY", "STORE_ARRAY", "POP_RETURN",
 	"AND_STACK", "OR_STACK",  "XOR_STACK", "ADD_STACK", "SUB_STACK",
@@ -142,9 +145,11 @@ static enum compilable_stmt can_compile_stmt( struct statement *stmt ) {
 			return LOCAL_INCREMENT;
 		} else if( stmt->execute == execute_decrement_statement ) {
 			return LOCAL_DECREMENT;
+		} else if( stmt->execute == execute_call_statement ) {
+			return CALL_STATEMENT;
 		} else if( stmt->execute == execute_return_statement ) {
 			if( stmt->source->evaluate == evaluate_arithmetic_expression ) {
-				return RETURN_EXPRESSION;
+				return RETURN_STATEMENT;
 			}
 		}
 	}
@@ -411,6 +416,16 @@ static enum result execute_arithmetic_statement( struct statement *this,
 					unref_string( local->string_value );
 				}
 				local->string_value = var.string_value;
+				break;
+			case CALL_EXPR:
+				var.number_value = 0;
+				var.string_value = NULL;
+				if( !insn->expr->evaluate( insn->expr, vars, &var ) ) {
+					return EXCEPTION;
+				}
+				if( var.string_value ) {
+					unref_string( var.string_value );
+				}
 				break;
 			case PUSH_EXPR:
 				var.number_value = 0;
@@ -978,7 +993,20 @@ static struct statement* optimize_return( struct statement *stmt, struct stateme
 	return stmt;
 }
 
-#if defined( PRINT_INSNS )
+static struct statement* optimize_call( struct statement *stmt, struct statement *prev, char *message ) {
+	struct expression *expr = stmt->source;
+	struct arithmetic_statement *arith;
+	if( prev->execute == execute_arithmetic_statement || can_compile_stmt( stmt->next ) ) {
+		arith = add_arithmetic_statement( stmt, prev, message );
+		if( arith ) {
+			stmt = &arith->stmt;
+			add_instruction( &arith->insns, CALL_EXPR, 0, expr, message );
+		}
+	}
+	return stmt;
+}
+
+#if defined( PRINT_OPTIMIZATIONS )
 static void print_insns( struct function *func, struct arithmetic_statement *stmt, int line ) {
 	char *name;
 	struct instruction *insn = stmt->insns.list;
@@ -991,10 +1019,10 @@ static void print_insns( struct function *func, struct arithmetic_statement *stm
 		}
 #if defined( FLOATING_POINT )
 		if( insn->value ) {
-			fprintf( stderr, "% 6d %s %.16g:\n", insn->expr->line, name, insn->value );
+			fprintf( stderr, "% 6d %s %.16g\n", insn->expr->line, name, insn->value );
 		} else
 #endif
-		fprintf( stderr, "% 6d %s %d:\n", insn->expr->line, name, insn->local );
+		fprintf( stderr, "% 6d %s %d\n", insn->expr->line, name, insn->local );
 		insn++;
 	}
 }
@@ -1018,7 +1046,10 @@ struct statement* optimize_statements( struct function *func, struct statement *
 			case LOCAL_DECREMENT:
 				next = optimize_increment( next, prev, DEC_LOCAL, message );
 				break;
-			case RETURN_EXPRESSION:
+			case CALL_STATEMENT:
+				next = optimize_call( next, prev, message );
+				break;
+			case RETURN_STATEMENT:
 				next = optimize_return( next, prev, message );
 				break;
 			default:
@@ -1041,6 +1072,11 @@ struct statement* optimize_statements( struct function *func, struct statement *
 						next->local = param->index;
 						next->execute = execute_while_const_statement;
 					}
+#if defined( PRINT_OPTIMIZATIONS )
+					if( next->execute != execute_while_statement ) {
+						fprintf( stderr, "Optimized while conditional in function '%s' on line %d of '%s'.\n", func->str.string, func->line, func->file->string );
+					}
+#endif
 				} else if( next->execute == execute_if_statement ) {
 					param = next->source;
 					if( param->evaluate == evaluate_arithmetic_expression
@@ -1060,6 +1096,11 @@ struct statement* optimize_statements( struct function *func, struct statement *
 						next->local = param->index;
 						next->execute = execute_if_const_statement;
 					}
+#if defined( PRINT_OPTIMIZATIONS )
+					if( next->execute != execute_if_statement ) {
+						fprintf( stderr, "Optimized if conditional in function '%s' on line %d of '%s'.\n", func->str.string, func->line, func->file->string );
+					}
+#endif
 				}
 		}
 		if( message[ 0 ] ) {
@@ -1068,7 +1109,7 @@ struct statement* optimize_statements( struct function *func, struct statement *
 		prev = next;
 		next = next->next;
 	}
-#if defined( PRINT_INSNS )
+#if defined( PRINT_OPTIMIZATIONS )
 	while( stmt ) {
 		if( stmt->execute == execute_arithmetic_statement ) {
 			print_insns( func, ( struct arithmetic_statement * ) stmt, stmt->source->line );

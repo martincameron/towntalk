@@ -5,7 +5,7 @@
 
 //# Return the encoded length and encode to output if not null.
 function lze_encode( input, output ) {
-	var hash = $buffer( 65536 ), code, in_idx, in_len = $len( input ), in_end = -( in_len 8 ), out_idx, lit, off, len;	
+	var hash = $buffer( 65536 ), code, in_idx, in_len = $len( input ), in_end = -( in_len 8 ), out_idx, lit, off, len;
 	while <e( in_idx in_end ) {
 		if <( in_idx in_end ) {
 			let len = 1;

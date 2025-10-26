@@ -1802,7 +1802,7 @@ static enum result execute_until_statement( struct statement *this,
 	}
 }
 
-static enum result execute_call_statement( struct statement *this,
+enum result execute_call_statement( struct statement *this,
 	struct variables *vars, struct variable *result ) {
 	struct variable var = { 0, NULL };
 	enum result ret = this->source->evaluate( this->source, vars, &var );

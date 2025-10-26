@@ -39,7 +39,7 @@ program fxtest {
 	}
 	play 0, c;
 
-	let x = 0;
+	let x = 0, c = 0;
 	while TRUE {
 		switch $waitevent {
 			case WINDOW_EVENT {

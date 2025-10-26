@@ -1086,7 +1086,8 @@ function testoptimizer() {
 	call assert_throws( "String index", ${ () { var s = "", i; var c = $chr( s, i ); } } );
 	let acc = $unpack( TAB, 0 );
 	call assert_equals( 1, acc ${-} );
-	call assert_throws( "Not a string", ${ () { var c; let c = $unpack( ONE, c ); } } );
+	let g = 0;
+	call assert_throws( "Not a string", ${ () { var c; let c = $unpack( g, 0 ); } } );
 	call assert_throws( "String index", ${ () { var i = 1; var c = $unpack( TAB, i ); } } );
 	let acc = str;
 	let acc = str;
@@ -1101,7 +1102,8 @@ function testoptimizer() {
 	call assert_throws( "Not a number", ${ () { var s = $buffer( 1 ); let [ s 0 ] = s; } } );
 	call assert_throws( "Array index", ${ () { var arr = $array( 0 ); let [ arr 0 ] = 0; } } );
 	call assert_throws( "Not an array", ${ () { var arr; let [ arr 0 ] = 0; } } );
-	let acc = &( 3 ONE );
+	let acc = 3;
+	let acc = &( acc ONE );
 	call assert_equals( 1, acc, ${-} );
 	let acc = |( 0 ONE );
 	call assert_equals( 1, acc, ${-} );
