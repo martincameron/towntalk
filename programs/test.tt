@@ -1078,6 +1078,7 @@ function testoptimizer() {
 	call assert_equals( 1, acc, ${-} );
 	let acc = [ arr +( 1 1 ) ];
 	call assert_equals( "2", acc, ${-} );
+	call assert_equals( "A", :( $function( ${ () { var a = $array( 1 "A" ); return [ a 0 ]; } } ) ), ${-} );
 	call assert_throws( "Not an array", ${ () { var c; let c = [ c c ]; } } );
 	call assert_throws( "Array index", ${ () { var [ s 0 ], i; var c = [ s, i ]; } } );
 	let acc = $chr( str, 0 );
