@@ -72,13 +72,13 @@ enum arithmetic_op {
 	STORE_ARRAY, POP_RETURN, STORE_RETURN, POP_RESULT, STORE_RESULT,
 	AND_STACK, OR_STACK,  XOR_STACK, ADD_STACK, SUB_STACK,
 	MUL_STACK, FDI_STACK, DIV_STACK, MOD_STACK, ASL_STACK, ASR_STACK,
-	LT_STACK,  LE_STACK,  EQ_STACK,  GE_STACK,  GT_STACK,  NE_STACK,
+	NE_STACK,  LT_STACK,  LE_STACK,  EQ_STACK,  GE_STACK,  GT_STACK,
 	AND_CONST, OR_CONST,  XOR_CONST, ADD_CONST, SUB_CONST,
 	MUL_CONST, FDI_CONST, DIV_CONST, MOD_CONST, ASL_CONST, ASR_CONST,
-	LT_CONST,  LE_CONST,  EQ_CONST,  GE_CONST,  GT_CONST,  NE_CONST,
+	NE_CONST,  LT_CONST,  LE_CONST,  EQ_CONST,  GE_CONST,  GT_CONST,
 	AND_LOCAL, OR_LOCAL,  XOR_LOCAL, ADD_LOCAL, SUB_LOCAL,
 	MUL_LOCAL, FDI_LOCAL, DIV_LOCAL, MOD_LOCAL, ASL_LOCAL, ASR_LOCAL,
-	LT_LOCAL,  LE_LOCAL,  EQ_LOCAL,  GE_LOCAL,  GT_LOCAL,  NE_LOCAL,
+	NE_LOCAL,  LT_LOCAL,  LE_LOCAL,  EQ_LOCAL,  GE_LOCAL,  GT_LOCAL,
 	NOP
 };
 
@@ -114,13 +114,14 @@ static char* arithmetic_ops[] = {
 	"STORE_ARRAY", "POP_RETURN", "STORE_RETURN", "POP_RESULT", "STORE_RESULT",
 	"AND_STACK", "OR_STACK",  "XOR_STACK", "ADD_STACK", "SUB_STACK",
 	"MUL_STACK", "FDI_STACK", "DIV_STACK", "MOD_STACK", "ASL_STACK", "ASR_STACK",
-	"LT_STACK",  "LE_STACK",  "EQ_STACK",  "GE_STACK",  "GT_STACK",  "NE_STACK",
+	"NE_STACK",  "LT_STACK",  "LE_STACK",  "EQ_STACK",  "GE_STACK",  "GT_STACK",
 	"AND_CONST", "OR_CONST",  "XOR_CONST", "ADD_CONST", "SUB_CONST",
 	"MUL_CONST", "FDI_CONST", "DIV_CONST", "MOD_CONST", "ASL_CONST", "ASR_CONST",
-	"LT_CONST",  "LE_CONST",  "EQ_CONST",  "GE_CONST",  "GT_CONST",  "NE_CONST",
+	"NE_CONST",  "LT_CONST",  "LE_CONST",  "EQ_CONST",  "GE_CONST",  "GT_CONST",
 	"AND_LOCAL", "OR_LOCAL",  "XOR_LOCAL", "ADD_LOCAL", "SUB_LOCAL",
 	"MUL_LOCAL", "FDI_LOCAL", "DIV_LOCAL", "MOD_LOCAL", "ASL_LOCAL", "ASR_LOCAL",
-	"LT_LOCAL",  "LE_LOCAL",  "EQ_LOCAL",  "GE_LOCAL",  "GT_LOCAL",  "NE_LOCAL"
+	"NE_LOCAL",  "LT_LOCAL",  "LE_LOCAL",  "EQ_LOCAL",  "GE_LOCAL",  "GT_LOCAL",
+	"NOP"
 };
 #endif
 
@@ -172,20 +173,16 @@ static enum compilable_stmt can_compile_stmt( struct statement *stmt ) {
 }
 
 static enum arithmetic_op get_arithmetic_op( struct expression *expr ) {
-	char *chr;
-	const char *OPS = "&:3+-*0/%12<(=)>!";
-	enum arithmetic_op oper = HALT;
-	if( expr->evaluate == evaluate_arithmetic_expression ) {
-		chr = strchr( OPS, expr->index );
-		if( chr ) {
-			oper = AND_STACK + ( chr - OPS );
-		}
+	static const char *OPS = "&:3+-*0/%12!<(=)>";
+	char *chr = strchr( OPS, expr->index );
+	if( chr ) {
+		return AND_STACK + ( chr - OPS );
 	}
-	return oper;
+	return HALT;
 }
 
 static enum compilable_expr can_compile_expr( struct expression *expr ) {
-	if( get_arithmetic_op( expr ) ) {
+	if( expr->evaluate == evaluate_arithmetic_expression ) {
 		return ARITHMETIC_OPERATOR;
 	} else if( expr->evaluate == evaluate_number_literal_expression ) {
 		return NUMBER_LITERAL;
@@ -254,21 +251,25 @@ static struct instruction* compile_expression( struct arithmetic_statement *stmt
 		}
 	} else switch( can_compile_expr( expr ) ) {
 		case ARITHMETIC_OPERATOR:
-			parameter = expr->parameters;
-			insn = compile_expression( stmt, parameter, top, message );
-			while( insn && parameter->next ) {
-				parameter = parameter->next;
-				insn = compile_expression( stmt, parameter, top + 1, message );
-				if( insn ) {
-					oper = get_arithmetic_op( expr );
-					if( insn->oper == PUSH_CONST ) {
-						insn->oper = oper + AND_CONST - AND_STACK;
-					} else if( insn->oper == PUSH_LOCAL ) {
-						insn->oper = oper + AND_LOCAL - AND_STACK;
-					} else {
-						insn = add_instruction( &stmt->insns, oper, 0, parameter, message );
+			oper = get_arithmetic_op( expr );
+			if( oper ) {
+				parameter = expr->parameters;
+				insn = compile_expression( stmt, parameter, top, message );
+				while( insn && parameter->next ) {
+					parameter = parameter->next;
+					insn = compile_expression( stmt, parameter, top + 1, message );
+					if( insn ) {
+						if( insn->oper == PUSH_CONST ) {
+							insn->oper = oper + AND_CONST - AND_STACK;
+						} else if( insn->oper == PUSH_LOCAL ) {
+							insn->oper = oper + AND_LOCAL - AND_STACK;
+						} else {
+							insn = add_instruction( &stmt->insns, oper, 0, parameter, message );
+						}
 					}
 				}
+			} else {
+				insn = add_instruction( &stmt->insns, PUSH_EXPR, 0, expr, message );
 			}
 			break;
 		case NUMBER_LITERAL:
@@ -1035,12 +1036,14 @@ static struct arithmetic_statement* add_arithmetic_statement( struct statement *
 	return arith;
 }
 
-static void optimize_stmt_source( struct statement *stmt, char *message ) {
+static int optimize_stmt_source( struct statement *stmt, char *message ) {
 	struct expression expr;
 	expr.parameters = stmt->source;
 	if( optimize_parameters( &expr, message ) ) {
 		stmt->source = expr.parameters;
+		return 1;
 	}
+	return 0;
 }
 
 static struct statement* optimize_local_assignment( struct statement *stmt, struct statement *prev, char *message ) {
@@ -1048,7 +1051,7 @@ static struct statement* optimize_local_assignment( struct statement *stmt, stru
 	struct expression *expr = stmt->source;
 	int local = stmt->local, oper, dest = POP_LOCAL;
 	struct arithmetic_statement *arith;
-	if( prev->execute == execute_arithmetic_statement || can_compile_stmt( stmt->next ) || can_compile_expr( expr ) >= ARITHMETIC_OPERATOR ) {
+	if( prev->execute == execute_arithmetic_statement || can_compile_stmt( stmt->next ) || can_compile_expr( expr ) ) {
 		arith = add_arithmetic_statement( stmt, prev, message );
 		if( arith ) {
 			stmt = &arith->stmt;
@@ -1133,14 +1136,15 @@ static struct statement* optimize_return( struct statement *stmt, struct stateme
 static struct statement* optimize_call( struct statement *stmt, struct statement *prev, char *message ) {
 	struct expression *expr = stmt->source;
 	struct arithmetic_statement *arith;
-	if( prev->execute == execute_arithmetic_statement || can_compile_stmt( stmt->next ) ) {
-		arith = add_arithmetic_statement( stmt, prev, message );
-		if( arith ) {
-			stmt = &arith->stmt;
-			add_instruction( &arith->insns, CALL_EXPR, 0, expr, message );
+	if( optimize_stmt_source( stmt, message ) ) {
+		if( prev->execute == execute_arithmetic_statement || can_compile_stmt( stmt->next ) ) {
+			arith = add_arithmetic_statement( stmt, prev, message );
+			if( arith ) {
+				stmt = &arith->stmt;
+				add_instruction( &arith->insns, CALL_EXPR, 0, expr, message );
+			}
 		}
 	}
-	optimize_stmt_source( stmt, message );
 	return stmt;
 }
 
@@ -1238,11 +1242,9 @@ static struct expression* compile_arith_stmt_expr( struct expression *expr, stru
 
 static struct expression* optimize_expression( struct expression *expr, struct expression *prev, char *message ) {
 	enum compilable_expr compilable = can_compile_expr( expr );
-	if( compilable ) {
-		if( compilable >= ARITHMETIC_OPERATOR ) {
-			expr = compile_arith_stmt_expr( expr, prev, message );
-		}
-	} else {
+	if( compilable >= ARITHMETIC_OPERATOR ) {
+		expr = compile_arith_stmt_expr( expr, prev, message );
+	} else if( !compilable ) {
 		expr = optimize_parameters( expr, message );
 	}
 	return expr;
