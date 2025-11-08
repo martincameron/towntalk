@@ -1051,7 +1051,7 @@ static struct statement* optimize_local_assignment( struct statement *stmt, stru
 	struct expression *expr = stmt->source;
 	int local = stmt->local, oper, dest = POP_LOCAL;
 	struct arithmetic_statement *arith;
-	if( prev->execute == execute_arithmetic_statement || can_compile_stmt( stmt->next ) || can_compile_expr( expr ) ) {
+	if( prev->execute == execute_arithmetic_statement || can_compile_stmt( stmt->next ) || can_compile_expr( expr ) >= ARITHMETIC_OPERATOR ) {
 		arith = add_arithmetic_statement( stmt, prev, message );
 		if( arith ) {
 			stmt = &arith->stmt;
@@ -1114,7 +1114,7 @@ static struct statement* optimize_return( struct statement *stmt, struct stateme
 	int *oper, dest = POP_RETURN;
 	struct expression *expr = stmt->source;
 	struct arithmetic_statement *arith;
-	if( prev->execute == execute_arithmetic_statement || can_compile_expr( expr ) ) {
+	if( prev->execute == execute_arithmetic_statement || can_compile_expr( expr ) >= ARITHMETIC_OPERATOR ) {
 		arith = add_arithmetic_statement( stmt, prev, message );
 		if( arith ) {
 			stmt = &arith->stmt;
