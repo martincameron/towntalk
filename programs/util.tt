@@ -36,10 +36,8 @@ library util {
 
 	//# Increase the capacity of the specified list by the specified amount and return the new backing-array.
 	function list_expand( ( list ) this, amount ) {
-		var idx, old = this.array, len = this.len, arr = $array( +( $len( old ) amount ) );
-		while <( idx len ) {
-			let [ arr idx ] = [ old idx++ ];
-		}
+		var old = this.array, arr = $array( +( $len( old ) amount ) );
+		arraycopy old 0 arr 0 this.len;
 		let this.array = arr;
 		return arr;
 	}
@@ -60,9 +58,7 @@ library util {
 		if >( end $len( dest ) ) {
 			let dest = this:expand( end );
 		}
-		while <( idx end ) {
-			let [ dest idx++ ] = [ arr offset++ ];
-		}
+		arraycopy arr offset dest idx len;
 		let this.len = end;
 	}
 
@@ -80,22 +76,17 @@ library util {
 
 	//# Insert the specified value into the specified list at the specified index.
 	function list_insert( ( list ) this, value, index ) {
-		call list_add( this, value );
-		var arr = this.array, len = this.len;
-		while <( index len ) {
-			var tmp = [ arr index ];
-			let [ arr index++ ] = value;
-			let value = tmp;
-		}
+		call this:add( 0 );
+		var arr = this.array;
+		arraycopy arr index arr +( index 1 ) -( this.len index 1 );
+		let [ arr index ] = value;
 	}
 
 	//# Remove the value at the specified index from the specified list.
 	function list_remove( ( list ) this, index ) {
-		var arr = this.array, len = this.len, offset = index, value = [ arr index++ ];
-		while <( index len ) {
-			let [ arr offset++ ] = [ arr index++ ];
-		}
-		let this.len = -( len 1 );
+		var arr = this.array, len = -( this.len 1 ), value = [ arr index ];
+		arraycopy arr +( index 1 ) arr index len;
+		let this.len = len;
 		return value;
 	}
 
@@ -213,19 +204,7 @@ library util {
 
 	//# Copy the specified range from the source array to the dest array.
 	function array_copy( src src_offset dest dest_offset len ) {
-		var src_end = +( src_offset len );
-		var dest_end = +( dest_offset len );
-		if <( src_end dest_end ) {
-			dec src_end;
-			dec dest_end;
-			while >e( src_end src_offset ) {
-				let [ dest dest_end-- ] = [ src src_end-- ];
-			}
-		} else {
-			while <( src_offset src_end ) {
-				let [ dest dest_offset++ ] = [ src src_offset++ ];
-			}
-		}
+		arraycopy src src_offset dest dest_offset len;
 	}
 
 	//# Return the content of the specified string with leading and trailing spaces removed.

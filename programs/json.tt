@@ -59,25 +59,12 @@ library json {
 	# Add the specified value to the specified list, increasing the capacity if necessary.
 	function list_add( ( list ) this, value ) {
 		if >e( this.len $len( this.array ) ) {
-			var idx, arr = $array( *( this.len 2 ) );
-			while <( idx this.len ) {
-				let [ arr idx ] = [ this.array idx ];
-				inc idx;
-			}
+			var arr = $array( *( this.len 2 ) );
+			arraycopy this.array 0 arr 0 this.len;
 			let this.array = arr;
 		}
 		let [ this.array this.len ] = value;
 		let this.len = +( this.len 1 );
-	}
-
-	# Insert the specified value into the specified list at the specified index.
-	function list_insert( ( list ) this, value, idx ) {
-		call list_add( this, 0 );
-		while <( idx this.len ) {
-			var tmp = [ this.array idx ];
-			let [ this.array idx++ ] = value;
-			let value = tmp;
-		}
 	}
 
 	# Return a new parser for the specified source string.

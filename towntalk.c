@@ -105,6 +105,7 @@
 		dec a;                   Decrement local variable.
 		save str, "file";        Save bytes from string to file.
 		append str, "file";      Append bytes to the end of file.
+		arraycopy a ax b yx n;   Copy n elements of array a from [ a ax ] to array b at [ b yx ].
 
 	Expressions:
 		-123                     Decimal number literal.
@@ -1459,7 +1460,7 @@ enum result is_instance( struct variable *var, struct structure *type, struct va
 }
 
 /* Evaluate the specified expression into the specified result variable.
-   Throws an exception if the value is not a reference. */
+   Throws an exception if the result is not a reference. */
 enum result evaluate_string( struct expression *expr, struct variables *vars, struct variable *result ) {
 	enum result ret = expr->evaluate( expr, vars, result );
 	if( ret && result->string_value == NULL ) {
@@ -1469,7 +1470,18 @@ enum result evaluate_string( struct expression *expr, struct variables *vars, st
 }
 
 /* Evaluate the specified expression into the specified result variable.
-   Throws an exception if the value is not an element reference or null (if allowed). */
+   Throws an exception if the result is not an array reference. */
+enum result evaluate_array( struct expression *expr, struct variables *vars, struct variable *result ) {
+	enum result ret = expr->evaluate( expr, vars, result );
+	if( ret && ( result->string_value == NULL || result->string_value->type != ARRAY ) ) {
+		ret = throw( vars, expr, 0, "Not an array." );
+		dispose_variable( result );
+	}
+	return ret;
+}
+
+/* Evaluate the specified expression into the specified result variable.
+   Throws an exception if the result is not an element reference or null (if allowed). */
 enum result evaluate_element( struct expression *expr, struct variables *vars, struct variable *result, int allow_null ) {
 	enum result ret = expr->evaluate( expr, vars, result );
 	if( ret ) {
@@ -1699,8 +1711,7 @@ static enum result execute_try_catch_statement( struct statement *this,
 	ret = execute_statements( ( ( struct block_statement * ) this )->if_block, &try_vars, result );
 	if( ret == EXCEPTION ) {
 		exception_var = vars->func->variable_decls;
-		while( idx-- > 0 )
-		{
+		while( idx-- > 0 ) {
 			exception_var = exception_var->next;
 		}
 		if( is_exit( try_vars.exception )
@@ -1964,6 +1975,82 @@ static enum result execute_save_statement( struct statement *this,
 			dispose_temporary( &file );
 		}
 		dispose_temporary( &str );
+	}
+	return ret;
+}
+
+static enum result execute_arraycopy_statement( struct statement *this,
+	struct variables *vars, struct variable *result ) {
+	struct expression *param = this->source;
+	int src_idx, dest_idx, count;
+	struct variable src = { 0 }, dest = { 0 };
+	struct array *src_arr, *dest_arr;
+	struct string **src_str, **dest_str, **dest_str_end;
+	enum result ret = evaluate_array( param, vars, &src );
+	if( ret ) {
+		param = param->next;
+		ret = evaluate_integer( param, vars, &src_idx );
+		if( ret ) {
+			param = param->next;
+			ret = evaluate_array( param, vars, &dest );
+			if( ret ) {
+				param = param->next;
+				ret = evaluate_integer( param, vars, &dest_idx );
+				if( ret ) {
+					param = param->next;
+					ret = evaluate_integer( param, vars, &count );
+					if( ret ) {
+						src_arr = ( struct array * ) src.string_value;
+						dest_arr = ( struct array * ) dest.string_value;
+						if( count >= 0 && src_idx >= 0 && src_idx + count <= src_arr->length && dest_idx >= 0 && dest_idx + count <= dest_arr->length ) {
+							memmove( &dest_arr->number_values[ dest_idx ], &src_arr->number_values[ src_idx ], count * sizeof( number ) );
+							if( dest_arr->string_values ) {
+								dest_str = &dest_arr->string_values[ dest_idx ];
+								dest_str_end = dest_str + count;
+								if( src_arr->string_values ) {
+									src_str = &src_arr->string_values[ src_idx ];
+									if( src_str + count < dest_str_end ) {
+										dest_str_end--;
+										src_str += count - 1;
+										while( dest_str_end >= dest_str ) {
+											if( *src_str ) {
+												( *src_str )->reference_count++;
+											}
+											if( *dest_str_end ) {
+												unref_string( *dest_str_end );
+											}
+											*dest_str_end-- = *src_str--;
+										}
+									} else {
+										while( dest_str < dest_str_end ) {
+											if( *src_str ) {
+												( *src_str )->reference_count++;
+											}
+											if( *dest_str ) {
+												unref_string( *dest_str );
+											}
+											*dest_str++ = *src_str++;
+										}
+									}
+								} else {
+									while( dest_str < dest_str_end ) {
+										if( *dest_str ) {
+											unref_string( *dest_str );
+											*dest_str = NULL;
+										}
+										dest_str++;
+									}
+								}
+							}
+						} else {
+							ret = throw( vars, param, count, "Array index out of bounds." );
+						}
+					}
+				}
+				dispose_temporary( &dest );
+			}
+		}
+		dispose_temporary( &src );
 	}
 	return ret;
 }
@@ -4497,6 +4584,11 @@ static struct element* parse_append_statement( struct element *elem,
 	return next;
 }
 
+static struct element* parse_arraycopy_statement( struct element *elem,
+	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
+	return parse_expr_list_statement( elem, func, vars, prev, execute_arraycopy_statement, message );
+}
+
 static struct element* parse_array_assignment( struct element *elem,
 	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
 	struct expression expr;
@@ -5673,7 +5765,9 @@ static int add_structure_field( struct structure *struc, struct element *elem, c
 			field = new_string_value( elem->str.string );
 			if( field ) {
 				if( append_string_list( &struc->fields, &struc->fields_tail, field ) ) {
-					struc->length++;
+					if( struc->length++ >= 32768 ) {
+						sprintf( message, "Too many fields on line %d.", elem->line );
+					}
 				} else {
 					strcpy( message, OUT_OF_MEMORY );
 				}
@@ -5780,6 +5874,7 @@ static struct keyword statements[] = {
 	{ "dec", "n;", parse_decrement_statement, NULL },
 	{ "save", "xx;", parse_save_statement, NULL },
 	{ "append", "xx;", parse_append_statement, NULL },
+	{ "arraycopy", "xxxxx;", parse_arraycopy_statement, NULL },
 	{ NULL }
 };
 

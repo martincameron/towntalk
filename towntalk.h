@@ -331,11 +331,15 @@ enum result is_instance( struct variable *var, struct structure *type, struct va
 int is_custom_instance( struct string *str, struct custom_type *type );
 
 /* Evaluate the specified expression into the specified result variable.
-   Throws an exception if the value is not a reference. */
+   Throws an exception if the result is not a reference. */
 enum result evaluate_string( struct expression *expr, struct variables *vars, struct variable *result );
 
 /* Evaluate the specified expression into the specified result variable.
-   Throws an exception if the value is not an element reference or null (if allowed). */
+   Throws an exception if the result is not an array reference. */
+enum result evaluate_array( struct expression *expr, struct variables *vars, struct variable *result );
+
+/* Evaluate the specified expression into the specified result variable.
+   Throws an exception if the result is not an element reference or null (if allowed). */
 enum result evaluate_element( struct expression *expr, struct variables *vars, struct variable *result, int allow_null );
 
 /* Evaluate the specified expression into the specified number result. */

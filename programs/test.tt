@@ -1285,6 +1285,32 @@ function testcharacters() {
 	call assert_throws( "Invalid", ${ () { call 'aa'; } } );
 }
 
+function testarraycopy() {
+	var a = $array( 3 65 66 67 );
+	arraycopy a 0 a 0 3;
+	call assert_equals( "ABC", $sub( a 0 3 ), ${-} );
+	arraycopy a 0 a 1 2;
+	call assert_equals( "AAB", $sub( a 0 3 ), ${-} );
+	arraycopy a 1 a 0 2;
+	call assert_equals( "ABB", $sub( a 0 3 ), ${-} );
+	let a = $array( 3 "A" "B" "C" );
+	arraycopy a 0 a 0 3;
+	call assert_equals( "ABC", $str( [ a 0 ] [ a 1 ] [ a 2 ] ), ${-} );
+	arraycopy a 0 a 1 2;
+	call assert_equals( "AAB", $str( [ a 0 ] [ a 1 ] [ a 2 ] ), ${-} );
+	arraycopy a 1 a 0 2;
+	call assert_equals( "ABB", $str( [ a 0 ] [ a 1 ] [ a 2 ] ), ${-} );
+	arraycopy $buffer( 3 65 66 67 ) 0 a 0 3;
+	call assert_equals( "ABC", $sub( a 0 3 ), ${-} );
+	call assert_equals( "656667", $str( [ a 0 ] [ a 1 ] [ a 2 ] ), ${-} );
+	call assert_throws( "Array", ${ () { arraycopy $array( 0 ) -1 $array( 0 ) 0 0; } } );
+	call assert_throws( "Array", ${ () { arraycopy $array( 0 ) 0 $array( 0 ) -1 0; } } );
+	call assert_throws( "Array", ${ () { arraycopy $array( 0 ) 0 $array( 0 ) 0 -1; } } );
+	call assert_throws( "Array", ${ () { arraycopy $array( 0 ) 1 $array( 0 ) 0 0; } } );
+	call assert_throws( "Array", ${ () { arraycopy $array( 0 ) 0 $array( 0 ) 1 0; } } );
+	call assert_throws( "Array", ${ () { arraycopy $array( 0 ) 0 $array( 0 ) 0 1; } } );
+}
+
 program test {
 	call hello();
 	call assert( =( testvoid() 0 ), ${-} );
@@ -1354,5 +1380,6 @@ program test {
 	call teststack();
 	call testscope();
 	call testcharacters();
+	call testarraycopy();
 	print "Tests passed.";
 }
