@@ -1096,7 +1096,7 @@ static int write_element( struct element *elem, char *output ) {
 	return length;
 }
 
-static int qualify_name( struct function *func, char *name, int len, char *output ) {
+static int qualify_decl( struct function *func, char *decl, int len, char *output ) {
 	int llen = 0, qlen = len;
 	if( func && func->library ) {
 		llen = func->library->length;
@@ -1107,7 +1107,7 @@ static int qualify_name( struct function *func, char *name, int len, char *outpu
 			memcpy( output, func->library->string, sizeof( char ) * llen );
 			output[ llen++ ] = '_';
 		}
-		memcpy( &output[ llen ], name, sizeof( char ) * len );
+		memcpy( &output[ llen ], decl, sizeof( char ) * len );
 		output[ qlen ] = 0;
 	}
 	return qlen;
@@ -1118,13 +1118,13 @@ static struct function* new_function( char *name, struct function *parent ) {
 	struct function *func;
 	if( name ) {
 		nlen = strlen( name );
-		qlen = qualify_name( parent, name, nlen, NULL );
+		qlen = qualify_decl( parent, name, nlen, NULL );
 	}
 	func = calloc( 1, sizeof( struct function ) + sizeof( char ) * ( qlen + 1 ) );
 	if( func ) {
 		func->str.string = ( char * ) &func[ 1 ];
 		if( name ) {
-			func->str.length = qualify_name( parent, name, nlen, func->str.string );
+			func->str.length = qualify_decl( parent, name, nlen, func->str.string );
 		} else {
 			func->str.string = "[Function]";
 			func->str.length = 10;
@@ -1157,12 +1157,12 @@ static struct local_variable* new_local_variable( struct function *func, struct 
 static struct global_variable* new_global_variable( char *name,
 	struct structure *type, struct function *init_function, struct expression *initializer, char *message ) {
 	int nlen = strlen( name );
-	int qlen = qualify_name( init_function, name, nlen, NULL );
+	int qlen = qualify_decl( init_function, name, nlen, NULL );
 	struct global_variable *global = malloc( sizeof( struct global_variable ) + sizeof( char ) * ( qlen + 1 ) );
 	if( global ) {
 		global->str.reference_count = 1;
 		global->str.string = ( char * ) &global[ 1 ];
-		qualify_name( init_function, name, nlen, global->str.string );
+		qualify_decl( init_function, name, nlen, global->str.string );
 		global->str.length = qlen;
 		global->str.type = GLOBAL;
 		global->value.number_value = 0;
@@ -2433,7 +2433,7 @@ static struct string* get_decl_indexed( struct function *func, char *name, int l
 }
 
 static struct string* find_decl( struct function *func, char *name, enum reference_type type, char *terminators ) {
-	char qname[ 65 ];
+	char qname[ 128 ];
 	struct string *str;
 	struct string_list *imports = NULL;
 	int qlen, flen = terminators ? field_end( name, terminators ) - name : strlen( name );
@@ -2443,7 +2443,7 @@ static struct string* find_decl( struct function *func, char *name, enum referen
 	str = get_decl( func->env->decls_index[ hash_code( name, name[ flen ] ) ], name, flen, type );
 	while( str == NULL && imports ) {
 		qlen = imports->str->length;
-		if( qlen + 1 + flen < 65 ) {
+		if( qlen + 1 + flen < 128 ) {
 			strcpy( qname, imports->str->string );
 			qname[ qlen++ ] = '_';
 			memcpy( &qname[ qlen ], name, sizeof( char ) * flen );
@@ -4130,7 +4130,7 @@ static struct element* parse_thiscall_expression( struct element *elem,
 
 static struct element* parse_member_call_expression( struct structure *struc, struct expression *this,
 	char *memb, struct element *elem, struct function *func, struct variables *vars, struct expression *prev, char *message ) {
-	char qname[ 65 ];
+	char qname[ 128 ];
 	int num_params, qlen, mlen = strlen( memb );
 	struct expression *expr;
 	struct function *decl = NULL;
@@ -4138,7 +4138,7 @@ static struct element* parse_member_call_expression( struct structure *struc, st
 	if( struc ) {
 		while( struc && decl == NULL ) {
 			qlen = struc->str.length + 1 + mlen;
-			if( qlen < 65 ) {
+			if( qlen < 128 ) {
 				strcpy( qname, struc->str.string );
 				qname[ struc->str.length ] = '_';
 				strcpy( &qname[ struc->str.length + 1 ], memb );
@@ -5780,17 +5780,73 @@ static int add_structure_field( struct structure *struc, struct element *elem, c
 	return message[ 0 ] == 0;
 }
 
+static struct element* skip_comments( struct element *elem, char *message ) {
+	int line;
+	char *str;
+	while( elem ) {
+		line = elem->line;
+		str = elem->str.string;
+		if( strcmp( str, "rem" ) == 0 || strcmp( str, "Rem" ) == 0 || strcmp( str, "/*" ) == 0 ) {
+			elem = elem->next;
+			if( elem == NULL || elem->str.string[ 0 ] != '{' ) {
+				sprintf( message, "Expected '{' after '%s' on line %d.", str, line );
+				break;
+			}
+		} else if( strcmp( str, "//" ) && strcmp( str, "*/" ) ) {
+			break;
+		}
+		elem = elem->next;
+	}
+	return elem;
+}
+
+static struct element* parse_struct_member_function( struct string *struct_name, struct element *elem, struct function *func, char *message ) {
+	int slen, qlen;
+	char qname[ 64 ];
+	struct function *decl;
+	struct element *next = skip_comments( elem, message );
+	if( next && message[ 0 ] == 0 ) {
+		elem = next;
+		next = next->next;
+		if( strcmp( elem->str.string, "function" ) == 0 ) {
+			validate_syntax( "n({", next, elem, NULL, message );
+			if( message[ 0 ] == 0 ) {
+				slen = struct_name->length;
+				qlen = slen + 1 + next->str.length;
+				if( qlen < 64 ) {
+					strcpy( qname, struct_name->string );
+					qname[ slen ] = '_';
+					strcpy( &qname[ slen + 1 ], next->str.string );
+					decl = parse_function( next->next, qname, func, message );
+					if( decl ) {
+						if( add_decl( &decl->str, elem->line, func->env, message ) ) {
+							next = next->next->next->next;
+						}
+						unref_string( &decl->str );
+					}
+				} else {
+					sprintf( message, "Name too long on line %d.", next->line );
+				}
+			}
+		} else {
+			sprintf( message, "Expected 'function' on line %d.", elem->line );
+		}
+	}
+	return next;
+}
+
 static struct element* parse_struct_declaration( struct element *elem,
 	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
 	struct string_list *field, *tail;
 	struct environment *env = func->env;
 	struct element *child, *next = elem->next;
-	int qlen = qualify_name( func, next->str.string, next->str.length, NULL );
+	struct string *struct_name = &next->str;
+	int qlen = qualify_decl( func, next->str.string, next->str.length, NULL );
 	struct structure *struc = calloc( 1, sizeof( struct structure ) + sizeof( char ) * ( qlen + 2 ) * 2 );
 	if( struc ) {
 		struc->str.reference_count = 1;
 		struc->str.string = ( char * ) &struc[ 1 ];
-		qualify_name( func, next->str.string, next->str.length, struc->str.string );
+		qualify_decl( func, next->str.string, next->str.length, struc->str.string );
 		struc->str.length = qlen;
 		struc->str.type = STRUCT;
 		struc->instance_name = struc->str.string + qlen + 1;
@@ -5826,10 +5882,18 @@ static struct element* parse_struct_declaration( struct element *elem,
 			if( next && next->str.string[ 0 ] == '{' ) {
 				child = next->child;
 				while( child && message[ 0 ] == 0 ) {
-					if( add_structure_field( struc, child, message ) ) {
+					child = skip_comments( child, message );
+					if( child && message[ 0 ] == 0 && add_structure_field( struc, child, message ) ) {
 						child = child->next;
-						if( child && ( child->str.string[ 0 ] == ',' || child->str.string[ 0 ] == ';' ) ) {
-							child = child->next;
+						if( child ) {
+							if( child->str.string[ 0 ] == ',' ) {
+								child = child->next;
+							} else if( child->str.string[ 0 ] == ';' ) {
+								child = child->next;
+								while( child && message[ 0 ] == 0 ) {
+									child = parse_struct_member_function( struct_name, child, func, message );
+								}
+							}
 						}
 					}
 				}
@@ -6017,7 +6081,7 @@ static struct keyword declarations[] = {
 
 static int validate_name( struct element *elem, char *message ) {
 	int chr = elem->str.string[ 0 ], idx = 1, len = elem->str.length;
-	int result = len < 65 && ( ( chr >= 'A' && chr <= 'Z') || ( chr >= 'a' && chr <= 'z' ) );
+	int result = len < 64 && ( ( chr >= 'A' && chr <= 'Z') || ( chr >= 'a' && chr <= 'z' ) );
 	if( result ) {
 		/* First character must be alphabetical.*/
 		while( idx < len ) {
@@ -6038,7 +6102,7 @@ static int validate_name( struct element *elem, char *message ) {
 
 static int validate_local( struct string *decl, int line, struct environment *env, char *message ) {
 	int hash = hash_code( decl->string, 0 );
-	if( decl->length > 64 ) {
+	if( decl->length >= 64 ) {
 		sprintf( message, "Invalid name '%.64s' on line %d.", decl->string, line );
 	} else if( get_keyword( decl->string, declarations )
 	|| get_keyword( decl->string, env->statements_index[ hash ] )

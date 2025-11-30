@@ -16,6 +16,10 @@ struct struc {
 
 struct exten( struc ) {
 	f,g;
+	rem {}
+	function getg( ( exten ) this ) {
+		return this.g;
+	}
 };
 
 library lib {
@@ -70,10 +74,6 @@ function except( elem ) {
 
 function struc_geta( ( struc ) this ) {
 	return this.a;
-}
-
-function exten_getg( ( exten ) this ) {
-	return this.g;
 }
 
 function setg( x ) {
