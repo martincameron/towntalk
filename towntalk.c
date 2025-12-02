@@ -21,7 +21,7 @@
 	Towntalk (c)2025 Martin Cameron.
 
 	A program file consists of a list of declarations.
-	When an unquoted '#' character is encountered, the rest of the line is ignored.
+	When an unquoted '#' or '//' sequence is encountered, the rest of the line is ignored.
 	Variable and function names must be alphanumeric.
 	Commas within name and argument lists are optional.
 	A value may be a number, a reference, or a tuple.
@@ -500,7 +500,8 @@ static int parse_child_element( char *buffer, int idx, struct element *parent, i
 	}
 	while( chr ) {
 		chr = buffer[ idx++ ];
-		if( chr <= 32 || ( ( chr < '0' || ( chr & 0x1F ) > 26 ) && ( bracket = strchr( "\"#(),;=[]{}", chr ) ) ) ) {
+		if( chr <= 32 || ( ( chr < '0' || ( chr & 0x1F ) > 26 ) && ( bracket = strchr( "\"#(),;=[]{}", chr ) ) )
+		|| ( chr == '/' && ( buffer[ idx ] == '/' || ( buffer[ idx ] == '*' && buffer[ idx + 1 ] != '/' ) ) ) ) {
 			if( length > 0 ) {
 				if( elem == NULL ) {
 					elem = new_element( length );
@@ -518,11 +519,24 @@ static int parse_child_element( char *buffer, int idx, struct element *parent, i
 					return -1;
 				}
 			}
-			if( chr == '\n' || chr == '#' ) {
+			if( chr == '\n' || chr == '#' || ( chr == '/' && buffer[ idx ] == '/' ) ) {
 				while( chr && chr != '\n' ) {
 					chr = buffer[ idx++ ];
 				}
 				line++;
+			} else if( chr == '/' && buffer[ idx ] == '*' ) {
+				while( chr && ( chr != '*' || buffer[ idx ] != '/' ) ) {
+					chr = buffer[ idx++ ];
+					if( chr == '\n' ) {
+						line++;
+					}
+				}
+				if( chr ) {
+					chr = buffer[ ++idx ];
+				} else {
+					sprintf( message, "Unclosed comment on line %d.", line );
+					return -2;
+				}
 			} else if( chr == ')' || chr == ']' || chr == '}' ) {
 				parent->line = line;
 				return idx;
@@ -2584,11 +2598,6 @@ static struct element* parse_variable_declaration( struct element *elem, struct 
 		elem = elem->next;
 	}
 	return elem;
-}
-
-static struct element* ignore_keyword( struct element *elem,
-	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
-	return elem->next;
 }
 
 static struct element* parse_comment( struct element *elem,
@@ -4959,10 +4968,7 @@ static struct element* parse_default_statement( struct element *elem,
 static struct keyword switch_stmts[] = {
 	{ "case", "X{", parse_case_statement, &switch_stmts[ 1 ] },
 	{ "default", "{", parse_default_statement, &switch_stmts[ 2 ] },
-	{ "rem", "{", parse_comment, &switch_stmts[ 3 ] },
-	{ "/*", "{", parse_comment, &switch_stmts[ 4 ] },
-	{ "//", "", ignore_keyword, &switch_stmts[ 5 ] },
-	{ "*/", "", ignore_keyword, NULL }
+	{ "rem", "{", parse_comment, NULL }
 };
 
 static struct element* parse_switch_statement( struct element *elem,
@@ -5784,15 +5790,15 @@ static struct element* skip_comments( struct element *elem, char *message ) {
 	int line;
 	char *str;
 	while( elem ) {
-		line = elem->line;
 		str = elem->str.string;
-		if( strcmp( str, "rem" ) == 0 || strcmp( str, "Rem" ) == 0 || strcmp( str, "/*" ) == 0 ) {
+		if( strcmp( str, "rem" ) == 0 || strcmp( str, "Rem" ) == 0 ) {
+			line = elem->line;
 			elem = elem->next;
 			if( elem == NULL || elem->str.string[ 0 ] != '{' ) {
 				sprintf( message, "Expected '{' after '%s' on line %d.", str, line );
 				break;
 			}
-		} else if( strcmp( str, "//" ) && strcmp( str, "*/" ) ) {
+		} else {
 			break;
 		}
 		elem = elem->next;
@@ -5914,9 +5920,6 @@ static struct element* parse_struct_declaration( struct element *elem,
 
 static struct keyword statements[] = {
 	{ "rem", "{", parse_comment, NULL },
-	{ "/*", "{", parse_comment, NULL },
-	{ "*/", "", ignore_keyword, NULL },
-	{ "//", "", ignore_keyword, NULL },
 	{ "var", "V;", parse_local_declaration, NULL },
 	{ "let", "A;", parse_assignment_statement, NULL },
 	{ "print", "x;", parse_print_statement, NULL },
@@ -6028,10 +6031,7 @@ static struct keyword library_decls[] = {
 	{ "struct", "n", parse_struct_declaration, &library_decls[ 2 ] },
 	{ "const", "V;", parse_const_declaration, &library_decls[ 3 ] },
 	{ "global", "V;", parse_global_declaration, &library_decls[ 4 ] },
-	{ "rem", "{", parse_comment, &library_decls[ 5 ] },
-	{ "/*", "{", parse_comment, &library_decls[ 6 ] },
-	{ "*/", "", ignore_keyword, &library_decls[ 7 ] },
-	{ "//", "", ignore_keyword, NULL }
+	{ "rem", "{", parse_comment, NULL }
 };
 
 static struct element* parse_library_declaration( struct element *elem,

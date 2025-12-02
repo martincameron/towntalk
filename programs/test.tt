@@ -16,7 +16,8 @@ struct struc {
 
 struct exten( struc ) {
 	f,g;
-	rem {}
+	rem {/*
+		*/}
 	function getg( ( exten ) this ) {
 		return this.g;
 	}

@@ -1,40 +1,40 @@
 
 library util {
-	//# Constants for type expression.
+	// Constants for type expression.
 	const TYPE_STRING = $type( "" ),
 		TYPE_ELEMENT = $type( ${-} ),
 		TYPE_ARRAY = $type( $array( 0 ) ),
 		TYPE_FUNCTION = $type( $function( ${ (){} } ) );
 
-	//# Marker struct for string functions.
+	// Marker struct for string functions.
 	struct string {
 	}
 
-	//# Marker struct for array functions.
+	// Marker struct for array functions.
 	struct array {
 	}
 
-	//# Array-backed list.
+	// Array-backed list.
 	struct list {
 		array, len
 	}
 
-	//# Simple hash-map with string keys.
+	// Simple hash-map with string keys.
 	struct map {
 		entries
 	}
 
-	//# Map entry.
+	// Map entry.
 	struct entry {
 		key value
 	}
 
-	//# Return a new list with an initial capacity of 8.
+	// Return a new list with an initial capacity of 8.
 	function new_list() {
 		return $new( list $array( 8 ) );
 	}
 
-	//# Increase the capacity of the specified list by the specified amount and return the new backing-array.
+	// Increase the capacity of the specified list by the specified amount and return the new backing-array.
 	function list_expand( ( list ) this, amount ) {
 		var old = this.array, arr = $array( +( $len( old ) amount ) );
 		arraycopy old 0 arr 0 this.len;
@@ -42,7 +42,7 @@ library util {
 		return arr;
 	}
 
-	//# Add the specified value to the end of the list.
+	// Add the specified value to the end of the list.
 	function list_add( ( list ) this, value ) {
 		var arr = this.array, len = this.len;
 		if >e( len $len( arr ) ) {
@@ -52,7 +52,7 @@ library util {
 		let this.len = len;
 	}
 
-	//# Add the specified range from the specified array to the specified list.
+	// Add the specified range from the specified array to the specified list.
 	function list_add_array( ( list ) this, arr, offset, len ) {
 		var dest = this.array, idx = this.len, end = +( idx len );
 		if >( end $len( dest ) ) {
@@ -62,7 +62,7 @@ library util {
 		let this.len = end;
 	}
 
-	//# Add the specified characters from the specified string to the specified list.
+	// Add the specified characters from the specified string to the specified list.
 	function list_add_chars( ( list ) this, str, offset, len ) {
 		var dest = this.array, idx = this.len, end = +( idx len );
 		if >( end $len( dest ) ) {
@@ -74,7 +74,7 @@ library util {
 		let this.len = end;
 	}
 
-	//# Insert the specified value into the specified list at the specified index.
+	// Insert the specified value into the specified list at the specified index.
 	function list_insert( ( list ) this, value, index ) {
 		call this:add( 0 );
 		var arr = this.array;
@@ -82,7 +82,7 @@ library util {
 		let [ arr index ] = value;
 	}
 
-	//# Remove the value at the specified index from the specified list.
+	// Remove the value at the specified index from the specified list.
 	function list_remove( ( list ) this, index ) {
 		var arr = this.array, len = -( this.len 1 ), value = [ arr index ];
 		arraycopy arr +( index 1 ) arr index len;
@@ -90,7 +90,7 @@ library util {
 		return value;
 	}
 
-	//# Call the specified function once for each item in the list.
+	// Call the specified function once for each item in the list.
 	function list_for_each( ( list ) this, func ) {
 		var arr = this.array, len = this.len, idx;
 		while <( idx len ) {
@@ -98,7 +98,7 @@ library util {
 		}
 	}
 
-	//# Find the entry instance with the specified key in the list.
+	// Find the entry instance with the specified key in the list.
 	function list_find_entry( ( list ) this, key ) {
 		var arr = this.array, len = this.len, idx;
 		while <( idx len ) {
@@ -110,7 +110,7 @@ library util {
 		return NULL;
 	}
 
-	//# Remove the entry with the specified key from the list if present.
+	// Remove the entry with the specified key from the list if present.
 	function list_remove_entry( ( list ) this, key ) {
 		var arr = this.array, end = -( this.len 1 ), idx;
 		while <e( idx end ) {
@@ -123,7 +123,7 @@ library util {
 		}
 	}
 
-	//# Create a new hash-map.
+	// Create a new hash-map.
 	function new_map() {
 		var entries = $array( 32 ), idx;
 		while <( idx 32 ) {
@@ -132,7 +132,7 @@ library util {
 		return $new( map entries );
 	}
 
-	//# Calculate a 5-bit hash-code for the specified string.
+	// Calculate a 5-bit hash-code for the specified string.
 	function string_hash_code( str ) {
 		var hash, len = $len( str ), idx;
 		while <( idx len ) {
@@ -141,12 +141,12 @@ library util {
 		return &( hash 0x1F );
 	}
 
-	//# Return the map entry for the specified key, or NULL.
+	// Return the map entry for the specified key, or NULL.
 	function map_get_entry( ( map ) this, key ) {
 		return list_find_entry( [ this.entries string_hash_code( key ) ] key );
 	}
 
-	//# Return the value for the specified key, or NULL.
+	// Return the value for the specified key, or NULL.
 	function map_get( ( map ) this, key ) {
 		var ( entry ) entry = this:get_entry( key );
 		if entry {
@@ -155,12 +155,12 @@ library util {
 		return NULL;
 	}
 
-	//# Remove the specified entry from the map, if present.
+	// Remove the specified entry from the map, if present.
 	function map_remove( ( map ) this, key ) {
 		return list_remove_entry( [ this.entries string_hash_code( key ) ], key );
 	}
 
-	//# Put the specified value into the map under the specified string key.
+	// Put the specified value into the map under the specified string key.
 	function map_put( ( map ) this, key, value ) {
 		var hash = string_hash_code( key );
 		var ( list ) list = [ this.entries hash ];
@@ -172,7 +172,7 @@ library util {
 		}
 	}
 
-	//# Call the specified function once for each entry instance in the map.
+	// Call the specified function once for each entry instance in the map.
 	function map_for_each( ( map ) this, func ) {
 		var entries = this.entries, len = $len( entries ), idx;
 		while <( idx len ) {
@@ -180,7 +180,7 @@ library util {
 		}
 	}
 
-	//# Call the specified function once for each value in the array.
+	// Call the specified function once for each value in the array.
 	function array_for_each( arr, func ) {
 		var idx, len = $len( arr );
 		while <( idx len ) {
@@ -188,12 +188,12 @@ library util {
 		}
 	}
 
-	//# Return a new list instance backed by the specified array.
+	// Return a new list instance backed by the specified array.
 	function array_as_list( arr ) {
 		return $new( list arr $len( arr ) );
 	}
 
-	//# Return a new array instance containing the specified range.
+	// Return a new array instance containing the specified range.
 	function array_slice( arr, offset, len ) {
 		var slice = $array( len ), idx;
 		while <( offset len ) {
@@ -202,12 +202,12 @@ library util {
 		return slice;
 	}
 
-	//# Copy the specified range from the source array to the dest array.
+	// Copy the specified range from the source array to the dest array.
 	function array_copy( src src_offset dest dest_offset len ) {
 		arraycopy src src_offset dest dest_offset len;
 	}
 
-	//# Return the content of the specified string with leading and trailing spaces removed.
+	// Return the content of the specified string with leading and trailing spaces removed.
 	function string_trim( this ) {
 		var idx, end = -( $len( this ) 1 );
 		while <e( idx end ) {
@@ -223,8 +223,8 @@ library util {
 		return "";
 	}
 
-	//# Add the specified value to the specified characters in the array within the specified range.
-	//# The returned value will be over 127 if the string contains non-ASCII characters.
+	// Add the specified value to the specified characters in the array within the specified range.
+	// The returned value will be over 127 if the string contains non-ASCII characters.
 	function array_shift_case( this offset len start end add ) {
 		var bits;
 		while <( offset len ) {
@@ -240,7 +240,7 @@ library util {
 		return bits;
 	}
 
-	//# Upper-case the specified latin characters within the specified array.
+	// Upper-case the specified latin characters within the specified array.
 	function array_upper( ( array ) this len ) {
 		var bits = this:shift_case( 0 len 97 122 -32 );
 		if &( bits 0x80 ) {
@@ -250,7 +250,7 @@ library util {
 		return bits;
 	}
 
-	//# Lower-case the specified latin characters within the specified array.
+	// Lower-case the specified latin characters within the specified array.
 	function array_lower( ( array ) this len ) {
 		var bits = this:shift_case( 0 len 65 90 32 );
 		if &( bits 0x80 ) {
@@ -260,7 +260,7 @@ library util {
 		return bits;
 	}
 
-	//# Copy the specified unsigned characters from the specified string into the specified array.
+	// Copy the specified unsigned characters from the specified string into the specified array.
 	function string_get_chars( this offset array index len ) {
 		var end = +( offset len );
 		while <( offset end ) {
@@ -268,7 +268,7 @@ library util {
 		}
 	}
 
-	//# Return an upper-case representation of the specified ASCII string.
+	// Return an upper-case representation of the specified ASCII string.
 	function string_upper( ( string ) this ) {
 		var len = $len( this ), ( array ) arr = $buffer( len );
 		call this:get_chars( 0 arr 0 len );
@@ -276,7 +276,7 @@ library util {
 		return $sub( arr 0 len );
 	}
 
-	//# Return an upper-case representation of the specified ASCII or ISO-8859-1 encoded string.
+	// Return an upper-case representation of the specified ASCII or ISO-8859-1 encoded string.
 	function string_upper_latin( ( string ) this ) {
 		var len = $len( this ), ( array ) arr = $buffer( len );
 		call this:get_chars( 0 arr 0 len );
@@ -284,7 +284,7 @@ library util {
 		return $sub( arr 0 len );
 	}
 
-	//# Return a lower-case representation of the specified ASCII string.
+	// Return a lower-case representation of the specified ASCII string.
 	function string_lower( ( string ) this ) {
 		var len = $len( this ), ( array ) arr = $buffer( len );
 		call this:get_chars( 0 arr 0 len );
@@ -292,7 +292,7 @@ library util {
 		return $sub( arr 0 len );
 	}
 
-	//# Return a lower-case representation of the specified ASCII or ISO-8859-1 encoded string.
+	// Return a lower-case representation of the specified ASCII or ISO-8859-1 encoded string.
 	function string_lower_latin( ( string ) this ) {
 		var len = $len( this ), ( array ) arr = $buffer( len );
 		call this:get_chars( 0 arr 0 len );
@@ -300,7 +300,7 @@ library util {
 		return $sub( arr 0 len );
 	}
 
-	//# Return a list instance containing the text between the specified separator characters.
+	// Return a list instance containing the text between the specified separator characters.
 	function string_split( this, separators ) {
 		var ( list ) list = new_list();
 		var offset, len = $len( this ), end = $stridx( this separators 0 );
@@ -313,7 +313,7 @@ library util {
 		return list;
 	}
 
-	//# Return the first index of the specified substring within the specified string, or -1.
+	// Return the first index of the specified substring within the specified string, or -1.
 	function string_find( this, substr, offset ) {
 		var sublen = $len( substr ), strend = -( $len( this ) sublen ), firstchr = $sub( substr 0 1 );
 		while <e( offset strend ) {
@@ -333,14 +333,14 @@ library util {
 		return -1;
 	}
 
-	//# Return a copy of this string with the specified string value inserted at the specified index.
+	// Return a copy of this string with the specified string value inserted at the specified index.
 	function string_insert( this, value, index ) {
 		return $str( $sub( this 0 index ) value $sub( this index -( $len( this ) index ) ) );
 	}
 
-	//# Decode the specified UTF-8 encoded string into the specified array.
-	//# The array should be the same length as the string to prevent overflow.
-	//# The number of characters decoded is returned.
+	// Decode the specified UTF-8 encoded string into the specified array.
+	// The array should be the same length as the string to prevent overflow.
+	// The number of characters decoded is returned.
 	function string_utf8_decode( this, array ) {
 		var offset, len = $len( this ), count;
 		while <( offset len ) {
@@ -369,7 +369,7 @@ library util {
 		return count;
 	}
 
-	//# Return a UTF-8 encoded string containing the characters in the specified array.
+	// Return a UTF-8 encoded string containing the characters in the specified array.
 	function array_utf8_encode( this, offset, len ) {
 		var start = offset;
 		while <( offset len ) {
@@ -404,14 +404,14 @@ library util {
 		return $sub( this offset len );
 	}
 
-	//# Encode the specified ISO-8859-1 encoded string as UTF-8.
+	// Encode the specified ISO-8859-1 encoded string as UTF-8.
 	function string_utf8_encode( ( string ) this ) {
 		var len = $len( this ), ( array ) arr = $buffer( len );
 		call this:get_chars( 0 arr 0 len );
 		return arr:utf8_encode( 0 len );
 	}
 
-	//# Return a string representation of the specified stack-trace array (or other value).
+	// Return a string representation of the specified stack-trace array (or other value).
 	function trace_to_string( trace ) {
 		var ( list ) list = new_list(), msg = $str( trace );
 		call list:add_chars( msg 0 $len( msg ) );
@@ -430,7 +430,7 @@ library util {
 		return $sub( list.array 0 list.len );
 	}
 
-	//# Return an assertion failed message for the specified trace element.
+	// Return an assertion failed message for the specified trace element.
 	function assertion_failed( expected, actual, caller ) {
 		var msg = $str( "Assertion failed on line " $tup( NULL caller ) " of '" $src( caller ) "'." );
 		if ||( expected actual ) {
@@ -439,22 +439,22 @@ library util {
 		return msg;
 	}
 
-	//# Throw an exception if the specified value is FALSE/NULL.
+	// Throw an exception if the specified value is FALSE/NULL.
 	function assert( value ) {
 		if !( value ) {
 			throw assertion_failed( 0 0 [ $trace( NULL ) 1 ] );
 		}
 	}
 
-	//# Throw an exception if the specified values are not equivalent.
+	// Throw an exception if the specified values are not equivalent.
 	function assert_equals( expected, value ) {
 		if $cmp( expected value ) {
 			throw assertion_failed( expected value [ $trace( NULL ) 1 ] );
 		}
 	}
 
-	//# Throw an exception if the specified no-argument function does not throw an
-	//# exception with a message that starts with the specified string when compiled and invoked.
+	// Throw an exception if the specified no-argument function does not throw an
+	// exception with a message that starts with the specified string when compiled and invoked.
 	function assert_throws( expected, func ) {
 		var err;
 		try {
