@@ -688,6 +688,7 @@ function testparse() {
 	call assert_throws( "Unclosed string", ${ () { call $parse( "\""); } } );
 	call assert_throws( "Unexpected closing bracket", ${ () { call $parse( "())"); } } );
 	call assert_throws( "Unclosed element", ${ () { call $parse( "(}" ); } } );
+	call assert_throws( "Unclosed comment", ${ () { call $parse( "/*" ); } } );
 }
 
 function testunparse() {

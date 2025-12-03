@@ -500,8 +500,8 @@ static int parse_child_element( char *buffer, int idx, struct element *parent, i
 	}
 	while( chr ) {
 		chr = buffer[ idx++ ];
-		if( chr <= 32 || ( ( chr < '0' || ( chr & 0x1F ) > 26 ) && ( bracket = strchr( "\"#(),;=[]{}", chr ) ) )
-		|| ( chr == '/' && ( buffer[ idx ] == '/' || ( buffer[ idx ] == '*' && buffer[ idx + 1 ] != '/' ) ) ) ) {
+		if( chr <= 32 || ( ( chr < '0' || ( chr & 0x1F ) > 26 ) && ( ( bracket = strchr( "\"#(),;=[]{}", chr ) )
+		|| ( chr == '/' && ( buffer[ idx ] == '/' || ( buffer[ idx ] == '*' && buffer[ idx + 1 ] != '/' ) ) ) ) ) ) {
 			if( length > 0 ) {
 				if( elem == NULL ) {
 					elem = new_element( length );
