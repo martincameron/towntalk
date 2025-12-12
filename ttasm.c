@@ -734,7 +734,7 @@ static int parse_instructions( struct element *elem, struct function *func, stru
 	return count;
 }
 
-static enum result execute_asm_statement( struct statement *this,
+static enum result execute_asm_statement( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	struct asm_statement *stmt = ( struct asm_statement * ) this;
 	unsigned int idx, len, string_bounds[ 128 ], array_bounds[ 128 ];
@@ -765,7 +765,7 @@ static enum result execute_asm_statement( struct statement *this,
 				/* jump_lt     0 y z off : jump <( y z ) label; */
 				if( locals[ ins->y ].number_value < locals[ ins->z ].number_value ) {
 					if( env->interrupted ) {
-						return throw_interrupted( vars, this->source );
+						return throw_interrupted( vars, this );
 					} else {
 						ins = &stmt->instructions[ ( int ) ins->imm ];
 					}
@@ -777,7 +777,7 @@ static enum result execute_asm_statement( struct statement *this,
 				/* jump_le     0 y z off : jump <e( y z ) label; */
 				if( locals[ ins->y ].number_value <= locals[ ins->z ].number_value ) {
 					if( env->interrupted ) {
-						return throw_interrupted( vars, this->source );
+						return throw_interrupted( vars, this );
 					} else {
 						ins = &stmt->instructions[ ( int ) ins->imm ];
 					}
@@ -789,7 +789,7 @@ static enum result execute_asm_statement( struct statement *this,
 				/* jump_eq     0 y z off : jump =( y z ) label; */
 				if( locals[ ins->y ].number_value == locals[ ins->z ].number_value ) {
 					if( env->interrupted ) {
-						return throw_interrupted( vars, this->source );
+						return throw_interrupted( vars, this );
 					} else {
 						ins = &stmt->instructions[ ( int ) ins->imm ];
 					}
@@ -801,7 +801,7 @@ static enum result execute_asm_statement( struct statement *this,
 				/* jump_ne     0 y z off : jump <>( y z ) label; */
 				if( locals[ ins->y ].number_value != locals[ ins->z ].number_value ) {
 					if( env->interrupted ) {
-						return throw_interrupted( vars, this->source );
+						return throw_interrupted( vars, this );
 					} else {
 						ins = &stmt->instructions[ ( int ) ins->imm ];
 					}
@@ -813,7 +813,7 @@ static enum result execute_asm_statement( struct statement *this,
 				/* jump_ge     0 y z off : jump >e( y z ) label; */
 				if( locals[ ins->y ].number_value >= locals[ ins->z ].number_value ) {
 					if( env->interrupted ) {
-						return throw_interrupted( vars, this->source );
+						return throw_interrupted( vars, this );
 					} else {
 						ins = &stmt->instructions[ ( int ) ins->imm ];
 					}
@@ -825,7 +825,7 @@ static enum result execute_asm_statement( struct statement *this,
 				/* jump_gt     0 y z off : jump >( y z ) label; */
 				if( locals[ ins->y ].number_value > locals[ ins->z ].number_value ) {
 					if( env->interrupted ) {
-						return throw_interrupted( vars, this->source );
+						return throw_interrupted( vars, this );
 					} else {
 						ins = &stmt->instructions[ ( int ) ins->imm ];
 					}
@@ -849,7 +849,7 @@ static enum result execute_asm_statement( struct statement *this,
 				if( idx < array_bounds[ ins->y ] ) {
 					locals[ ins->x ].number_value = ( ( struct array * ) locals[ ins->y ].string_value )->number_values[ idx ];
 				} else {
-					return throw( vars, this->source, ins->imm, "Not an array or index out of bounds." );
+					return throw( vars, this, ins->imm, "Not an array or index out of bounds." );
 				}
 				ins++;
 				break;
@@ -859,7 +859,7 @@ static enum result execute_asm_statement( struct statement *this,
 				if( idx < array_bounds[ ins->y ] ) {
 					locals[ ins->x ].number_value = ( ( struct array * ) locals[ ins->y ].string_value )->number_values[ idx ];
 				} else {
-					return throw( vars, this->source, locals[ ins->z ].number_value, "Not an array or index out of bounds." );
+					return throw( vars, this, locals[ ins->z ].number_value, "Not an array or index out of bounds." );
 				}
 				ins++;
 				break;
@@ -870,7 +870,7 @@ static enum result execute_asm_statement( struct statement *this,
 					locals[ ins->x ].number_value = ( ( struct array * ) locals[ ins->y ].string_value )->number_values[ idx ];
 					locals[ ins->z ].number_value++;
 				} else {
-					return throw( vars, this->source, locals[ ins->z ].number_value, "Not an array or index out of bounds." );
+					return throw( vars, this, locals[ ins->z ].number_value, "Not an array or index out of bounds." );
 				}
 				ins++;
 				break;
@@ -880,7 +880,7 @@ static enum result execute_asm_statement( struct statement *this,
 				if( idx < array_bounds[ ins->x ] ) {
 					( ( struct array * ) locals[ ins->x ].string_value )->number_values[ idx ] = ins->imm;
 				} else {
-					return throw( vars, this->source, locals[ ins->y ].number_value, "Not an array or index out of bounds." );
+					return throw( vars, this, locals[ ins->y ].number_value, "Not an array or index out of bounds." );
 				}
 				ins++;
 				break;
@@ -890,7 +890,7 @@ static enum result execute_asm_statement( struct statement *this,
 				if( idx < array_bounds[ ins->x ] ) {
 					( ( struct array * ) locals[ ins->x ].string_value )->number_values[ idx ] = locals[ ins->z ].number_value;
 				} else {
-					return throw( vars, this->source, ins->imm, "Not an array or index out of bounds." );
+					return throw( vars, this, ins->imm, "Not an array or index out of bounds." );
 				}
 				ins++;
 				break;
@@ -900,7 +900,7 @@ static enum result execute_asm_statement( struct statement *this,
 				if( idx < array_bounds[ ins->x ] ) {
 					( ( struct array * ) locals[ ins->x ].string_value )->number_values[ idx ] = locals[ ins->z ].number_value;
 				} else {
-					return throw( vars, this->source, locals[ ins->y ].number_value, "Not an array or index out of bounds." );
+					return throw( vars, this, locals[ ins->y ].number_value, "Not an array or index out of bounds." );
 				}
 				ins++;
 				break;
@@ -911,7 +911,7 @@ static enum result execute_asm_statement( struct statement *this,
 					( ( struct array * ) locals[ ins->x ].string_value )->number_values[ idx ] = locals[ ins->z ].number_value;
 					locals[ ins->y ].number_value++;
 				} else {
-					return throw( vars, this->source, locals[ ins->y ].number_value, "Not an array or index out of bounds." );
+					return throw( vars, this, locals[ ins->y ].number_value, "Not an array or index out of bounds." );
 				}
 				ins++;
 				break;
@@ -950,7 +950,7 @@ static enum result execute_asm_statement( struct statement *this,
 				if( ins->imm ) {
 					locals[ ins->x ].number_value = ( long_int ) locals[ ins->y ].number_value / ( long_int ) ins->imm;
 				} else {
-					return throw( vars, this->source, 0, "Integer division by zero." );
+					return throw( vars, this, 0, "Integer division by zero." );
 				}
 				ins++;
 				break;
@@ -959,7 +959,7 @@ static enum result execute_asm_statement( struct statement *this,
 				if( locals[ ins->z ].number_value ) {
 					locals[ ins->x ].number_value = ( long_int ) locals[ ins->y ].number_value / ( long_int ) locals[ ins->z ].number_value;
 				} else {
-					return throw( vars, this->source, 0, "Integer division by zero." );
+					return throw( vars, this, 0, "Integer division by zero." );
 				}
 				ins++;
 				break;
@@ -968,7 +968,7 @@ static enum result execute_asm_statement( struct statement *this,
 				if( ins->imm ) {
 					locals[ ins->x ].number_value = ( long_int ) locals[ ins->y ].number_value % ( long_int ) ins->imm;
 				} else {
-					return throw( vars, this->source, 0, "Modulo division by zero." );
+					return throw( vars, this, 0, "Modulo division by zero." );
 				}
 				ins++;
 				break;
@@ -977,7 +977,7 @@ static enum result execute_asm_statement( struct statement *this,
 				if( locals[ ins->z ].number_value ) {
 					locals[ ins->x ].number_value = ( long_int ) locals[ ins->y ].number_value % ( long_int ) locals[ ins->z ].number_value;
 				} else {
-					return throw( vars, this->source, 0, "Modulo division by zero." );
+					return throw( vars, this, 0, "Modulo division by zero." );
 				}
 				ins++;
 				break;
@@ -1047,7 +1047,7 @@ static enum result execute_asm_statement( struct statement *this,
 				if( idx < string_bounds[ ins->y ] ) {
 					locals[ ins->x ].number_value = ( signed char ) locals[ ins->y ].string_value->string[ idx ];
 				} else {
-					return throw( vars, this->source, ins->imm, "Not a string or index out of bounds." );
+					return throw( vars, this, ins->imm, "Not a string or index out of bounds." );
 				}
 				ins++;
 				break;
@@ -1057,7 +1057,7 @@ static enum result execute_asm_statement( struct statement *this,
 				if( idx < string_bounds[ ins->y ] ) {
 					locals[ ins->x ].number_value = ( signed char ) locals[ ins->y ].string_value->string[ idx ];
 				} else {
-					return throw( vars, this->source, locals[ ins->z ].number_value, "Not a string or index out of bounds." );
+					return throw( vars, this, locals[ ins->z ].number_value, "Not a string or index out of bounds." );
 				}
 				ins++;
 				break;
@@ -1068,7 +1068,7 @@ static enum result execute_asm_statement( struct statement *this,
 					locals[ ins->x ].number_value = ( signed char ) locals[ ins->y ].string_value->string[ idx ];
 					locals[ ins->z ].number_value++;
 				} else {
-					return throw( vars, this->source, locals[ ins->z ].number_value, "Not a string or index out of bounds." );
+					return throw( vars, this, locals[ ins->z ].number_value, "Not a string or index out of bounds." );
 				}
 				ins++;
 				break;
@@ -1080,7 +1080,7 @@ static enum result execute_asm_statement( struct statement *this,
 					locals[ ins->x ].number_value = ( ( signed char ) chr[ idx ] << 24 ) | ( ( unsigned char ) chr[ idx + 1 ] << 16 )
 						| ( ( unsigned char ) chr[ idx + 2 ] << 8 ) | ( unsigned char ) chr[ idx + 3 ];
 				} else {
-					return throw( vars, this->source, ins->imm, "Not a string or index out of bounds." );
+					return throw( vars, this, ins->imm, "Not a string or index out of bounds." );
 				}
 				ins++;
 				break;
@@ -1092,7 +1092,7 @@ static enum result execute_asm_statement( struct statement *this,
 					locals[ ins->x ].number_value = ( ( signed char ) chr[ idx ] << 24 ) | ( ( unsigned char ) chr[ idx + 1 ] << 16 )
 						| ( ( unsigned char ) chr[ idx + 2 ] << 8 ) | ( unsigned char ) chr[ idx + 3 ];
 				} else {
-					return throw( vars, this->source, ins->imm, "Not a string or index out of bounds." );
+					return throw( vars, this, ins->imm, "Not a string or index out of bounds." );
 				}
 				ins++;
 				break;
@@ -1105,12 +1105,12 @@ static enum result execute_asm_statement( struct statement *this,
 						| ( ( unsigned char ) chr[ idx + 2 ] << 8 ) | ( unsigned char ) chr[ idx + 3 ];
 					locals[ ins->z ].number_value++;
 				} else {
-					return throw( vars, this->source, ins->imm, "Not a string or index out of bounds." );
+					return throw( vars, this, ins->imm, "Not a string or index out of bounds." );
 				}
 				ins++;
 				break;
 			default:
-				return throw( vars, this->source, ins->opcode, "Illegal instruction." );
+				return throw( vars, this, ins->opcode, "Illegal instruction." );
 		}
 	}
 }
@@ -1126,14 +1126,11 @@ struct element* parse_asm_statement( struct element *elem,
 		if( count > 0 ) {
 			stmt = calloc( 1, sizeof( struct asm_statement ) + sizeof( struct instruction ) * count );
 			if( stmt ) {
-				prev->next = &stmt->stmt;
-				stmt->stmt.source = calloc( 1, sizeof( struct expression ) );
-			}
-			if( stmt && stmt->stmt.source ) {
-				stmt->stmt.source->line = elem->line;
+				stmt->stmt.head.line = elem->line;
+				prev->head.next = ( struct expression * ) stmt;
 				stmt->instructions = ( struct instruction * ) &stmt[ 1 ];
 				parse_instructions( next->child, func, stmt->instructions, &labels, message );
-				stmt->stmt.execute = execute_asm_statement;
+				stmt->stmt.head.evaluate = execute_asm_statement;
 				next = next->next;
 			} else {
 				strcpy( message, OUT_OF_MEMORY );

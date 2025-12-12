@@ -814,8 +814,8 @@ static void dispose_global_variable( struct global_variable *global ) {
 void dispose_statements( struct statement *statements ) {
 	struct statement *next;
 	while( statements ) {
-		next = statements->next;
-		dispose_expressions( statements->source );
+		next = ( struct statement * ) statements->head.next;
+		dispose_expressions( statements->head.parameters );
 		if( statements->dispose ) {
 			statements->dispose( statements );
 		} else {
@@ -1284,10 +1284,10 @@ enum result evaluate_global( struct expression *this,
 	return OKAY;
 }
 
-static enum result execute_global_assignment( struct statement *this,
+static enum result execute_global_assignment( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	struct variable var = { 0 }, *dest = ( ( struct global_assignment_statement * ) this )->destination;
-	enum result ret = this->source->evaluate( this->source, vars, &var );
+	enum result ret = this->parameters->evaluate( this->parameters, vars, &var );
 	if( ret ) {
 		dispose_temporary( dest );
 		dest->number_value = var.number_value;
@@ -1296,10 +1296,10 @@ static enum result execute_global_assignment( struct statement *this,
 	return ret;
 }
 
-enum result execute_local_assignment( struct statement *this,
+enum result execute_local_assignment( struct expression *this,
 	struct variables *vars, struct variable *result ) {
-	struct variable var = { 0 }, *dest = &vars->locals[ this->local ];
-	enum result ret = this->source->evaluate( this->source, vars, &var );
+	struct variable var = { 0 }, *dest = &vars->locals[ this->index ];
+	enum result ret = this->parameters->evaluate( this->parameters, vars, &var );
 	if( ret ) {
 		dispose_temporary( dest );
 		dest->number_value = var.number_value;
@@ -1339,36 +1339,36 @@ static enum result write_string_expression( struct expression *expr, struct vari
 	return ret;
 }
 
-static enum result execute_print_statement( struct statement *this,
+static enum result execute_print_statement( struct expression *this,
 	struct variables *vars, struct variable *result ) {
-	return write_string_expression( this->source, vars, 1, stdout );
+	return write_string_expression( this->parameters, vars, 1, stdout );
 }
 
-static enum result execute_write_statement( struct statement *this,
+static enum result execute_write_statement( struct expression *this,
 	struct variables *vars, struct variable *result ) {
-	return write_string_expression( this->source, vars, 0, stdout );
+	return write_string_expression( this->parameters, vars, 0, stdout );
 }
 
-static enum result execute_error_statement( struct statement *this,
+static enum result execute_error_statement( struct expression *this,
 	struct variables *vars, struct variable *result ) {
-	return write_string_expression( this->source, vars, 1, stderr );
+	return write_string_expression( this->parameters, vars, 1, stderr );
 }
 
-static enum result execute_throw_statement( struct statement *this,
+static enum result execute_throw_statement( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	struct variable exc = { 0, NULL };
-	this->source->evaluate( this->source, vars, &exc );
+	this->parameters->evaluate( this->parameters, vars, &exc );
 	dispose_temporary( vars->exception );
 	vars->exception->number_value = exc.number_value;
 	vars->exception->string_value = exc.string_value;
 	return EXCEPTION;
 }
 
-static enum result execute_exit_statement( struct statement *this,
+static enum result execute_exit_statement( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	struct variable exit_code = { 0, NULL };
 	char *message = NULL;
-	enum result ret = this->source->evaluate( this->source, vars, &exit_code );
+	enum result ret = this->parameters->evaluate( this->parameters, vars, &exit_code );
 	if( ret ) {
 		vars->func->env->interrupted = 1;
 		if( vars->func->env->worker ) {
@@ -1380,20 +1380,20 @@ static enum result execute_exit_statement( struct statement *this,
 	return ret;
 }
 
-enum result execute_return_statement( struct statement *this,
+enum result execute_return_statement( struct expression *this,
 	struct variables *vars, struct variable *result ) {
-	if( this->source->evaluate( this->source, vars, result ) ) {
+	if( this->parameters->evaluate( this->parameters, vars, result ) ) {
 		return RETURN;
 	}
 	return EXCEPTION;
 }
 
-static enum result execute_break_statement( struct statement *this,
+static enum result execute_break_statement( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	return BREAK;
 }
 
-static enum result execute_continue_statement( struct statement *this,
+static enum result execute_continue_statement( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	return CONTINUE;
 }
@@ -1407,10 +1407,10 @@ enum result throw_interrupted( struct variables *vars, struct expression *source
 	}
 }
 
-static enum result execute_tail_call_statement( struct statement *this,
+static enum result execute_tail_call_statement( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	enum result ret = OKAY;
-	struct expression *source = this->source, *parameter = source->parameters;
+	struct expression *source = this->parameters, *parameter = source->parameters;
 	struct function *func = ( ( struct function_expression * ) source )->function;
 	int num_params = func->num_parameters, num_locals = func->num_variables;
 	int idx = 0, size = sizeof( struct variable ) * num_params;
@@ -1434,7 +1434,7 @@ static enum result execute_tail_call_statement( struct statement *this,
 			dispose_variable( &vars->locals[ idx++ ] );
 		}
 		if( func->env->interrupted ) {
-			ret = throw_interrupted( vars, source );
+			ret = throw_interrupted( vars, this );
 		} else {
 			ret = AGAIN;
 		}
@@ -1642,8 +1642,8 @@ enum result evaluate_custom( struct expression *expr, struct custom_type *type, 
 
 static enum result execute_statements( struct statement *stmt, struct variables *vars, struct variable *result ) {
 	enum result ret = OKAY;
-	while( stmt && ( ret = stmt->execute( stmt, vars, result ) ) == OKAY ) {
-		stmt = stmt->next;
+	while( stmt && ( ret = stmt->head.evaluate( ( struct expression * ) stmt, vars, result ) ) == OKAY ) {
+		stmt = ( struct statement * ) stmt->head.next;
 	}
 	return ret;
 }
@@ -1652,7 +1652,7 @@ static int is_exit( struct variable *exception ) {
 	return exception->string_value && exception->string_value->type == EXIT;
 }
 
-static enum result execute_try_finally_statement( struct statement *this,
+static enum result execute_try_finally_statement( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	enum result try_ret, fin_ret;
 	struct variables try_vars, fin_vars;
@@ -1711,10 +1711,10 @@ static enum result execute_try_finally_statement( struct statement *this,
 	return try_ret;
 }
 
-static enum result execute_try_catch_statement( struct statement *this,
+static enum result execute_try_catch_statement( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	enum result ret = OKAY;
-	int idx = this->local;
+	int idx = this->index;
 	struct variables try_vars;
 	struct local_variable *exception_var;
 	try_vars.parent = vars->parent;
@@ -1738,32 +1738,32 @@ static enum result execute_try_catch_statement( struct statement *this,
 	return ret;
 }
 
-enum result execute_if_statement( struct statement *this,
+enum result execute_if_statement( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	struct statement *stmt = ( ( struct block_statement * ) this )->if_block;
 	struct variable condition = { 0 };
-	enum result ret = this->source->evaluate( this->source, vars, &condition );
+	enum result ret = this->parameters->evaluate( this->parameters, vars, &condition );
 	if( ret ) {
 		if( condition.string_value ) {
 			dispose_temporary( &condition );
 		} else if( condition.number_value == 0 ) {
 			stmt = ( ( struct block_statement * ) this )->else_block;
 		}
-		while( stmt && ( ret = stmt->execute( stmt, vars, result ) ) == OKAY ) {
-			stmt = stmt->next;
+		while( stmt && ( ret = stmt->head.evaluate( ( struct expression * ) stmt, vars, result ) ) == OKAY ) {
+			stmt = ( struct statement * ) stmt->head.next;
 		}
 	}
 	return ret;
 }
 
-enum result execute_while_statement( struct statement *this,
+enum result execute_while_statement( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	struct environment *env = vars->func->env;
 	struct variable condition = { 0 };
 	struct statement *stmt;
 	enum result ret;
 	while( 1 ) {
-		if( this->source->evaluate( this->source, vars, &condition ) ) {
+		if( this->parameters->evaluate( this->parameters, vars, &condition ) ) {
 			if( condition.string_value ) {
 				dispose_variable( &condition );
 			} else if( condition.number_value ) {
@@ -1775,8 +1775,8 @@ enum result execute_while_statement( struct statement *this,
 			return EXCEPTION;
 		}
 		stmt = ( ( struct block_statement * ) this )->if_block;
-		while( stmt && ( ret = stmt->execute( stmt, vars, result ) ) == OKAY ) {
-			stmt = stmt->next;
+		while( stmt && ( ret = stmt->head.evaluate( ( struct expression * ) stmt, vars, result ) ) == OKAY ) {
+			stmt = ( struct statement * ) stmt->head.next;
 		}
 		if( stmt ) {
 			if( ret == RETURN ) {
@@ -1788,12 +1788,12 @@ enum result execute_while_statement( struct statement *this,
 			}
 		}
 		if( env->interrupted ) {
-			return throw_interrupted( vars, this->source );
+			return throw_interrupted( vars, this );
 		}
 	}
 }
 
-static enum result execute_until_statement( struct statement *this,
+static enum result execute_until_statement( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	struct environment *env = vars->func->env;
 	struct variable condition = { 0 };
@@ -1801,8 +1801,8 @@ static enum result execute_until_statement( struct statement *this,
 	enum result ret;
 	while( 1 ) {
 		stmt = ( ( struct block_statement * ) this )->if_block;
-		while( stmt && ( ret = stmt->execute( stmt, vars, result ) ) == OKAY ) {
-			stmt = stmt->next;
+		while( stmt && ( ret = stmt->head.evaluate( ( struct expression * ) stmt, vars, result ) ) == OKAY ) {
+			stmt = ( struct statement * ) stmt->head.next;
 		}
 		if( stmt ) {
 			if( ret == RETURN ) {
@@ -1813,7 +1813,7 @@ static enum result execute_until_statement( struct statement *this,
 				return EXCEPTION;
 			}
 		}
-		if( this->source->evaluate( this->source, vars, &condition ) ) {
+		if( this->parameters->evaluate( this->parameters, vars, &condition ) ) {
 			if( condition.string_value || condition.number_value ) {
 				dispose_temporary( &condition );
 				return OKAY;
@@ -1822,28 +1822,28 @@ static enum result execute_until_statement( struct statement *this,
 			return EXCEPTION;
 		}
 		if( env->interrupted ) {
-			return throw_interrupted( vars, this->source );
+			return throw_interrupted( vars, this );
 		}
 	}
 }
 
-enum result execute_call_statement( struct statement *this,
+enum result execute_call_statement( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	struct variable var = { 0, NULL };
-	enum result ret = this->source->evaluate( this->source, vars, &var );
+	enum result ret = this->parameters->evaluate( this->parameters, vars, &var );
 	if( ret ) {
 		dispose_temporary( &var );
 	}
 	return ret;
 }
 
-enum result execute_array_assignment( struct statement *this,
+enum result execute_array_assignment( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	int idx;
 	struct array *arr;
 	enum result ret = OKAY;
 	struct variable dest = { 0, NULL }, src = { 0, NULL };
-	struct expression *src_expr = this->source, *dest_expr = src_expr->next, *idx_expr = dest_expr->next;
+	struct expression *src_expr = this->parameters, *dest_expr = src_expr->next, *idx_expr = dest_expr->next;
 	if( dest_expr->evaluate == evaluate_local ) {
 		arr = ( struct array * ) vars->locals[ dest_expr->index ].string_value;
 	} else {
@@ -1882,24 +1882,24 @@ enum result execute_array_assignment( struct statement *this,
 	return ret;
 }
 
-static enum result execute_struct_assignment( struct statement *this,
+static enum result execute_struct_assignment( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	struct array *arr;
-	struct expression *destination = this->source->next;
+	struct expression *destination = this->parameters->next;
 	struct variable obj = { 0, NULL }, var = { 0, NULL };
 	enum result ret = destination->evaluate( destination, vars, &obj );
 	if( ret ) {
 		ret = is_instance( &obj, ( ( struct structure_statement * ) this )->structure, vars, destination );
 		if( ret ) {
 			arr = ( struct array * ) obj.string_value;
-			ret = this->source->evaluate( this->source, vars, &var );
+			ret = this->parameters->evaluate( this->parameters, vars, &var );
 			if( ret ) {
-				arr->number_values[ this->local ] = var.number_value;
+				arr->number_values[ this->index ] = var.number_value;
 				if( arr->string_values ) {
-					if( arr->string_values[ this->local ] ) {
-						unref_string( arr->string_values[ this->local ] );
+					if( arr->string_values[ this->index ] ) {
+						unref_string( arr->string_values[ this->index ] );
 					}
-					arr->string_values[ this->local ] = var.string_value;
+					arr->string_values[ this->index ] = var.string_value;
 				} else {
 					dispose_temporary( &var );
 				}
@@ -1910,81 +1910,81 @@ static enum result execute_struct_assignment( struct statement *this,
 	return ret;
 }
 
-static enum result execute_switch_statement( struct statement *this,
+static enum result execute_switch_statement( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	int matched = 0;
 	struct expression *case_expr;
 	struct variable switch_value = { 0, NULL }, case_value = { 0, NULL };
 	struct statement *cases = ( ( struct block_statement * ) this )->if_block;
 	struct statement *deflt = ( ( struct block_statement * ) this )->else_block;
-	enum result ret = this->source->evaluate( this->source, vars, &switch_value );
+	enum result ret = this->parameters->evaluate( this->parameters, vars, &switch_value );
 	if( ret ) {
 		while( cases && ret && !matched ) {
-			case_expr = cases->source;
+			case_expr = cases->head.parameters;
 			while( case_expr && ret && !matched ) {
 				ret = case_expr->evaluate( case_expr, vars, &case_value );
 				if( ret ) {
 					matched = compare_variables( &switch_value, &case_value ) == 0;
 					dispose_variable( &case_value );
 					if( matched ) {
-						ret = cases->execute( cases, vars, result );
+						ret = cases->head.evaluate( ( struct expression * ) cases, vars, result );
 					}
 				}
 				case_expr = case_expr->next;
 			}
-			cases = cases->next;
+			cases = ( struct statement * ) cases->head.next;
 		}
 		if( ret && !matched && deflt ) {
-			ret = deflt->execute( deflt, vars, result );
+			ret = deflt->head.evaluate( ( struct expression * ) deflt, vars, result );
 		}
 		dispose_temporary( &switch_value );
 	}
 	return ret;
 }
 
-static enum result execute_case_statement( struct statement *this,
+static enum result execute_case_statement( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	struct statement *stmt = ( ( struct block_statement * ) this )->if_block;
 	enum result ret = OKAY;
-	while( stmt && ( ret = stmt->execute( stmt, vars, result ) ) == OKAY ) {
-		stmt = stmt->next;
+	while( stmt && ( ret = stmt->head.evaluate( ( struct expression * ) stmt, vars, result ) ) == OKAY ) {
+		stmt = ( struct statement * ) stmt->head.next;
 	}
 	return ret;
 }
 
-enum result execute_increment_statement( struct statement *this,
+enum result execute_increment_statement( struct expression *this,
 	struct variables *vars, struct variable *result ) {
-	struct variable *local = &vars->locals[ this->local ];
+	struct variable *local = &vars->locals[ this->index ];
 	if( local->string_value ) {
-		return throw( vars, this->source, 0, "Not a number." );
+		return throw( vars, this, 0, "Not a number." );
 	}
 	local->number_value++;
 	return OKAY;
 }
 
-enum result execute_decrement_statement( struct statement *this,
+enum result execute_decrement_statement( struct expression *this,
 	struct variables *vars, struct variable *result ) {
-	struct variable *local = &vars->locals[ this->local ];
+	struct variable *local = &vars->locals[ this->index ];
 	if( local->string_value ) {
-		return throw( vars, this->source, 0, "Not a number." );
+		return throw( vars, this, 0, "Not a number." );
 	}
 	local->number_value--;
 	return OKAY;
 }
 
-static enum result execute_save_statement( struct statement *this,
+static enum result execute_save_statement( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	int count;
 	char message[ 64 ];
 	struct variable str = { 0, NULL }, file = { 0, NULL };
-	enum result ret = evaluate_string( this->source, vars, &str );
+	enum result ret = evaluate_string( this->parameters, vars, &str );
 	if( ret ) {
-		ret = evaluate_string( this->source->next, vars, &file );
+		ret = evaluate_string( this->parameters->next, vars, &file );
 		if( ret ) {
 			count = save_file( file.string_value->string,
-				str.string_value->string, str.string_value->length, this->local, message );
+				str.string_value->string, str.string_value->length, this->index, message );
 			if( count != str.string_value->length ) {
-				ret = throw( vars, this->source, 0, message );
+				ret = throw( vars, this, 0, message );
 			}
 			dispose_temporary( &file );
 		}
@@ -1993,9 +1993,9 @@ static enum result execute_save_statement( struct statement *this,
 	return ret;
 }
 
-static enum result execute_arraycopy_statement( struct statement *this,
+static enum result execute_arraycopy_statement( struct expression *this,
 	struct variables *vars, struct variable *result ) {
-	struct expression *param = this->source;
+	struct expression *param = this->parameters;
 	int src_idx, dest_idx, count;
 	struct variable src = { 0 }, dest = { 0 };
 	struct array *src_arr, *dest_arr;
@@ -2097,8 +2097,8 @@ static enum result evaluate_call_expression( struct expression *this,
 	}
 	while( ret ) {
 		stmt = call_vars.func->statements;
-		while( stmt && ( ret = stmt->execute( stmt, &call_vars, result ) ) == OKAY ) {
-			stmt = stmt->next;
+		while( stmt && ( ret = stmt->head.evaluate( ( struct expression * ) stmt, &call_vars, result ) ) == OKAY ) {
+			stmt = ( struct statement * ) stmt->head.next;
 		}
 		if( stmt ) {
 			if( ret == RETURN ) {
@@ -2523,10 +2523,11 @@ static int add_local_variable( struct element *elem,
 			if( initializer ) {
 				stmt = calloc( 1, sizeof( struct statement ) );
 				if( stmt ) {
-					prev->next = stmt;
-					stmt->source = initializer;
-					stmt->local = func->num_variables - 1;
-					stmt->execute = execute_local_assignment;
+					prev->head.next = ( struct expression * ) stmt;
+					stmt->head.line = initializer->line;
+					stmt->head.index = func->num_variables - 1;
+					stmt->head.parameters = initializer;
+					stmt->head.evaluate = execute_local_assignment;
 				} else {
 					strcpy( message, OUT_OF_MEMORY );
 				}
@@ -2546,8 +2547,8 @@ static struct element* parse_variable_declaration( struct element *elem, struct 
 	struct expression expr = { 0 }, *array_expr;
 	struct element *next;
 	while( elem && elem->str.string[ 0 ] != ';' && elem->str.string[ 0 ] != '{' && message[ 0 ] == 0 ) {
-		if( prev && prev->next ) {
-			prev = prev->next;
+		if( prev && prev->head.next ) {
+			prev = ( struct statement * ) prev->head.next;
 		}
 		if( elem->str.string[ 0 ] == '(' ) {
 			type = ( struct structure * ) find_decl( func, elem->child->str.string, STRUCT, NULL );
@@ -4531,18 +4532,13 @@ static struct element* parse_increment_statement( struct element *elem,
 	struct element *next = elem->next;
 	struct statement *stmt = calloc( 1, sizeof( struct statement ) );
 	if( stmt ) {
-		prev->next = stmt;
+		prev->head.next = ( struct expression * ) stmt;
 		local = get_local_variable( func->variable_decls, next->str.string, "" );
 		if( local ) {
-			stmt->source = calloc( 1, sizeof( struct expression ) );
-			if( stmt->source ) {
-				stmt->local = local->index;
-				stmt->source->line = next->line;
-				stmt->execute = execute_increment_statement;
-				next = next->next->next;
-			} else {
-				strcpy( message, OUT_OF_MEMORY );
-			}
+			stmt->head.line = elem->line;
+			stmt->head.index = local->index;
+			stmt->head.evaluate = execute_increment_statement;
+			next = next->next->next;
 		} else {
 			sprintf( message, "Undeclared local variable '%.64s' on line %d.", next->str.string, next->line );
 		}
@@ -4558,18 +4554,13 @@ static struct element* parse_decrement_statement( struct element *elem,
 	struct element *next = elem->next;
 	struct statement *stmt = calloc( 1, sizeof( struct statement ) );
 	if( stmt ) {
-		prev->next = stmt;
+		prev->head.next = ( struct expression * ) stmt;
 		local = get_local_variable( func->variable_decls, next->str.string, "" );
 		if( local ) {
-			stmt->source = calloc( 1, sizeof( struct expression ) );
-			if( stmt->source ) {
-				stmt->local = local->index;
-				stmt->source->line = next->line;
-				stmt->execute = execute_decrement_statement;
-				next = next->next->next;
-			} else {
-				strcpy( message, OUT_OF_MEMORY );
-			}
+			stmt->head.line = elem->line;
+			stmt->head.index = local->index;
+			stmt->head.evaluate = execute_decrement_statement;
+			next = next->next->next;
 		} else {
 			sprintf( message, "Undeclared local variable '%.64s' on line %d.", next->str.string, next->line );
 		}
@@ -4587,8 +4578,8 @@ static struct element* parse_save_statement( struct element *elem,
 static struct element* parse_append_statement( struct element *elem,
 	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
 	struct element *next = parse_save_statement( elem, func, vars, prev, message );
-	if( prev->next && message[ 0 ] == 0 ) {
-		prev->next->local = 1;
+	if( prev->head.next && message[ 0 ] == 0 ) {
+		prev->head.index = 1;
 	}
 	return next;
 }
@@ -4604,24 +4595,25 @@ static struct element* parse_array_assignment( struct element *elem,
 	struct element *next = elem, *child = elem->child;
 	struct statement *stmt = calloc( 1, sizeof( struct statement ) );
 	if( stmt ) {
-		prev->next = stmt;
+		prev->head.next = ( struct expression * ) stmt;
 		expr.next = NULL;
 		child = parse_expression( child, func, vars, &expr, message );
 		if( expr.next ) {
-			stmt->source = expr.next;
+			stmt->head.parameters = expr.next;
 			if( child->str.string[ 0 ] == ',' ) {
 				child = child->next;
 			}
 			expr.next = NULL;
 			child = parse_expression( child, func, vars, &expr, message );
 			if( expr.next ) {
-				stmt->source->next = expr.next;
+				stmt->head.parameters->next = expr.next;
 				expr.next = NULL;
 				next = parse_expression( next->next->next, func, vars, &expr, message );
 				if( expr.next ) {
-					expr.next->next = stmt->source;
-					stmt->source = expr.next;
-					stmt->execute = execute_array_assignment;
+					stmt->head.line = elem->line;
+					expr.next->next = stmt->head.parameters;
+					stmt->head.parameters = expr.next;
+					stmt->head.evaluate = execute_array_assignment;
 				}
 			}
 		}
@@ -4640,26 +4632,27 @@ static struct element* parse_struct_assignment( struct element *elem,
 	struct element *next = elem;
 	struct statement *stmt = calloc( 1, sizeof( struct structure_statement ) );
 	if( stmt ) {
-		prev->next = stmt;
+		prev->head.next = ( struct expression * ) stmt;
 		struc = ( struct structure * ) find_decl( func, next->str.string, STRUCT, "!." );
 		field = field_end( next->str.string, "!." );
 		if( struc && field[ 0 ] ) {
 			( ( struct structure_statement * ) stmt )->structure = struc;
 			idx = get_string_list_index( struc->fields, &field[ 1 ] );
 			if( idx >= 0 ) {
-				stmt->local = idx;
 				next = next->next;
 				expr.next = NULL;
 				parse_expressions( next->child, func, vars, 0, &expr, &count, message );
-				stmt->source = expr.next;
+				stmt->head.parameters = expr.next;
 				if( message[ 0 ] == 0 ) {
 					if( count == 1 ) {
 						expr.next = NULL;
 						next = parse_expression( next->next->next, func, vars, &expr, message );
 						if( expr.next ) {
-							expr.next->next = stmt->source;
-							stmt->source = expr.next;
-							stmt->execute = execute_struct_assignment;
+							stmt->head.line = elem->line;
+							stmt->head.index = idx;
+							expr.next->next = stmt->head.parameters;
+							stmt->head.parameters = expr.next;
+							stmt->head.evaluate = execute_struct_assignment;
 						}
 					} else {
 						sprintf( message, "Invalid structure assignment on line %d.", next->line );
@@ -4688,22 +4681,23 @@ static struct element* parse_local_assignment( struct element *elem,
 	if( struc && field ) {
 		stmt = calloc( 1, sizeof( struct structure_statement ) );
 		if( stmt ) {
-			prev->next = stmt;
+			prev->head.next = ( struct expression * ) stmt;
 			expr.next = NULL;
 			next = parse_expression( next->next->next, func, vars, &expr, message );
 			if( expr.next ) {
-				stmt->source = expr.next;
+				stmt->head.line = elem->line;
+				stmt->head.parameters = expr.next;
 				( ( struct structure_statement * ) stmt )->structure = struc;
 				idx = get_string_list_index( struc->fields, &field[ 1 ] );
 				if( idx >= 0 ) {
-					stmt->local = idx;
+					stmt->head.index = idx;
 					expr.next = calloc( 1, sizeof( struct expression ) );
 					if( expr.next ) {
-						stmt->source->next = expr.next;
 						expr.next->line = next->line;
 						expr.next->index = local->index;
 						expr.next->evaluate = evaluate_local;
-						stmt->execute = execute_struct_assignment;
+						stmt->head.parameters->next = expr.next;
+						stmt->head.evaluate = execute_struct_assignment;
 					} else {
 						strcpy( message, OUT_OF_MEMORY );
 					}
@@ -4719,13 +4713,14 @@ static struct element* parse_local_assignment( struct element *elem,
 	} else {
 		stmt = calloc( 1, sizeof( struct statement ) );
 		if( stmt ) {
-			prev->next = stmt;
+			prev->head.next = ( struct expression * ) stmt;
 			expr.next = NULL;
 			next = parse_expression( next->next->next, func, vars, &expr, message );
 			if( expr.next ) {
-				stmt->source = expr.next;
-				stmt->local = local->index;
-				stmt->execute = execute_local_assignment;
+				stmt->head.line = elem->line;
+				stmt->head.index = local->index;
+				stmt->head.parameters = expr.next;
+				stmt->head.evaluate = execute_local_assignment;
 			}
 		} else {
 			strcpy( message, OUT_OF_MEMORY );
@@ -4748,22 +4743,23 @@ static struct element* parse_global_assignment( struct element *elem,
 	if( struc && field[ 0 ] ) {
 		stmt = calloc( 1, sizeof( struct structure_statement ) );
 		if( stmt ) {
-			prev->next = stmt;
+			prev->head.next = ( struct expression * ) stmt;
 			expr.next = NULL;
 			next = parse_expression( next->next->next, func, vars, &expr, message );
 			if( expr.next ) {
-				stmt->source = expr.next;
+				stmt->head.line = elem->line;
+				stmt->head.parameters = expr.next;
 				( ( struct structure_statement * ) stmt )->structure = struc;
 				idx = get_string_list_index( struc->fields, &field[ 1 ] );
 				if( idx >= 0 ) {
-					stmt->local = idx;
+					stmt->head.index = idx;
 					expr.next = calloc( 1, sizeof( struct value_expression ) );
 					if( expr.next ) {
-						stmt->source->next = expr.next;
 						expr.next->line = next->line;
 						expr.next->evaluate = evaluate_global;
 						( ( struct value_expression * ) expr.next )->str = &global->str;
-						stmt->execute = execute_struct_assignment;
+						stmt->head.parameters->next = expr.next;
+						stmt->head.evaluate = execute_struct_assignment;
 					} else {
 						strcpy( message, OUT_OF_MEMORY );
 					}
@@ -4779,13 +4775,14 @@ static struct element* parse_global_assignment( struct element *elem,
 	} else {
 		stmt = calloc( 1, sizeof( struct global_assignment_statement ) );
 		if( stmt ) {
-			prev->next = stmt;
+			prev->head.next = ( struct expression * ) stmt;
 			expr.next = NULL;
 			next = parse_expression( next->next->next, func, vars, &expr, message );
 			if( expr.next ) {
-				stmt->source = expr.next;
+				stmt->head.line = elem->line;
+				stmt->head.parameters = expr.next;
 				( ( struct global_assignment_statement * ) stmt )->destination = &global->value;
-				stmt->execute = execute_global_assignment;
+				stmt->head.evaluate = execute_global_assignment;
 			}
 		} else {
 			strcpy( message, OUT_OF_MEMORY );
@@ -4823,7 +4820,7 @@ static struct element* parse_assignment_statement( struct element *elem,
 				}
 			}
 		}
-		prev = prev->next;
+		prev = ( struct statement * ) prev->head.next;
 	}
 	return elem;
 }
@@ -4831,16 +4828,17 @@ static struct element* parse_assignment_statement( struct element *elem,
 /* Parse a statement that expects one or more expressions after the keyword. */
 struct element* parse_expr_list_statement( struct element *elem,
 	struct function *func, struct variables *vars, struct statement *prev,
-	enum result ( *execute )( struct statement *this, struct variables *vars, struct variable *result ),
+	enum result ( *execute )( struct expression *this, struct variables *vars, struct variable *result ),
 	char *message ) {
 	struct expression head, *expr;
 	struct element *next = elem->next;
 	struct statement *stmt = calloc( 1, sizeof( struct statement ) );
 	if( stmt ) {
-		prev->next = stmt;
+		stmt->head.line = elem->line;
+		prev->head.next = ( struct expression * ) stmt;
 		head.next = NULL;
 		next = parse_expression( next, func, vars, &head, message );
-		expr = stmt->source = head.next;
+		expr = stmt->head.parameters = head.next;
 		while( expr && next->str.string[ 0 ] != ';' ) {
 			if( next->str.string[ 0 ] == ',' ) {
 				next = next->next;
@@ -4849,7 +4847,7 @@ struct element* parse_expr_list_statement( struct element *elem,
 			expr = expr->next;
 		}
 		if( expr ) {
-			stmt->execute = execute;
+			stmt->head.evaluate = execute;
 			next = next->next;
 		}
 	} else {
@@ -4893,8 +4891,9 @@ static struct element* parse_break_statement( struct element *elem,
 	struct element *next = elem->next;
 	struct statement *stmt = calloc( 1, sizeof( struct statement ) );
 	if( stmt ) {
-		stmt->execute = execute_break_statement;
-		prev->next = stmt;
+		stmt->head.line = elem->line;
+		stmt->head.evaluate = execute_break_statement;
+		prev->head.next = ( struct expression * ) stmt;
 		next = next->next;
 	} else {
 		strcpy( message, OUT_OF_MEMORY );
@@ -4907,8 +4906,9 @@ static struct element* parse_continue_statement( struct element *elem,
 	struct element *next = elem->next;
 	struct statement *stmt = calloc( 1, sizeof( struct statement ) );
 	if( stmt ) {
-		stmt->execute = execute_continue_statement;
-		prev->next = stmt;
+		stmt->head.line = elem->line;
+		stmt->head.evaluate = execute_continue_statement;
+		prev->head.next = ( struct expression * ) stmt;
 		next = next->next;
 	} else {
 		strcpy( message, OUT_OF_MEMORY );
@@ -4927,15 +4927,16 @@ static struct element* parse_case_statement( struct element *elem,
 	struct element *next = elem->next;
 	struct statement block = { 0 }, *stmt = calloc( 1, sizeof( struct block_statement ) );
 	if( stmt ) {
+		stmt->head.line = elem->line;
 		stmt->dispose = dispose_block_statement;
-		prev->next = stmt;
+		prev->head.next = ( struct expression * ) stmt;
 		next = parse_expressions( next, func, vars, '{', &expr, NULL, message );
-		stmt->source = expr.next;
+		stmt->head.parameters = expr.next;
 		if( message[ 0 ] == 0 ) {
 			parse_keywords_indexed( func->env->statements_index, next->child, func, vars, &block, message );
-			( ( struct block_statement * ) stmt )->if_block = block.next;
+			( ( struct block_statement * ) stmt )->if_block = ( struct statement * ) block.head.next;
 			if( message[ 0 ] == 0 ) {
-				stmt->execute = execute_case_statement;
+				stmt->head.evaluate = execute_case_statement;
 				next = next->next;
 			}
 		}
@@ -4950,13 +4951,14 @@ static struct element* parse_default_statement( struct element *elem,
 	struct element *next = elem->next;
 	struct statement block = { 0 }, *stmt = calloc( 1, sizeof( struct block_statement ) );
 	if( stmt ) {
+		stmt->head.line = elem->line;
 		stmt->dispose = dispose_block_statement;
-		prev->next = stmt;
-		block.next = NULL;
+		prev->head.next = ( struct expression * ) stmt;
+		block.head.next = NULL;
 		parse_keywords_indexed( func->env->statements_index, next->child, func, vars, &block, message );
-		( ( struct block_statement * ) stmt )->if_block = block.next;
+		( ( struct block_statement * ) stmt )->if_block = ( struct statement * ) block.head.next;
 		if( message[ 0 ] == 0 ) {
-			stmt->execute = execute_case_statement;
+			stmt->head.evaluate = execute_case_statement;
 			next = next->next;
 		}
 	} else {
@@ -4978,45 +4980,46 @@ static struct element* parse_switch_statement( struct element *elem,
 	struct statement block = { 0 }, *cas, *def;
 	struct block_statement *stmt = calloc( 1, sizeof( struct block_statement ) );
 	if( stmt ) {
+		stmt->stmt.head.line = elem->line;
 		stmt->stmt.dispose = dispose_block_statement;
-		prev->next = &stmt->stmt;
+		prev->head.next = ( struct expression * ) stmt;
 		expr.next = NULL;
 		next = parse_expression( next, func, vars, &expr, message );
 		if( expr.next ) {
-			stmt->stmt.source = expr.next;
-			block.next = NULL;
+			stmt->stmt.head.parameters = expr.next;
+			block.head.next = NULL;
 			parse_keywords( switch_stmts, next->child, func, vars, &block, message );
 			if( message[ 0 ] == 0 ) {
 				cas = def = NULL;
-				while( block.next ) {
-					if( block.next->source ) {
+				while( block.head.next ) {
+					if( block.head.next->parameters ) {
 						if( cas ) {
-							cas->next = block.next;
-							cas = cas->next;
+							cas->head.next = ( struct expression * ) block.head.next;
+							cas = ( struct statement * ) cas->head.next;
 						} else {
-							stmt->if_block = cas = block.next;
+							stmt->if_block = cas = ( struct statement * ) block.head.next;
 						}
-						block.next = block.next->next;
-						cas->next = NULL;
+						block.head.next = ( struct expression * ) block.head.next->next;
+						cas->head.next = NULL;
 					} else {
 						if( def ) {
-							def->next = block.next;
-							def = def->next;
+							def->head.next = ( struct expression * ) block.head.next;
+							def = ( struct statement * ) def->head.next;
 						} else {
-							stmt->else_block = def = block.next;
+							stmt->else_block = def = ( struct statement * ) block.head.next;
 						}
-						block.next = block.next->next;
-						def->next = NULL;
+						block.head.next = ( struct expression * ) block.head.next->next;
+						def->head.next = NULL;
 					}
 				}
-				if( stmt->else_block == NULL || stmt->else_block->next == NULL ) {
+				if( stmt->else_block == NULL || stmt->else_block->head.next == NULL ) {
 					next = next->next;
-					stmt->stmt.execute = execute_switch_statement;
+					stmt->stmt.head.evaluate = execute_switch_statement;
 				} else {
 					sprintf( message, "Duplicate default block in switch statement on line %d.", elem->line );
 				}
 			} else {
-				dispose_statements( block.next );
+				dispose_statements( ( struct statement * ) block.head.next );
 			}
 		}
 	} else {
@@ -5304,8 +5307,8 @@ static void parse_keywords( struct keyword *keywords, struct element *elem,
 	struct statement *stmt = prev;
 	while( elem && message[ 0 ] == 0 ) {
 		elem = parse_keyword( get_keyword( elem->str.string, keywords ), elem, func, vars, stmt, message );
-		while( stmt && stmt->next ) {
-			stmt = stmt->next;
+		while( stmt && stmt->head.next ) {
+			stmt = ( struct statement * ) stmt->head.next;
 		}
 	}
 }
@@ -5315,12 +5318,12 @@ struct statement* parse_keywords_indexed( struct keyword **index, struct element
 	struct statement *stmt = prev;
 	while( elem && message[ 0 ] == 0 ) {
 		elem = parse_keyword( get_keyword( elem->str.string, index[ hash_code( elem->str.string, 0 ) ] ), elem, func, vars, stmt, message );
-		while( stmt && stmt->next ) {
-			stmt = stmt->next;
+		while( stmt && stmt->head.next ) {
+			stmt = ( struct statement * ) stmt->head.next;
 		}
 	}
 #if defined( OPTIMIZER )
-	if( message[ 0 ] == 0 && prev->next ) {
+	if( message[ 0 ] == 0 && prev->head.next ) {
 		stmt = optimize_statements( func, prev, message );
 	}
 #endif
@@ -5333,23 +5336,24 @@ static struct element* parse_if_statement( struct element *elem,
 	struct element *next = elem->next;
 	struct statement block = { 0 }, *stmt = calloc( 1, sizeof( struct block_statement ) );
 	if( stmt ) {
+		stmt->head.line = elem->line;
 		stmt->dispose = dispose_block_statement;
-		prev->next = stmt;
+		prev->head.next = ( struct expression * ) stmt;
 		expr.next = NULL;
 		next = parse_expression( next, func, vars, &expr, message );
 		if( expr.next ) {
-			stmt->source = expr.next;
-			stmt->execute = execute_if_statement;
+			stmt->head.parameters = expr.next;
+			stmt->head.evaluate = execute_if_statement;
 			if( next->child ) {
 				parse_keywords_indexed( func->env->statements_index, next->child, func, vars, &block, message );
-				( ( struct block_statement * ) stmt )->if_block = block.next;
+				( ( struct block_statement * ) stmt )->if_block = ( struct statement * ) block.head.next;
 			}
 			if( message[ 0 ] == 0 ) {
 				next = next->next;
 				if( next && is_keyword( next->str.string, "else" ) ) {
 					if( next->next && ( next->next->str.string[ 0 ] == '{' || is_keyword( next->next->str.string, "if" ) ) ) {
 						next = next->next;
-						block.next = NULL;
+						block.head.next = NULL;
 						if( next->child ) {
 							parse_keywords_indexed( func->env->statements_index, next->child, func, vars, &block, message );
 							if( message[ 0 ] == 0 ) {
@@ -5361,7 +5365,7 @@ static struct element* parse_if_statement( struct element *elem,
 								next = parse_if_statement( next, func, vars, &block, message );
 							}
 						}
-						( ( struct block_statement * ) stmt )->else_block = block.next;
+						( ( struct block_statement * ) stmt )->else_block = ( struct statement * ) block.head.next;
 					} else {
 						sprintf( message, "Expected '{' or 'if' after 'else' on line %d.", next->line );
 					}
@@ -5380,18 +5384,19 @@ static struct element* parse_while_statement( struct element *elem,
 	struct element *next = elem->next;
 	struct statement block = { 0 }, *stmt = calloc( 1, sizeof( struct block_statement ) );
 	if( stmt ) {
+		stmt->head.line = elem->line;
 		stmt->dispose = dispose_block_statement;
-		prev->next = stmt;
+		prev->head.next = ( struct expression * ) stmt;
 		expr.next = NULL;
 		next = parse_expression( next, func, vars, &expr, message );
 		if( expr.next ) {
-			stmt->source = expr.next;
+			stmt->head.parameters = expr.next;
 			if( next->child ) {
 				parse_keywords_indexed( func->env->statements_index, next->child, func, vars, &block, message );
-				( ( struct block_statement * ) stmt )->if_block = block.next;
+				( ( struct block_statement * ) stmt )->if_block = ( struct statement * ) block.head.next;
 			}
 			if( message[ 0 ] == 0 ) {
-				stmt->execute = execute_while_statement;
+				stmt->head.evaluate = execute_while_statement;
 				next = next->next;
 			}
 		}
@@ -5405,7 +5410,7 @@ static struct element* parse_until_statement( struct element *elem,
 	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
 	struct element *next = parse_while_statement( elem, func, vars, prev, message );
 	if( message[ 0 ] == 0 ) {
-		prev->next->execute = execute_until_statement;
+		prev->head.next->evaluate = execute_until_statement;
 	}
 	return next;
 }
@@ -5428,17 +5433,17 @@ static struct element* parse_catch_block( struct element *elem,
 			}
 		}
 		if( local ) {
-			try_stmt->stmt.local = local->index;
-			try_stmt->stmt.execute = execute_try_catch_statement;
+			try_stmt->stmt.head.index = local->index;
+			try_stmt->stmt.head.evaluate = execute_try_catch_statement;
 		}
 	} else {
 		elem = elem->next;
-		try_stmt->stmt.execute = execute_try_finally_statement;
+		try_stmt->stmt.head.evaluate = execute_try_finally_statement;
 	}
 	if( message[ 0 ] == 0 ) {
 		if( elem->child ) {
 			parse_keywords_indexed( func->env->statements_index, elem->child, func, vars, &block, message );
-			try_stmt->else_block = block.next;
+			try_stmt->else_block = ( struct statement * ) block.head.next;
 		}
 		if( message[ 0 ] == 0 ) {
 			elem = elem->next;
@@ -5452,12 +5457,13 @@ static struct element* parse_try_statement( struct element *elem,
 	struct statement try_block = { 0 };
 	struct block_statement *try_stmt = calloc( 1, sizeof( struct block_statement ) );
 	if( try_stmt ) {
+		try_stmt->stmt.head.line = elem->line;
 		try_stmt->stmt.dispose = dispose_block_statement;
-		prev->next = &try_stmt->stmt;
+		prev->head.next = ( struct expression * ) &try_stmt->stmt;
 		elem = elem->next;
 		if( elem->child ) {
 			parse_keywords_indexed( func->env->statements_index, elem->child, func, vars, &try_block, message );
-			try_stmt->if_block = try_block.next;
+			try_stmt->if_block = ( struct statement * ) try_block.head.next;
 		}
 		if( message[ 0 ] == 0 ) {
 			elem = parse_catch_block( elem->next, func, vars, try_stmt, message );
@@ -5465,9 +5471,10 @@ static struct element* parse_try_statement( struct element *elem,
 			&& ( is_keyword( elem->str.string, "catch" ) || is_keyword( elem->str.string, "finally" ) ) ) {
 				try_stmt = calloc( 1, sizeof( struct block_statement ) );
 				if( try_stmt ) {
+					try_stmt->stmt.head.line = elem->line;
 					try_stmt->stmt.dispose = dispose_block_statement;
-					try_stmt->if_block = prev->next;
-					prev->next = &try_stmt->stmt;
+					try_stmt->if_block = ( struct statement * ) prev->head.next;
+					prev->head.next = ( struct expression * ) &try_stmt->stmt;
 					elem = parse_catch_block( elem, func, vars, try_stmt, message );
 				} else {
 					strcpy( message, OUT_OF_MEMORY );
@@ -5554,16 +5561,16 @@ int parse_function_body( struct function *func, struct variables *vars, char *me
 	struct element *next = func->body->child;
 	struct expression *source;
 	if( next ) {
-		prev.next = NULL;
+		prev.head.next = NULL;
 		stmt = parse_keywords_indexed( func->env->statements_index, next, func, vars, &prev, message );
-		func->statements = prev.next;
+		func->statements = ( struct statement * ) prev.head.next;
 	}
 	if( message[ 0 ] == 0 ) {
-		if( stmt && stmt->execute == execute_return_statement ) {
-			source = stmt->source;
+		if( stmt && stmt->head.evaluate == execute_return_statement ) {
+			source = stmt->head.parameters;
 			if( source && source->evaluate == evaluate_call_expression
 			&& ( ( struct function_expression * ) source )->function == func ) {
-				stmt->execute = execute_tail_call_statement;
+				stmt->head.evaluate = execute_tail_call_statement;
 			}
 		}
 		return 1;

@@ -49,14 +49,14 @@ enum result evaluate_global( struct expression *this, struct variables *vars, st
 enum result evaluate_local( struct expression *this, struct variables *vars, struct variable *result );
 enum result evaluate_local_post_inc( struct expression *this, struct variables *vars, struct variable *result );
 enum result evaluate_local_post_dec( struct expression *this, struct variables *vars, struct variable *result );
-enum result execute_array_assignment( struct statement *this, struct variables *vars, struct variable *result );
-enum result execute_local_assignment( struct statement *this, struct variables *vars, struct variable *result );
-enum result execute_increment_statement( struct statement *this, struct variables *vars, struct variable *result );
-enum result execute_decrement_statement( struct statement *this, struct variables *vars, struct variable *result );
-enum result execute_return_statement( struct statement *this, struct variables *vars, struct variable *result );
-enum result execute_call_statement( struct statement *this, struct variables *vars, struct variable *result );
-enum result execute_while_statement( struct statement *this, struct variables *vars, struct variable *result );
-enum result execute_if_statement( struct statement *this, struct variables *vars, struct variable *result );
+enum result execute_array_assignment( struct expression *this, struct variables *vars, struct variable *result );
+enum result execute_local_assignment( struct expression *this, struct variables *vars, struct variable *result );
+enum result execute_increment_statement( struct expression *this, struct variables *vars, struct variable *result );
+enum result execute_decrement_statement( struct expression *this, struct variables *vars, struct variable *result );
+enum result execute_return_statement( struct expression *this, struct variables *vars, struct variable *result );
+enum result execute_call_statement( struct expression *this, struct variables *vars, struct variable *result );
+enum result execute_while_statement( struct expression *this, struct variables *vars, struct variable *result );
+enum result execute_if_statement( struct expression *this, struct variables *vars, struct variable *result );
 enum result to_int( struct variable *var, int *result, struct variables *vars, struct expression *source );
 enum result to_num( struct variable *var, number *result, struct variables *vars, struct expression *source );
 void dispose_statements( struct statement *statements );
@@ -153,19 +153,19 @@ struct arithmetic_statement_expr {
 
 static enum compilable_stmt can_compile_stmt( struct statement *stmt ) {
 	if( stmt ) {
-		if( stmt->execute == execute_local_assignment ) {
+		if( stmt->head.evaluate == execute_local_assignment ) {
 			return LOCAL_ASSIGNMENT;
-		} else if( stmt->execute == execute_array_assignment ) {
-			if( stmt->source->next->evaluate == evaluate_local ) {
+		} else if( stmt->head.evaluate == execute_array_assignment ) {
+			if( stmt->head.parameters->next->evaluate == evaluate_local ) {
 				return ARRAY_ASSIGNMENT;
 			}
-		} else if( stmt->execute == execute_increment_statement ) {
+		} else if( stmt->head.evaluate == execute_increment_statement ) {
 			return LOCAL_INCREMENT;
-		} else if( stmt->execute == execute_decrement_statement ) {
+		} else if( stmt->head.evaluate == execute_decrement_statement ) {
 			return LOCAL_DECREMENT;
-		} else if( stmt->execute == execute_call_statement ) {
+		} else if( stmt->head.evaluate == execute_call_statement ) {
 			return CALL_STATEMENT;
-		} else if( stmt->execute == execute_return_statement ) {
+		} else if( stmt->head.evaluate == execute_return_statement ) {
 			return RETURN_STATEMENT;
 		}
 	}
@@ -349,7 +349,7 @@ static enum result modulo( number *lhs, number rhs, struct variables *vars, stru
 	return OKAY;
 }
 
-static enum result execute_arithmetic_statement( struct statement *this,
+static enum result execute_arithmetic_statement( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	struct instruction *insn = ( ( struct arithmetic_statement * ) this )->insns.list;
 	number stack[ 9 ], *top = stack, value;
@@ -865,10 +865,10 @@ static enum result execute_arithmetic_statement( struct statement *this,
 	}
 }
 
-static enum result execute_while_local_statement( struct statement *this,
+static enum result execute_while_local_statement( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	struct environment *env = vars->func->env;
-	struct variable *lhs = &vars->locals[ this->local ];
+	struct variable *lhs = &vars->locals[ this->index ];
 	struct variable *rhs = &vars->locals[ ( ( struct block_statement * ) this )->rhs ];
 	int oper = ( ( struct block_statement * ) this )->oper;
 	struct statement *stmt;
@@ -888,8 +888,8 @@ static enum result execute_while_local_statement( struct statement *this,
 			}
 		}
 		stmt = ( ( struct block_statement * ) this )->if_block;
-		while( stmt && ( ret = stmt->execute( stmt, vars, result ) ) == OKAY ) {
-			stmt = stmt->next;
+		while( stmt && ( ret = stmt->head.evaluate( ( struct expression * ) stmt, vars, result ) ) == OKAY ) {
+			stmt = ( struct statement * ) stmt->head.next;
 		}
 		if( stmt ) {
 			if( ret == RETURN ) {
@@ -901,15 +901,15 @@ static enum result execute_while_local_statement( struct statement *this,
 			}
 		}
 		if( env->interrupted ) {
-			return throw_interrupted( vars, this->source );
+			return throw_interrupted( vars, this );
 		}
 	}
 }
 
-static enum result execute_while_const_statement( struct statement *this,
+static enum result execute_while_const_statement( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	struct environment *env = vars->func->env;
-	struct variable *lhs = &vars->locals[ this->local ];
+	struct variable *lhs = &vars->locals[ this->index ];
 	number rhs = ( ( struct block_statement * ) this )->num;
 	int oper = ( ( struct block_statement * ) this )->oper;
 	struct statement *stmt;
@@ -932,8 +932,8 @@ static enum result execute_while_const_statement( struct statement *this,
 			}
 		}
 		stmt = ( ( struct block_statement * ) this )->if_block;
-		while( stmt && ( ret = stmt->execute( stmt, vars, result ) ) == OKAY ) {
-			stmt = stmt->next;
+		while( stmt && ( ret = stmt->head.evaluate( ( struct expression * ) stmt, vars, result ) ) == OKAY ) {
+			stmt = ( struct statement * ) stmt->head.next;
 		}
 		if( stmt ) {
 			if( ret == RETURN ) {
@@ -945,14 +945,14 @@ static enum result execute_while_const_statement( struct statement *this,
 			}
 		}
 		if( env->interrupted ) {
-			return throw_interrupted( vars, this->source );
+			return throw_interrupted( vars, this );
 		}
 	}
 }
 
-static enum result execute_if_local_statement( struct statement *this,
+static enum result execute_if_local_statement( struct expression *this,
 	struct variables *vars, struct variable *result ) {
-	struct variable *lhs = &vars->locals[ this->local ];
+	struct variable *lhs = &vars->locals[ this->index ];
 	struct variable *rhs = &vars->locals[ ( ( struct block_statement * ) this )->rhs ];
 	struct statement *stmt = ( ( struct block_statement * ) this )->if_block;
 	enum result ret = OKAY;
@@ -968,15 +968,15 @@ static enum result execute_if_local_statement( struct statement *this,
 		case '>': if( lhs->number_value <= rhs->number_value ) stmt = ( ( struct block_statement * ) this )->else_block; break;
 		default: return execute_if_statement( this, vars, result );
 	}
-	while( stmt && ( ret = stmt->execute( stmt, vars, result ) ) == OKAY ) {
-		stmt = stmt->next;
+	while( stmt && ( ret = stmt->head.evaluate( ( struct expression * ) stmt, vars, result ) ) == OKAY ) {
+		stmt = ( struct statement * ) stmt->head.next;
 	}
 	return ret;
 }
 
-static enum result execute_if_const_statement( struct statement *this,
+static enum result execute_if_const_statement( struct expression *this,
 	struct variables *vars, struct variable *result ) {
-	struct variable *lhs = &vars->locals[ this->local ];
+	struct variable *lhs = &vars->locals[ this->index ];
 	number rhs = ( ( struct block_statement * ) this )->num;
 	struct statement *stmt = ( ( struct block_statement * ) this )->if_block;
 	enum result ret = OKAY;
@@ -996,51 +996,43 @@ static enum result execute_if_const_statement( struct statement *this,
 			default: return execute_if_statement( this, vars, result );
 		}
 	}
-	while( stmt && ( ret = stmt->execute( stmt, vars, result ) ) == OKAY ) {
-		stmt = stmt->next;
+	while( stmt && ( ret = stmt->head.evaluate( ( struct expression * ) stmt, vars, result ) ) == OKAY ) {
+		stmt = ( struct statement * ) stmt->head.next;
 	}
 	return ret;
 }
 
 /* Replace the source statement with a new arithmetic statement (combined with the previous statement if possible). */
 static struct arithmetic_statement* add_arithmetic_statement( struct statement *src, struct statement *prev, char *message ) {
-	struct expression *expr;
 	struct arithmetic_statement *arith;
-	if( prev->execute == execute_arithmetic_statement ) {
+	if( prev->head.evaluate == execute_arithmetic_statement ) {
 		arith = ( struct arithmetic_statement * ) prev;
-		expr = src->source;
-		while( expr->next ) {
-			expr = expr->next;
-		}
-		expr->next = arith->stmt.source;
-		arith->stmt.source = src->source;
-		src->source = NULL;
-		prev->next = src->next;
+		arith->stmt.head.next = src->head.next;
+		src->head.next = arith->stmt.head.parameters;
+		arith->stmt.head.parameters = ( struct expression * ) src;
 	} else {
 		arith = calloc( 1, sizeof( struct arithmetic_statement ) );
 		if( arith ) {
-			arith->stmt.local = src->local;
-			arith->stmt.source = src->source;
-			src->source = NULL;
-			arith->stmt.execute = execute_arithmetic_statement;
+			arith->stmt.head.line = src->head.line;
+			arith->stmt.head.parameters = ( struct expression * ) src;
+			arith->stmt.head.evaluate = execute_arithmetic_statement;
 			arith->stmt.dispose = dispose_arithmetic_statement;
-			arith->stmt.next = src->next;
-			prev->next = &arith->stmt;
+			prev->head.next = ( struct expression * ) arith;
+			arith->stmt.head.next = src->head.next;
+			src->head.next = NULL;
 		} else {
 			strcpy( message, OUT_OF_MEMORY );
 			return NULL;
 		}
 	}
-	src->next = NULL;
-	dispose_statements( src );
 	return arith;
 }
 
 static int optimize_stmt_source( struct statement *stmt, char *message ) {
 	struct expression expr;
-	expr.parameters = stmt->source;
+	expr.parameters = stmt->head.parameters;
 	if( optimize_parameters( &expr, message ) ) {
-		stmt->source = expr.parameters;
+		stmt->head.parameters = expr.parameters;
 		return 1;
 	}
 	return 0;
@@ -1048,10 +1040,10 @@ static int optimize_stmt_source( struct statement *stmt, char *message ) {
 
 static struct statement* optimize_local_assignment( struct statement *stmt, struct statement *prev, char *message ) {
 	struct instruction *insn;
-	struct expression *expr = stmt->source;
-	int local = stmt->local, oper, dest = POP_LOCAL;
+	struct expression *expr = stmt->head.parameters;
+	int local = stmt->head.index, oper, dest = POP_LOCAL;
 	struct arithmetic_statement *arith;
-	if( prev->execute == execute_arithmetic_statement || can_compile_stmt( stmt->next ) || can_compile_expr( expr ) >= ARITHMETIC_OPERATOR ) {
+	if( prev->head.evaluate == execute_arithmetic_statement || can_compile_stmt( ( struct statement * ) stmt->head.next ) || can_compile_expr( expr ) >= ARITHMETIC_OPERATOR ) {
 		arith = add_arithmetic_statement( stmt, prev, message );
 		if( arith ) {
 			stmt = &arith->stmt;
@@ -1078,7 +1070,7 @@ static struct statement* optimize_local_assignment( struct statement *stmt, stru
 
 static struct statement* optimize_array_assignment( struct statement *stmt, struct statement *prev, char *message ) {
 	int *oper, dest = POP_ARRAY;
-	struct expression *src = stmt->source, *arr = src->next, *idx = arr->next;
+	struct expression *src = stmt->head.parameters, *arr = src->next, *idx = arr->next;
 	struct arithmetic_statement *arith = add_arithmetic_statement( stmt, prev, message );
 	if( arith ) {
 		stmt = &arith->stmt;
@@ -1097,14 +1089,13 @@ static struct statement* optimize_array_assignment( struct statement *stmt, stru
 }
 
 static struct statement* optimize_increment( struct statement *stmt, struct statement *prev, enum arithmetic_op oper, char *message ) {
-	int local = stmt->local;
-	struct expression *expr = stmt->source;
+	int local = stmt->head.index;
 	struct arithmetic_statement *arith;
-	if( prev->execute == execute_arithmetic_statement || can_compile_stmt( stmt->next ) ) {
+	if( prev->head.evaluate == execute_arithmetic_statement || can_compile_stmt( ( struct statement * ) stmt->head.next ) ) {
 		arith = add_arithmetic_statement( stmt, prev, message );
 		if( arith ) {
+			add_instruction( &arith->insns, oper, local, ( struct expression * ) stmt, message );
 			stmt = &arith->stmt;
-			add_instruction( &arith->insns, oper, local, expr, message );
 		}
 	}
 	return stmt;
@@ -1112,9 +1103,9 @@ static struct statement* optimize_increment( struct statement *stmt, struct stat
 
 static struct statement* optimize_return( struct statement *stmt, struct statement *prev, char *message ) {
 	int *oper, dest = POP_RETURN;
-	struct expression *expr = stmt->source;
+	struct expression *expr = stmt->head.parameters;
 	struct arithmetic_statement *arith;
-	if( prev->execute == execute_arithmetic_statement || can_compile_expr( expr ) >= ARITHMETIC_OPERATOR ) {
+	if( prev->head.evaluate == execute_arithmetic_statement || can_compile_expr( expr ) >= ARITHMETIC_OPERATOR ) {
 		arith = add_arithmetic_statement( stmt, prev, message );
 		if( arith ) {
 			stmt = &arith->stmt;
@@ -1134,14 +1125,13 @@ static struct statement* optimize_return( struct statement *stmt, struct stateme
 }
 
 static struct statement* optimize_call( struct statement *stmt, struct statement *prev, char *message ) {
-	struct expression *expr = stmt->source;
 	struct arithmetic_statement *arith;
 	if( optimize_stmt_source( stmt, message ) ) {
-		if( prev->execute == execute_arithmetic_statement || can_compile_stmt( stmt->next ) ) {
+		if( prev->head.evaluate == execute_arithmetic_statement || can_compile_stmt( ( struct statement * ) stmt->head.next ) ) {
 			arith = add_arithmetic_statement( stmt, prev, message );
 			if( arith ) {
+				add_instruction( &arith->insns, CALL_EXPR, 0, stmt->head.parameters, message );
 				stmt = &arith->stmt;
-				add_instruction( &arith->insns, CALL_EXPR, 0, expr, message );
 			}
 		}
 	}
@@ -1150,7 +1140,7 @@ static struct statement* optimize_call( struct statement *stmt, struct statement
 
 static enum result evaluate_arith_stmt_expr( struct expression *this,
 	struct variables *vars, struct variable *result ) {
-	return execute_arithmetic_statement( &( ( struct arithmetic_statement_expr * ) this )->stmt.stmt, vars, result );
+	return execute_arithmetic_statement( &( ( struct arithmetic_statement_expr * ) this )->stmt.stmt.head, vars, result );
 }
 
 #if defined( PRINT_OPTIMIZATIONS )
@@ -1223,7 +1213,7 @@ static struct expression* compile_arith_stmt_expr( struct expression *expr, stru
 					arith_expr->expr.line = expr->line;
 					arith_expr->expr.next = expr->next;
 					arith_expr->expr.parameters = expr;
-					expr->next = arith_stmt->stmt.source;
+					expr->next = arith_stmt->stmt.head.parameters;
 					arith_expr->expr.evaluate = evaluate_arith_stmt_expr;
 					expr = &arith_expr->expr;
 					if( prev ) {
@@ -1266,27 +1256,27 @@ static struct expression* optimize_parameters( struct expression *expr, char *me
 }
 
 static int optimize_conditional( struct statement *stmt,
-	enum result ( *execute_local )( struct statement *this, struct variables *vars, struct variable *result ),
-	enum result ( *execute_const )( struct statement *this, struct variables *vars, struct variable *result ) ) {
-	struct expression *param = stmt->source;
+	enum result ( *execute_local )( struct expression *this, struct variables *vars, struct variable *result ),
+	enum result ( *execute_const )( struct expression *this, struct variables *vars, struct variable *result ) ) {
+	struct expression *param = stmt->head.parameters;
 	if( param->evaluate == evaluate_arithmetic_expression
 	&& strchr( "!<(=)>", param->index ) && param->parameters->evaluate == evaluate_local ) {
 		if( param->parameters->next->evaluate == evaluate_local ) {
-			stmt->local = param->parameters->index;
+			stmt->head.index = param->parameters->index;
 			( ( struct block_statement * ) stmt )->rhs = param->parameters->next->index;
 			( ( struct block_statement * ) stmt )->oper = param->index;
-			stmt->execute = execute_local;
+			stmt->head.evaluate = execute_local;
 			return 1;
 		} else if( param->parameters->next->evaluate == evaluate_number_literal_expression ) {
-			stmt->local = param->parameters->index;
+			stmt->head.index = param->parameters->index;
 			( ( struct block_statement * ) stmt )->num = ( ( struct value_expression * ) param->parameters->next )->num;
 			( ( struct block_statement * ) stmt )->oper = param->index;
-			stmt->execute = execute_const;
+			stmt->head.evaluate = execute_const;
 			return 1;
 		}
 	} else if( param->evaluate == evaluate_local ) {
-		stmt->local = param->index;
-		stmt->execute = execute_const;
+		stmt->head.index = param->index;
+		stmt->head.evaluate = execute_const;
 		return 1;
 	}
 	return 0;
@@ -1294,7 +1284,7 @@ static int optimize_conditional( struct statement *stmt,
 
 /* Returns the last statement after optimization. */
 struct statement* optimize_statements( struct function *func, struct statement *prev, char *message ) {
-	struct statement *stmt = prev, *next = stmt->next;
+	struct statement *stmt = prev, *next = ( struct statement * ) stmt->head.next;
 	while( next ) {
 		switch( can_compile_stmt( next ) ) {
 			case LOCAL_ASSIGNMENT:
@@ -1316,12 +1306,12 @@ struct statement* optimize_statements( struct function *func, struct statement *
 				next = optimize_return( next, prev, message );
 				break;
 			default:
-				if( next->execute == execute_while_statement
+				if( next->head.evaluate == execute_while_statement
 				&& optimize_conditional( next, execute_while_local_statement, execute_while_const_statement ) ) {
 #if defined( PRINT_OPTIMIZATIONS )
 					fprintf( stderr, "Optimized while conditional in function '%s' on line %d of '%s'.\n", func->str.string, func->line, func->file->string );
 #endif
-				} else if( next->execute == execute_if_statement
+				} else if( next->head.evaluate == execute_if_statement
 				&& optimize_conditional( next, execute_if_local_statement, execute_if_const_statement ) ) {
 #if defined( PRINT_OPTIMIZATIONS )
 					fprintf( stderr, "Optimized if conditional in function '%s' on line %d of '%s'.\n", func->str.string, func->line, func->file->string );
@@ -1334,16 +1324,16 @@ struct statement* optimize_statements( struct function *func, struct statement *
 			return prev;
 		}
 		prev = next;
-		next = next->next;
+		next = ( struct statement * ) next->head.next;
 	}
 #if defined( PRINT_OPTIMIZATIONS )
-	next = stmt->next;
+	next = ( struct statement * ) stmt->head.next;
 	while( next ) {
-		if( next->execute == execute_arithmetic_statement ) {
+		if( next->head.evaluate == execute_arithmetic_statement ) {
 			print_insns( func, ( struct arithmetic_statement * ) next );
 		}
-		print_expr_insns( func, next->source );
-		next = next->next;
+		print_expr_insns( func, next->head.parameters );
+		next = ( struct statement * ) next->head.next;
 	}
 #endif
 	return prev;

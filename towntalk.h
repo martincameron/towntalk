@@ -159,12 +159,8 @@ struct function_expression {
 
 /* Statement list. */
 struct statement {
-	int local;
-	struct expression *source;
-	enum result ( *execute )( struct statement *this,
-		struct variables *vars, struct variable *result );
+	struct expression head;
 	void ( *dispose )( struct statement *this );
-	struct statement *next;
 };
 
 /* Statement with associated statement lists. */
@@ -263,7 +259,7 @@ void dispose_environment( struct environment *env );
 /* Parse a statement that expects one or more expressions after the keyword. */
 struct element* parse_expr_list_statement( struct element *elem,
 	struct function *func, struct variables *vars, struct statement *prev,
-	enum result ( *execute )( struct statement *this, struct variables *vars, struct variable *result ),
+	enum result ( *execute )( struct expression *this, struct variables *vars, struct variable *result ),
 	char *message );
 
 /* Add the specified global declaration to the specified environment. */

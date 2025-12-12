@@ -584,11 +584,11 @@ static void audio_callback( void *userdata, Uint8 *stream, int len ) {
 	}
 }
 
-static enum result execute_display_statement( struct statement *this,
+static enum result execute_display_statement( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	int width, height;
 	struct variable caption = { 0, NULL };
-	struct expression *expr = this->source;
+	struct expression *expr = this->parameters;
 #if SDL_MAJOR_VERSION > 1
 	struct fxenvironment *fxenv = ( struct fxenvironment * ) vars->func->env;
 #endif
@@ -618,29 +618,29 @@ static enum result execute_display_statement( struct statement *this,
 								SDL_RenderClear( fxenv->renderer );
 								SDL_RenderPresent( fxenv->renderer );
 							} else {
-								ret = throw( vars, this->source, 0, SDL_GetError() );
+								ret = throw( vars, this, 0, SDL_GetError() );
 								SDL_DestroyRenderer( fxenv->renderer );
 								fxenv->renderer = NULL;
 								SDL_DestroyWindow( fxenv->window );
 								fxenv->window = NULL;
 							}
 						} else {
-							ret = throw( vars, this->source, 0, SDL_GetError() );
+							ret = throw( vars, this, 0, SDL_GetError() );
 							SDL_DestroyWindow( fxenv->window );
 							fxenv->window = NULL;
 						}
 					} else {
-						ret = throw( vars, this->source, 0, SDL_GetError() );
+						ret = throw( vars, this, 0, SDL_GetError() );
 					}
 				} else {
-					ret = throw( vars, this->source, 0, "Window already open." );
+					ret = throw( vars, this, 0, "Window already open." );
 				}
 #else
 				if( caption.string_value ) {
 					SDL_WM_SetCaption( caption.string_value->string, "" );
 				}
 				if( SDL_SetVideoMode( width, height, 32, SDL_HWSURFACE ) == NULL ) {
-					ret = throw( vars, this->source, 0, SDL_GetError() );
+					ret = throw( vars, this, 0, SDL_GetError() );
 				}
 #endif
 				dispose_variable( &caption );
@@ -650,7 +650,7 @@ static enum result execute_display_statement( struct statement *this,
 	return ret;
 }
 
-static enum result execute_surface_statement( struct statement *this,
+static enum result execute_surface_statement( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	struct variable var = { 0, NULL };
 	int surf, width, height, idx, len;
@@ -662,7 +662,7 @@ static enum result execute_surface_statement( struct statement *this,
 #else
 	struct SDL_Surface *surface = NULL;
 #endif
-	struct expression *expr = this->source;
+	struct expression *expr = this->parameters;
 	struct fxenvironment *fxenv = ( struct fxenvironment * ) vars->func->env;
 	enum result ret = evaluate_integer( expr, vars, &surf );
 	if( ret ) {
@@ -699,18 +699,18 @@ static enum result execute_surface_statement( struct statement *this,
 										idx++;
 									}
 									if( SDL_UpdateTexture( texture, NULL, pixels, width * sizeof( Uint32 ) ) ) {
-										ret = throw( vars, this->source, 0, SDL_GetError() );
+										ret = throw( vars, this, 0, SDL_GetError() );
 									}
 									SDL_SetTextureBlendMode( texture, SDL_BLENDMODE_BLEND );
 								} else {
-									ret = throw( vars, this->source, len, "Array index out of bounds." );
+									ret = throw( vars, this, len, "Array index out of bounds." );
 								}
 								free( pixels );
 							} else {
-								ret = throw_out_of_memory( vars, this->source );
+								ret = throw_out_of_memory( vars, this );
 							}
 						} else {
-							ret = throw( vars, this->source, 0, "Not an array." );
+							ret = throw( vars, this, 0, "Not an array." );
 						}
 					}
 					if( ret ) {
@@ -722,7 +722,7 @@ static enum result execute_surface_statement( struct statement *this,
 						SDL_DestroyTexture( texture );
 					}
 				} else {
-					ret = throw( vars, this->source, 0, SDL_GetError() );
+					ret = throw( vars, this, 0, SDL_GetError() );
 				}
 #else
 				surface = SDL_CreateRGBSurface( SDL_HWSURFACE, width, height,
@@ -743,14 +743,14 @@ static enum result execute_surface_statement( struct statement *this,
 										idx++;
 									}
 								} else {
-									ret = throw( vars, this->source, len, "Array index out of bounds." );
+									ret = throw( vars, this, len, "Array index out of bounds." );
 								}
 								SDL_UnlockSurface( surface );
 							} else {
-								ret = throw( vars, this->source, 0, SDL_GetError() );
+								ret = throw( vars, this, 0, SDL_GetError() );
 							}
 						} else {
-							ret = throw( vars, this->source, 0, "Not an array." );
+							ret = throw( vars, this, 0, "Not an array." );
 						}
 					}
 					if( ret ) {
@@ -762,21 +762,21 @@ static enum result execute_surface_statement( struct statement *this,
 						SDL_FreeSurface( surface );
 					}
 				} else {
-					ret = throw( vars, this->source, 0, SDL_GetError() );
+					ret = throw( vars, this, 0, SDL_GetError() );
 				}
 #endif
 			} else {
-				ret = throw( vars, this->source, 0, "Invalid surface dimensions." );
+				ret = throw( vars, this, 0, "Invalid surface dimensions." );
 			}
 		} else {
-			ret = throw( vars, this->source, surf, "Surface index out of bounds." );
+			ret = throw( vars, this, surf, "Surface index out of bounds." );
 		}
 		dispose_temporary( &var );
 	}
 	return ret;
 }
 
-static enum result execute_blit_statement( struct statement *this,
+static enum result execute_blit_statement( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	int idx = 0, params[ 7 ];
 	enum result ret = OKAY;
@@ -785,7 +785,7 @@ static enum result execute_blit_statement( struct statement *this,
 #else
 	struct SDL_Rect src, dest;
 #endif
-	struct expression *expr = this->source;
+	struct expression *expr = this->parameters;
 	struct fxenvironment *fxenv = ( struct fxenvironment * ) vars->func->env;
 	while( ret && idx < 7 ) {
 		ret = evaluate_integer( expr, vars, &params[ idx++ ] );
@@ -804,7 +804,7 @@ static enum result execute_blit_statement( struct statement *this,
 			SDL_QueryTexture( fxenv->surfaces[ idx ], NULL, NULL, &dest.w, &dest.h );
 			SDL_RenderSetClipRect( fxenv->renderer, &clip );
 			if( SDL_RenderCopy( fxenv->renderer, fxenv->surfaces[ idx ], NULL, &dest ) ) {
-				ret = throw( vars, this->source, 0, SDL_GetError() );
+				ret = throw( vars, this, 0, SDL_GetError() );
 			}
 #else
 			src.x = params[ 1 ];
@@ -814,22 +814,22 @@ static enum result execute_blit_statement( struct statement *this,
 			dest.x = params[ 5 ];
 			dest.y = params[ 6 ];
 			if( SDL_BlitSurface( fxenv->surfaces[ idx ], &src, SDL_GetVideoSurface(), &dest ) ) {
-				ret = throw( vars, this->source, 0, SDL_GetError() );
+				ret = throw( vars, this, 0, SDL_GetError() );
 			}
 #endif
 		} else {
-			ret = throw( vars, this->source, idx, "Surface index out of bounds." );
+			ret = throw( vars, this, idx, "Surface index out of bounds." );
 		}
 	}
 	return ret;
 }
 
-static enum result execute_rect_statement( struct statement *this,
+static enum result execute_rect_statement( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	enum result ret = OKAY;
 	int idx = 0, params[ 5 ];
 	struct SDL_Rect rect;
-	struct expression *expr = this->source;
+	struct expression *expr = this->parameters;
 #if SDL_MAJOR_VERSION > 1
 	int colour;
 	struct fxenvironment *fxenv = ( struct fxenvironment * ) vars->func->env;
@@ -849,18 +849,18 @@ static enum result execute_rect_statement( struct statement *this,
 		SDL_SetRenderDrawColor( fxenv->renderer,
 			( colour >> 16 ) & 0xFF, ( colour >> 8 ) & 0xFF, colour & 0xFF, 0xFF );
 		if( SDL_RenderFillRect( fxenv->renderer, &rect ) ) {
-			ret = throw( vars, this->source, 0, SDL_GetError() );
+			ret = throw( vars, this, 0, SDL_GetError() );
 		}
 #else
 		if( SDL_FillRect( SDL_GetVideoSurface(), &rect, params[ 4 ] ) ) {
-			ret = throw( vars, this->source, 0, SDL_GetError() );
+			ret = throw( vars, this, 0, SDL_GetError() );
 		}
 #endif
 	}
 	return ret;
 }
 
-static enum result execute_show_statement( struct statement *this,
+static enum result execute_show_statement( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 #if SDL_MAJOR_VERSION > 1
 	struct fxenvironment *fxenv = ( struct fxenvironment * ) vars->func->env;
@@ -874,42 +874,42 @@ static enum result execute_show_statement( struct statement *this,
 	return OKAY;
 }
 
-static enum result execute_sleep_statement( struct statement *this,
+static enum result execute_sleep_statement( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	int millis;
-	enum result ret = evaluate_integer( this->source, vars, &millis );
+	enum result ret = evaluate_integer( this->parameters, vars, &millis );
 	if( ret && millis > 0 ) {
 		SDL_Delay( millis );
 	}
 	return ret;
 }
 
-static enum result execute_timer_statement( struct statement *this,
+static enum result execute_timer_statement( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	int millis;
 	struct fxenvironment *fxenv = ( struct fxenvironment * ) vars->func->env;
-	enum result ret = evaluate_integer( this->source, vars, &millis );
+	enum result ret = evaluate_integer( this->parameters, vars, &millis );
 	if( ret ) {
 		if( millis > 0 ) {
 			fxenv->timer = SDL_AddTimer( millis, timer_callback, fxenv );
 			if( !fxenv->timer ) {
-				ret = throw( vars, this->source, millis, "Unable to start timer." );
+				ret = throw( vars, this, millis, "Unable to start timer." );
 			}
 		} else {
 			if( SDL_RemoveTimer( fxenv->timer ) == 0 ) {
-				ret = throw( vars, this->source, millis, "Unable to stop timer." );
+				ret = throw( vars, this, millis, "Unable to stop timer." );
 			}
 		}
 	}
 	return ret;
 }
 
-static enum result execute_audio_statement( struct statement *this,
+static enum result execute_audio_statement( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	struct fxenvironment *fxenv = ( struct fxenvironment * ) vars->func->env;
 	SDL_AudioSpec audiospec = { 0 };
 	int ticklen;
-	enum result ret = evaluate_integer( this->source, vars, &ticklen );
+	enum result ret = evaluate_integer( this->parameters, vars, &ticklen );
 	if( ret ) {
 		/* audio period; (Samples per tick at 24khz, 480 = 50hz) */
 		if( ticklen > 0 ) {
@@ -928,11 +928,11 @@ static enum result execute_audio_statement( struct statement *this,
 					if( SDL_OpenAudio( &audiospec, NULL ) >= 0 ) {
 						SDL_PauseAudio( 0 );
 					} else {
-						ret = throw( vars, this->source, 0, SDL_GetError() );
+						ret = throw( vars, this, 0, SDL_GetError() );
 					}
 				}
 			} else {
-				ret = throw( vars, this->source, ticklen, "Invalid tick length." );
+				ret = throw( vars, this, ticklen, "Invalid tick length." );
 			}
 		} else {
 			SDL_CloseAudio();
@@ -945,12 +945,12 @@ static enum result execute_audio_statement( struct statement *this,
 	return ret;
 }
 
-static enum result execute_sample_statement( struct statement *this,
+static enum result execute_sample_statement( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	/* sample index "data" loopstart looplen; */
 	int loop, llen, lend, idx, len;
 	struct variable data = { 0 };
-	struct expression *expr = this->source;
+	struct expression *expr = this->parameters;
 	struct fxenvironment *fxenv = ( struct fxenvironment * ) vars->func->env;
 	enum result ret = evaluate_integer( expr, vars, &idx );
 	if( ret ) {
@@ -977,23 +977,23 @@ static enum result execute_sample_statement( struct statement *this,
 					assign_variable( &data, &fxenv->samples[ idx - 1 ].sample_data );
 					SDL_UnlockAudio();
 				} else {
-					ret = throw( vars, this->source, lend, "Loop out of bounds." );
+					ret = throw( vars, this, lend, "Loop out of bounds." );
 				}
 			} else {
-				ret = throw( vars, this->source, len, "Sample data too long." );
+				ret = throw( vars, this, len, "Sample data too long." );
 			}
 		} else {
-			ret = throw( vars, this->source, idx, "Invalid sample index." );
+			ret = throw( vars, this, idx, "Invalid sample index." );
 		}
 	}
 	dispose_variable( &data );
 	return ret;
 }
 
-static enum result execute_play_statement( struct statement *this,
+static enum result execute_play_statement( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	int channel;
-	struct expression *expr = this->source;
+	struct expression *expr = this->parameters;
 	struct variable sequence = { 0, NULL };
 	struct fxenvironment *fxenv = ( struct fxenvironment * ) vars->func->env;
 	enum result ret = evaluate_integer( expr, vars, &channel );
@@ -1003,7 +1003,7 @@ static enum result execute_play_statement( struct statement *this,
 		if( ret ) {
 			if( channel >= 0 && channel < NUM_CHANNELS ) {
 				SDL_LockAudio();
-				if( this->local && fxenv->channels[ channel ].sequence.string_value ) {
+				if( this->index && fxenv->channels[ channel ].sequence.string_value ) {
 					assign_variable( &sequence, &fxenv->channels[ channel ].next_sequence );
 				} else {
 					fxenv->channels[ channel ].sequence_offset = 0;
@@ -1018,7 +1018,7 @@ static enum result execute_play_statement( struct statement *this,
 				}
 				SDL_UnlockAudio();
 			} else {
-				ret = throw( vars, this->source, channel, "Invalid channel index." );
+				ret = throw( vars, this, channel, "Invalid channel index." );
 			}
 			dispose_variable( &sequence );
 		}
@@ -1026,14 +1026,14 @@ static enum result execute_play_statement( struct statement *this,
 	return ret;
 }
 
-static enum result execute_midi_statement( struct statement *this,
+static enum result execute_midi_statement( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 #if defined( ALSA_MIDI )
 	int err = 0;
 	struct fxenvironment *fxenv = ( struct fxenvironment * ) vars->func->env;
 #endif
 	struct variable device = { 0, NULL };
-	enum result ret = this->source->evaluate( this->source, vars, &device );
+	enum result ret = this->parameters->evaluate( this->parameters, vars, &device );
 	if( ret ) {
 #if defined( ALSA_MIDI )
 		SDL_LockAudio();
@@ -1046,10 +1046,10 @@ static enum result execute_midi_statement( struct statement *this,
 		}
 		SDL_UnlockAudio();
 		if( err < 0 ) {
-			ret = throw( vars, this->source, err, snd_strerror( err ) );
+			ret = throw( vars, this, err, snd_strerror( err ) );
 		}
 #else
-		ret = throw( vars, this->source, 0, "MIDI not supported." );
+		ret = throw( vars, this, 0, "MIDI not supported." );
 #endif
 		dispose_variable( &device );
 	}
@@ -1066,15 +1066,10 @@ static struct element* parse_show_statement( struct element *elem,
 	struct element *next = elem->next;
 	struct statement *stmt = calloc( 1, sizeof( struct statement ) );
 	if( stmt ) {
-		stmt->source = calloc( 1, sizeof( struct expression ) );
-		if( stmt->source ) {
-			stmt->source->line = elem->line;
-			stmt->execute = execute_show_statement;
-			prev->next = stmt;
-			next = next->next;
-		} else {
-			strcpy( message, OUT_OF_MEMORY );
-		}
+		stmt->head.line = elem->line;
+		stmt->head.evaluate = execute_show_statement;
+		prev->head.next = ( struct expression * ) stmt;
+		next = next->next;
 	} else {
 		strcpy( message, OUT_OF_MEMORY );
 	}
@@ -1124,8 +1119,8 @@ static struct element* parse_play_statement( struct element *elem,
 static struct element* parse_queue_statement( struct element *elem,
 	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
 	struct element *next = parse_expr_list_statement( elem, func, vars, prev, execute_play_statement, message );
-	if( prev->next ) {
-		prev->next->local = 1;
+	if( prev->head.next ) {
+		prev->head.next->index = 1;
 	}
 	return next;
 }

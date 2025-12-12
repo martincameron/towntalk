@@ -87,13 +87,13 @@ static struct custom_type worker_type = {
 	"Worker", NULL, NULL, dispose_worker
 };
 
-static enum result execute_lock_statement( struct statement *this,
+static enum result execute_lock_statement( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	struct statement *stmt = ( ( struct block_statement * ) this )->if_block;
 	struct worker *work = ( struct worker * ) vars->func->env->worker;
 	struct variable var = { 0, NULL };
 	char *locked = NULL;
-	enum result ret = this->source->evaluate( this->source, vars, &var );
+	enum result ret = this->parameters->evaluate( this->parameters, vars, &var );
 	if( ret ) {
 		if( is_custom_instance( var.string_value, &worker_type ) ) {
 			work = ( struct worker * ) var.string_value;
@@ -101,15 +101,15 @@ static enum result execute_lock_statement( struct statement *this,
 		} else if( work ) {
 			locked = &work->worker_locked;
 		} else {
-			ret = throw( vars, this->source, 0, "Not a worker.");
+			ret = throw( vars, this->parameters, 0, "Not a worker.");
 		}
 		if( locked ) {
 			if( locked[ 0 ] == 0 && lock_worker( work ) ) {
 				locked[ 0 ] = 1;
 				while( stmt ) {
-					ret = stmt->execute( stmt, vars, result );
+					ret = stmt->head.evaluate( ( struct expression * ) stmt, vars, result );
 					if( ret == OKAY ) {
-						stmt = stmt->next;
+						stmt = ( struct statement * ) stmt->head.next;
 					} else {
 						break;
 					}
@@ -117,10 +117,10 @@ static enum result execute_lock_statement( struct statement *this,
 				locked[ 0 ] = 0;
 				if( unlock_worker( work ) == 0 ) {
 					locked[ 0 ] = 1;
-					ret = throw( vars, this->source, 0, "Unable to unlock worker.");
+					ret = throw( vars, this->parameters, 0, "Unable to unlock worker.");
 				}
 			} else {
-				ret = throw( vars, this->source, 0, "Unable to lock worker.");
+				ret = throw( vars, this->parameters, 0, "Unable to lock worker.");
 			}
 		}
 		dispose_temporary( &var );
@@ -134,8 +134,9 @@ struct element* parse_lock_statement( struct element *elem,
 	struct element *next = elem->next;
 	struct statement block = { 0 }, *stmt = calloc( 1, sizeof( struct block_statement ) );
 	if( stmt ) {
+		stmt->head.line = elem->line;
 		stmt->dispose = dispose_block_statement;
-		prev->next = stmt;
+		prev->head.next = ( struct expression * ) stmt;
 		if( next->str.string[ 0 ] == '{' ) {
 			expr.next = calloc( 1, sizeof( struct value_expression ) );
 			if( expr.next ) {
@@ -149,12 +150,12 @@ struct element* parse_lock_statement( struct element *elem,
 			next = parse_expression( next, func, vars, &expr, message );
 		}
 		if( message[ 0 ] == 0 ) {
-			stmt->source = expr.next;
-			stmt->execute = execute_lock_statement;
+			stmt->head.parameters = expr.next;
+			stmt->head.evaluate = execute_lock_statement;
 			if( next->child ) {
-				block.next = NULL;
+				block.head.next = NULL;
 				parse_keywords_indexed( func->env->statements_index, next->child, func, vars, &block, message );
-				( ( struct block_statement * ) stmt )->if_block = block.next;
+				( ( struct block_statement * ) stmt )->if_block = ( struct statement * ) block.head.next;
 			}
 			if( message[ 0 ] == 0 ) {
 				next = next->next;
