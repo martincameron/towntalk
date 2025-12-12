@@ -146,11 +146,6 @@ struct arithmetic_statement {
 	struct instructions insns;
 };
 
-struct arithmetic_statement_expr {
-	struct expression expr;
-	struct arithmetic_statement stmt;
-};
-
 static enum compilable_stmt can_compile_stmt( struct statement *stmt ) {
 	if( stmt ) {
 		if( stmt->head.evaluate == execute_local_assignment ) {
@@ -1138,11 +1133,6 @@ static struct statement* optimize_call( struct statement *stmt, struct statement
 	return stmt;
 }
 
-static enum result evaluate_arith_stmt_expr( struct expression *this,
-	struct variables *vars, struct variable *result ) {
-	return execute_arithmetic_statement( &( ( struct arithmetic_statement_expr * ) this )->stmt.stmt.head, vars, result );
-}
-
 #if defined( PRINT_OPTIMIZATIONS )
 static void print_insns( struct function *func, struct arithmetic_statement *stmt ) {
 	char *name;
@@ -1168,8 +1158,8 @@ static void print_insns( struct function *func, struct arithmetic_statement *stm
 
 static void print_expr_insns( struct function *func, struct expression * expr ) {
 	while( expr ) {
-		if( expr->evaluate == evaluate_arith_stmt_expr ) {
-			print_insns( func, &( ( struct arithmetic_statement_expr * ) expr )->stmt );
+		if( expr->evaluate == execute_arithmetic_statement ) {
+			print_insns( func, ( struct arithmetic_statement * ) expr );
 		}
 		print_expr_insns( func, expr->parameters );
 		expr = expr->next;
@@ -1182,10 +1172,8 @@ static struct expression* compile_arith_stmt_expr( struct expression *expr, stru
 	struct instruction *insn;
 	struct instructions *insns;
 	int *oper, dest = POP_RESULT;
-	struct arithmetic_statement *arith_stmt;
-	struct arithmetic_statement_expr *new_arith_expr, *arith_expr = calloc( 1, sizeof( struct arithmetic_statement_expr ) );
-	if( arith_expr ) {
-		arith_stmt = &arith_expr->stmt;
+	struct arithmetic_statement *new_arith_stmt, *arith_stmt = calloc( 1, sizeof( struct arithmetic_statement ) );
+	if( arith_stmt ) {
 		if( compile_expression( arith_stmt, expr, 0, message ) ) {
 			oper = &arith_stmt->insns.list[ arith_stmt->insns.count - 1 ].oper;
 			if( *oper == PUSH_LOCAL || *oper == PUSH_GLOBAL || *oper == PUSH_ARRAY ) {
@@ -1196,34 +1184,31 @@ static struct expression* compile_arith_stmt_expr( struct expression *expr, stru
 				insns = &arith_stmt->insns;
 				if( insns->list != insns->initial ) {
 					size = ( insns->count + 1 ) * sizeof( struct instruction );
-					new_arith_expr = calloc( 1, sizeof( struct arithmetic_statement_expr ) + size );
-					if( new_arith_expr ) {
-						insn = ( struct instruction * ) &new_arith_expr[ 1 ];
+					new_arith_stmt = calloc( 1, sizeof( struct arithmetic_statement ) + size );
+					if( new_arith_stmt ) {
+						insn = ( struct instruction * ) &new_arith_stmt[ 1 ];
 						memcpy( insn, insns->list, size );
-						new_arith_expr->stmt.insns.list = insn;
-						arith_stmt = &new_arith_expr->stmt;
+						new_arith_stmt->insns.list = insn;
 					} else {
 						strcpy( message, OUT_OF_MEMORY );
 					}
-					free( insns->list );
-					free( arith_expr );
-					arith_expr = new_arith_expr;
+					dispose_arithmetic_statement( ( struct statement * ) arith_stmt );
+					arith_stmt = new_arith_stmt;
 				}
-				if( arith_expr ) {
-					arith_expr->expr.line = expr->line;
-					arith_expr->expr.next = expr->next;
-					arith_expr->expr.parameters = expr;
+				if( arith_stmt ) {
+					arith_stmt->stmt.head.line = expr->line;
+					arith_stmt->stmt.head.next = expr->next;
 					expr->next = arith_stmt->stmt.head.parameters;
-					arith_expr->expr.evaluate = evaluate_arith_stmt_expr;
-					expr = &arith_expr->expr;
+					arith_stmt->stmt.head.parameters = expr;
+					arith_stmt->stmt.head.evaluate = execute_arithmetic_statement;
 					if( prev ) {
-						prev->next = expr;
+						prev->next = ( struct expression * ) arith_stmt;
 					}
-					return expr;
 				}
+				return ( struct expression * ) arith_stmt;
 			}
 		}
-		free( arith_expr );
+		dispose_arithmetic_statement( ( struct statement * ) arith_stmt );
 	} else {
 		strcpy( message, OUT_OF_MEMORY );
 	}
