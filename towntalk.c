@@ -2647,7 +2647,7 @@ static enum result evaluate_unary_expression( struct expression *this,
 	return ret;
 }
 
-static enum result evaluate_logical_expression( struct expression *this,
+enum result evaluate_logical_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	int value;
 	struct variable var = { 0, NULL };
