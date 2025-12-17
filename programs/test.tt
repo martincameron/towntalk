@@ -474,6 +474,7 @@ function testarith() {
 	call assert_equals( 0, ^( 1 1 ), ${-} );
 	call assert_equals( 0, ^( 1 one ), ${-} );
 	call assert_equals( -1, ~( FALSE ), ${-} );
+	call assert_equals( -1, ~( zero ), ${-} );
 	call assert_equals( 21, +( *( +( *( 1 2 ) 3 ) 4 ) 1 ), ${-} );
 	call assert_equals( 10, +( *( +( *( 1 two ) two ) two ) two ), ${-} );
 	call assert_throws( "1", ${ () { call +( except( ${ 1 } ) except( ${ 0 } ) ); } } );

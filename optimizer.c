@@ -43,6 +43,7 @@ enum result evaluate_number_literal_expression( struct expression *this, struct 
 enum result evaluate_string_literal_expression( struct expression *this, struct variables *vars, struct variable *result );
 enum result evaluate_arithmetic_expression( struct expression *this, struct variables *vars, struct variable *result );
 enum result evaluate_logical_expression( struct expression *this, struct variables *vars, struct variable *result );
+enum result evaluate_unary_expression( struct expression *this, struct variables *vars, struct variable *result );
 enum result evaluate_chr_expression( struct expression *this, struct variables *vars, struct variable *result );
 enum result evaluate_unpack_expression( struct expression *this, struct variables *vars, struct variable *result );
 enum result evaluate_index_expression( struct expression *this, struct variables *vars, struct variable *result );
@@ -82,7 +83,7 @@ enum arithmetic_op {
 	AND_LOCAL, OR_LOCAL,  XOR_LOCAL, ADD_LOCAL, SUB_LOCAL,
 	MUL_LOCAL, FDI_LOCAL, DIV_LOCAL, MOD_LOCAL, ASL_LOCAL, ASR_LOCAL,
 	NE_LOCAL,  LT_LOCAL,  LE_LOCAL,  EQ_LOCAL,  GE_LOCAL,  GT_LOCAL,
-	NOP
+	NOT_STACK, NOT_LOCAL, NOP
 };
 
 enum compilable_stmt {
@@ -105,7 +106,9 @@ enum compilable_expr {
 	ARITHMETIC_OPERATOR,
 	ARRAY_ELEMENT,
 	STRING_CHARACTER,
-	STRING_UNPACK
+	STRING_UNPACK,
+	LOGICAL_NOT,
+	BITWISE_NOT
 };
 
 #if defined( PRINT_OPTIMIZATIONS )
@@ -126,7 +129,7 @@ static char* arithmetic_ops[] = {
 	"AND_LOCAL", "OR_LOCAL",  "XOR_LOCAL", "ADD_LOCAL", "SUB_LOCAL",
 	"MUL_LOCAL", "FDI_LOCAL", "DIV_LOCAL", "MOD_LOCAL", "ASL_LOCAL", "ASR_LOCAL",
 	"NE_LOCAL",  "LT_LOCAL",  "LE_LOCAL",  "EQ_LOCAL",  "GE_LOCAL",  "GT_LOCAL",
-	"NOP"
+	"NOT_STACK", "NOT_LOCAL", "NOP"
 };
 #endif
 
@@ -203,6 +206,14 @@ static enum compilable_expr can_compile_expr( struct expression *expr ) {
 	} else if( expr->evaluate == evaluate_unpack_expression ) {
 		if( expr->parameters->evaluate == evaluate_global ) {
 			return STRING_UNPACK;
+		}
+	} else if( expr->evaluate == evaluate_logical_expression ) {
+		if( expr->index == '!' ) {
+			return LOGICAL_NOT;
+		}
+	} else if( expr->evaluate == evaluate_unary_expression ) {
+		if( expr->index == 1 ) {
+			return BITWISE_NOT;
 		}
 	} else if( expr->evaluate == evaluate_global ) {
 		return GLOBAL_VARIABLE;
@@ -310,6 +321,29 @@ static struct instruction* compile_expression( struct arithmetic_statement *stmt
 			insn = compile_expression( stmt, expr->parameters->next, top, message );
 			if( insn ) {
 				insn = add_instruction( &stmt->insns, PUSH_UNPACK, 0, expr->parameters, message );
+			}
+			break;
+		case LOGICAL_NOT:
+			insn = compile_expression( stmt, expr->parameters, top, message );
+			if( insn ) {
+				oper = insn->oper;
+				if( oper == PUSH_LOCAL || oper == PUSH_GLOBAL || oper == PUSH_EXPR || oper == PUSH_ARRAY ) {
+					oper = PUSH_TRUE_IF_NULL;
+					insn->oper++;
+				} else {
+					oper = PUSH_TRUE_IF_ZERO;
+				}
+				insn = add_instruction( &stmt->insns, oper, 0, expr, message );
+			}
+			break;
+		case BITWISE_NOT:
+			insn = compile_expression( stmt, expr->parameters, top, message );
+			if( insn ) {
+				if( insn->oper == PUSH_LOCAL ) {
+					insn->oper = NOT_LOCAL;
+				} else {
+					insn = add_instruction( &stmt->insns, NOT_STACK, 0, expr, message );
+				}
 			}
 			break;
 		case GLOBAL_VARIABLE:
@@ -899,6 +933,21 @@ static enum result execute_arithmetic_statement( struct expression *this,
 					*top = *top != local->number_value;
 				}
 				break;
+			case NOT_STACK:
+				*top = ~( ( long_int ) *top );
+				break;
+			case NOT_LOCAL:
+				local = locals + insn->local;
+				if( local->string_value ) {
+					if( to_num( local, &value, vars, insn->expr ) ) {
+						*++top = ~( ( long_int ) value );
+					} else {
+						return EXCEPTION;
+					}
+				} else {
+					*++top = ~( ( long_int ) local->number_value );
+				}
+				break;
 		}
 		insn++;
 	}
@@ -1289,7 +1338,7 @@ static struct expression* optimize_expression( struct expression *expr, struct e
 	enum compilable_expr compilable = can_compile_expr( expr );
 	if( compilable >= ARITHMETIC_OPERATOR ) {
 		expr = compile_arith_stmt_expr( expr, prev, message );
-	} else if( expr->evaluate == evaluate_logical_expression && ( expr->index == '&' || expr->index == '|' ) ) {
+	} else if( expr->evaluate == evaluate_logical_expression ) {
 		expr = compile_logical_expr( expr, prev, message );
 	} else if( !compilable ) {
 		expr = optimize_parameters( expr, message );

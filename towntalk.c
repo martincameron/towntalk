@@ -2621,7 +2621,7 @@ static struct element* parse_local_declaration( struct element *elem,
 	return parse_variable_declaration( elem->next, func, vars, prev, add_local_variable, message);
 }
 
-static enum result evaluate_unary_expression( struct expression *this,
+enum result evaluate_unary_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	struct variable var = { 0, NULL };
 	enum result ret = this->parameters->evaluate( this->parameters, vars, &var );
