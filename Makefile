@@ -12,7 +12,7 @@ SDL2=`sdl2-config --cflags --libs`
 all: tt
 
 clean:
-	rm -fv tt ttfp ttfx ttfx-midi ttfx-sdl1 xm2tmf *.gcov *.gcda *.gcno
+	rm -fv tt ttfp ttfx ttfx-midi ttfx-sdl1 xm2tmf *.gcov *.gcda *.gcno vgcore.*
 
 tt: tt.c towntalk.c towntalk.h optimizer.c worker.c worker.h ttasm.c ttasm.h
 	$(CC) $(CFLAGS) $(ANSI_C) -DOPTIMIZER -DASM_STATEMENT tt.c towntalk.c optimizer.c worker.c ttasm.c -o tt
