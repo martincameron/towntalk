@@ -253,18 +253,21 @@ static struct instruction* add_instruction( struct instructions *insns,
 }
 
 static struct instruction* compile_expression( struct arithmetic_statement *stmt, struct expression *expr, struct expression *prev, int top, char *message ) {
-	struct expression params, *param;
-	struct instruction *insn;
 	enum arithmetic_op oper;
-	switch( top <= 6 ? can_compile_expr( expr ) : EXPR_NOT_COMPILABLE ) {
+	struct instruction *insn;
+	struct expression params, *param;
+	enum compilable_expr compilable = can_compile_expr( expr );
+	switch( top < 6 ? compilable : EXPR_NOT_COMPILABLE ) {
 		case ARITHMETIC_OPERATOR:
 			oper = get_arithmetic_op( expr );
 			if( oper ) {
-				param = expr->parameters;
-				insn = compile_expression( stmt, param, NULL, top, message );
-				while( insn && param->next ) {
-					param = param->next;
-					insn = compile_expression( stmt, param, NULL, top + 1, message );
+				params.next = expr->parameters;
+				insn = compile_expression( stmt, params.next, &params, top, message );
+				prev = params.next;
+				param = prev->next;
+				while( insn && param ) {
+					insn = compile_expression( stmt, param, prev, top + 1, message );
+					param = prev->next;
 					if( insn ) {
 						if( insn->oper == PUSH_CONST ) {
 							insn->oper = oper + AND_CONST - AND_STACK;
@@ -274,7 +277,10 @@ static struct instruction* compile_expression( struct arithmetic_statement *stmt
 							insn = add_instruction( &stmt->insns, oper, 0, param, message );
 						}
 					}
+					prev = param;
+					param = param->next;
 				}
+				expr->parameters = params.next;
 			} else {
 				insn = add_instruction( &stmt->insns, PUSH_EXPR, 0, expr, message );
 			}
@@ -335,7 +341,9 @@ static struct instruction* compile_expression( struct arithmetic_statement *stmt
 			}
 			break;
 		case BITWISE_NOT:
-			insn = compile_expression( stmt, expr->parameters, NULL, top, message );
+			params.next = expr->parameters;
+			insn = compile_expression( stmt, params.next, &params, top, message );
+			expr->parameters = params.next;
 			if( insn ) {
 				if( insn->oper == PUSH_LOCAL ) {
 					insn->oper = NOT_LOCAL;
@@ -350,7 +358,7 @@ static struct instruction* compile_expression( struct arithmetic_statement *stmt
 		default:
 			insn = NULL;
 			if( prev ) {
-				expr = optimize_expression( expr, prev, EXPR_NOT_COMPILABLE, message );
+				expr = optimize_expression( expr, prev, compilable, message );
 			} else {
 				expr = optimize_parameters( expr, message );
 			}
@@ -389,7 +397,7 @@ static enum result modulo( number *lhs, number rhs, struct variables *vars, stru
 static enum result execute_arithmetic_statement( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	struct instruction *insn = ( ( struct arithmetic_statement * ) this )->insns.list;
-	number stack[ 9 ], *top = stack, value;
+	number stack[ 8 ], *top = stack, value;
 	struct variable var, *locals = vars->locals, *local;
 	struct array *arr;
 	int index;
@@ -1121,14 +1129,17 @@ static struct arithmetic_statement* add_arithmetic_statement( struct statement *
 
 static struct statement* optimize_local_assignment( struct statement *stmt, struct statement *prev, char *message ) {
 	struct instruction *insn;
-	struct expression *expr = stmt->head.parameters;
-	int local = stmt->head.index, oper, dest = POP_LOCAL;
 	struct arithmetic_statement *arith;
-	if( prev->head.evaluate == execute_arithmetic_statement || can_compile_stmt( ( struct statement * ) stmt->head.next ) || can_compile_expr( expr ) >= ARITHMETIC_OPERATOR ) {
+	int local = stmt->head.index, oper, dest = POP_LOCAL;
+	struct expression params, *param = stmt->head.parameters;
+	if( prev->head.evaluate == execute_arithmetic_statement || can_compile_stmt( ( struct statement * ) stmt->head.next ) || can_compile_expr( param ) >= ARITHMETIC_OPERATOR ) {
 		arith = add_arithmetic_statement( stmt, prev, message );
 		if( arith ) {
 			stmt = &arith->stmt;
-			if( compile_expression( arith, expr, NULL, 0, message ) ) {
+			params.next = arith->stmt.head.parameters->parameters;
+			insn = compile_expression( arith, params.next, &params, 0, message );
+			arith->stmt.head.parameters->parameters = params.next;
+			if( insn ) {
 				insn = &arith->insns.list[ arith->insns.count - 1 ];
 				oper = insn->oper;
 				if( oper == PUSH_EXPR ) {
@@ -1139,7 +1150,7 @@ static struct statement* optimize_local_assignment( struct statement *stmt, stru
 						dest = STORE_LOCAL;
 						insn->oper++;
 					}
-					add_instruction( &arith->insns, dest, local, expr, message );
+					add_instruction( &arith->insns, dest, local, param, message );
 				}
 			}
 		}
@@ -1150,20 +1161,24 @@ static struct statement* optimize_local_assignment( struct statement *stmt, stru
 }
 
 static struct statement* optimize_array_assignment( struct statement *stmt, struct statement *prev, char *message ) {
+	struct instruction *insn;
 	int *oper, dest = POP_ARRAY;
-	struct expression *src = stmt->head.parameters, *arr = src->next, *idx = arr->next;
+	struct expression params, *src = stmt->head.parameters, *arr = src->next, *idx = arr->next;
 	struct arithmetic_statement *arith = add_arithmetic_statement( stmt, prev, message );
 	if( arith ) {
 		stmt = &arith->stmt;
-		if( compile_expression( arith, idx, NULL, 0, message )
-		&& add_instruction( &arith->insns, CHECK_ARRAY, arr->index, idx, message )
-		&& compile_expression( arith, src, NULL, 1, message ) ) {
-			oper = &arith->insns.list[ arith->insns.count - 1 ].oper;
-			if( *oper == PUSH_LOCAL || *oper == PUSH_GLOBAL || *oper == PUSH_EXPR || *oper == PUSH_ARRAY ) {
-				dest = STORE_ARRAY;
-				(*oper)++;
+		if( compile_expression( arith, idx, arr, 0, message ) && add_instruction( &arith->insns, CHECK_ARRAY, arr->index, idx, message ) ) {
+			params.next = arith->stmt.head.parameters->parameters;
+			insn = compile_expression( arith, params.next, &params, 1, message );
+			arith->stmt.head.parameters->parameters = params.next;
+			if( insn ) {
+				oper = &arith->insns.list[ arith->insns.count - 1 ].oper;
+				if( *oper == PUSH_LOCAL || *oper == PUSH_GLOBAL || *oper == PUSH_EXPR || *oper == PUSH_ARRAY ) {
+					dest = STORE_ARRAY;
+					(*oper)++;
+				}
+				add_instruction( &arith->insns, dest, arr->index, arr, message );
 			}
-			add_instruction( &arith->insns, dest, arr->index, arr, message );
 		}
 	}
 	return stmt;
@@ -1183,20 +1198,24 @@ static struct statement* optimize_increment( struct statement *stmt, struct stat
 }
 
 static struct statement* optimize_return( struct statement *stmt, struct statement *prev, char *message ) {
+	struct instruction *insn;
 	int *oper, dest = POP_RETURN;
-	struct expression *expr = stmt->head.parameters;
 	struct arithmetic_statement *arith;
-	if( prev->head.evaluate == execute_arithmetic_statement || can_compile_expr( expr ) >= ARITHMETIC_OPERATOR ) {
+	struct expression params, *param = stmt->head.parameters;
+	if( prev->head.evaluate == execute_arithmetic_statement || can_compile_expr( param ) >= ARITHMETIC_OPERATOR ) {
 		arith = add_arithmetic_statement( stmt, prev, message );
 		if( arith ) {
 			stmt = &arith->stmt;
-			if( compile_expression( arith, expr, NULL, 0, message ) ) {
+			params.next = arith->stmt.head.parameters->parameters;
+			insn = compile_expression( arith, params.next, &params, 0, message );
+			arith->stmt.head.parameters->parameters = params.next;
+			if( insn ) {
 				oper = &arith->insns.list[ arith->insns.count - 1 ].oper;
 				if( *oper == PUSH_LOCAL || *oper == PUSH_GLOBAL || *oper == PUSH_EXPR || *oper == PUSH_ARRAY ) {
 					dest = STORE_RETURN;
 					(*oper)++;
 				}
-				add_instruction( &arith->insns, dest, 0, expr, message );
+				add_instruction( &arith->insns, dest, 0, param, message );
 			}
 		}
 	} else {
