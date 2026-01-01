@@ -160,7 +160,7 @@ static enum compilable_stmt can_compile_stmt( struct statement *stmt ) {
 		if( stmt->head.evaluate == execute_local_assignment ) {
 			return LOCAL_ASSIGNMENT;
 		} else if( stmt->head.evaluate == execute_array_assignment ) {
-			if( stmt->head.parameters->next->evaluate == evaluate_local ) {
+			if( stmt->head.parameters->evaluate == evaluate_local ) {
 				return ARRAY_ASSIGNMENT;
 			}
 		} else if( stmt->head.evaluate == execute_increment_statement ) {
@@ -1161,17 +1161,14 @@ static struct statement* optimize_local_assignment( struct statement *stmt, stru
 }
 
 static struct statement* optimize_array_assignment( struct statement *stmt, struct statement *prev, char *message ) {
-	struct instruction *insn;
 	int *oper, dest = POP_ARRAY;
-	struct expression params, *src = stmt->head.parameters, *arr = src->next, *idx = arr->next;
+	struct expression *arr = stmt->head.parameters, *idx = arr->next;
 	struct arithmetic_statement *arith = add_arithmetic_statement( stmt, prev, message );
 	if( arith ) {
 		stmt = &arith->stmt;
 		if( compile_expression( arith, idx, arr, 0, message ) && add_instruction( &arith->insns, CHECK_ARRAY, arr->index, idx, message ) ) {
-			params.next = arith->stmt.head.parameters->parameters;
-			insn = compile_expression( arith, params.next, &params, 1, message );
-			arith->stmt.head.parameters->parameters = params.next;
-			if( insn ) {
+			idx = arr->next;
+			if( compile_expression( arith, idx->next, idx, 1, message ) ) {
 				oper = &arith->insns.list[ arith->insns.count - 1 ].oper;
 				if( *oper == PUSH_LOCAL || *oper == PUSH_GLOBAL || *oper == PUSH_EXPR || *oper == PUSH_ARRAY ) {
 					dest = STORE_ARRAY;

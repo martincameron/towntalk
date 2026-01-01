@@ -1843,7 +1843,7 @@ enum result execute_array_assignment( struct expression *this,
 	struct array *arr;
 	enum result ret = OKAY;
 	struct variable dest = { 0, NULL }, src = { 0, NULL };
-	struct expression *src_expr = this->parameters, *dest_expr = src_expr->next, *idx_expr = dest_expr->next;
+	struct expression *dest_expr = this->parameters, *idx_expr = dest_expr->next, *src_expr = idx_expr->next;
 	if( dest_expr->evaluate == evaluate_local ) {
 		arr = ( struct array * ) vars->locals[ dest_expr->index ].string_value;
 	} else {
@@ -1885,14 +1885,15 @@ enum result execute_array_assignment( struct expression *this,
 static enum result execute_struct_assignment( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	struct array *arr;
-	struct expression *destination = this->parameters->next;
+	struct expression *param = this->parameters;
 	struct variable obj = { 0, NULL }, var = { 0, NULL };
-	enum result ret = destination->evaluate( destination, vars, &obj );
+	enum result ret = param->evaluate( param, vars, &obj );
 	if( ret ) {
-		ret = is_instance( &obj, ( ( struct structure_statement * ) this )->structure, vars, destination );
+		ret = is_instance( &obj, ( ( struct structure_statement * ) this )->structure, vars, param );
 		if( ret ) {
+			param = param->next;
 			arr = ( struct array * ) obj.string_value;
-			ret = this->parameters->evaluate( this->parameters, vars, &var );
+			ret = param->evaluate( param, vars, &var );
 			if( ret ) {
 				arr->number_values[ this->index ] = var.number_value;
 				if( arr->string_values ) {
@@ -4591,28 +4592,24 @@ static struct element* parse_arraycopy_statement( struct element *elem,
 
 static struct element* parse_array_assignment( struct element *elem,
 	struct function *func, struct variables *vars, struct statement *prev, char *message ) {
-	struct expression expr;
+	struct expression params, *param;
 	struct element *next = elem, *child = elem->child;
 	struct statement *stmt = calloc( 1, sizeof( struct statement ) );
 	if( stmt ) {
 		prev->head.next = ( struct expression * ) stmt;
-		expr.next = NULL;
-		child = parse_expression( child, func, vars, &expr, message );
-		if( expr.next ) {
-			stmt->head.parameters = expr.next;
+		params.next = NULL;
+		child = parse_expression( child, func, vars, &params, message );
+		stmt->head.parameters = param = params.next;
+		if( param ) {
 			if( child->str.string[ 0 ] == ',' ) {
 				child = child->next;
 			}
-			expr.next = NULL;
-			child = parse_expression( child, func, vars, &expr, message );
-			if( expr.next ) {
-				stmt->head.parameters->next = expr.next;
-				expr.next = NULL;
-				next = parse_expression( next->next->next, func, vars, &expr, message );
-				if( expr.next ) {
+			child = parse_expression( child, func, vars, param, message );
+			param = param->next;
+			if( param ) {
+				next = parse_expression( next->next->next, func, vars, param, message );
+				if( param->next ) {
 					stmt->head.line = elem->line;
-					expr.next->next = stmt->head.parameters;
-					stmt->head.parameters = expr.next;
 					stmt->head.evaluate = execute_array_assignment;
 				}
 			}
@@ -4645,13 +4642,10 @@ static struct element* parse_struct_assignment( struct element *elem,
 				stmt->head.parameters = expr.next;
 				if( message[ 0 ] == 0 ) {
 					if( count == 1 ) {
-						expr.next = NULL;
-						next = parse_expression( next->next->next, func, vars, &expr, message );
-						if( expr.next ) {
+						next = parse_expression( next->next->next, func, vars, expr.next, message );
+						if( expr.next->next ) {
 							stmt->head.line = elem->line;
 							stmt->head.index = idx;
-							expr.next->next = stmt->head.parameters;
-							stmt->head.parameters = expr.next;
 							stmt->head.evaluate = execute_struct_assignment;
 						}
 					} else {
@@ -4682,28 +4676,26 @@ static struct element* parse_local_assignment( struct element *elem,
 		stmt = calloc( 1, sizeof( struct structure_statement ) );
 		if( stmt ) {
 			prev->head.next = ( struct expression * ) stmt;
-			expr.next = NULL;
-			next = parse_expression( next->next->next, func, vars, &expr, message );
-			if( expr.next ) {
-				stmt->head.line = elem->line;
+			stmt->head.line = elem->line;
+			( ( struct structure_statement * ) stmt )->structure = struc;
+			idx = get_string_list_index( struc->fields, &field[ 1 ] );
+			if( idx >= 0 ) {
+				stmt->head.index = idx;
+				expr.next = calloc( 1, sizeof( struct expression ) );
 				stmt->head.parameters = expr.next;
-				( ( struct structure_statement * ) stmt )->structure = struc;
-				idx = get_string_list_index( struc->fields, &field[ 1 ] );
-				if( idx >= 0 ) {
-					stmt->head.index = idx;
-					expr.next = calloc( 1, sizeof( struct expression ) );
-					if( expr.next ) {
-						expr.next->line = next->line;
-						expr.next->index = local->index;
-						expr.next->evaluate = evaluate_local;
-						stmt->head.parameters->next = expr.next;
+				if( expr.next ) {
+					expr.next->line = elem->line;
+					expr.next->index = local->index;
+					expr.next->evaluate = evaluate_local;
+					next = parse_expression( next->next->next, func, vars, expr.next, message );
+					if( expr.next->next ) {
 						stmt->head.evaluate = execute_struct_assignment;
-					} else {
-						strcpy( message, OUT_OF_MEMORY );
 					}
 				} else {
-					sprintf( message, "Field '%.64s' not declared on line %d.", elem->str.string, elem->line );
+					strcpy( message, OUT_OF_MEMORY );
 				}
+			} else {
+				sprintf( message, "Field '%.64s' not declared on line %d.", elem->str.string, elem->line );
 			}
 		} else {
 			strcpy( message, OUT_OF_MEMORY );
@@ -4744,28 +4736,26 @@ static struct element* parse_global_assignment( struct element *elem,
 		stmt = calloc( 1, sizeof( struct structure_statement ) );
 		if( stmt ) {
 			prev->head.next = ( struct expression * ) stmt;
-			expr.next = NULL;
-			next = parse_expression( next->next->next, func, vars, &expr, message );
-			if( expr.next ) {
-				stmt->head.line = elem->line;
+			stmt->head.line = elem->line;
+			( ( struct structure_statement * ) stmt )->structure = struc;
+			idx = get_string_list_index( struc->fields, &field[ 1 ] );
+			if( idx >= 0 ) {
+				stmt->head.index = idx;
+				expr.next = calloc( 1, sizeof( struct value_expression ) );
 				stmt->head.parameters = expr.next;
-				( ( struct structure_statement * ) stmt )->structure = struc;
-				idx = get_string_list_index( struc->fields, &field[ 1 ] );
-				if( idx >= 0 ) {
-					stmt->head.index = idx;
-					expr.next = calloc( 1, sizeof( struct value_expression ) );
-					if( expr.next ) {
-						expr.next->line = next->line;
-						expr.next->evaluate = evaluate_global;
-						( ( struct value_expression * ) expr.next )->str = &global->str;
-						stmt->head.parameters->next = expr.next;
+				if( expr.next ) {
+					expr.next->line = elem->line;
+					expr.next->evaluate = evaluate_global;
+					( ( struct value_expression * ) expr.next )->str = &global->str;
+					next = parse_expression( next->next->next, func, vars, expr.next, message );
+					if( expr.next->next ) {
 						stmt->head.evaluate = execute_struct_assignment;
-					} else {
-						strcpy( message, OUT_OF_MEMORY );
 					}
 				} else {
-					sprintf( message, "Field '%.64s' not declared on line %d.", elem->str.string, elem->line );
+					strcpy( message, OUT_OF_MEMORY );
 				}
+			} else {
+				sprintf( message, "Field '%.64s' not declared on line %d.", elem->str.string, elem->line );
 			}
 		} else {
 			strcpy( message, OUT_OF_MEMORY );
