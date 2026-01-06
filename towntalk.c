@@ -501,7 +501,7 @@ static int parse_child_element( char *buffer, int idx, struct element *parent, i
 	while( chr ) {
 		chr = buffer[ idx++ ];
 		if( chr <= 32 || ( ( chr < '0' || ( chr & 0x1F ) > 26 ) && ( ( bracket = strchr( "\"#(),;=[]{}", chr ) )
-		|| ( chr == '/' && ( buffer[ idx ] == '/' || ( buffer[ idx ] == '*' && buffer[ idx + 1 ] != '/' ) ) ) ) ) ) {
+		|| ( chr == '/' && ( buffer[ idx ] == '/' || buffer[ idx ] == '*' ) ) ) ) ) {
 			if( length > 0 ) {
 				if( elem == NULL ) {
 					elem = new_element( length );
@@ -525,18 +525,19 @@ static int parse_child_element( char *buffer, int idx, struct element *parent, i
 				}
 				line++;
 			} else if( chr == '/' && buffer[ idx ] == '*' ) {
-				while( chr && ( chr != '*' || buffer[ idx ] != '/' ) ) {
+				idx++;
+				while( chr != '*' || buffer[ idx ] != '/' ) {
 					chr = buffer[ idx++ ];
-					if( chr == '\n' ) {
-						line++;
+					if( chr ) {
+						if( chr == '\n' ) {
+							line++;
+						}
+					} else {
+						sprintf( message, "Unclosed comment on line %d.", line );
+						return -2;
 					}
 				}
-				if( chr ) {
-					chr = buffer[ ++idx ];
-				} else {
-					sprintf( message, "Unclosed comment on line %d.", line );
-					return -2;
-				}
+				idx++;
 			} else if( chr == ')' || chr == ']' || chr == '}' ) {
 				parent->line = line;
 				return idx;
