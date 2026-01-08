@@ -1281,7 +1281,7 @@ function testscope() {
 function testcharacters() {
 	call assert_equals( 65, 'A', ${-} );
 	call assert_equals( -1, '\377', ${-} );
-	call assert_equals( 34, \"\"", ${-} );
+	call assert_equals( 34, '\"', ${-} );
 	call assert_throws( "Invalid", ${ () { call ''; } } );
 	call assert_throws( "Invalid", ${ () { call '123456'; } } );
 	call assert_throws( "Invalid", ${ () { call 'a'b; } } );

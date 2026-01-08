@@ -119,7 +119,7 @@ library json {
 
 	# Return an instance of json_string from the specified parser.
 	function parse_string_value( ( parser ) p ) {
-		call p:expect( \"\"" );
+		call p:expect( '\"' );
 		call p:next_char();
 		var str = p:parse_string( "\\\"" );
 		while =( p.current '\\' ) {
@@ -127,7 +127,7 @@ library json {
 			call p:next_char();
 			let str = $cat( str p:parse_string( "\\\"" ) );
 		}
-		call p:expect( \"\"" );
+		call p:expect( '\"' );
 		call p:next_char();
 		return $new( string @write_string str );
 	}
@@ -170,13 +170,13 @@ library json {
 	}
 	
 	function parse_array( ( parser ) p ) {
-		call p:expect( \"[" );
+		call p:expect( '\[' );
 		var ( array ) arr = $new( array @write_array $new( list $array( 1 ) ) );
 		call p:next_char();
 		call p:skip_space();
-		while <>( p.current \"]" ) {
+		while <>( p.current '\]' ) {
 			if list.len( arr.values ) {
-				call p:expect( \"," );
+				call p:expect( '\,' );
 				call p:next_char();
 				call p:skip_space();
 			}
@@ -203,13 +203,13 @@ library json {
 	}
 	
 	function parse_object( ( parser ) p ) {
-		call p:expect( \"{" );
+		call p:expect( '\{' );
 		var ( object ) obj = $new( object @write_object $new( list $array( 1 ) ) );
 		call p:next_char();
 		call p:skip_space();
-		while <>( p.current \"}" ) {
+		while <>( p.current '\}' ) {
 			if list.len( obj.tuples ) {
-				call p:expect( \"," );
+				call p:expect( '\,' );
 				call p:next_char();
 				call p:skip_space();
 			}
@@ -244,16 +244,16 @@ library json {
 	function parse_node( ( parser ) p ) {
 		call p:skip_space();
 		switch p.current {
-			case \"[" {
+			case '\[' {
 				return parse_array( p );
 			}
-			case \"{" {
+			case '\{' {
 				return parse_object( p );
 			}
-			case \"\"" {
+			case '\"' {
 				return parse_string_value( p );
 			}
-			case \"'" {
+			case '\'' {
 				return parse_char_value( p );
 			}
 			case '-' '0' '1' '2' '3' '4' '5' '6' '7' '8' '9' 'f' 'n' 't' {

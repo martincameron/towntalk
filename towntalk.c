@@ -28,7 +28,7 @@
 	References may be strings, elements, arrays, structs, functions or custom types.
 	A tuple is a reference with an associated number.
 	Strings are immutable and can be used as byte arrays.
-	String literals may include the escape sequences "\"", "\\", and octal "\nnn".
+	String and character literals may include escape sequences such as "\"", '\(', and octal "\nnn".
 	Buffers are arrays that cannot hold references but use much less memory.
 	Keywords and dollar-expressions may be expressed with a capital, eg. 'Print Time;'.
 	Elements are immutable trees of strings with next and child references.
@@ -111,7 +111,7 @@
 		-123                     Decimal number literal.
 		0x100                    Hexadecimal number literal.
 		0888                     Octal integer literal.
-		'A' or \"A"              Integer character literal.
+		'A'                      Integer character literal.
 		"String"                 String literal.
 		${0,"1",$tup("2",3)}     Element literal.
 		variable or global!      Value of named local or global variable.
@@ -500,100 +500,110 @@ static int parse_child_element( char *buffer, int idx, struct element *parent, i
 	}
 	while( chr ) {
 		chr = buffer[ idx++ ];
-		if( chr <= 32 || ( ( chr < '0' || ( chr & 0x1F ) > 26 ) && ( ( bracket = strchr( "\"#(),;=[]{}", chr ) )
+		if( chr <= 32 || ( ( chr < '0' || ( chr & 0x1F ) > 26 ) && ( ( bracket = strchr( "\"#(),;=[]{}\\", chr ) )
 		|| ( chr == '/' && ( buffer[ idx ] == '/' || buffer[ idx ] == '*' ) ) ) ) ) {
-			if( length > 0 ) {
-				if( elem == NULL ) {
-					elem = new_element( length );
-					parent->child = elem;
+			if( chr == '\\' ) {
+				chr = buffer[ idx++ ];
+				if( chr >= 32 ) {
+					length += 2;
 				} else {
-					elem->next = new_element( length );
-					elem = elem->next;
+					sprintf( message, "Invalid escape on line %d.", line );
+					return -3;
 				}
-				if( elem ) {
-					elem->line = line;
-					memcpy( elem->str.string, &buffer[ offset ], sizeof( char ) * length );
-					/*printf("%d %d %c :%s\n",offset,length,chr,elem->str.string);*/
-				} else {
-					strcpy( message, OUT_OF_MEMORY );
-					return -1;
-				}
-			}
-			if( chr == '\n' || chr == '#' || ( chr == '/' && buffer[ idx ] == '/' ) ) {
-				while( chr && chr != '\n' ) {
-					chr = buffer[ idx++ ];
-				}
-				line++;
-			} else if( chr == '/' && buffer[ idx ] == '*' ) {
-				idx++;
-				while( chr != '*' || buffer[ idx ] != '/' ) {
-					chr = buffer[ idx++ ];
-					if( chr ) {
-						if( chr == '\n' ) {
-							line++;
-						}
+			} else {
+				if( length > 0 ) {
+					if( elem == NULL ) {
+						elem = new_element( length );
+						parent->child = elem;
 					} else {
-						sprintf( message, "Unclosed comment on line %d.", line );
-						return -2;
+						elem->next = new_element( length );
+						elem = elem->next;
+					}
+					if( elem ) {
+						elem->line = line;
+						memcpy( elem->str.string, &buffer[ offset ], sizeof( char ) * length );
+						/*printf("%d %d %c :%s\n",offset,length,chr,elem->str.string);*/
+					} else {
+						strcpy( message, OUT_OF_MEMORY );
+						return -1;
 					}
 				}
-				idx++;
-			} else if( chr == ')' || chr == ']' || chr == '}' ) {
-				parent->line = line;
-				return idx;
-			} else if( chr > 32 ) {
-				if( chr == '"' ) {
-					len = parse_string( buffer, idx - 1, NULL, line, message );
-					if( len < 0 ) {
-						return len;
-					} else {
-						len = len - idx + 1;
+				if( chr == '\n' || chr == '#' || ( chr == '/' && buffer[ idx ] == '/' ) ) {
+					while( chr && chr != '\n' ) {
+						chr = buffer[ idx++ ];
 					}
-				} else {
-					len = 2;
-				}
-				if( elem == NULL ) {
-					elem = new_element( len );
-					parent->child = elem;
-				} else {
-					elem->next = new_element( len );
-					elem = elem->next;
-				}
-				if( elem ) {
-					elem->line = line;
-					if( chr == '"' ) {
-						idx = parse_string( buffer, idx - 1, elem->str.string, line, message );
-						if( idx < 0 ) {
-							return idx;
-						}
-					} else if( chr == '(' || chr == '[' || chr == '{' ) {
-						elem->str.string[ 0 ] = bracket[ 0 ];
-						elem->str.string[ 1 ] = bracket[ 1 ];
-						idx = parse_child_element( buffer, idx, elem, depth - 1, message );
-						if( idx > 0 ) {
-							/* Exchange line and elem->line. */
-							len = elem->line;
-							elem->line = line;
-							line = len;
-							if( buffer[ idx - 1 ] != bracket[ 1 ] ) {
-								sprintf( message, "Unclosed element on line %d.", line );
-								return -2;
+					line++;
+				} else if( chr == '/' && buffer[ idx ] == '*' ) {
+					idx++;
+					while( chr != '*' || buffer[ idx ] != '/' ) {
+						chr = buffer[ idx++ ];
+						if( chr ) {
+							if( chr == '\n' ) {
+								line++;
 							}
 						} else {
-							return idx;
+							sprintf( message, "Unclosed comment on line %d.", line );
+							return -2;
+						}
+					}
+					idx++;
+				} else if( chr == ')' || chr == ']' || chr == '}' ) {
+					parent->line = line;
+					return idx;
+				} else if( chr > 32 ) {
+					if( chr == '"' ) {
+						len = parse_string( buffer, idx - 1, NULL, line, message );
+						if( len < 0 ) {
+							return len;
+						} else {
+							len = len - idx + 1;
 						}
 					} else {
-						elem->str.string[ 0 ] = chr;
-						elem->str.string[ 1 ] = 0;
-						elem->str.length = 1;
+						len = 2;
 					}
-				} else {
-					strcpy( message, OUT_OF_MEMORY );
-					return -1;
+					if( elem == NULL ) {
+						elem = new_element( len );
+						parent->child = elem;
+					} else {
+						elem->next = new_element( len );
+						elem = elem->next;
+					}
+					if( elem ) {
+						elem->line = line;
+						if( chr == '"' ) {
+							idx = parse_string( buffer, idx - 1, elem->str.string, line, message );
+							if( idx < 0 ) {
+								return idx;
+							}
+						} else if( chr == '(' || chr == '[' || chr == '{' ) {
+							elem->str.string[ 0 ] = bracket[ 0 ];
+							elem->str.string[ 1 ] = bracket[ 1 ];
+							idx = parse_child_element( buffer, idx, elem, depth - 1, message );
+							if( idx > 0 ) {
+								/* Exchange line and elem->line. */
+								len = elem->line;
+								elem->line = line;
+								line = len;
+								if( buffer[ idx - 1 ] != bracket[ 1 ] ) {
+									sprintf( message, "Unclosed element on line %d.", line );
+									return -2;
+								}
+							} else {
+								return idx;
+							}
+						} else {
+							elem->str.string[ 0 ] = chr;
+							elem->str.string[ 1 ] = 0;
+							elem->str.length = 1;
+						}
+					} else {
+						strcpy( message, OUT_OF_MEMORY );
+						return -1;
+					}
 				}
+				offset = idx;
+				length = 0;
 			}
-			offset = idx;
-			length = 0;
 		} else {
 			length++;
 		}
@@ -4325,12 +4335,12 @@ static struct element* parse_number_literal_expression( struct element *elem, st
 
 static struct element* parse_character_literal_expression( struct element *elem, struct expression *prev, char *message ) {
 	struct value_expression *expr = calloc( 1, sizeof( struct value_expression ) );
-	char *str = elem->str.string, out[ 8 ], quote = str[ 0 ];
+	char *str = elem->str.string, out[ 8 ];
 	int len = elem->str.length;
 	if( expr ) {
 		prev->next = &expr->expr;
 		expr->expr.line = elem->line;
-		if( len > 0 && len < 7 && str[ len - 1 ] == quote && unquote_string( str, out, quote ) == 1 ) {
+		if( len > 0 && len < 7 && str[ len - 1 ] == '\'' && unquote_string( str, out, '\'' ) == 1 ) {
 			expr->num = out[ 0 ];
 			expr->expr.index = out[ 0 ];
 			expr->expr.evaluate = evaluate_number_literal_expression;
@@ -4425,9 +4435,6 @@ struct element* parse_expression( struct element *elem,
 	} else if( chr == '\'' && value[ 1 ] ) {
 		/* Character literal. */
 		next = parse_character_literal_expression( elem, prev, message );
-	} else if( chr == '\\' && value[ 1 ] == 0 && elem->next && elem->next->str.string[ 0 ] == '"' ) {
-		/* Escaped character literal. */
-		next = parse_character_literal_expression( elem->next, prev, message );
 	} else if( chr == '[' ) {
 		/* Array index operator. */
 		next = parse_index_expression( elem, func, vars, prev, message );
