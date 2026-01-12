@@ -5800,7 +5800,7 @@ static struct element* skip_comments( struct element *elem, char *message ) {
 			line = elem->line;
 			elem = elem->next;
 			if( elem == NULL || elem->str.string[ 0 ] != '{' ) {
-				sprintf( message, "Expected '{' after '%s' on line %d.", str, line );
+				sprintf( message, "Expected '{' after '%.64s' on line %d.", str, line );
 				break;
 			}
 		} else {
@@ -5815,33 +5815,29 @@ static struct element* parse_struct_member_function( struct string *struct_name,
 	int slen, qlen;
 	char qname[ 64 ];
 	struct function *decl;
-	struct element *next = skip_comments( elem, message );
-	if( next && message[ 0 ] == 0 ) {
-		elem = next;
-		next = next->next;
-		if( strcmp( elem->str.string, "function" ) == 0 ) {
-			validate_syntax( "n({", next, elem, NULL, message );
-			if( message[ 0 ] == 0 ) {
-				slen = struct_name->length;
-				qlen = slen + 1 + next->str.length;
-				if( qlen < 64 ) {
-					strcpy( qname, struct_name->string );
-					qname[ slen ] = '_';
-					strcpy( &qname[ slen + 1 ], next->str.string );
-					decl = parse_function( next->next, qname, func, message );
-					if( decl ) {
-						if( add_decl( &decl->str, elem->line, func->env, message ) ) {
-							next = next->next->next->next;
-						}
-						unref_string( &decl->str );
+	struct element *next = elem->next;
+	if( strcmp( elem->str.string, "function" ) == 0 ) {
+		validate_syntax( "n({", next, elem, NULL, message );
+		if( message[ 0 ] == 0 ) {
+			slen = struct_name->length;
+			qlen = slen + 1 + next->str.length;
+			if( qlen < 64 ) {
+				strcpy( qname, struct_name->string );
+				qname[ slen ] = '_';
+				strcpy( &qname[ slen + 1 ], next->str.string );
+				decl = parse_function( next->next, qname, func, message );
+				if( decl ) {
+					if( add_decl( &decl->str, elem->line, func->env, message ) ) {
+						next = next->next->next->next;
 					}
-				} else {
-					sprintf( message, "Name too long on line %d.", next->line );
+					unref_string( &decl->str );
 				}
+			} else {
+				sprintf( message, "Name too long on line %d.", next->line );
 			}
-		} else {
-			sprintf( message, "Expected 'function' on line %d.", elem->line );
 		}
+	} else {
+		sprintf( message, "Expected 'function' on line %d.", elem->line );
 	}
 	return next;
 }
@@ -5894,16 +5890,19 @@ static struct element* parse_struct_declaration( struct element *elem,
 				child = next->child;
 				while( child && message[ 0 ] == 0 ) {
 					child = skip_comments( child, message );
-					if( child && message[ 0 ] == 0 && add_structure_field( struc, child, message ) ) {
-						child = child->next;
-						if( child ) {
-							if( child->str.string[ 0 ] == ',' ) {
-								child = child->next;
-							} else if( child->str.string[ 0 ] == ';' ) {
-								child = child->next;
-								while( child && message[ 0 ] == 0 ) {
+					if( child && message[ 0 ] == 0 ) {
+						if( child->str.string[ 0 ] == ';' ) {
+							child = child->next;
+							while( child && message[ 0 ] == 0 ) {
+								child = skip_comments( child, message );
+								if( child && message[ 0 ] == 0 ) {
 									child = parse_struct_member_function( struct_name, child, func, message );
 								}
+							}
+						} else if( add_structure_field( struc, child, message ) ) {
+							child = child->next;
+							if( child && child->str.string[ 0 ] == ',' ) {
+								child = child->next;
 							}
 						}
 					}
