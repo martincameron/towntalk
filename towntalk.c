@@ -1368,11 +1368,14 @@ static enum result execute_error_statement( struct expression *this,
 static enum result execute_throw_statement( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	struct variable exc = { 0, NULL };
-	this->parameters->evaluate( this->parameters, vars, &exc );
-	dispose_temporary( vars->exception );
-	vars->exception->number_value = exc.number_value;
-	vars->exception->string_value = exc.string_value;
-	return EXCEPTION;
+	enum result ret = this->parameters->evaluate( this->parameters, vars, &exc );
+	if( ret ) {
+		dispose_temporary( vars->exception );
+		vars->exception->number_value = exc.number_value;
+		vars->exception->string_value = exc.string_value;
+		ret = EXCEPTION;
+	}
+	return ret;
 }
 
 static enum result execute_exit_statement( struct expression *this,
