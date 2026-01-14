@@ -5355,7 +5355,7 @@ static struct element* parse_if_statement( struct element *elem,
 					if( next->next && ( next->next->str.string[ 0 ] == '{' || is_keyword( next->next->str.string, "if" ) ) ) {
 						next = next->next;
 						block.head.next = NULL;
-						if( next->child ) {
+						if( next->str.string[ 0 ] == '{' ) {
 							parse_keywords_indexed( func->env->statements_index, next->child, func, vars, &block, message );
 							if( message[ 0 ] == 0 ) {
 								next = next->next;
