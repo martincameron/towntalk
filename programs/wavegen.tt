@@ -1,0 +1,443 @@
+
+import audiodata from "audiodata.tt";
+
+/*
+	Simple looped-waveform generator. Example patches:
+
+	var str1 = "Waveform Sawtooth Octave -2 Chorus 1024";
+	var str2 = "Waveform Sawtooth Octave -2 Chorus 511 Point 0,-127 Point 256,127 Point 511,-127";
+	var str3 = "Waveform Sine Octave -2 Chorus 1023,1,0,96,128 Point 0,0 Point 1,16 Point 16,0 Point 256,0 Point 511,0";
+	var add1 = "Waveform Sine Octave -4 Chorus 508,1,0,-2,128 Point 1,16,16,16,0,32,0,16,0,16,0,32,0 Point 256,0";
+	var add2 = "Waveform Sine Octave -4 Chorus 508,508,2,0,0 Point 1,16,16,32,0,16,0,16,0,32,0,16,0";
+	var fmsaw = "Waveform Sine   Octave -3 Chorus 1,1,0,0,0";
+	var fmsqr = "Waveform Sine   Octave -3 Chorus 1,2,0,0,0";
+	var fmbas = "Waveform Sine   Octave -3 Chorus 128,256,1,0,128";
+	var fmcho = "Waveform Square Octave -3 Chorus 255,128,1,1,128";
+*/
+library wavegen {
+	const TRIANGLE_WINDOW = $pack( interpolate( $buffer( 4 0 256 0 0 ), $buffer( 512 ), 0, 512, >>( FP_ONE 8 ) ) );
+	const SINE_TABLE = $pack( interpolate( $buffer( 17, 0, 13, 25, 37, 49, 60, 71, 81, 91, 99, 106, 113, 118, 122, 126, 127, 127 ),
+		$buffer( 128 ), 0, 128, >>( FP_ONE 3 ) ) );
+	
+	struct element {
+		token, description, parent, sibling, child, begin, end
+	}
+	
+	struct waveform( element ) {
+		envelope, octave, cycles, mod_rate, lfo_rate, detune, mix, x0, y0, spectral, noise, audiodata_waveform;
+		
+		function begin( ( waveform ) this value ) {
+			switch value {
+				case "Sawtooth" {
+					call this:set_envelope_point( 0, -127 );
+					call this:set_envelope_point( 511, 127 );
+				}
+				case "Square" {
+					call this:set_envelope_point(   0, -127 );
+					call this:set_envelope_point( 255, -127 );
+					call this:set_envelope_point( 256,  127 );
+					call this:set_envelope_point( 511,  127 );
+				}
+				case "Sine" {
+					let this.spectral = TRUE;
+					call this:set_envelope_point(   0,    0 );
+					call this:set_envelope_point(   1, -127 );
+					call this:set_envelope_point(   2,    0 );
+					call this:set_envelope_point( 511,    0 );
+				}
+				case "Noise" {
+					let this.spectral = TRUE, this.noise = TRUE;
+					call this:set_envelope_point( 0, 0 );
+					call this:set_envelope_point( 1, 1 );
+					call this:set_envelope_point( 256, 1 );
+					call this:set_envelope_point( 257, 0 );
+					call this:set_envelope_point( 511, 0 );
+				}
+				default {
+					throw $cat( "Invalid waveform type (Sawtooth, Square, Sine, Noise) on line " $line( value ) "." );
+				}
+			}
+			let this.cycles = 1;
+			let this.mix = 128;
+			return $next( value );
+		}
+		
+		function end( ( waveform ) this ) {
+			var rate = *( 128 262 );
+			if this.noise {
+				let this.audiodata_waveform = audiodata_new_waveform( 1, rate, noise( this.envelope 128 ) );
+			} else {
+				var modulator = cosine();
+				var carrier = ?( this.spectral additive( this.envelope $buffer( 512 ) ) this.envelope );
+				var wave_len = *( this.cycles 512 ), wave_buf = $buffer( wave_len );
+				call fm( carrier modulator modulator this.cycles this.mod_rate this.lfo_rate this.detune this.mix wave_buf );
+				if >( this.octave -4 ) {
+					var wave_idx, out_idx, out_len = +( wave_len 1024 ), out_buf = $buffer( out_len );
+					while <( out_idx out_len ) {
+						var out_end = +( out_idx 512 );
+						while <( out_idx out_end ) {
+							let [ out_buf out_idx++ ] = <<( [ wave_buf wave_idx++ ] 8 );
+						}
+						if >e( wave_idx wave_len ) {
+							let wave_idx = 0;
+						}
+					}
+					var octave = +( this.octave 4 );
+					var ( audiodata_waveform ) audiodata = audiodata_new_waveform( 1 rate out_buf );
+					let audiodata = audiodata:resample( 0 >>( rate octave ) );
+					let audiodata.sample_rate = rate;
+					let this.audiodata_waveform = audiodata:crop( >>( 512 octave ), -( audiodata:get_num_samples() >>( 1024 octave ) ) );
+				} else {
+					let this.audiodata_waveform = waveform_amplify( audiodata_new_waveform( 1 rate wave_buf ) <<( FP_ONE 8 ) );
+				}
+			}
+		}
+		
+		function set_envelope_point( ( waveform ) this x1 y1 ) {
+			var env = this.envelope, x0 = this.x0, y0 = this.y0;
+			if <e( x1 x0 ) {
+				let x0 = -( x1 1 );
+				let y0 = 0;
+			}
+			var x = 1, dx = -( x1 x0 ), dy = -( y1 y0 );
+			while <e( x dx ) {
+				let [ env +( x0 x ) ] = +( _/( *( dy x++ ) dx ) y0 );
+			}
+			let this.x0 = x1;
+			let this.y0 = y1;
+		}
+	}
+	
+	struct octave( element ) {
+		;
+		function begin( ( octave ) this value ) {
+			var octave = parse_integer( value );
+			if ||( <( octave -4 ) >( octave 4 ) ) {
+				throw $cat( "Invalid octave (-4 to 4) on line " $line( value ) "." );
+			}
+			let waveform.octave( this.parent ) = octave;
+			return $next( value );
+		}
+	}
+	
+	struct chorus( element ) {
+		;
+		function begin( ( chorus ) this value ) {
+			var line = $line( value );
+			var ( list ) list = $new( list $buffer( 5 ) );
+			var next = parse_integers( value list );
+			if ||( <( list.len 1 ) >( list.len 5 ) ) {
+				throw $cat( "Invalid Chorus parameter (Cycles[, ModRate, LfoRate, Detune, Mix]) on line " line "." );
+			}
+			let waveform.cycles( this.parent ) = check_range( [ list.array 0 ] 1 1024 "number of cycles" line );
+			let waveform.mod_rate( this.parent ) = ?( >( list.len 1 ) check_range( [ list.array 1 ] 0 1024 "modulation rate" line ) 1 );
+			let waveform.lfo_rate( this.parent ) = ?( >( list.len 2 ) check_range( [ list.array 2 ] 0 1024 "LFO rate" line ) 0 );
+			let waveform.detune( this.parent ) = ?( >( list.len 3 ) check_range( [ list.array 3 ] -192 192 "detune pitch" line ) 0 );
+			let waveform.mix( this.parent ) = ?( >( list.len 4 ) check_range( [ list.array 4 ] 0 256 "mix parameter" line ) 128 );
+			return next;
+		}
+	}
+	
+	struct point( element ) {
+		;
+		function begin( ( point ) this value ) {
+			var line = $line( value );
+			var ( waveform ) parent = this.parent;
+			var ( list ) list = $new( list $buffer( 2 ) );
+			var next = parse_integers( value list );
+			var arr = list.array, len = list.len;
+			if <( len 2 ) {
+				throw $cat( "Invalid envelope point (x,y) on line " line "." );
+			}
+			var idx = 1, x = check_range( [ arr 0 ] 0 511 "envelope index" line );
+			while <( idx len ) {
+				var y = check_range( [ arr idx++ ] -128 127 "envelope amplitude" line );
+				call parent:set_envelope_point( x++, y );
+			}
+			return next;
+		}
+	}
+	
+	struct list {
+		array, len;
+		
+		function expand( ( list ) this, amount ) {
+			var old = this.array, arr = $array( +( $len( old ) amount ) );
+			arraycopy old 0 arr 0 this.len;
+			let this.array = arr;
+			return arr;
+		}
+		
+		function add( ( list ) this, value ) {
+			var arr = this.array, len = this.len;
+			if >e( len $len( arr ) ) {
+				let arr = this:expand( +( len 1 ) );
+			}
+			let [ arr len++ ] = value;
+			let this.len = len;
+		}
+		
+		function add_string( ( list ) this, str ) {
+			var dest = this.array, idx = this.len, end = +( idx $len( str ) ), offset;
+			if >( end $len( dest ) ) {
+				let dest = this:expand( end );
+			}
+			while <( idx end ) {
+				let [ dest idx++ ] = $chr( str offset++ );
+			}
+			let this.len = end;
+		}
+	}
+	
+	function parse( str, ( element ) context ) {
+		var elem = $parse( str );
+		while TRUE {
+			while $cmp( context.token elem ) {
+				if $eq( elem "()" ) {
+					let elem = $next( elem );
+				} else if context.sibling {
+					let context = context.sibling;
+				} else if context.parent {
+					let context = context.parent;
+					if context.end {
+						call :context.end();
+					}
+				} else if elem {
+					throw $str( "Invalid token '" elem "' on line " $line( elem ) "." );
+				} else {
+					return 0;
+				}
+			}
+			var next = $next( elem );
+			if $eq( next "()" ) {
+				let next = $next( next );
+			}
+			if next {
+				let elem = :context.begin( next );
+				if context.child {
+					let context = context.child;
+				} else if context.end {
+					call :context.end();
+				}
+			} else {
+				throw $str( "Invalid parameter for '" elem "' on line " $line( elem ) "." );
+			}
+		}
+	}
+	
+	function parse_integer( elem ) {
+		try {
+			return $int( elem );
+		} catch e {
+			throw $cat( "Invalid integer '" elem "' on line " $line( elem ) ". " );
+		}
+	}
+	
+	function parse_integers( elem ( list ) list ) {
+		call list:add( parse_integer( elem ) );
+		var next = $next( elem );
+		while $eq( "," next ) {
+			let next = $next( next );
+			call list:add( parse_integer( next ) );
+			let next = $next( next );
+		}
+		return next;
+	}
+	
+	// Return the syntax description for this element, its siblings and children.
+	function element_syntax( ( element ) elem ) {
+		var indent, ( list ) chars = $new( list $buffer( 256 ) );
+		while elem {
+			var desc_idx = 0, prefix = elem.token, desc = elem.description;
+			while <( desc_idx $len( desc ) ) {
+				var idx = 0;
+				while <( idx++ indent ) {
+					call chars:add_string( "    " );
+				}
+				call chars:add_string( prefix );
+				call chars:add( 32 );
+				call chars:add_string( [ desc desc_idx++ ] );
+				call chars:add( '\n' );
+				let prefix = "   ";
+			}
+			if elem.child {
+				inc indent;
+				let elem = elem.child;
+			} else if elem.sibling {
+				let elem = elem.sibling;
+			} else {
+				while &&( elem elem.sibling ) {
+					dec indent;
+					let elem = elem.parent;
+				}
+				if elem {
+					let elem = elem.sibling;
+				}
+			}
+		}
+		return $sub( chars.array 0 chars.len );
+	}
+	
+	function check_range( value min max name line ) {
+		if ||( <( value min ) >( value max ) ) {
+			throw $str( "Invalid " name " " value " (" min " to " max ") on line " line "." );
+		}
+		return value;
+	}
+	
+	function sine() {
+		var output = $buffer( 512 ), x0, x1 = 255, x2 = 256, x3 = 511;
+		while <( x0 128 ) {
+			var y = $unpack( SINE_TABLE x0 );
+			let [ output x0++ ] = y;
+			let [ output x1-- ] = y;
+			let y = *( y -1 );
+			let [ output x2++ ] = y;
+			let [ output x3-- ] = y;
+		}
+		return output;
+	}
+	
+	function cosine() {
+		var output = $buffer( 512 ), x, x0 = 384, x1 = 127, x2 = 128, x3 = 383;
+		while <( x 128 ) {
+			var y = $unpack( SINE_TABLE x++ );
+			let [ output x0++ ] = y;
+			let [ output x1-- ] = y;
+			let y = *( y -1 );
+			let [ output x2++ ] = y;
+			let [ output x3-- ] = y;
+		}
+		return output;
+	}
+	
+	function random( len seed mask ) {
+		var idx, output = $buffer( len );
+		while <( idx len ) {
+			let [ output idx++ ] = &( >>( seed 24 ) mask );
+			let seed = +( *( seed 65 ) 17 );
+		}
+		return output;
+	}
+	
+	/* Generate a 512-byte periodic waveform from the specified 256-harmonic spectrum. */
+	function additive( spectrum, phase ) {
+		var idx, partial = 1, output = $buffer( 512 ), sine = sine();
+		while <e( partial 256 ) {
+			let idx = 0;
+			var pphs = [ phase partial ];
+			var pamp = [ spectrum partial ];
+			while <( idx 512 ) {
+				let [ output idx ] = +( [ output idx ] *( [ sine &( +( pphs *( idx++ partial ) ) 0x1FF ) ] pamp ) );
+			}
+			inc partial;
+		}
+		let idx = 0;
+		while <( idx 512 ) {
+			var amp = _/( [ output idx ] 256 );
+			if <( amp -128 ) { let amp = -128; }
+			if >( amp 127 ) { let amp = 127; }
+			let [ output idx++ ] = amp;
+		}
+		return output;
+	}
+	
+	/* Generate a count * 512-sample noise waveform from the specified 256-harmonic spectrum. */
+	function noise( spectrum count ) {
+		var offset, len = *( count 512 ), input = $buffer( +( len 512 ) ), end = +( len 256 );
+		var seed, phase = $buffer( 512 );
+		while <( offset end ) {
+			var idx = 0;
+			while <( idx 512 ) {
+				let seed = +( *( seed 65 ) 17 );
+				let [ phase idx++ ] = &( >>( seed 24 ) 0xFF );
+			}
+			let idx = 0;
+			var wave = additive( spectrum phase ), in_idx = offset;
+			while <( idx 512 ) {
+				let [ input in_idx ] = +( [ input in_idx++ ] *( [ wave idx ] $unpack( TRIANGLE_WINDOW idx++ ) ) );
+			}
+			let offset = +( offset 256 );
+		}
+		var output = $buffer( len );
+		arraycopy input 256 output 0 len;
+		return output;
+	}
+	
+	/* Simple 3-operator FM synthesis. */
+	function fm( carrier, modulator, lfo, cycles, modRate, lfoRate, detune, mix, output ) {
+		var idx, end = *( cycles 512 ), cycles2 = raise2( cycles, _/( <<( detune FP_SHIFT ) 96 ) );
+		while <( idx end ) {
+			var out1 = [ carrier &( idx 0x1FF ) ];
+			var out2 = [ carrier &( +( _/( *( idx cycles2 ) cycles ) _/( *( +( 128 [ modulator &( _/( *( idx modRate ) cycles ) 0x1FF ) ] ) +( 128 [ lfo &( _/( *( idx lfoRate ) cycles ) 0x1FF ) ] ) ) 128 ) ) 0x1FF ) ];
+			let [ output idx++ ] = _/( +( *( out1 mix ) *( out2 -( 256 mix ) ) ) 256 );
+		}
+	}
+	
+	function begin( this value ) {
+		print value;
+		let value = $next( value );
+		while $eq( "," value ) {
+			let value = $next( value );
+			print value;
+		}
+		return $next( value );
+	}
+	
+	function new_point( ( waveform ) parent ) {
+		return $new( point "Point"
+			$array( 6 "X,Y (Set a point in the time or spectral envelope.)"
+			"(If Sawtooth or Square waveform, set sample X from 0 to 511.)"
+			"(If Waveform is Sine or Noise, set harmonic X from 1 to 256.)"
+			"(The value of Y is an eight-bit quantity from -128 to 127.)"
+			"(Multiple Points with increasing X are linear interpolated.)"
+			"(Neighbouring values can also be set with 'X,Y0,Y1,...,Yn'.)" )
+			parent NULL NULL @point_begin );
+	}
+	
+	function new_chorus( ( waveform ) parent ) {
+		return $new( chorus "Chorus"
+			$array( 6 "Cycles[,ModRate,LfoRate,Detune,Mix] (Phase modulation.)"
+			"(Cycles controls cycles of unmodulated oscillator 1.)"
+			"(ModRate controls cycles of osc 2 modulation. Default 1.)"
+			"(LfoRate controls cycles of modulator LFO. Default 0.)"
+			"(Detune adjusts pitch of osc 2 in eighths of a semitone.)"
+			"(Mix controls oscillator mix from 0 to 256. Default 128.)" )
+			parent new_point( parent ) NULL @chorus_begin );
+	}
+	
+	function new_octave( ( waveform ) parent ) {
+		return $new( octave "Octave" $array( 1 "0 (Waveform octave, from -4 to 4.)" )
+			parent new_chorus( parent ) NULL @octave_begin );
+	}
+	
+	function new_waveform() {
+		var ( waveform ) this = $new( waveform "Waveform"
+			$array( 1 "Type ('Sawtooth', 'Square', 'Sine', or 'Noise'.)" )
+			NULL NULL NULL @waveform_begin @waveform_end $buffer( 512 ) );
+		let this.child = new_octave( this );
+		return this;
+	}
+}
+
+program generate_waveform {
+	var idx = 1, wave_file, patch = "Waveform Sawtooth Octave -2 Chorus 1024,0";
+	while <( idx $argc ) {
+		switch $argv( idx++ ) {
+			case "-patch" {
+				let patch = $argv( idx++ );
+			}
+			case "-wav" {
+				let wave_file = $argv( idx++ );
+			}
+		}
+	}
+	var ( waveform ) waveform = new_waveform();
+	if wave_file {
+		call parse( patch waveform );
+		save waveform_write_wav( waveform.audiodata_waveform ) wave_file;
+	} else {
+		error $str( "Usage: " $argv( 0 ) " -patch \"" patch " \" -wav output.wav" );
+		error $str( "Patch syntax: " waveform:syntax() );
+	}
+}

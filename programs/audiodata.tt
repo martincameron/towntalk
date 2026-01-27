@@ -291,12 +291,12 @@ library audiodata {
 	function waveform_resample( ( waveform ) this, channel, rate ) {
 		if <( rate >>( this.sample_rate 1 ) ) {
 			//# Downsample to improve anti-aliasing.
-			let this = waveform_resample( this channel >>( this.sample_rate 1 ) );
+			let this = this:resample( channel >>( this.sample_rate 1 ) );
 			let channel = 0;
 		}
 		if >( rate <<( this.sample_rate 2 ) ) {
 			//# Upsample to improve pitch accuracy.
-			let this = waveform_resample( this channel <<( this.sample_rate 2 ) );
+			let this = this:resample( channel <<( this.sample_rate 2 ) );
 			let channel = 0;
 		}
 		//# Compensate for filter delay.
@@ -329,20 +329,28 @@ library audiodata {
 		return new_waveform( 1 rate output_sample_data );
 	}
 
-	const FREQ_TABLE = $pack( interpolate( $buffer( 9 256 279 304 332 362 395 431 470 512 ), $buffer( FP_ONE ), 0, FP_ONE, 8 ) );
+	const EXP2_TABLE = $pack( interpolate(
+		$buffer( 17, 2048, 2139, 2233, 2332, 2435, 2543, 2656, 2774, 2896, 3025, 3158, 3298, 3444, 3597, 3756, 3922, 4096 ),
+		$buffer( FP_ONE ), 0, FP_ONE, 16 ) );
+
+	//# Return value multplied by 2 to the power of x (fixed-point).
+	function raise2( value x ) {
+		var scale = 10;
+		while <( x 0 ) {
+			let x = +( x FP_ONE );
+			inc scale;
+		}
+		while >e( x FP_ONE ) {
+			let x = -( x FP_ONE );
+			dec scale;
+		}
+		let value = >>( *( value $unpack( EXP2_TABLE x ) ) scale );
+		return +( >>( value 1 ) &( value 1 ) );
+	}
 
 	//# Adjust the sampling-rate by the specified number of octaves (fixed-point).
 	function waveform_adjust_pitch( ( waveform ) this, pitch ) {
-		var rate = this.sample_rate;
-		while <( pitch 0 ) {
-			let rate = >>( rate 1 );
-			let pitch = +( pitch FP_ONE );
-		}
-		while >e( pitch FP_ONE ) {
-			let rate = <<( rate 1 );
-			let pitch = -( pitch FP_ONE );
-		}
-		let this.sample_rate = >>( *( rate $unpack( FREQ_TABLE pitch ) ) FP_SHIFT );
+		let this.sample_rate = raise2( this.sample_rate pitch );
 	}
 
 	//# Copy a section of the specified channel into the specified waveform instance.
@@ -376,33 +384,61 @@ library audiodata {
 	}
 }
 
-program test_audiodata {
-	var ( audiodata_waveform ) waveform = audiodata_raw_waveform( 8000 "abc" 0 3 );
-	
-	let waveform = waveform:crop( 1 1 );
-	let waveform = waveform:amplify( >>( audiodata_FP_ONE 1 ) );
-	let waveform = waveform:amplify( <<( audiodata_FP_ONE 1 ) );
-	
-	print waveform.sample_rate;
-	print $asc( >>( [ waveform.sample_data 0 ] 8 ) );
-
-	var idx, len = 65536, sample_data = $buffer( len );
-	while <( idx len ) {
-		let [ sample_data idx ] = <<( -( &( idx++ 0x7F ) 0x80 ) 6 );
+program convert_waveform {
+	var idx = 1, channel, offset, length, rate, tune = 96, gain = 64, input_path, output_path;
+	while <( idx $argc ) {
+		var arg = $argv( idx++ );
+		switch arg {
+			case "-chan" {
+				let channel = $int( $argv( idx++ ) );
+			}
+			case "-crop" {
+				var str = $argv( idx++ );
+				var sep = $stridx( str "," 0 );
+				if <( sep 0 ) {
+					let length = $int( str );
+				} else {
+					let offset = $int( $sub( str 0 sep++ ) );
+					let length = $int( $sub( str sep -( $len( str ) sep ) ) );
+				}
+			}
+			case "-tune" {
+				let tune = $int( $argv( idx++ ) );
+			}
+			case "-rate" {
+				let rate = $int( $argv( idx++ ) );
+			}
+			case "-gain" {
+				let gain = $int( $argv( idx++ ) );
+			}
+			default {
+				if !( input_path ) {
+					let input_path = arg;
+				} else if !( output_path ) {
+					let output_path = arg;
+				}
+			}
+		}
 	}
-	let waveform = audiodata_new_waveform( 1 8000 sample_data );
-	var wav = waveform:write_wav();
-	#save wav "test.wav";
-
-	let waveform = audiodata_wav_waveform( wav );
-	print waveform.sample_rate;
-	print waveform:get_num_samples();
-	print $cmp( wav waveform:write_wav() );
-
-	#let waveform = audiodata_wav_waveform( $load( $argv( 1 ) ) );
-	#print waveform:get_num_samples();
-	#let waveform = waveform:resample( 0 16000 );
-	#var str = waveform:quantize( 0 );
-	#let waveform = audiodata_raw_waveform( waveform.sample_rate str 0 $len( str ) );
-	#save waveform:write_wav() "out.wav";
+	if input_path {
+		var ( waveform ) waveform = wav_waveform( $load( input_path ) );
+		print $str( "Input length: " waveform:get_num_samples() " samples." );
+		if output_path {
+			if >( length 0 ) {
+				let waveform = waveform:crop( offset length );
+			}
+			if >( rate 0 ) {
+				let waveform = waveform:resample( channel rate );
+			}
+			if <>( tune 96 ) {
+				let waveform.sample_rate = raise2( waveform.sample_rate _/( <<( -( tune 96 ) FP_SHIFT ) 96 ) );
+			}
+			if &&( <>( gain 64 ) >( gain 0 ) ) {
+				let waveform = waveform:amplify( <<( gain -( FP_SHIFT 6 ) ) );
+			}
+			save waveform:write_wav() output_path;
+		}
+	} else {
+		error $str( "Usage: " $argv( 0 ) " input.wav [output.wav] [-chan 0] [-crop 0,len] [-tune 96] [-rate hz] [-gain 64]" );
+	}
 }
