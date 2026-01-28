@@ -289,12 +289,12 @@ library audiodata {
 
 	//# Return a new mono waveform instance containing the specified waveform channel resampled to the specified sampling rate.
 	function waveform_resample_channel( ( waveform ) this, channel, rate ) {
-		if <( rate >>( this.sample_rate 1 ) ) {
+		while <( rate >>( this.sample_rate 1 ) ) {
 			//# Downsample to improve anti-aliasing.
 			let this = this:resample_channel( channel >>( this.sample_rate 1 ) );
 			let channel = 0;
 		}
-		if >( rate <<( this.sample_rate 2 ) ) {
+		while >( rate <<( this.sample_rate 2 ) ) {
 			//# Upsample to improve pitch accuracy.
 			let this = this:resample_channel( channel <<( this.sample_rate 2 ) );
 			let channel = 0;
