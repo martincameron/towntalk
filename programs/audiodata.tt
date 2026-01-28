@@ -287,16 +287,16 @@ library audiodata {
 		return resampling_table;
 	}
 
-	//# Return a new waveform instance for the specified channel at the specified sampling rate.
-	function waveform_resample( ( waveform ) this, channel, rate ) {
+	//# Return a new mono waveform instance containing the specified waveform channel resampled to the specified sampling rate.
+	function waveform_resample_channel( ( waveform ) this, channel, rate ) {
 		if <( rate >>( this.sample_rate 1 ) ) {
 			//# Downsample to improve anti-aliasing.
-			let this = this:resample( channel >>( this.sample_rate 1 ) );
+			let this = this:resample_channel( channel >>( this.sample_rate 1 ) );
 			let channel = 0;
 		}
 		if >( rate <<( this.sample_rate 2 ) ) {
 			//# Upsample to improve pitch accuracy.
-			let this = this:resample( channel <<( this.sample_rate 2 ) );
+			let this = this:resample_channel( channel <<( this.sample_rate 2 ) );
 			let channel = 0;
 		}
 		//# Compensate for filter delay.
@@ -329,6 +329,23 @@ library audiodata {
 		return new_waveform( 1 rate output_sample_data );
 	}
 
+	//# Return a new waveform instance containing the specified waveform resampled to the specified sampling rate.
+	function waveform_resample( ( waveform ) this, rate ) {
+		var channel, num_channels = this.num_channels;
+		var ( waveform ) wf = this:resample_channel( 0 rate );
+		if <( num_channels 2 ) {
+			return wf;
+		}
+		var num_samples = wf:get_num_samples();
+		var ( waveform ) output = new_waveform( num_channels rate $buffer( *( num_samples num_channels ) ) );
+		call wf:copy_channel( 0 0 output channel++ 0 num_samples );
+		while <( channel num_channels ) {
+			let wf = this:resample_channel( channel rate );
+			call wf:copy_channel( 0 0 output channel++ 0 num_samples );
+		}
+		return output;
+	}
+
 	const EXP2_TABLE = $pack( interpolate(
 		$buffer( 17, 2048, 2139, 2233, 2332, 2435, 2543, 2656, 2774, 2896, 3025, 3158, 3298, 3444, 3597, 3756, 3922, 4096 ),
 		$buffer( FP_ONE ), 0, FP_ONE, 16 ) );
@@ -353,7 +370,7 @@ library audiodata {
 		let this.sample_rate = raise2( this.sample_rate pitch );
 	}
 
-	//# Copy a section of the specified channel into the specified waveform instance.
+	//# Copy a section of the specified channel into the specified waveform instance and return it.
 	function waveform_copy_channel( ( waveform ) this, channel, offset, ( waveform ) output, output_channel, output_offset, count ) {
 		var input_data = this.sample_data, output_data = output.sample_data, idx;
 		var input_channels = this.num_channels, output_channels = output.num_channels;
@@ -365,6 +382,7 @@ library audiodata {
 			let output_offset = +( output_offset output_channels );
 			let offset = +( offset input_channels );
 		}
+		return output;
 	}
 	
 	//# Return a string containing 8-bit samples for the specified channel.
@@ -385,12 +403,12 @@ library audiodata {
 }
 
 program convert_waveform {
-	var idx = 1, channel, offset, length, rate, tune = 96, gain = 64, input_path, output_path;
+	var idx = 1, chan = -1, offset, length, rate, tune = 96, gain = 64, input_path, output_path;
 	while <( idx $argc ) {
 		var arg = $argv( idx++ );
 		switch arg {
 			case "-chan" {
-				let channel = $int( $argv( idx++ ) );
+				let chan = $int( $argv( idx++ ) );
 			}
 			case "-crop" {
 				var str = $argv( idx++ );
@@ -424,11 +442,15 @@ program convert_waveform {
 		var ( waveform ) waveform = wav_waveform( $load( input_path ) );
 		print $str( "Input length: " waveform:get_num_samples() " samples." );
 		if output_path {
+			if >e( chan 0 ) {
+				var num_samples = waveform:get_num_samples();
+				let waveform = waveform:copy_channel( chan 0 new_waveform( 1 waveform.sample_rate $buffer( num_samples ) ) 0 0 num_samples );
+			}
 			if >( length 0 ) {
 				let waveform = waveform:crop( offset length );
 			}
 			if >( rate 0 ) {
-				let waveform = waveform:resample( channel rate );
+				let waveform = waveform:resample( rate );
 			}
 			if <>( tune 96 ) {
 				let waveform.sample_rate = raise2( waveform.sample_rate _/( <<( -( tune 96 ) FP_SHIFT ) 96 ) );
