@@ -84,7 +84,7 @@ library wavegen {
 					}
 					var octave = +( this.octave 4 );
 					var ( audiodata_waveform ) audiodata = audiodata_new_waveform( 1 rate out_buf );
-					let audiodata = audiodata:resample( 0 >>( rate octave ) );
+					let audiodata = audiodata:resample( >>( rate octave ) );
 					let audiodata.sample_rate = rate;
 					let this.audiodata_waveform = audiodata:crop( >>( 512 octave ), -( audiodata:get_num_samples() >>( 1024 octave ) ) );
 				} else {
