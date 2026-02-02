@@ -23,8 +23,12 @@ library wavegen {
 		token, description, parent, sibling, child, begin, end
 	}
 	
+	struct waveform_parent( element ) {
+		audiodata
+	}
+	
 	struct waveform( element ) {
-		envelope, octave, cycles, mod_rate, lfo_rate, detune, mix, x0, y0, spectral, noise, audiodata_waveform;
+		envelope, octave, cycles, mod_rate, lfo_rate, detune, mix, x0, y0, spectral, noise, audiodata;
 		
 		function begin( ( waveform ) this value ) {
 			switch value {
@@ -65,7 +69,7 @@ library wavegen {
 		function end( ( waveform ) this ) {
 			var rate = *( 128 262 );
 			if this.noise {
-				let this.audiodata_waveform = audiodata_new_waveform( 1, rate, noise( this.envelope 128 ) );
+				let this.audiodata = audiodata_new_waveform( 1, rate, noise( this.envelope 128 ) );
 			} else {
 				var modulator = cosine();
 				var carrier = ?( this.spectral additive( this.envelope $buffer( 512 ) ) this.envelope );
@@ -86,10 +90,13 @@ library wavegen {
 					var ( audiodata_waveform ) audiodata = audiodata_new_waveform( 1 rate out_buf );
 					let audiodata = audiodata:resample( >>( rate octave ) );
 					let audiodata.sample_rate = rate;
-					let this.audiodata_waveform = audiodata:crop( >>( 512 octave ), -( audiodata:get_num_samples() >>( 1024 octave ) ) );
+					let this.audiodata = audiodata:crop( >>( 512 octave ), -( audiodata:get_num_samples() >>( 1024 octave ) ) );
 				} else {
-					let this.audiodata_waveform = waveform_amplify( audiodata_new_waveform( 1 rate wave_buf ) <<( FP_ONE 8 ) );
+					let this.audiodata = waveform_amplify( audiodata_new_waveform( 1 rate wave_buf ) <<( FP_ONE 8 ) );
 				}
+			}
+			if this.parent {
+				let waveform_parent.audiodata( this.parent ) = this.audiodata;
 			}
 		}
 		
@@ -266,7 +273,7 @@ library wavegen {
 			} else if elem.sibling {
 				let elem = elem.sibling;
 			} else {
-				while &&( elem elem.sibling ) {
+				while &&( elem !( elem.sibling ) ) {
 					dec indent;
 					let elem = elem.parent;
 				}
@@ -411,10 +418,10 @@ library wavegen {
 			parent new_chorus( parent ) NULL @octave_begin );
 	}
 	
-	function new_waveform() {
+	function new_waveform( parent sibling ) {
 		var ( waveform ) this = $new( waveform "Waveform"
 			$array( 1 "Type ('Sawtooth', 'Square', 'Sine', or 'Noise'.)" )
-			NULL NULL NULL @waveform_begin @waveform_end $buffer( 512 ) );
+			parent sibling NULL @waveform_begin @waveform_end $buffer( 512 ) );
 		let this.child = new_octave( this );
 		return this;
 	}
@@ -422,6 +429,7 @@ library wavegen {
 
 program generate_waveform {
 	var idx = 1, wave_file, patch = "Waveform Sawtooth Octave -2 Chorus 1024,0";
+
 	while <( idx $argc ) {
 		switch $argv( idx++ ) {
 			case "-patch" {
@@ -432,10 +440,10 @@ program generate_waveform {
 			}
 		}
 	}
-	var ( waveform ) waveform = new_waveform();
+	var ( waveform ) waveform = new_waveform( NULL, NULL );
 	if wave_file {
 		call parse( patch waveform );
-		save waveform_write_wav( waveform.audiodata_waveform ) wave_file;
+		save waveform_write_wav( waveform.audiodata ) wave_file;
 	} else {
 		error $str( "Usage: " $argv( 0 ) " -patch \"" patch " \" -wav output.wav" );
 		error $str( "Patch syntax: " waveform:syntax() );
