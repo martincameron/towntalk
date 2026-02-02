@@ -28,7 +28,7 @@ library wavegen {
 	}
 	
 	struct waveform( element ) {
-		envelope, octave, cycles, mod_rate, lfo_rate, detune, mix, x0, y0, spectral, noise, audiodata;
+		envelope, octave, cycles, mod_rate, lfo_rate, detune, mix, x0, y0, spectral, noise;
 		
 		function begin( ( waveform ) this value ) {
 			switch value {
@@ -67,9 +67,9 @@ library wavegen {
 		}
 		
 		function end( ( waveform ) this ) {
-			var rate = *( 128 262 );
+			var ( audiodata_waveform ) audiodata, rate = *( 128 262 );
 			if this.noise {
-				let this.audiodata = audiodata_new_waveform( 1, rate, noise( this.envelope 128 ) );
+				let audiodata = audiodata_new_waveform( 1, rate, noise( this.envelope 128 ) );
 			} else {
 				var modulator = cosine();
 				var carrier = ?( this.spectral additive( this.envelope $buffer( 512 ) ) this.envelope );
@@ -87,17 +87,14 @@ library wavegen {
 						}
 					}
 					var octave = +( this.octave 4 );
-					var ( audiodata_waveform ) audiodata = audiodata_new_waveform( 1 rate out_buf );
-					let audiodata = audiodata:resample( >>( rate octave ) );
+					let audiodata = waveform_resample( audiodata_new_waveform( 1 rate out_buf ) >>( rate octave ) );
+					let audiodata = audiodata:crop( >>( 512 octave ), -( audiodata:get_num_samples() >>( 1024 octave ) ) );
 					let audiodata.sample_rate = rate;
-					let this.audiodata = audiodata:crop( >>( 512 octave ), -( audiodata:get_num_samples() >>( 1024 octave ) ) );
 				} else {
-					let this.audiodata = waveform_amplify( audiodata_new_waveform( 1 rate wave_buf ) <<( FP_ONE 8 ) );
+					let audiodata = waveform_amplify( audiodata_new_waveform( 1 rate wave_buf ) <<( FP_ONE 8 ) );
 				}
 			}
-			if this.parent {
-				let waveform_parent.audiodata( this.parent ) = this.audiodata;
-			}
+			let waveform_parent.audiodata( this.parent ) = audiodata;
 		}
 		
 		function set_envelope_point( ( waveform ) this x1 y1 ) {
@@ -429,7 +426,6 @@ library wavegen {
 
 program generate_waveform {
 	var idx = 1, wave_file, patch = "Waveform Sawtooth Octave -2 Chorus 1024,0";
-
 	while <( idx $argc ) {
 		switch $argv( idx++ ) {
 			case "-patch" {
@@ -440,10 +436,10 @@ program generate_waveform {
 			}
 		}
 	}
-	var ( waveform ) waveform = new_waveform( NULL, NULL );
+	var ( waveform ) waveform = new_waveform( $new( waveform_parent "" ), NULL );
 	if wave_file {
 		call parse( patch waveform );
-		save waveform_write_wav( waveform.audiodata ) wave_file;
+		save waveform_write_wav( waveform_parent.audiodata( waveform.parent ) ) wave_file;
 	} else {
 		error $str( "Usage: " $argv( 0 ) " -patch \"" patch " \" -wav output.wav" );
 		error $str( "Patch syntax: " waveform:syntax() );
