@@ -233,11 +233,19 @@ library wavegen {
 		try {
 			return $int( elem );
 		} catch e {
-			throw $cat( "Invalid integer '" elem "' on line " $line( elem ) ". " );
+			throw $cat( "Invalid integer '" elem "' on line " $line( elem ) "." );
 		}
 	}
 	
 	function parse_integers( elem ( list ) list ) {
+		if =( $chr( elem 0 ) '\"' ) {
+			try {
+				call parse_integers( $parse( $unquote( elem ) ) list );
+			} catch e {
+				throw $cat( "Unable to parse integers on line " $line( elem ) ". " e );
+			}
+			return $next( elem );
+		}
 		call list:add( parse_integer( elem ) );
 		var next = $next( elem );
 		while $eq( "," next ) {

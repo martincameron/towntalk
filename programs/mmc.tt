@@ -1,0 +1,678 @@
+
+import wavegen from "wavegen.tt";
+
+/*
+	Micromod Compiler for Towntalk.
+*/
+library mmc {
+	const VERSION = "20260217";
+	const KEY_TO_STRING = "A-A#B-C-C#D-D#E-F-F#G-G#";
+	const STRING_TO_KEY = $pack( $buffer( 8 -2, 0, 1, 3, 5, 6, 8, 10 ) );
+	const KEY_TO_PERIOD = $pack( $buffer( 74, 1814,
+		/* C-0   C#0   D-0   D#0   E-0   F-0   F#0   G-0   G#0   A-1  A#1  B-1 */
+		  1712, 1616, 1524, 1440, 1356, 1280, 1208, 1140, 1076, 1016, 960, 907,
+		   856,  808,  762,  720,  678,  640,  604,  570,  538,  508, 480, 453,
+		   428,  404,  381,  360,  339,  320,  302,  285,  269,  254, 240, 226,
+		   214,  202,  190,  180,  170,  160,  151,  143,  135,  127, 120, 113,
+		   107,  101,   95,   90,   85,   80,   75,   71,   67,   63,  60,  56,
+		    53,   50,   47,   45,   42,   40,   37,   35,   33,   31,  30,  28, 26
+	) );
+	
+	function note_info() {
+		return $array( 64 ""
+			"An 8-character ProTracker note takes the form 'KKOIIFPP', where:"
+			""
+			"    KK = Key (One of 'C-', 'C#', 'D-', 'D#', 'E-', 'F-', 'F#',"
+			"                     'G-', 'G#', 'A-', 'A#', 'B-', or '--')."
+			"    O  = Octave (0 to 6, or '-')."
+			"    II = Instrument or macro index (Decimal, 01 to 99, or '--')."
+			"    F  = Effect Command (Hexadecimal, 0 to F, or '-')."
+			"    PP = Effect Parameter (Hexadecimal, 00 to FF, or '--')."
+			""
+			"For example, an empty note would be '--------', and instrument 1"
+			"played at middle-c, with no effect would be 'C-201---'."
+			"The channel volume and fine-tune are set from the instrument."
+			""
+			"When a macro is played instead of an instrument, it will run until"
+			"a note with an instrument is encountered. The transpose and volume"
+			"of a macro can be adjusted by using a key or set volume (effect C)"
+			"in the pattern. When the end of the pattern is reached, the macro"
+			"will continue to run into the next pattern in the sequence."
+			""
+			"The available effect/parameter combinations are:"
+			""
+			"    0xy = Arpeggio, rapidly cycle through key, key + x, key + y."
+			"    1xx = Portamento up with speed xx."
+			"    1Fx = Portamento up with speed x semitones per row (Macro only)."
+			"    2xx = Portamento down with speed xx."
+			"    2Fx = Portamento down with speed x semitones per row (Macro only)."
+			"    3xx = Tone portamento, slide towards the current key at speed xx."
+			"    3Fx = Tone portamento with speed x semitones per row (Macro only)."
+			"    4xy = Vibrato with speed x, depth y."
+			"    5xy = Continue tone portamento with volume-slide speed (x - y)."
+			"    6xy = Continue vibrato with volume slide speed (x - y)."
+			"    7xx = Tremolo with speed x, depth y."
+			"    8xx = Set panning 00 to 7F. Not for 4-channel modules."
+			"    9xx = Set sample offset to xx * 256 samples."
+			"    9Fx = Increase sample offset by x * length / 64 (Macro only)."
+			"    Axy = Volume slide with speed (x - y)."
+			"    AxF = Linear volume-slide up with speed x (Macro only)."
+			"    AFx = Linear volume-slide down with speed x (Macro only)."
+			"    Bxx = Pattern jump to pattern xx."
+			"    Cxx = Set volume of instrument or macro to xx (00 to 40)."
+			"    CFx = Linear set volume x (Macro only)."
+			"    Dnn = Pattern break, to row nn (decimal 00 to 63) of next pattern."
+			"    E1x = Fine portamento up with speed x."
+			"    E2x = Fine portamento down with speed x."
+			"    E3x = Glissando. (Not supported in Micromod)."
+			"    E4x = Set vibrato waveform x (Sine 0, Saw 1, Square 2, Random 3)."
+			"    E5x = Set channel fine-tune x eighths of a semitone."
+			"    E60 = Set pattern loop marker."
+			"    E6x = Pattern loop (replay from the marker x times)."
+			"    E7x = Set tremolo waveform x (Sine 0, Saw 1, Square 2, Random 3)."
+			"    E9x = Retrigger sample every x ticks."
+			"    EAx = Fine volume-slide up with speed x."
+			"    EBx = Fine volume-slide down with speed x."
+			"    ECx = Note cut. Set volume to zero after x ticks."
+			"    EDx = Note delay. Wait x ticks before triggering key."
+			"    EEx = Pattern delay. Add x ticks to current row."
+			"    EFx = Invert loop. (Not supported in Micromod)."
+			"    Fxx = Set speed 00 to 1F (ticks per row, default 6)."
+			"    Fxx = Set tempo 20 to FF (tick length 2.5/xx seconds, default 7D)." "" );
+	}
+	
+	function num_char( chr radix ) {
+		var value;
+		if &&( >e( chr '0' ) <e( chr '9' ) ) {
+			let value = -( chr '0' );
+		} else if &&( >e( chr 'A' ) <e( chr 'Z' ) ) {
+			let value = -( chr '7' );
+		} else if <>( chr '-' ) {
+			let value = radix;
+		}
+		if >e( value radix ) {
+			throw $str( "Invalid character '" $asc( chr ) "'." );
+		}
+		return value;
+	}
+	
+	function parse_key( key_str ) {
+		var chr = $chr( key_str 0 ), chr1 = $chr( key_str 1 ), chr2 = $chr( key_str 2 );
+		if <( num_char( chr 17 ) 10 ) {
+			return +( *( num_char( chr 10 ) 100 ) *( num_char( chr1 10 ) 10 ) num_char( chr2 10 ) );
+		} else {
+			var key = $unpack( STRING_TO_KEY -( chr 'A' ) );
+			if =( chr1 '\#' ) {
+				inc key;
+			}
+			if <>( $chr( KEY_TO_STRING +( *( key 2 ) 5 ) ) chr1 ) {
+				throw $str( "Invalid key '" $sub( key_str 0 3 ) "'." );
+			}
+			return +( key *( num_char( chr2 10 ) 12 ) );
+		}
+	}
+	
+	function fixed_len_string( str len ) {
+		while <( $len( str ) len ) {
+			let str = $str( str "        " );
+		}
+		return $sub( str 0 len );
+	}
+	
+	struct sample {
+		name, volume, fine_tune, loop_start, loop_length, sample_data;
+	}
+	
+	struct note {
+		key, instrument, effect, parameter;
+		
+		function parse( ( note ) this note_str line ) {
+			if <>( $len( note_str ) 8 ) {
+				throw $str( "Invalid note '" note_str "' on line " line " (incorrect length)." );
+			}
+			try {
+				let this.key = parse_key( note_str );
+				let this.instrument = +( *( num_char( $chr( note_str 3 ) 10 ) 10 ) num_char( $chr( note_str 4 ) 10 ) );
+				let this.effect = num_char( $chr( note_str 5 ) 16 );
+				let this.parameter = +( <<( num_char( $chr( note_str 6 ) 16 ) 4 ) num_char( $chr( note_str 7 ) 16 ) );
+			} catch e {
+				throw $str( "Unable to parse note '" note_str "' on line " line ". " e );
+			}
+		}
+		
+		function load( ( note ) this buffer idx ) {
+			var in = [ buffer idx ];
+			let this.key = &( >>( in 24 ) 0xFF );
+			let this.instrument = &( >>( in 16 ) 0xFF );
+			let this.effect = &( >>( in 8 ) 0xFF );
+			let this.parameter = &( in 0xFF );
+		}
+		
+		function store( ( note ) this buffer idx ) {
+			let [ buffer idx ] = |( <<( &( this.key 0xFF ) 24 )
+				<<( &( this.instrument 0xFF ) 16 ) <<( &( this.effect 0xFF ) 8 ) &( this.parameter 0xFF ) );
+		}
+		
+		function pack( ( note ) this buffer idx ) {
+			var period, instrument = this.instrument, effect = this.effect, parameter = this.parameter, key = this.key;
+			if &&( >( key 0 ) <( key 73 ) ) {
+				let period = $unpack( KEY_TO_PERIOD key );
+			}
+			if ||( <( instrument 0 ) >( instrument 31 ) ) {
+				let instrument = 0;
+			}
+			var out = |( &( parameter 0xFF ) <<( &( effect 0xF ) 8 ) );
+			let out = |( out <<( &( instrument 0xF ) 12 ) <<( &( period 0xFFF ) 16 ) );
+			let [ buffer idx ] = |( out <<( &( instrument 0x10 ) 24 ) );
+		}
+	}
+	
+	struct module( element ) {
+		song_name, num_channels, seq_length, sequence, patterns, samples, resource_path, macros;
+		
+		function begin( ( module ) this value ) {
+			let this.song_name = $unquote( value );
+			return $next( value );
+		}
+		
+		function get_num_patterns( ( module ) this ) {
+			var sequence = this.sequence, idx, max;
+			while <( idx 128 ) {
+				var entry = [ sequence idx++ ];
+				if >( entry max ) {
+					let max = entry;
+				}
+			}
+			return +( max 1 );
+		}
+		
+		function get_pattern( ( module ) this idx ) {
+			var pattern = [ this.patterns idx ];
+			if !( pattern ) {
+				let pattern = $buffer( *( this.num_channels 64 ) );
+				let [ this.patterns idx ] = pattern;
+			}
+			return pattern;
+		}
+		
+		function pack_pattern( ( module ) this idx ) {
+			var input = this:get_pattern( idx ), len = $len( input );
+			var ( note ) note = $new( note ), output = $buffer( len );
+			let idx = 0;
+			while <( idx len ) {
+				call note:load( input idx );
+				call note:pack( output idx++ );
+			}
+			return $pack( output );
+		}
+		
+		function write( ( module ) this ) {
+			var ( list ) list = $new( list $buffer( 65536 ) );
+			call list:add_string( fixed_len_string( this.song_name 20 ) );
+			var idx = 1;
+			while <( idx 32 ) {
+				var ( sample ) sam = [ this.samples idx++ ];
+				call list:add_string( fixed_len_string( sam.name 22 ) );
+				call list:add( >>( $len( sam.sample_data ) 9 ) );
+				call list:add( >>( $len( sam.sample_data ) 1 ) );
+				call list:add( ?( <( sam.fine_tune 0 ) +( sam.fine_tune 16 ) sam.fine_tune ) );
+				call list:add( sam.volume );
+				call list:add( >>( sam.loop_start 9 ) );
+				call list:add( >>( sam.loop_start 1 ) );
+				call list:add( >>( sam.loop_length 9 ) );
+				call list:add( >>( sam.loop_length 1 ) );
+			}
+			call list:add( this.seq_length );
+			call list:add( 0 );
+			call list:add_string( $sub( this.sequence 0 128 ) );
+			switch this.num_channels {
+				case 4 {
+					call list:add_string( "M.K." );
+				}
+				case 6, 8 {
+					call list:add( +( '0' this.num_channels ) );
+					call list:add_string( "CHN" );
+				}
+				default {
+					call list:add( '1' );
+					call list:add( +( '0' -( this.num_channels 10 ) ) );
+					call list:add_string( "CH" );
+				}
+			}
+			let idx = 0;
+			var len = this:get_num_patterns();
+			while <( idx len ) {
+				call list:add_string( this:pack_pattern( idx++ ) );
+			}
+			let idx = 1;
+			while <( idx 32 ) {
+				call list:add_string( sample.sample_data( [ this.samples idx++ ] ) );
+			}
+			return $sub( list.array 0 list.len );
+		}
+	}
+	
+	function new_module( resource_path ) {
+		var ( module ) this = $new( module "Module"
+			$array( 1 "\"Title\" (Song title, maximum 20 characters.)" ) NULL NULL NULL @module_begin NULL
+			"Untitled" 4 1 $buffer( 128 ) $array( 128 ) $array( 32 ) resource_path $array( 100 ) );
+		let this.child = new_channels( this );
+		var samples = this.samples, idx;
+		while <( idx 32 ) {
+			let [ samples idx++ ] = $new( sample "" 0 0 0 0 $buffer( 0 ) );
+		}
+		return this;
+	}
+	
+	struct channels( element ) {
+		;
+		function begin( ( channels ) this value ) {
+			var num_channels = check_range( $int( value ) 4 16 "num channels" $line( value ) );
+			let module.num_channels( this.parent ) = +( num_channels &( num_channels 1 ) );
+			return $next( value );
+		}
+	}
+	
+	function new_channels( module ) {
+		return $new( channels "Channels"
+			$array( 1 "4 (Number of channels. Four channel modules have fixed panning.)" )
+			module new_sequence( module ) NULL @channels_begin );
+	}
+	
+	struct sequence( element ) {
+		;
+		function begin( ( sequence ) this value ) {
+			var ( list ) list = $new( list $buffer( 128 ) );
+			var next = parse_integers( value list );
+			var idx, arr = list.array, len = list.len;
+			let module.seq_length( this.parent ) = check_range( len 1 127 "sequence length" $line( value ) );
+			while <( idx len ) {
+				call check_range( [ arr idx++ ] 0 127 "sequence pattern index" $line( value ) );
+			}
+			let module.sequence( this.parent ) = arr;
+			return next;
+		}
+	}
+	
+	function new_sequence( module ) {
+		return $new( sequence "Sequence"
+			$array( 1 "0,1,2,... (The order in which patterns are played in the song.)" )
+			module new_instrument( module ) NULL @sequence_begin );
+	}
+	
+	struct instrument( waveform_parent ) {
+		index, sample, ping_pong;
+		
+		function begin( ( instrument ) this value ) {
+			let this.index = check_range( parse_integer( value ) 1 31 "instrument index" $line( value ) );
+			var ( sample ) sample = [ module.samples( this.parent ) this.index ];
+			let sample.name = "", sample.volume = 0, sample.fine_tune = 0;
+			let sample.loop_start = 0, sample.loop_length = 0x1FFFE;
+			let this.sample = sample;
+			let this.ping_pong = FALSE;
+			let this.audiodata = NULL;
+			return $next( value );
+		}
+		
+		function end( ( instrument ) this ) {
+			var ( audiodata_waveform ) waveform = this.audiodata;
+			var ( sample ) sample = this.sample, loop_start, loop_length;
+			if waveform {
+				var sample_length = waveform:get_num_samples();
+				let loop_start = sample.loop_start, loop_length = sample.loop_length;
+				let loop_start = &( loop_start -2 ), loop_length = &( loop_length -2 );
+				if >( +( loop_start loop_length ) sample_length ) {
+					let loop_length = &( -( sample_length loop_start ) -2 );
+				}
+				if ||( <( loop_start 0 ) >e( loop_start sample_length ) <( loop_length 4 ) ) {
+					let loop_start = &( sample_length -2 );
+					let loop_length = 0;
+				}
+				let sample_length = +( loop_start *( loop_length ?( this.ping_pong 2 1 ) ) );
+				if >( sample_length 0x1FFFE ) {
+					throw $str( "Instrument " this.index " sample data length out of range (" sample_length ", max 131070)." );
+				}
+				let waveform = waveform:copy_channel( 0 0
+					audiodata_new_waveform( 1 waveform.sample_rate $buffer( sample_length ) ) 0 0 +( loop_start loop_length ) );
+				if this.ping_pong {
+					let loop_length = *( loop_length 2 );
+					var sample_data = waveform.sample_data, idx = loop_start, end = -( sample_length 1 );
+					while <( idx end ) {
+						let [ sample_data end-- ] = [ sample_data idx++ ];
+					}
+				}
+				let sample.sample_data = waveform:quantize( 0 );
+			}
+			let sample.loop_start = loop_start, sample.loop_length = loop_length;
+		}
+	}
+	
+	function new_instrument( module ) {
+		var ( instrument ) this = $new( instrument "Instrument"
+			$array( 1 "Index (Instrument index, from 1 to 31.)" )
+			module new_macro( module ) NULL @instrument_begin @instrument_end );
+		let this.child = new_name( this );
+		return this;
+	}
+	
+	struct name( element ) {
+		;
+		function begin( ( name ) this value ) {
+			let sample.name( instrument.sample( this.parent ) ) = $unquote( value );
+			return $next( value );
+		}
+	}
+	
+	function new_name( instrument ) {
+		return $new( name "Name"
+			$array( 1 "\"Name\" (Instrument name, maximum 22 characters.)" )
+			instrument new_volume( instrument ) NULL @name_begin );
+	}
+	
+	struct volume( element ) {
+		;
+		function begin( ( volume ) this value ) {
+			var volume = check_range( parse_integer( value ) 0 64 "instrument volume" $line( value ) );
+			let sample.volume( instrument.sample( this.parent ) ) = volume;
+			return $next( value );
+		}
+	}
+	
+	function new_volume( instrument ) {
+		return $new( volume "Volume"
+			$array( 1 "0 (Instrument volume, 0 to 64.)" )
+			instrument new_finetune( instrument ) NULL @volume_begin );
+	}
+	
+	struct finetune( element ) {
+		;
+		function begin( ( finetune ) this value ) {
+			var finetune = check_range( $int( value ) -7 8 "instrument finetune" $line( value ) );
+			let sample.fine_tune( instrument.sample( this.parent ) ) = finetune;
+			return $next( value );
+		}
+	}
+	
+	function new_finetune( instrument ) {
+		return $new( finetune "FineTune"
+			$array( 1 "0 (Fine-tuning in eighths of a semitone, from -8 to 7.)" )
+			instrument new_waveform( instrument new_wavefile( instrument ) ) NULL @finetune_begin );
+	}
+	
+	struct wavefile( element ) {
+		file, offset, count, divisions, gain, pitch;
+		
+		function begin( ( wavefile ) this value ) {
+			let this.file = $str( module.resource_path( instrument.parent( this.parent ) ) $unquote( value ) );
+			let this.offset = 0, this.count = 0, this.divisions = 0, this.gain = 64, this.pitch = 0;
+			var ( sample ) sample = instrument.sample( this.parent );
+			let sample.loop_start = 0, sample.loop_length = 0;
+			return $next( value );
+		}
+		
+		function end( ( wavefile ) this ) {
+			var ( audiodata_waveform ) waveform, data;
+			try {
+				let data = $load( this.file );
+			} catch e {
+				throw $str( "Unable to load '" this.file "'. " e );
+			}
+			var idx = +( $endidx( this.file "." ) 1 ), len;
+			switch $sub( this.file idx -( $len( this.file ) idx ) ) {
+				case "WAV" "wav" {
+					let waveform = audiodata_wav_waveform( data );
+				}
+				case "IFF" "iff" {
+					let waveform = audiodata_iff_waveform( data );
+				}
+				default {
+					let len = $len( data );
+					if >( len 131072 ) {
+						let len = 131072;
+					}
+					let waveform = audiodata_raw_waveform( 8000 data 0 len );
+				}
+			}
+			if >( this.count 0 ) {
+				let len = 1;
+				if >( this.divisions 1 ) {
+					let len = _/( waveform:get_num_samples() this.divisions );
+				}
+				let waveform = waveform:crop( *( this.offset len ) *( this.count len ) );
+			}
+			if <>( this.gain 64 ) {
+				let waveform = waveform:amplify( <<( this.gain -( audiodata_FP_SHIFT 6 ) ) );
+			}
+			if <>( this.pitch 0 ) {
+				var rate = waveform.sample_rate;
+				call waveform:adjust_pitch( _/( <<( this.pitch audiodata_FP_SHIFT ) 96 ) );
+				let waveform = waveform:resample_channel( 0 rate );
+			}
+			let instrument.audiodata( this.parent ) = waveform;
+		}
+	}
+	
+	function new_wavefile( instrument ) {
+		var ( wavefile ) this = $new( wavefile "WaveFile"
+			$array( 1 "\"FileName\" (The relative path of the WAV file.)" )
+			instrument new_loopstart( instrument ) NULL @wavefile_begin @wavefile_end );
+		let this.child = new_crop( this );
+		return this;
+	}
+	
+	struct crop( element ) {
+		;
+		function begin( ( crop ) this value ) {
+			var ( list ) list = $new( list $buffer( 3 ) );
+			var next = parse_integers( value list );
+			if <( check_range( list.len 1 3 "number of crop parameters" $line( value ) ) 2 ) {
+				let wavefile.count( this.parent ) = [ list.array 0 ];
+			} else {
+				let wavefile.offset( this.parent ) = [ list.array 0 ];
+				let wavefile.count( this.parent ) = [ list.array 1 ];
+				let wavefile.divisions( this.parent ) = [ list.array 2 ];
+			}
+			return next;
+		}
+	}
+	
+	function new_crop( wavefile ) {
+		return $new( crop "Crop"
+			$array( 3 "\"Offset,Count[,Divisions]\" (Crop Count Divisions from Offset.)"
+				"(The Divisions parameter divides the sample into segments.)"
+				"(If unspecified, one division is equivalent to one sample.)" )
+			wavefile new_gain( wavefile ) NULL @crop_begin );
+	}
+	
+	struct gain( element ) {
+		;
+		function begin( ( gain ) this value ) {
+			let wavefile.gain( this.parent ) = parse_integer( value );
+			return $next( value );
+		}
+	}
+	
+	function new_gain( wavefile ) {
+		return $new( gain "Gain"
+			$array( 1 "64 (Amplification factor, divided by 64.)" )
+			wavefile new_pitch( wavefile ) NULL @gain_begin );
+	}
+	
+	struct pitch( element ) {
+		;
+		function begin( ( pitch ) this value ) {
+			let wavefile.pitch( this.parent ) = parse_integer( value );
+			return $next( value );
+		}
+	}
+	
+	function new_pitch( wavefile ) {
+		return $new( pitch "Pitch"
+			$array( 1 "0 (Tune the sample in eighths of a semitone.)" )
+			wavefile NULL NULL @pitch_begin );
+	}
+	
+	struct loopstart( element ) {
+		;
+		function begin( ( loopstart ) this value ) {
+			let sample.loop_start( instrument.sample( this.parent ) ) = parse_integer( value );
+			return $next( value );
+		}
+	}
+	
+	function new_loopstart( instrument ) {
+		return $new( loopstart "LoopStart"
+			$array( 1 "Offset (Offset of sustain phase in samples.)" )
+			instrument new_looplength( instrument ) NULL @loopstart_begin );
+	}
+	
+	struct looplength( element ) {
+		;
+		function begin( ( looplength ) this value ) {
+			let sample.loop_length( instrument.sample( this.parent ) ) = parse_integer( value );
+			return $next( value );
+		}
+	}
+	
+	function new_looplength( instrument ) {
+		return $new( looplength "LoopLength"
+			$array( 1 "Length (Length of sustain phase in samples.)" )
+			instrument new_pingpong( instrument ) NULL @looplength_begin );
+	}
+	
+	struct pingpong( element ) {
+		;
+		function begin( ( pingpong ) this value ) {
+			switch value {
+				case "On" { let instrument.ping_pong( this.parent ) = TRUE; }
+				case "Off" { let instrument.ping_pong( this.parent ) = FALSE; }
+				default { throw $cat( "Invalid PingPong parameter (On or Off) on line " $line( value ) "." ); }
+			}
+			return $next( value );
+		}
+	}
+	
+	function new_pingpong( instrument ) {
+		return $new( pingpong "PingPong"
+			$array( 1 "Off (Set to On to append a reversed sustain phase to the sample.)" )
+			instrument NULL NULL @pingpong_begin );
+	}
+	
+	struct macro( element ) {
+		index, notes, row, repeat_row, scale, root;
+		
+		function begin( ( macro ) this value ) {
+			let this.index = check_range( parse_integer( value ) 1 99 "macro index" $line( value ) );
+			let this.notes = $buffer( *( 64 4 ) ), this.row = 0, this.repeat_row = 0;
+			throw "Macro not supported.";
+		}
+	}
+	
+	function new_macro( module ) {
+		return $new( macro "Macro"
+			$array( 1 "Index (Macro index, from 1 to 99.)" )
+			module new_pattern( module ) NULL @macro_begin );
+	}
+	
+	struct pattern( element ) {
+		index;
+		
+		function begin( ( pattern ) this value ) {
+			let this.index = check_range( parse_integer( value ) 0 127 "pattern index" $line( value ) );
+			let row.index( this.child ) = 0;
+			return $next( value );
+		}
+	}
+	
+	function new_pattern( module ) {
+		var ( pattern ) this = $new( pattern "Pattern"
+			$array( 1 "Index (Pattern index, from 0 to 127.)" )
+			module NULL NULL @pattern_begin );
+		let this.child = new_row( this );
+		return this;
+	}
+	
+	struct row( element ) {
+		index;
+		
+		function begin( ( row ) this value ) {
+			var line = $line( value ), elem, offset;
+			var ( module ) module = pattern.parent( this.parent ), ( note ) note = $new( note );
+			var pattern = module:get_pattern( pattern.index( this.parent ) ), row_idx, channel;
+			try {
+				let elem = $parse( $unquote( value ) );
+			} catch e {
+				throw $str( "Invalid row on line " line ". " e );
+			}
+			try {
+				while <( offset $len( elem ) ) {
+					let row_idx = +( *( row_idx 10 ) $int( $sub( elem offset++ 1 ) ) );
+				}
+			} catch e {
+				throw $str( "Invalid row index '" elem "' on line " line ". " e );
+			}
+			call check_range( row_idx 0 63 "row index" line );
+			if <( row_idx this.index ) {
+				throw $str( "Row index " row_idx " is less than previous on line " line "." );
+			}
+			let this.index = row_idx, elem = $next( elem );
+			let offset = *( row_idx module.num_channels );
+			while elem {
+				call note:parse( elem line );
+				call note:store( pattern offset++ );
+				let elem = $next( elem );
+			}
+			return $next( value );
+		}
+	}
+	
+	function new_row( pattern ) {
+		return $new( row "Row"
+			$array( 3 "\"00 C-2-1--- -------- ...\" (Specify a single row within a pattern.)"
+				"(Row index, from 0 to 63, followed by notes for each channel.)"
+				"(See the '-notes' command-line option for more information.)" )
+			pattern NULL NULL @row_begin );
+	}
+}
+
+program compiler {
+	var idx = 1, mt_file, mod_file, syntax, notes;
+	while <( idx $argc ) {
+		switch $argv( idx++ ) {
+			case "-mt" {
+				let mt_file = $argv( idx++ );
+			}
+			case "-mod" {
+				let mod_file = $argv( idx++ );
+			}
+			case "-syntax" {
+				let syntax = TRUE;
+			}
+			case "-notes" {
+				let notes = TRUE;
+			}
+		}
+	}
+	if syntax {
+		print element_syntax( new_module( "" ) );
+	} else if notes {
+		var info = note_info();
+		let idx = 0;
+		while <( idx $len( info ) ) {
+			var line = [ info idx++ ];
+			if line {
+				print line;
+			}
+		}
+	} else if &&( mt_file mod_file ) {
+		print $str( "Compiling '" mt_file "' to '" mod_file "'."  );
+		var ( module ) module = new_module( $sub( mt_file 0 +( $endidx( mt_file "/\\" ) 1 ) ) );
+		call parse( $load( mt_file ) module );
+		save module:write() mod_file;
+	} else {
+		error $str( "Micromod Compiler! " VERSION );
+		error "          Compile: -mt input.mt -mod output.mod";
+		error "  Print MT Syntax: -syntax";
+		error "  Print Note Info: -notes";
+	}
+}
