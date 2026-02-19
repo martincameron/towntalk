@@ -5,7 +5,8 @@ import wavegen from "wavegen.tt";
 	Micromod Compiler for Towntalk.
 */
 library mmc {
-	const VERSION = "20260217";
+	const VERSION = "20260219";
+	const HEX_TO_STRING = "0123456789ABCDEF";
 	const KEY_TO_STRING = "A-A#B-C-C#D-D#E-F-F#G-G#";
 	const STRING_TO_KEY = $pack( $buffer( 8 -2, 0, 1, 3, 5, 6, 8, 10 ) );
 	const KEY_TO_PERIOD = $pack( $buffer( 74, 1814,
@@ -112,11 +113,50 @@ library mmc {
 		}
 	}
 	
+	function period_to_key( period ) {
+		var key = 0;
+		if &&( >e( period $unpack( KEY_TO_PERIOD 72 ) ) <e( period $unpack( KEY_TO_PERIOD 1 ) ) ) {
+			while >( $unpack( KEY_TO_PERIOD +( key 12 ) ) period ) {
+				let key = +( key 12 );
+			}
+			while >e( $unpack( KEY_TO_PERIOD +( key 1 ) ) period ) {
+				inc key;
+			}
+			if >e( -( $unpack( KEY_TO_PERIOD key ) period ) -( period $unpack( KEY_TO_PERIOD +( key 1 ) ) ) ) {
+				inc key;
+			}
+		}
+		return key;
+	}
+	
 	function fixed_len_string( str len ) {
 		while <( $len( str ) len ) {
 			let str = $str( str "        " );
 		}
 		return $sub( str 0 len );
+	}
+	
+	function trim( str ) {
+		var offset, end = -( $len( str ) 1 );
+		while &&( >e( end 0 ) <( $chr( str, end ) 33 ) ) {
+			let end = -( end 1 );
+		}
+		return $sub( str, offset, +( end 1 ) );
+	}
+	
+	function split( str separators ( list ) list ) {
+		var offset, len = $len( str ), end = $stridx( str separators 0 );
+		while >e( end 0 ) {
+			call list:add( $sub( str offset -( end++ offset ) ) );
+			let offset = end;
+			let end = ?( <( offset len ) $stridx( str separators offset ) -1 );
+		}
+		call list:add( $sub( str offset -( len offset ) ) );
+		return list;
+	}
+	
+	function u16be( str, idx ) {
+		return |( <<( &( $chr( str idx ) 0xFF ) 8 ) &( $chr( str +( idx 1 ) ) 0xFF ) );
 	}
 	
 	struct sample {
@@ -138,6 +178,33 @@ library mmc {
 			} catch e {
 				throw $str( "Unable to parse note '" note_str "' on line " line ". " e );
 			}
+		}
+		
+		function to_string( ( note ) this ) {
+			var chars = $buffer( 8  '-' '-' '-' '-' '-' '-' '-' '-' );
+			var key = +( this.key 2 );
+			if &&( >( key 2 ) <( key 120 ) ) {
+				var idx = *( %( key 12 ) 2 );
+				let [ chars 0 ] = $chr( KEY_TO_STRING idx++ );
+				let [ chars 1 ] = $chr( KEY_TO_STRING idx );
+				let [ chars 2 ] = +( '0' _/( key 12 ) );
+			}
+			var instrument = this.instrument;
+			if &&( >( instrument 0 ) <( instrument 100 ) ) {
+				if >( instrument 9 ) {
+					let [ chars 3 ] = +( '0' _/( instrument 10 ) );
+				}
+				let [ chars 4 ] = +( '0' %( instrument 10 ) );
+			}
+			var effect = this.effect, parameter = this.parameter;
+			if ||( >( effect 0 ) >( parameter 0 ) ) {
+				if <( effect 16 ) {
+					let [ chars 5 ] = $chr( HEX_TO_STRING effect );
+				}
+				let [ chars 6 ] = $chr( HEX_TO_STRING &( >>( parameter 4 ) 0xF ) );
+				let [ chars 7 ] = $chr( HEX_TO_STRING &( parameter 0xF ) );
+			}
+			return $sub( chars 0 8 );
 		}
 		
 		function load( ( note ) this buffer idx ) {
@@ -164,6 +231,14 @@ library mmc {
 			var out = |( &( parameter 0xFF ) <<( &( effect 0xF ) 8 ) );
 			let out = |( out <<( &( instrument 0xF ) 12 ) <<( &( period 0xFFF ) 16 ) );
 			let [ buffer idx ] = |( out <<( &( instrument 0x10 ) 24 ) );
+		}
+		
+		function unpack( ( note ) this buffer idx ) {
+			var in = [ buffer idx ];
+			let this.key = period_to_key( &( >>( in 16 ) 0xFFF ) );
+			let this.instrument = |( &( >>( in 24 ) 0x10 ) &( >>( in 12 ) 0xF ) );
+			let this.effect = &( >>( in 8 ) 0xF );
+			let this.parameter = &( in 0xFF ); 
 		}
 	}
 	
@@ -204,6 +279,74 @@ library mmc {
 				call note:pack( output idx++ );
 			}
 			return $pack( output );
+		}
+		
+		function read( ( module ) this modfile ) {
+			switch $sub( modfile, 1082, 2 ) {
+				case "K.", "K!", "T4" {
+					let this.num_channels = 4;
+				}
+				case "HN" {
+					let this.num_channels = $int( $sub( modfile, 1080, 1 ) );
+				}
+				case "CH" {
+					let this.num_channels = $int( $sub( modfile, 1080, 2 ) );
+				}
+				default {
+					throw "Not a MOD file.";
+				}
+			}
+			let this.song_name = trim( $sub( modfile, 0, 20 ) );
+			let this.seq_length = &( $chr( modfile 950 ) 0x7F );
+			var idx;
+			while <( idx 128 ) {
+				let [ this.sequence idx ] = &( $chr( modfile +( 952 idx++ ) ) 0x7F );
+			}
+			var ( note ) note = $new( note );
+			var offset = 271;
+			var pat_idx, count = this:get_num_patterns();
+			while <( pat_idx count ) {
+				var pattern = this:get_pattern( pat_idx++ ), len = $len( pattern );
+				let idx = 0;
+				while <( idx len ) {
+					let [ pattern idx ] = $unpack( modfile offset++ );
+					call note:unpack( pattern idx );
+					call note:store( pattern idx++ );
+				}
+			}
+			let offset = *( offset 4 );
+			let idx = 1;
+			while <( idx 32 ) {
+				var ( sample ) sample = [ this.samples idx ];
+				let sample.name = trim( $sub( modfile -( *( idx 30 ) 10 ) 22 ) );
+				var length = *( u16be( modfile, +( *( idx 30 ) 12 ) ) 2 );
+				if >e( +( offset length ) $len( modfile ) ) {
+					let length = -( $len( modfile ) offset );
+				}
+				var fine = &( $chr( modfile +( *( idx 30 ) 14 ) ) 0xF );
+				let sample.fine_tune = -( &( fine 0x7 ) &( fine 0x8 ) );
+				var vol = &( $chr( modfile +( *( idx 30 ) 15 ) ) 0x7F );
+				let sample.volume = ?( >( vol 64 ) 64 vol );
+				var loopidx = *( u16be( modfile, +( *( idx 30 ) 16 ) ) 2 );
+				var looplen = *( u16be( modfile, +( *( idx 30 ) 18 ) ) 2 );
+				if >( +( loopidx looplen ) length ) {
+					if <e( +( _/( loopidx 2 ) looplen ) length ) {
+						// Some old modules have loop start in bytes.
+						let loopidx = _/( loopidx 2 );
+					} else {
+						let looplen = -( length loopidx );
+					}
+				}
+				if <( looplen 4 ) {
+					let loopidx = length;
+					let looplen = 0;
+				}
+				let sample.loop_start = loopidx;
+				let sample.loop_length = looplen;
+				let sample.sample_data = $sub( modfile offset length );
+				let offset = +( offset length );
+				inc idx;
+			}
 		}
 		
 		function write( ( module ) this ) {
@@ -247,6 +390,83 @@ library mmc {
 			let idx = 1;
 			while <( idx 32 ) {
 				call list:add_string( sample.sample_data( [ this.samples idx++ ] ) );
+			}
+			return $sub( list.array 0 list.len );
+		}
+		
+		function decompile( ( module ) this write_sample_data ) {
+			var ( list ) list = $new( list $buffer( 65536 ) );
+			call list:add_string( "Module ");
+			call list:add_string( $quote( this.song_name ) );
+			call list:add( '\n' );
+			call list:add_string( "Channels ");
+			call list:add_string( $str( this.num_channels ) );
+			call list:add( '\n' );
+			call list:add_string( "Sequence \"");
+			var sequence = this.sequence, idx, len = this.seq_length;
+			call list:add_string( $str( [ sequence idx++ ] ) ); 
+			while <( idx len ) {
+				call list:add_string( $str( "," [ sequence idx++ ] ) );
+			}
+			call list:add_string( "\"\n" );
+			let idx = 1;
+			while <( idx 32 ) {
+				var ( sample ) sample = [ this.samples idx ];
+				var sample_data = sample.sample_data;
+				if ||( $len( sample.name ) $len( sample_data ) ) {
+					call list:add_string( "\tInstrument ");
+					call list:add_string( $str( idx ) );
+					if $len( sample.name ) {
+						call list:add_string( " Name ");
+						call list:add_string( $quote( sample.name ) );
+					}
+					if sample.volume {
+						call list:add_string( " Volume ");
+						call list:add_string( $str( sample.volume ) );
+					}
+					if sample.fine_tune {
+						call list:add_string( " FineTune ");
+						call list:add_string( $str( sample.fine_tune ) );
+					}
+					if $len( sample_data ) {
+						var file_name = $str( ?( <( idx 10 ) "0" "" ) idx ".raw" );
+						call list:add_string( " WaveFile \"" );
+						call list:add_string( file_name );
+						call list:add( '\"' );
+						if write_sample_data {
+							call :( write_sample_data file_name sample_data );
+						}
+						call list:add_string( " LoopStart ");
+						call list:add_string( $str( sample.loop_start ) );
+						call list:add_string( " LoopLength ");
+						call list:add_string( $str( sample.loop_length ) );
+					}
+					call list:add( '\n' );
+				}
+				inc idx;
+			}
+			var ( note ) note = $new( note ), num_channels = this.num_channels;
+			let idx = 0, len = this:get_num_patterns();
+			while <( idx len ) {
+				call list:add_string( "\tPattern ");
+				call list:add_string( $str( idx ) );
+				call list:add( '\n' );
+				var pattern = this:get_pattern( idx++ );
+				var row = 0, offset = 0;
+				while <( row 64 ) {
+					call list:add_string( "\t\tRow \"" );
+					if <( row 10 ) {
+						call list:add( '0' );
+					}
+					call list:add_string( $str( row++ ) );
+					var end = +( offset num_channels );
+					while <( offset end ) {
+						call list:add( 32 );
+						call note:load( pattern offset++ );
+						call list:add_string( note:to_string() );
+					}
+					call list:add_string( "\"\n" );
+				}
 			}
 			return $sub( list.array 0 list.len );
 		}
@@ -427,8 +647,8 @@ library mmc {
 				}
 				default {
 					let len = $len( data );
-					if >( len 131072 ) {
-						let len = 131072;
+					if >( len 131070 ) {
+						let len = 131070;
 					}
 					let waveform = audiodata_raw_waveform( 8000 data 0 len );
 				}
@@ -596,31 +816,34 @@ library mmc {
 		index;
 		
 		function begin( ( row ) this value ) {
-			var line = $line( value ), elem, offset;
+			var line = $line( value ), offset;
 			var ( module ) module = pattern.parent( this.parent ), ( note ) note = $new( note );
 			var pattern = module:get_pattern( pattern.index( this.parent ) ), row_idx, channel;
-			try {
-				let elem = $parse( $unquote( value ) );
-			} catch e {
-				throw $str( "Invalid row on line " line ". " e );
+			var ( list ) list = split( $unquote( value ) " " $new( list $array( 32 ) ) );
+			var arr = list.array, len = list.len, idx;
+			if <( len 1 ) {
+				throw $str( "Invalid row on line " line "." );
 			}
+			var str = [ arr idx++ ];
 			try {
-				while <( offset $len( elem ) ) {
-					let row_idx = +( *( row_idx 10 ) $int( $sub( elem offset++ 1 ) ) );
+				while <( offset $len( str ) ) {
+					let row_idx = +( *( row_idx 10 ) $int( $sub( str offset++ 1 ) ) );
 				}
 			} catch e {
-				throw $str( "Invalid row index '" elem "' on line " line ". " e );
+				throw $str( "Invalid row index '" str "' on line " line ". " e );
 			}
 			call check_range( row_idx 0 63 "row index" line );
 			if <( row_idx this.index ) {
 				throw $str( "Row index " row_idx " is less than previous on line " line "." );
 			}
-			let this.index = row_idx, elem = $next( elem );
+			let this.index = row_idx;
 			let offset = *( row_idx module.num_channels );
-			while elem {
-				call note:parse( elem line );
-				call note:store( pattern offset++ );
-				let elem = $next( elem );
+			while <( idx len ) {
+				let str = [ arr idx++ ];
+				if $len( str ) {
+					call note:parse( str line );
+					call note:store( pattern offset++ );
+				}
 			}
 			return $next( value );
 		}
@@ -636,7 +859,8 @@ library mmc {
 }
 
 program compiler {
-	var idx = 1, mt_file, mod_file, syntax, notes;
+	var ( module ) module;
+	var idx = 1, mt_file, mod_file, output, syntax, notes;
 	while <( idx $argc ) {
 		switch $argv( idx++ ) {
 			case "-mt" {
@@ -644,6 +868,9 @@ program compiler {
 			}
 			case "-mod" {
 				let mod_file = $argv( idx++ );
+			}
+			case "-out" {
+				let output = $argv( idx++ );
 			}
 			case "-syntax" {
 				let syntax = TRUE;
@@ -664,14 +891,20 @@ program compiler {
 				print line;
 			}
 		}
-	} else if &&( mt_file mod_file ) {
-		print $str( "Compiling '" mt_file "' to '" mod_file "'."  );
-		var ( module ) module = new_module( $sub( mt_file 0 +( $endidx( mt_file "/\\" ) 1 ) ) );
+	} else if &&( mt_file output ) {
+		print $str( "Compiling '" mt_file "' to '" output "'."  );
+		let module = new_module( $sub( mt_file 0 +( $endidx( mt_file "/\\" ) 1 ) ) );
 		call parse( $load( mt_file ) module );
-		save module:write() mod_file;
+		save module:write() output;
+	} else if &&( mod_file output ) {
+		print $str( "Decompiling '" mod_file "' to '" output "'."  );
+		let module = new_module( $sub( output 0 +( $endidx( output "/\\" ) 1 ) ) );
+		call module:read( $load( mod_file ) );
+		save module:decompile( $function( ${ ( name data ) { save data $str( module.resource_path name ); } } ) ) output;
 	} else {
 		error $str( "Micromod Compiler! " VERSION );
-		error "          Compile: -mt input.mt -mod output.mod";
+		error "          Compile: -mt input.mt -out output.mod";
+		error "        Decompile: -mod input.mod -out output.mt";
 		error "  Print MT Syntax: -syntax";
 		error "  Print Note Info: -notes";
 	}
