@@ -5,7 +5,7 @@ import wavegen from "wavegen.tt";
 	Micromod Compiler for Towntalk.
 */
 library mmc {
-	const VERSION = "20260219";
+	const VERSION = "20260220";
 	const HEX_TO_STRING = "0123456789ABCDEF";
 	const KEY_TO_STRING = "A-A#B-C-C#D-D#E-F-F#G-G#";
 	const STRING_TO_KEY = $pack( $buffer( 8 -2, 0, 1, 3, 5, 6, 8, 10 ) );
@@ -398,11 +398,9 @@ library mmc {
 			var ( list ) list = $new( list $buffer( 65536 ) );
 			call list:add_string( "Module ");
 			call list:add_string( $quote( this.song_name ) );
-			call list:add( '\n' );
-			call list:add_string( "Channels ");
+			call list:add_string( "\n\tChannels ");
 			call list:add_string( $str( this.num_channels ) );
-			call list:add( '\n' );
-			call list:add_string( "Sequence \"");
+			call list:add_string( "\n\tSequence \"");
 			var sequence = this.sequence, idx, len = this.seq_length;
 			call list:add_string( $str( [ sequence idx++ ] ) ); 
 			while <( idx len ) {
@@ -433,13 +431,15 @@ library mmc {
 						call list:add_string( " WaveFile \"" );
 						call list:add_string( file_name );
 						call list:add( '\"' );
+						if sample.loop_length {
+							call list:add_string( " LoopStart ");
+							call list:add_string( $str( sample.loop_start ) );
+							call list:add_string( " LoopLength ");
+							call list:add_string( $str( sample.loop_length ) );
+						}
 						if write_sample_data {
 							call :( write_sample_data file_name sample_data );
 						}
-						call list:add_string( " LoopStart ");
-						call list:add_string( $str( sample.loop_start ) );
-						call list:add_string( " LoopLength ");
-						call list:add_string( $str( sample.loop_length ) );
 					}
 					call list:add( '\n' );
 				}
@@ -468,6 +468,7 @@ library mmc {
 					call list:add_string( "\"\n" );
 				}
 			}
+			call list:add_string( "(End.)\n" );
 			return $sub( list.array 0 list.len );
 		}
 	}
@@ -816,16 +817,15 @@ library mmc {
 		index;
 		
 		function begin( ( row ) this value ) {
-			var line = $line( value ), offset;
+			var line = $line( value ), arr, offset, len, idx, str = "";
 			var ( module ) module = pattern.parent( this.parent ), ( note ) note = $new( note );
 			var pattern = module:get_pattern( pattern.index( this.parent ) ), row_idx, channel;
-			var ( list ) list = split( $unquote( value ) " " $new( list $array( 32 ) ) );
-			var arr = list.array, len = list.len, idx;
-			if <( len 1 ) {
-				throw $str( "Invalid row on line " line "." );
-			}
-			var str = [ arr idx++ ];
 			try {
+				var ( list ) list = split( $unquote( value ) " " $new( list $array( 32 ) ) );
+				let arr = list.array, len = list.len, str = [ arr idx++ ];
+				while <( $len( str ) 1 ) {
+					let str = [ arr idx++ ];
+				}
 				while <( offset $len( str ) ) {
 					let row_idx = +( *( row_idx 10 ) $int( $sub( str offset++ 1 ) ) );
 				}
@@ -838,11 +838,16 @@ library mmc {
 			}
 			let this.index = row_idx;
 			let offset = *( row_idx module.num_channels );
+			var end = +( offset module.num_channels );
 			while <( idx len ) {
 				let str = [ arr idx++ ];
 				if $len( str ) {
 					call note:parse( str line );
-					call note:store( pattern offset++ );
+					if <( offset end ) {
+						call note:store( pattern offset++ );
+					} else {
+						throw $str( "Too many notes in row on line " line "." );
+					}
 				}
 			}
 			return $next( value );
