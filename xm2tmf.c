@@ -4,7 +4,7 @@
 #include "stdlib.h"
 #include "string.h"
 
-static const char *VERSION = "MOD/S3M/XM to TMF converter (c)2022 mumart@gmail.com";
+static const char *VERSION = "MOD/S3M/XM to TMF converter (c)2026 mumart@gmail.com";
 
 static const int FP_SHIFT = 15, FP_ONE = 32768, FP_MASK = 32767;
 
@@ -243,10 +243,12 @@ static int envelope_calculate_ampl( struct envelope *envelope, int tick ) {
 				point = idx;
 			}
 		}
-		dt = envelope->points_tick[ point + 1 ] - envelope->points_tick[ point ];
-		da = envelope->points_ampl[ point + 1 ] - envelope->points_ampl[ point ];
 		ampl = envelope->points_ampl[ point ];
-		ampl += ( ( da << 24 ) / dt ) * ( tick - envelope->points_tick[ point ] ) >> 24;
+		dt = envelope->points_tick[ point + 1 ] - envelope->points_tick[ point ];
+		if( dt > 0 ) {
+			da = envelope->points_ampl[ point + 1 ] - envelope->points_ampl[ point ];
+			ampl += ( ( da << 24 ) / dt ) * ( tick - envelope->points_tick[ point ] ) >> 24;
+		}
 	}
 	return ampl;
 }
@@ -422,7 +424,8 @@ static struct module* module_load_xm( struct data *data, char *message ) {
 			}
 			if( num_samples > 0 ) {
 				for( key = 0; key < 96; key++ ) {
-					instrument->key_to_sample[ key + 1 ] = data_u8( data, offset + 33 + key );
+					int sample_idx = data_u8( data, offset + 33 + key );
+					instrument->key_to_sample[ key + 1 ] = sample_idx < num_samples ? sample_idx : 0;
 				}
 				point_tick = 0;
 				for( point = 0; point < 12; point++ ) {
@@ -559,6 +562,7 @@ static struct module* module_load_s3m( struct data *data, char *message ) {
 				channel_map[ idx ] = module->num_channels++;
 			}
 		}
+		module_data_idx = 96 + module->sequence_len;
 		module->sequence = calloc( module->sequence_len, sizeof( unsigned char ) );
 		if( !module->sequence ){
 			dispose_module( module );
@@ -567,7 +571,9 @@ static struct module* module_load_s3m( struct data *data, char *message ) {
 		for( idx = 0; idx < module->sequence_len; idx++ ) {
 			module->sequence[ idx ] = data_u8( data, 96 + idx );
 		}
-		module_data_idx = 96 + module->sequence_len;
+		while( module->sequence_len > 0 && module->sequence[ module->sequence_len - 1 ] >= module->num_patterns ) {
+			module->sequence_len--;
+		}
 		module->instruments = calloc( module->num_instruments + 1, sizeof( struct instrument ) );
 		if( !module->instruments ) {
 			dispose_module( module );
@@ -904,7 +910,7 @@ static struct module* module_load_mod( struct data *data, char *message ) {
 }
 
 /* Allocate and initialize a module from the specified data, returns NULL on error.
-   Message should point to a 64-character buffer to receive error messages. */
+   Message must point to a 64-character buffer to receive error messages. */
 struct module* module_load( struct data *data, char *message ) {
 	char ascii[ 16 ];
 	struct module* module;
@@ -914,6 +920,11 @@ struct module* module_load( struct data *data, char *message ) {
 		module = module_load_s3m( data, message );
 	} else {
 		module = module_load_mod( data, message );
+	}
+	if( module && ( module->num_channels < 1 || module->num_patterns < 1 || module->sequence_len < 1 ) ) {
+		strcpy( message, "Invalid module file!" );
+		dispose_module( module );
+		return NULL;
 	}
 	return module;
 }
