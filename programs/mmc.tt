@@ -5,18 +5,25 @@ import wavegen from "wavegen.tt";
 	Micromod Compiler for Towntalk.
 */
 library mmc {
-	const VERSION = "20260220";
+	const VERSION = "20260303";
+	const CHROMATIC_SCALE = "C#D#EF#G#A#B";
+	const C_MAJOR_SCALE   = "C-D-EF-G-A-B",
+	const C_MINOR_SCALE   = "C-D#-F-G#-#-";
 	const HEX_TO_STRING = "0123456789ABCDEF";
 	const KEY_TO_STRING = "A-A#B-C-C#D-D#E-F-F#G-G#";
 	const STRING_TO_KEY = $pack( $buffer( 8 -2, 0, 1, 3, 5, 6, 8, 10 ) );
-	const KEY_TO_PERIOD = $pack( $buffer( 74, 1814,
-		/* C-0   C#0   D-0   D#0   E-0   F-0   F#0   G-0   G#0   A-1  A#1  B-1 */
-		  1712, 1616, 1524, 1440, 1356, 1280, 1208, 1140, 1076, 1016, 960, 907,
-		   856,  808,  762,  720,  678,  640,  604,  570,  538,  508, 480, 453,
-		   428,  404,  381,  360,  339,  320,  302,  285,  269,  254, 240, 226,
-		   214,  202,  190,  180,  170,  160,  151,  143,  135,  127, 120, 113,
-		   107,  101,   95,   90,   85,   80,   75,   71,   67,   63,  60,  56,
-		    53,   50,   47,   45,   42,   40,   37,   35,   33,   31,  30,  28, 26
+	const KEY_TO_PERIOD = $pack( $buffer( 74, 1814, /*
+		 C-0   C#0   D-0   D#0   E-0   F-0   F#0   G-0   G#0   A-1  A#1  B-1 */
+		1712, 1616, 1524, 1440, 1356, 1280, 1208, 1140, 1076, 1016, 960, 907,
+		 856,  808,  762,  720,  678,  640,  604,  570,  538,  508, 480, 453,
+		 428,  404,  381,  360,  339,  320,  302,  285,  269,  254, 240, 226,
+		 214,  202,  190,  180,  170,  160,  151,  143,  135,  127, 120, 113,
+		 107,  101,   95,   90,   85,   80,   75,   71,   67,   63,  60,  56,
+		  53,   50,   47,   45,   42,   40,   37,   35,   33,   31,  30,  28, 26
+	) );
+	const FINE_TUNING = $pack( $buffer( 16
+		4340, 4308, 4277, 4247, 4216, 4186, 4156, 4126,
+		4096, 4067, 4037, 4008, 3979, 3951, 3922, 3894
 	) );
 	
 	function note_info() {
@@ -129,6 +136,38 @@ library mmc {
 		return key;
 	}
 	
+	function key_to_period( key fine_tune ) {
+		var period;
+		if &&( >( key 0 ) <( key 73 ) ) {
+			let period = >>( *( $unpack( KEY_TO_PERIOD key ) $unpack( FINE_TUNING &( +( fine_tune 8 ) 0xF ) ) ) 11 );
+		}
+		return +( >>( period 1 ) &( period 1 ) );
+	}
+	
+	function transpose_period( period semitones maximum ) {
+		let period = _/( *( period $unpack( KEY_TO_PERIOD +( semitones 13 ) ) 2 ) 856 );
+		let period = +( >>( period 1 ) &( period 1 ) );
+		return ?( <( period maximum ) period maximum );
+	}
+	
+	function divide( dividend divisor maximum ) {
+		var quotient;
+		if >( dividend 0 ) {
+			let quotient = _/( <<( dividend 1 ) divisor );
+			let quotient = +( >>( quotient 1 ) &( quotient 1 ) );
+		}
+		return ?( <( quotient maximum ) quotient maximum );
+	}
+	
+	function sqrt( y ) {
+		var x = 256, n;
+		while <( n++ 8 ) {
+			let x = +( x _/( y x ) );
+			let x = +( >>( x 1 ) &( x 1 ) );
+		}
+		return x;
+	}
+	
 	function fixed_len_string( str len ) {
 		while <( $len( str ) len ) {
 			let str = $str( str "        " );
@@ -157,6 +196,12 @@ library mmc {
 	
 	function u16be( str, idx ) {
 		return |( <<( &( $chr( str idx ) 0xFF ) 8 ) &( $chr( str +( idx 1 ) ) 0xFF ) );
+	}
+	
+	function clone( src_buf ) {
+		var len = $len( src_buf ), dest_buf = $buffer( len );
+		arraycopy src_buf 0 dest_buf 0 len;
+		return dest_buf;
 	}
 	
 	struct sample {
@@ -248,6 +293,47 @@ library mmc {
 		function begin( ( module ) this value ) {
 			let this.song_name = $unquote( value );
 			return $next( value );
+		}
+		
+		function end( ( module ) this ) {
+			var macros = this.macros;
+			if macros {
+				var ( note ) note = $new( note );
+				var speed = 6, num_channels = this.num_channels, seq_idx;
+				var sequence = this.sequence, seq_len = this.seq_length;
+				var patterns = $array( seq_len ), samples = this.samples;
+				while <( seq_idx seq_len ) {
+					let [ patterns seq_idx ] = clone( this:get_pattern( [ sequence seq_idx++ ] ) );
+				}
+				let seq_idx = 0;
+				while <( seq_idx seq_len ) {
+					var mod_pattern = this:get_pattern( [ sequence seq_idx ] );
+					var pattern = [ patterns seq_idx ], row_idx = 0;
+					while <( row_idx 64 ) {
+						var offset = *( row_idx num_channels ), end = +( offset num_channels );
+						while <( offset end ) {
+							call note:load( pattern offset++ );
+							if &&( =( note.effect 0xF ) <( note.parameter 0x20 ) ) {
+								let speed = note.parameter;
+							}
+						}
+						let offset = *( row_idx num_channels );
+						while <( offset end ) {
+							call note:load( pattern offset );
+							var ( macro ) macro = [ macros note.instrument ];
+							if macro {
+								let note.instrument = 0;
+								call note:store( pattern offset );
+								call macro:expand( patterns, seq_idx, num_channels, offset, speed, samples );
+								call note:load( pattern offset );
+							}
+							call note:store( mod_pattern offset++ );
+						}
+						inc row_idx;
+					}
+					inc seq_idx;
+				}
+			}
 		}
 		
 		function get_num_patterns( ( module ) this ) {
@@ -475,12 +561,160 @@ library mmc {
 	
 	function new_module( resource_path ) {
 		var ( module ) this = $new( module "Module"
-			$array( 1 "\"Title\" (Song title, maximum 20 characters.)" ) NULL NULL NULL @module_begin NULL
-			"Untitled" 4 1 $buffer( 128 ) $array( 128 ) $array( 32 ) resource_path $array( 100 ) );
+			$array( 1 "\"Title\" (Song title, maximum 20 characters.)" )
+			NULL NULL NULL @module_begin @module_end "Untitled" 4 1
+			$buffer( 128 ) $array( 128 ) $array( 32 ) resource_path );
 		let this.child = new_channels( this );
 		var samples = this.samples, idx;
 		while <( idx 32 ) {
 			let [ samples idx++ ] = $new( sample "" 0 0 0 0 $buffer( 0 ) );
+		}
+		return this;
+	}
+	
+	struct macro {
+		scale root_key notes keys;
+		
+		function get_scale_distance( ( macro ) this src_key dest_key ) {
+			return -( this:get_note_idx( dest_key ) this:get_note_idx( src_key ) );
+		}
+		
+		function get_note_idx( ( macro ) this key ) {
+			var note_idx = [ this.keys key ];
+			if note_idx {
+				return note_idx;
+			}
+			throw $str( "Key '" $sub( note_to_string( $new( note key ) ) 0 3 ) "' not in scale '" this.scale "'." );
+		}
+		
+		function transpose_key( ( macro ) this key distance ) {
+			var note_idx = this:get_note_idx( key );
+			var keys = this.keys, add = ?( >( distance 0 ) 1 -1 );
+			while &&( key <>( [ keys key ] +( note_idx distance ) ) ) {
+				let key = &( +( key add ) 0x7F );
+			}
+			return key;
+		}
+		
+		function expand( ( macro ) this patterns pat_idx num_channels offset speed samples ) {
+			var ( note ) note = $new( note ), pattern = [ patterns pat_idx ];
+			var macro_offset, src_key = this.root_key, dst_key = src_key, distance, amplitude = 64;
+			var volume, fine_tune, period, porta_period, porta_speed;
+			var sample_offset, sample_length, delta;
+			if <( speed 1 ) {
+				let speed = 1;
+			}
+			while <( macro_offset 64 ) {
+				if >e( offset $len( pattern ) ) {
+					inc pat_idx;
+					if <( pat_idx $len( patterns ) ) {
+						let pattern = [ patterns pat_idx ];
+						let offset = %( offset num_channels );
+					} else {
+						break;
+					}
+				}
+				call note:load( pattern offset );
+				if note.instrument {
+					break;
+				}
+				if note.key {
+					let distance = this:get_scale_distance( this.root_key note.key );
+				}
+				var effect = note.effect;
+				var param = note.parameter;
+				call note:load( this.notes macro_offset++ );
+				if effect {
+					if =( effect 0xC ) {
+						if param {
+							let amplitude = ?( <( param 64 ) param 64 );
+						} else {
+							/* Ensure C00 is passed through to empty notes. */
+							let amplitude = 0;
+							let note.effect = 0xC;
+							let note.parameter = 0;
+						}
+					} else {
+						let note.effect = effect;
+						let note.parameter = param;
+					}
+				}
+				if note.instrument {
+					if <( note.instrument $len( samples ) ) {
+						var ( sample ) sample = [ samples note.instrument ];
+						let volume = *( sample.volume 4 );
+						let fine_tune = sample.fine_tune;
+						let sample_length = +( sample.loop_start sample.loop_length );
+						if &&( <( amplitude 64 ) <>( note.effect 0xC ) ) {
+							/* Setting an instrument sets the volume. */
+							let note.effect = 0xC;
+							let note.parameter = sample.volume;
+						}
+					}
+				}
+				if &&( =( note.effect 0xE ) =( &( note.parameter 0xF0 ) 0x50 ) ) {
+					let fine_tune = &( note.parameter 0xF );
+				}
+				if note.key {
+					let src_key = note.key;
+					let dst_key = this:transpose_key( src_key distance );
+					let note.key = dst_key;
+					let porta_period = key_to_period( note.key fine_tune );
+					if &&( <>( note.effect 0x3 ) <>( note.effect 0x5 ) ) {
+						let period = porta_period;
+					}
+					if <>( note.effect 0x9 ) {
+						let sample_offset = 0;
+					}
+				}
+				if <( volume 0 ) {
+					let volume = 0;
+				}
+				if >( volume 256 ) {
+					let volume = 256;
+				}
+				if <( period 0 ) {
+					let period = 0;
+				}
+				switch note.effect {
+					case 0 {
+						if note.parameter {
+							/* Arpeggio.*/
+							let delta = this:get_scale_distance( src_key, +( src_key &( >>( note.parameter 4 ) 0xF ) ) );
+							let delta = -( this:transpose_key( dst_key, delta ) dst_key );
+							if <( delta 0 ) {
+								let delta = 0;
+							}
+							if >( delta 15 ) {
+								let delta = +( %( -( delta 3 ) 12 ) 3 );
+							}
+							let note.parameter = +( <<( delta 4 ) &( note.parameter 0xF ) );
+							let delta = this:get_scale_distance( src_key, +( src_key &( note.parameter 0xF ) ) );
+							let delta = -( this:transpose_key( dst_key, delta ) dst_key );
+							if <( delta 0 ) {
+								let delta = 0;
+							}
+							if >( delta 15 ) {
+								let delta = +( %( -( delta 3 ) 12 ) 3 );
+							}
+							let note.parameter = +( &( note.parameter 0xF0 ) delta );
+						}
+					}
+				}
+				call note:store( pattern offset );
+				let offset = +( offset num_channels );
+			}
+		}
+	}
+	
+	function new_macro( scale root_key notes ) {
+		var ( macro ) this = $new( macro scale root_key notes $buffer( 128 ) );
+		var keys = this.keys, idx = 1, note_idx = 1;
+		while <( idx 128 ) {
+			if <>( $chr( scale %( -( idx 1 ) 12 ) ) '-' ) {
+				let [ keys idx ] = note_idx++;
+			}
+			inc idx;
 		}
 		return this;
 	}
@@ -571,7 +805,7 @@ library mmc {
 	function new_instrument( module ) {
 		var ( instrument ) this = $new( instrument "Instrument"
 			$array( 1 "Index (Instrument index, from 1 to 31.)" )
-			module new_macro( module ) NULL @instrument_begin @instrument_end );
+			module new_macro_element( module ) NULL @instrument_begin @instrument_end );
 		let this.child = new_name( this );
 		return this;
 	}
@@ -779,20 +1013,142 @@ library mmc {
 			instrument NULL NULL @pingpong_begin );
 	}
 	
-	struct macro( element ) {
-		index, notes, row, repeat_row, scale, root;
-		
-		function begin( ( macro ) this value ) {
-			let this.index = check_range( parse_integer( value ) 1 99 "macro index" $line( value ) );
-			let this.notes = $buffer( *( 64 4 ) ), this.row = 0, this.repeat_row = 0;
-			throw "Macro not supported.";
+	struct repeat( element ) {
+		;
+		function begin( ( repeat ) this value ) {
+			if $eq( value "Begin" ) {
+				let note_element.repeat_begin( this.parent ) = TRUE;
+			} else if !( note_element.repeat_begin( this.parent ) ) {
+				let note_element.repeat_count( this.parent ) = parse_integer( value );
+			}
+			return $next( value );
 		}
 	}
 	
-	function new_macro( module ) {
-		return $new( macro "Macro"
+	function new_repeat( note_element ) {
+		return $new( repeat "Repeat"
+			$array( 2 "Count (Repeat the notes from the marker Count times.)"
+				"(Use a value of 'Begin' to set the marker.)" )
+			note_element NULL NULL @repeat_begin );
+	}
+	
+	struct note_element( element ) {
+		line, repeat_count, repeat_begin;
+		
+		function begin( ( note_element ) this value ) {
+			var ( macro_element ) macro = this.parent, ( note ) note = $new( note );
+			var row = check_range( macro.row 0 63 "macro row" $line( value ) );
+			let this.line = $line( value );
+			call note:parse( value $line( value ) );
+			call note:store( macro.notes row++ );
+			let macro.row = row;
+			return $next( value );
+		}
+		
+		function end( ( note_element ) this ) {
+			var ( macro_element ) macro = this.parent;
+			if this.repeat_count {
+				var ( note ) note = $new( note ), repeat, row = macro.row, end = row;
+				while <( repeat this.repeat_count ) {
+					var idx = macro.repeat_row;
+					while <( idx end ) {
+						call check_range( row 0 63 "macro row" this.line );
+						call note:load( macro.notes idx++ );
+						call note:store( macro.notes row++  );
+					}
+					inc repeat;
+				}
+				let macro.row = row;
+				let this.repeat_count = 0;
+			}
+			if this.repeat_begin {
+				let macro.repeat_row = macro.row;
+				let this.repeat_begin = FALSE;
+			}
+		}
+	}
+	
+	function new_note_element( macro ) {
+		var ( note_element ) this = $new( note_element "Note"
+			$array( 1 "\"C-2-1---\" (A single 8-character note, as used in a Pattern.)" )
+			macro NULL NULL @note_element_begin @note_element_end );
+		let this.child = new_repeat( this );
+		return this;
+	}
+	
+	struct root( element ) {
+		;
+		function begin( ( root ) this value ) {
+			var key = $unquote( value );
+			try {
+				call check_range( $len( key ) 3 3 "key length" $line( value ) );
+				let macro_element.root_key( this.parent ) = parse_key( key );
+			} catch e {
+				throw $str( "Unable to parse key '" key "' on line " $line( value ) ". " e );
+			}
+			return $next( value );
+		}
+	}
+	
+	function new_root( macro ) {
+		return $new( root "Root"
+			$array( 1 "\"C-2\" (No transpose will be applied when played at this key.)" )
+			macro new_note_element( macro ) NULL @root_begin );
+	}
+	
+	struct scale( element ) {
+		;
+		function begin( ( scale ) this value ) {
+			var scale = $unquote( value ), idx, len = $len( scale );
+			while <( idx len ) {
+				var chr = $chr( scale idx );
+				if &&( <>( chr '-' ) <>( chr $chr( CHROMATIC_SCALE idx ) ) ) {
+					break;
+				}
+				inc idx;
+			}
+			if <>( idx 12 ) {
+				throw $str( "Invalid scale '" scale "' on line " $line( value ) "." );
+			}
+			let macro_element.scale( this.parent ) = scale;
+			return $next( value );
+		}
+	}
+	
+	function new_scale( macro ) {
+		return $new( scale "Scale"
+			$array( 3 "\"C#D#EF#G#A#B\" (Key signature for Macro transpose.)"
+				"(All scales are specified as 12 notes starting from C.)"
+				"(C-Major would be 'C-D-EF-G-A-B', and C-Minor 'C-D#-F-G#-#-'.)" )
+			macro new_root( macro ) NULL @scale_begin );
+	}
+	
+	struct macro_element( element ) {
+		index, notes, row, repeat_row, scale, root_key;
+		
+		function begin( ( macro_element ) this value ) {
+			let this.index = check_range( parse_integer( value ) 1 99 "macro index" $line( value ) );
+			let this.notes = $buffer( 64 ), this.row = 0, this.repeat_row = 0;
+			let this.scale = CHROMATIC_SCALE, this.root_key = 25;
+			return $next( value );
+		}
+		
+		function end( ( macro_element ) this ) {
+			var macros = module.macros( this.parent );
+			if !( macros ) {
+				let macros = $array( 100 );
+				let module.macros( this.parent ) = macros;
+			}
+			let [ macros this.index ] = new_macro( this.scale this.root_key this.notes );
+		}
+	}
+	
+	function new_macro_element( module ) {
+		var ( macro_element ) this = $new( macro_element "Macro"
 			$array( 1 "Index (Macro index, from 1 to 99.)" )
-			module new_pattern( module ) NULL @macro_begin );
+			module new_pattern( module ) NULL @macro_element_begin @macro_element_end );
+		let this.child = new_scale( this );
+		return this;
 	}
 	
 	struct pattern( element ) {
