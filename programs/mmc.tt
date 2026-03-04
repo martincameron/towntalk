@@ -5,7 +5,7 @@ import wavegen from "wavegen.tt";
 	Micromod Compiler for Towntalk.
 */
 library mmc {
-	const VERSION = "20260303";
+	const VERSION = "20260304";
 	const CHROMATIC_SCALE = "C#D#EF#G#A#B";
 	const C_MAJOR_SCALE   = "C-D-EF-G-A-B",
 	const C_MINOR_SCALE   = "C-D#-F-G#-#-";
@@ -320,12 +320,17 @@ library mmc {
 						let offset = *( row_idx num_channels );
 						while <( offset end ) {
 							call note:load( pattern offset );
-							var ( macro ) macro = [ macros note.instrument ];
+							var macro_idx = note.instrument;
+							var ( macro ) macro = [ macros macro_idx ];
 							if macro {
-								let note.instrument = 0;
-								call note:store( pattern offset );
-								call macro:expand( patterns, seq_idx, num_channels, offset, speed, samples );
-								call note:load( pattern offset );
+								try {
+									let note.instrument = 0;
+									call note:store( pattern offset );
+									call macro:expand( patterns, seq_idx, num_channels, offset, speed, samples );
+									call note:load( pattern offset );
+								} catch e {
+									throw $str( "Error expanding macro " macro_idx " on row " row_idx " of pattern " [ sequence seq_idx ] ". " e );
+								}
 							}
 							call note:store( mod_pattern offset++ );
 						}
@@ -1039,7 +1044,7 @@ library mmc {
 			var ( macro_element ) macro = this.parent, ( note ) note = $new( note );
 			var row = check_range( macro.row 0 63 "macro row" $line( value ) );
 			let this.line = $line( value );
-			call note:parse( value $line( value ) );
+			call note:parse( $unquote( value ) $line( value ) );
 			call note:store( macro.notes row++ );
 			let macro.row = row;
 			return $next( value );
@@ -1259,9 +1264,11 @@ program compiler {
 		save module:write() output;
 	} else if &&( mod_file output ) {
 		print $str( "Decompiling '" mod_file "' to '" output "'."  );
+		let idx = $endidx( output "." );
+		var base_name = ?( >( idx 0 ) $str( $sub( output 0 idx ) "_" ) output );
 		let module = new_module( $sub( output 0 +( $endidx( output "/\\" ) 1 ) ) );
 		call module:read( $load( mod_file ) );
-		save module:decompile( $function( ${ ( name data ) { save data $str( module.resource_path name ); } } ) ) output;
+		save module:decompile( $function( ${ ( name data ) { save data $str( base_name name ); } } ) ) output;
 	} else {
 		error $str( "Micromod Compiler! " VERSION );
 		error "          Compile: -mt input.mt -out output.mod";
