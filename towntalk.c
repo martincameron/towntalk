@@ -18,7 +18,7 @@
 #include "towntalk.h"
 
 /*
-	Towntalk (c)2025 Martin Cameron.
+	Towntalk (c)2026 Martin Cameron.
 
 	A program file consists of a list of declarations.
 	When an unquoted '#' or '//' sequence is encountered, the rest of the line is ignored.

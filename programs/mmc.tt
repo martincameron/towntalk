@@ -5,7 +5,7 @@ import wavegen from "wavegen.tt";
 	Micromod Compiler for Towntalk.
 */
 library mmc {
-	const VERSION = "20260304";
+	const VERSION = "20260306";
 	const CHROMATIC_SCALE = "C#D#EF#G#A#B";
 	const C_MAJOR_SCALE   = "C-D-EF-G-A-B",
 	const C_MINOR_SCALE   = "C-D#-F-G#-#-";
@@ -703,6 +703,175 @@ library mmc {
 								let delta = +( %( -( delta 3 ) 12 ) 3 );
 							}
 							let note.parameter = +( &( note.parameter 0xF0 ) delta );
+						}
+					}
+					case 1 {
+						/* Portamento up. */
+						if &&( >( note.parameter 0xF0 ) <( note.parameter 0xFE ) ) {
+							let delta = -( period key_to_period( +( period_to_key( period ) &( note.parameter 0xF ) ), 0 ) );
+						} else {
+							let delta = transpose_period( *( note.parameter -( speed 1 ) ), -( dst_key src_key ), 0xFFFF );
+						}
+						let note.parameter = ?( >( speed 1 ) divide( delta, -( speed 1 ), 0xFF ) 0 );
+						if note.parameter {
+							let period = -( period *( note.parameter -( speed 1 ) ) );
+						} else {
+							let note.effect = 0xE;
+							let note.parameter = +( 0x10 &( delta 0xF ) );
+							let period = -( period &( delta 0xF ) );
+						}
+					}
+					case 2 {
+						/* Portamento down. */
+						if &&( >( note.parameter 0xF0 ) <( note.parameter 0xFE ) ) {
+							let delta = -( key_to_period( -( period_to_key( period ) &( note.parameter 0xF ) ), 0 ) period );
+						} else {
+							let delta = transpose_period( *( note.parameter -( speed 1 ) ), -( dst_key src_key ), 0xFFFF );
+						}
+						let note.parameter = ?( >( speed 1 ) divide( delta, -( speed 1 ), 0xFF ) 0 );
+						if note.parameter {
+							let period = +( period *( note.parameter -( speed 1 ) ) );
+						} else {
+							let note.effect = 0xE;
+							let note.parameter = +( 0x20 &( delta 0xF ) );
+							let period = +( period &( delta 0xF ) );
+						}
+					}
+					case 3, 5 {
+						/* Tone portamento. */
+						if &&( =( note.effect 3 ) note.parameter ) {
+							if &&( >( note.parameter 0xF0 ) <( note.parameter 0xFE ) ) {
+								if <( porta_period period ) {
+									let delta = -( period key_to_period( +( period_to_key( period ) &( note.parameter 0xF ) ), 0 ) );
+								} else {
+									let delta = -( key_to_period( -( period_to_key( period ) &( note.parameter 0xF ) ), 0 ) period );
+								}
+								let note.parameter = divide( delta, ?( >( speed 1 ) -( speed 1 ) 1 ), 0xFF );
+							} else {
+								let note.parameter = transpose_period( &( note.parameter 0xFF ), -( dst_key src_key ), 0xFF );
+							}
+							if <( note.parameter 1 ) {
+								let note.parameter = 1;
+							}
+							let porta_speed = note.parameter;
+						}
+						if <( period porta_period ) {
+							let period = +( period *( porta_speed -( speed 1 ) ) );
+							if >( period porta_period ) {
+								let period = porta_period;
+							}
+						} else {
+							let period = -( period *( porta_speed -( speed 1 ) ) );
+							if <( period porta_period ) {
+								let period = porta_period;
+							}
+						}
+					}
+					case 4 {
+						/* Vibrato. */
+						let note.parameter = +( &( note.parameter 0xF0 ) transpose_period( &( note.parameter 0xF ), -( dst_key src_key ), 0xF ) );
+					}
+					case 9 {
+						/* Set sample offset. */
+						if >e( note.parameter 0xF0 ) {
+							let sample_offset = +( sample_offset _/( *( sample_length &( note.parameter 0xF ) ) 64 ) );
+							let note.parameter = divide( sample_offset, 256, 0xFF );
+						} else {
+							let sample_offset = <<( &( note.parameter 0xFF ) 8 );
+						}
+					}
+					case 0xE {
+						switch &( note.parameter 0xF0 ) {
+							case 0x10 {
+								/* Fine portamento up. */
+								let note.parameter = +( 0x10 transpose_period( &( note.parameter 0xF ), -( dst_key src_key ), 0xF ) );
+								let period = -( period &( note.parameter 0xF ) );
+							}
+							case 0x20 {
+								/* Fine portamento down. */
+								let note.parameter = +( 0x20 transpose_period( &( note.parameter 0xF ), -( dst_key src_key ), 0xF ) );
+								let period = +( period &( note.parameter 0xF ) );
+							}
+						}
+					}
+				}
+				switch note.effect {
+					case 5, 6, 0xA {
+						/* Volume slide. */
+						if =( &( note.parameter 0xF ) 0xF ) {
+							let delta = +( >>( &( note.parameter 0xF0 ) 4 ) 1 );
+							let delta = +( sqrt( *( volume 256 ) ) divide( 256, *( delta 4 ), 256 ) );
+							let delta = -( divide( *( delta delta ), 256, 256 ) volume );
+							if <( delta 1 ) {
+								let delta = 1;
+							}
+						} else if =( &( note.parameter 0xF0 ) 0xF0 ) {
+							let delta = +( &( note.parameter 0xF ) 1 );
+							let delta = -( sqrt( *( volume 256 ) ) divide( 256, *( delta 4 ), 256 ) );
+							if <( delta 0 ) {
+								let delta = 0;
+							}
+							let delta = -( divide( *( delta delta ), 256, 256 ) volume );
+							if >( delta -1 ) {
+								let delta = -1;
+							}
+						} else {
+							let delta = divide( *( >>( &( note.parameter 0xF0 ) 4 ) 4 amplitude ), 64, 256 );
+							let delta = -( delta divide( *( &( note.parameter 0xF ) 4 amplitude ), 64, 256 ) );
+							let delta = *( delta -( speed 1 ) );
+						}
+						if >( +( volume delta ) *( amplitude 4 ) ) {
+							let delta = -( *( amplitude 4 ) volume );
+						}
+						if &&( >( speed 1 ) >( divide( delta, *( -( speed 1 ) 4 ), 0xF ) 1 ) ) {
+							let delta = divide( delta, *( -( speed 1 ) 4 ), 0xF );
+							let note.parameter = <<( delta 4 );
+							let volume = +( volume *( delta -( speed 1 ) 4 ) );
+						} else if &&( >( speed 1 ) >( divide( delta, *( -( speed 1 ) -4 ), 0xF ) 1 ) ) {
+							let delta = divide( delta, *( -( speed 1 ) -4 ), 0xF );
+							let note.parameter = delta;
+							let volume = -( volume *( delta -( speed 1 ) 4 ) );
+						} else if =( note.effect 0xA ) {
+							let volume = +( volume delta );
+							let note.effect = 0xC;
+							let note.parameter = divide( volume, 4, 64 );
+						} else if >( delta 0 ) {
+							let note.parameter = 0x10;
+							let volume = +( volume *( -( speed 1 ) 4 ) );
+						} else if <( delta 0 ) {
+							let note.parameter = 0x1;
+							let volume = -( volume *( -( speed 1 ) 4 ) );
+						}
+					}
+					case 7 {
+						/* Tremolo. */
+						let note.parameter = +( &( note.parameter 0xF0 ) divide( *( &( note.parameter 0xF ) amplitude ), 64, 0xF ) );
+					}
+					case 0xC {
+						/* Set volume. */
+						if =( &( note.parameter 0xF0 ) 0xF0 ) {
+							let note.parameter = +( &( note.parameter 0xF ) 1 );
+							let note.parameter = >>( *( note.parameter note.parameter ) 2 );
+						}
+						let note.parameter = divide( *( note.parameter amplitude ), 64, amplitude );
+						let volume = *( note.parameter 4 );
+					}
+					case 0xE {
+						switch &( note.parameter 0xF0 ) {
+							case 0xA0 {
+								/* Fine volume slide up. */
+								let delta = divide( *( &( note.parameter 0xF ) 4 amplitude ), 64, 256 );
+								let volume = +( volume delta );
+								let note.effect = 0xC;
+								let note.parameter = divide( volume, 4, amplitude );
+							}
+							case 0xB0 {
+								/* Fine volume slide down. */
+								let delta = divide( *( &( note.parameter 0xF ) 4 amplitude ), 64, 256 );
+								let volume = -( volume delta );
+								let note.effect = 0xC;
+								let note.parameter = divide( volume, 4, amplitude );
+							}
 						}
 					}
 				}
