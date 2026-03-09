@@ -5,7 +5,7 @@ import wavegen from "wavegen.tt";
 	Micromod Compiler for Towntalk.
 */
 library mmc {
-	const VERSION = "20260306";
+	const VERSION = "20260309";
 	const CHROMATIC_SCALE = "C#D#EF#G#A#B";
 	const C_MAJOR_SCALE   = "C-D-EF-G-A-B",
 	const C_MINOR_SCALE   = "C-D#-F-G#-#-";
@@ -485,7 +485,7 @@ library mmc {
 			return $sub( list.array 0 list.len );
 		}
 		
-		function decompile( ( module ) this write_sample_data ) {
+		function decompile( ( module ) this sample_prefix write_sample_data ) {
 			var ( list ) list = $new( list $buffer( 65536 ) );
 			call list:add_string( "Module ");
 			call list:add_string( $quote( this.song_name ) );
@@ -518,7 +518,7 @@ library mmc {
 						call list:add_string( $str( sample.fine_tune ) );
 					}
 					if $len( sample_data ) {
-						var file_name = $str( ?( <( idx 10 ) "0" "" ) idx ".raw" );
+						var file_name = $str( sample_prefix ?( <( idx 10 ) "0" "" ) idx ".raw" );
 						call list:add_string( " WaveFile \"" );
 						call list:add_string( file_name );
 						call list:add( '\"' );
@@ -1433,11 +1433,12 @@ program compiler {
 		save module:write() output;
 	} else if &&( mod_file output ) {
 		print $str( "Decompiling '" mod_file "' to '" output "'."  );
-		let idx = $endidx( output "." );
-		var base_name = ?( >( idx 0 ) $str( $sub( output 0 idx ) "_" ) output );
-		let module = new_module( $sub( output 0 +( $endidx( output "/\\" ) 1 ) ) );
+		let idx = +( $endidx( output "/\\" ) 1 );
+		var end = $endidx( output "." );
+		let module = new_module( $sub( output 0 idx ) );
 		call module:read( $load( mod_file ) );
-		save module:decompile( $function( ${ ( name data ) { save data $str( base_name name ); } } ) ) output;
+		save module:decompile( $str( $sub( output idx -( ?( >( end idx ) end $len( output ) ) idx ) ) "_" ),
+			$function( ${ ( name data ) { save data $str( module.resource_path name ); } } ) ) output;
 	} else {
 		error $str( "Micromod Compiler! " VERSION );
 		error "          Compile: -mt input.mt -out output.mod";
