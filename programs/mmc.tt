@@ -5,7 +5,7 @@ import wavegen from "wavegen.tt";
 	Micromod Compiler for Towntalk.
 */
 library mmc {
-	const VERSION = "20260309";
+	const VERSION = "20260310";
 	const CHROMATIC_SCALE = "C#D#EF#G#A#B";
 	const C_MAJOR_SCALE   = "C-D-EF-G-A-B",
 	const C_MINOR_SCALE   = "C-D#-F-G#-#-";
@@ -145,6 +145,13 @@ library mmc {
 	}
 	
 	function transpose_period( period semitones maximum ) {
+		if >( semitones 60 ) {
+			return 0;
+		}
+		while <( semitones -12 ) {
+			let period = *( period 2 );
+			let semitones = +( semitones 12 );
+		}
 		let period = _/( *( period $unpack( KEY_TO_PERIOD +( semitones 13 ) ) 2 ) 856 );
 		let period = +( >>( period 1 ) &( period 1 ) );
 		return ?( <( period maximum ) period maximum );
@@ -1222,7 +1229,7 @@ library mmc {
 		function end( ( note_element ) this ) {
 			var ( macro_element ) macro = this.parent;
 			if this.repeat_count {
-				var ( note ) note = $new( note ), repeat, row = macro.row, end = row;
+				var ( note ) note = $new( note ), repeat = 1, row = macro.row, end = row;
 				while <( repeat this.repeat_count ) {
 					var idx = macro.repeat_row;
 					while <( idx end ) {
@@ -1233,11 +1240,12 @@ library mmc {
 					inc repeat;
 				}
 				let macro.row = row;
-				let this.repeat_count = 0;
+				let this.repeat_begin = TRUE;
 			}
 			if this.repeat_begin {
 				let macro.repeat_row = macro.row;
 				let this.repeat_begin = FALSE;
+				let this.repeat_count = 0;
 			}
 		}
 	}
