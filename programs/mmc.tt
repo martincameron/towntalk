@@ -5,7 +5,7 @@ import wavegen from "wavegen.tt";
 	Micromod Compiler for Towntalk.
 */
 library mmc {
-	const VERSION = "20260310";
+	const VERSION = "20260312";
 	const CHROMATIC_SCALE = "C#D#EF#G#A#B";
 	const C_MAJOR_SCALE   = "C-D-EF-G-A-B",
 	const C_MINOR_SCALE   = "C-D#-F-G#-#-";
@@ -494,11 +494,11 @@ library mmc {
 		
 		function decompile( ( module ) this sample_prefix write_sample_data ) {
 			var ( list ) list = $new( list $buffer( 65536 ) );
-			call list:add_string( "Module ");
+			call list:add_string( "Module " );
 			call list:add_string( $quote( this.song_name ) );
-			call list:add_string( "\n\tChannels ");
+			call list:add_string( "\n\tChannels " );
 			call list:add_string( $str( this.num_channels ) );
-			call list:add_string( "\n\tSequence \"");
+			call list:add_string( "\n\tSequence \"" );
 			var sequence = this.sequence, idx, len = this.seq_length;
 			call list:add_string( $str( [ sequence idx++ ] ) ); 
 			while <( idx len ) {
@@ -510,18 +510,18 @@ library mmc {
 				var ( sample ) sample = [ this.samples idx ];
 				var sample_data = sample.sample_data;
 				if ||( $len( sample.name ) $len( sample_data ) ) {
-					call list:add_string( "\tInstrument ");
+					call list:add_string( "\tInstrument " );
 					call list:add_string( $str( idx ) );
 					if $len( sample.name ) {
-						call list:add_string( " Name ");
+						call list:add_string( " Name " );
 						call list:add_string( $quote( sample.name ) );
 					}
 					if sample.volume {
-						call list:add_string( " Volume ");
+						call list:add_string( " Volume " );
 						call list:add_string( $str( sample.volume ) );
 					}
 					if sample.fine_tune {
-						call list:add_string( " FineTune ");
+						call list:add_string( " FineTune " );
 						call list:add_string( $str( sample.fine_tune ) );
 					}
 					if $len( sample_data ) {
@@ -530,9 +530,9 @@ library mmc {
 						call list:add_string( file_name );
 						call list:add( '\"' );
 						if sample.loop_length {
-							call list:add_string( " LoopStart ");
+							call list:add_string( " LoopStart " );
 							call list:add_string( $str( sample.loop_start ) );
-							call list:add_string( " LoopLength ");
+							call list:add_string( " LoopLength " );
 							call list:add_string( $str( sample.loop_length ) );
 						}
 						if write_sample_data {
@@ -546,7 +546,7 @@ library mmc {
 			var ( note ) note = $new( note ), num_channels = this.num_channels;
 			let idx = 0, len = this:get_num_patterns();
 			while <( idx len ) {
-				call list:add_string( "\tPattern ");
+				call list:add_string( "\tPattern " );
 				call list:add_string( $str( idx ) );
 				call list:add( '\n' );
 				var pattern = this:get_pattern( idx++ );
@@ -1035,8 +1035,8 @@ library mmc {
 			instrument new_waveform( instrument new_wavefile( instrument ) ) NULL @finetune_begin );
 	}
 	
-	struct wavefile( element ) {
-		file, offset, count, divisions, gain, pitch;
+	struct wavefile( gain_parent ) {
+		file, offset, count, divisions, pitch;
 		
 		function begin( ( wavefile ) this value ) {
 			let this.file = $str( module.resource_path( instrument.parent( this.parent ) ) $unquote( value ) );
@@ -1117,21 +1117,7 @@ library mmc {
 			$array( 3 "\"Offset,Count[,Divisions]\" (Crop Count Divisions from Offset.)"
 				"(The Divisions parameter divides the sample into segments.)"
 				"(If unspecified, one division is equivalent to one sample.)" )
-			wavefile new_gain( wavefile ) NULL @crop_begin );
-	}
-	
-	struct gain( element ) {
-		;
-		function begin( ( gain ) this value ) {
-			let wavefile.gain( this.parent ) = parse_integer( value );
-			return $next( value );
-		}
-	}
-	
-	function new_gain( wavefile ) {
-		return $new( gain "Gain"
-			$array( 1 "64 (Amplification factor, divided by 64.)" )
-			wavefile new_pitch( wavefile ) NULL @gain_begin );
+			wavefile new_gain( wavefile new_pitch( wavefile ) ) NULL @crop_begin );
 	}
 	
 	struct pitch( element ) {

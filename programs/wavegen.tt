@@ -27,7 +27,11 @@ library wavegen {
 		audiodata
 	}
 	
-	struct waveform( element ) {
+	struct gain_parent( element ) {
+		gain
+	}
+	
+	struct waveform( gain_parent ) {
 		envelope, octave, cycles, mod_rate, lfo_rate, detune, mix, x0, y0, spectral, noise;
 		
 		function begin( ( waveform ) this value ) {
@@ -63,6 +67,7 @@ library wavegen {
 			}
 			let this.cycles = 1;
 			let this.mix = 128;
+			let this.gain = 64;
 			return $next( value );
 		}
 		
@@ -93,6 +98,9 @@ library wavegen {
 				} else {
 					let audiodata = waveform_amplify( audiodata_new_waveform( 1 rate wave_buf ) <<( FP_ONE 8 ) );
 				}
+			}
+			if <>( this.gain 64 ) {
+				let audiodata = audiodata:amplify( <<( this.gain -( FP_SHIFT 6 ) ) );
 			}
 			let waveform_parent.audiodata( this.parent ) = audiodata;
 		}
@@ -159,6 +167,14 @@ library wavegen {
 				call parent:set_envelope_point( x++, y );
 			}
 			return next;
+		}
+	}
+	
+	struct gain( element ) {
+		;
+		function begin( ( gain ) this value ) {
+			let gain_parent.gain( this.parent ) = parse_integer( value );
+			return $next( value );
 		}
 	}
 	
@@ -396,6 +412,12 @@ library wavegen {
 		return $next( value );
 	}
 	
+	function new_gain( parent sibling ) {
+		return $new( gain "Gain"
+			$array( 1 "64 (Amplification factor, divided by 64.)" )
+			parent sibling NULL @gain_begin );
+	}
+	
 	function new_point( ( waveform ) parent ) {
 		return $new( point "Point"
 			$array( 6 "X,Y (Set a point in the time or spectral envelope.)"
@@ -404,7 +426,7 @@ library wavegen {
 			"(The value of Y is an eight-bit quantity from -128 to 127.)"
 			"(Multiple Points with increasing X are linear interpolated.)"
 			"(Neighbouring values can also be set with 'X,Y0,Y1,...,Yn'.)" )
-			parent NULL NULL @point_begin );
+			parent new_gain( parent NULL ) NULL @point_begin );
 	}
 	
 	function new_chorus( ( waveform ) parent ) {
@@ -426,7 +448,7 @@ library wavegen {
 	function new_waveform( parent sibling ) {
 		var ( waveform ) this = $new( waveform "Waveform"
 			$array( 1 "Type ('Sawtooth', 'Square', 'Sine', or 'Noise'.)" )
-			parent sibling NULL @waveform_begin @waveform_end $buffer( 512 ) );
+			parent sibling NULL @waveform_begin @waveform_end 64 $buffer( 512 ) );
 		let this.child = new_octave( this );
 		return this;
 	}
