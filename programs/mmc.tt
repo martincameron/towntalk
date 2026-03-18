@@ -5,7 +5,7 @@ import wavegen from "wavegen.tt";
 	Micromod Compiler for Towntalk.
 */
 library mmc {
-	const VERSION = "20260312";
+	const VERSION = "20260318";
 	const CHROMATIC_SCALE = "C#D#EF#G#A#B";
 	const C_MAJOR_SCALE   = "C-D-EF-G-A-B",
 	const C_MINOR_SCALE   = "C-D#-F-G#-#-";
@@ -1343,15 +1343,23 @@ library mmc {
 		function begin( ( row ) this value ) {
 			var line = $line( value ), arr, offset, len, idx, str = "";
 			var ( module ) module = pattern.parent( this.parent ), ( note ) note = $new( note );
-			var pattern = module:get_pattern( pattern.index( this.parent ) ), row_idx, channel;
+			var pattern = module:get_pattern( pattern.index( this.parent ) ), row_idx = this.index, channel;
 			try {
 				var ( list ) list = split( $unquote( value ) " " $new( list $array( 32 ) ) );
-				let arr = list.array, len = list.len, str = [ arr idx++ ];
-				while <( $len( str ) 1 ) {
-					let str = [ arr idx++ ];
-				}
-				while <( offset $len( str ) ) {
-					let row_idx = +( *( row_idx 10 ) $int( $sub( str offset++ 1 ) ) );
+				let arr = list.array, len = list.len;
+				while <( idx len ) {
+					let str = [ arr idx ];
+					if $len( str ) {
+						if <( $len( str ) 4 ) {
+							let row_idx = 0;
+							while <( offset $len( str ) ) {
+								let row_idx = +( *( row_idx 10 ) $int( $sub( str offset++ 1 ) ) );
+							}
+							inc idx;
+						}
+						break;
+					}
+					inc idx;
 				}
 			} catch e {
 				throw $str( "Invalid row index '" str "' on line " line ". " e );
@@ -1360,7 +1368,7 @@ library mmc {
 			if <( row_idx this.index ) {
 				throw $str( "Row index " row_idx " is less than previous on line " line "." );
 			}
-			let this.index = row_idx;
+			let this.index = +( row_idx 1 );
 			let offset = *( row_idx module.num_channels );
 			var end = +( offset module.num_channels );
 			while <( idx len ) {

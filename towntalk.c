@@ -97,7 +97,7 @@
 		   default {statements}} Execute statements if no valid cases.
 		try {statements}         Execute statements unless exception thrown.
 		   catch e {statements}  Assign any thrown value to local variable and execute statements.
-		   catch (strc) e {...}  As above, but only handle instances of the specified struct.
+		   catch (struct) e {..} As above, but only handle instances of the specified struct.
 		   finally {statements}  Always execute even if exception thrown.
 		call expr;               Evaluate expression and discard result.
 		set [ arr idx ] = expr;  Variable/Array assignment (same as let).
