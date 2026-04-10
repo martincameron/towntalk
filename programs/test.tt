@@ -11,7 +11,7 @@ const ELE = ${ ( * ) };
 const TAB = "\0\0\0\1\0";
 
 struct struc {
-	a,b,c,d,e;
+	a,b,c,d, ( struc ) e;
 };
 
 struct exten( struc ) {
@@ -756,9 +756,12 @@ function testunpack() {
 
 function teststruct() {
 	var ( exten ) obj = $new( exten );
+	let obj.e = $new( struc );
 	let exten.f( obj ) = "a";
 	let exten.f( obj ) = 1;
 	let obj.g = 2;
+	let obj.e.a = "e.a";
+	let exten.e.b( obj ) = "e.b";
 	call assert_equals( 5, $len( struc ), ${-} );
 	call assert_equals( 7, $len( exten ), ${-} );
 	call assert_equals( 0, struc.a, ${-} );
@@ -767,26 +770,31 @@ function teststruct() {
 	call assert_equals( 7, $len( $new( exten ) ), ${-} );
 	call assert_equals( 1, exten.f( obj ), ${-} );
 	call assert_equals( 2, obj.g, ${-} );
+	call assert_equals( "e.a", obj.e.a, ${-} );
+	call assert_equals( "e.a" struc.e.a( obj ), ${-} );
+	call assert_equals( "e.b", obj.e.b, ${-} );
 	call assert_equals( "[exten]", obj, ${-} );
 	call assert_throws( "Field 'struc.xxx' not declared", ${ () { call struc.xxx; } } );
 	call assert_throws( "Wrong number", ${ () { call struc.a( 0 0 ); } } );
 	call assert_throws( "Not an instance", ${ () { call struc.a( 0 ); } } );
 	call assert_throws( "Not an instance", ${ () { call exten.g( $new( struc ) ); } } );
 	call assert_throws( "Undeclared", ${ () { set struc( 0 ) = 0; } } );
-	call assert_throws( "Field 'struc.' not", ${ () { set struc.( 0 ) = 0; } } );
-	call assert_throws( "Field 'struc.xxx' not declared", ${ () { set struc.xxx( 0 ) = 0; } } );
+	call assert_throws( "Undeclared", ${ () { set struc.( 0 ) = 0; } } );
+	call assert_throws( "Field 'xxx' not declared", ${ () { set struc.xxx( 0 ) = 0; } } );
 	call assert_throws( "Invalid", ${ () { set struc.a() = 0; } } );
 	call assert_throws( "Not an instance", ${ () { set struc.a( 0 ) = 0; } } );
 	call assert_throws( "Not an instance", ${ () { set exten.g( $new( struc ) ) = 0; } } );
 	call assert_throws( "Structure 'xxx' not", ${ () { var ( xxx ) a; } } );
 	call assert_throws( "Expression 'p.xxx' has no", ${ ( p ) { call p.xxx; } } );
-	call assert_throws( "Field not declared", ${ ( ( exten ) p ) { call p.xxx; } } );
+	call assert_throws( "Field 'xxx' not declared", ${ ( ( exten ) p ) { call p.xxx; } } );
 	call assert_throws( "Expression 'a.xxx' has no", ${ () { call a.xxx; } } );
-	call assert_throws( "Field not declared", ${ () { call ext.xxx; } } );
+	call assert_throws( "Field 'xxx' not declared", ${ () { call ext.xxx; } } );
 	call assert_throws( "Variable 'p' has no", ${ ( p ) { let p.xxx = 1; } } );
-	call assert_throws( "Field 'p.xxx' not declared", ${ ( ( exten ) p ) { let p.xxx = 1; } } );
+	call assert_throws( "Field 'xxx' not declared", ${ ( ( exten ) p ) { let p.xxx = 1; } } );
 	call assert_throws( "Variable 'a' has no", ${ () { let a.xxx = 1; } } );
-	call assert_throws( "Field 'ext.xxx' not declared", ${ () { let ext.xxx = 1; } } );
+	call assert_throws( "Field 'xxx' not declared", ${ () { let ext.xxx = 1; } } );
+	call assert_throws( "Field 'a.a' has no", ${ () { var ( struc ) s; return s.a.a; } } );
+	call assert_throws( "Unexpected ':'", ${ () { let struc.e.a:( 0 ) = 0; } } );
 }
 
 function testfuncref() {
@@ -979,13 +987,16 @@ function testthiscall() {
 	call assert_equals( 3, :ext.g( 3 ), ${-} );
 	call assert_equals( 3, ext.f, ${-} );
 	call assert_equals( 4 :( $function( ${ () { return ?( 1 :obj.g( 4 ) :s.a( 3 ) ); } } ) ), ${-} );
+	let [ obj exten.e ] = $new( struc $function( ${ ( this ) { return "e.a"; } } ) );
+	call assert_equals( "e.a", :obj.e.a(), ${-} );
+	call assert_equals( "e.a", :struc.e.a( obj ), ${-} );
 	call assert_throws( "Not an instance", ${ () { call :exten.g( 0 ); } } );
 	call assert_throws( "Not an instance", ${ () { call :exten.g( $array( 0 ) ); } } );
 	call assert_throws( "Not a function", ${ () { call :exten.g( $array( exten ) ); } } );
 	call assert_throws( "Incorrect number of parameters", ${ () { call :ext.g(); } } );
 	call assert_throws( "Undeclared", ${ () { call :x(); } } );
 	call assert_throws( "Undeclared", ${ () { call :exten(); } } );
-	call assert_throws( "Field 'exten.x' not declared", ${ () { call :exten.x(); } } );
+	call assert_throws( "Field 'x' not declared", ${ () { call :exten.x( 0 ); } } );
 	call assert_throws( "Expected '('", ${ () { call :exten.g; } } );
 	call assert_throws( "Expected expression", ${ () { call :exten.g(); } } );
 }
@@ -993,13 +1004,18 @@ function testthiscall() {
 function testmembercall() {
 	var ( exten ) obj = $new( exten );
 	let obj.a = 1, obj.g = 2;
+	let obj.e = $new( struc "e.a" );
 	call assert_equals( 1, obj:geta(), ${-} );
 	call assert_equals( 2, obj:getg(), ${-} );
 	call assert_equals( 0, ext:geta(), ${-} );
+	call assert_equals( "e.a", obj.e:geta(), ${-} );
+	call assert_equals( "e.a", exten.e:geta( obj ), ${-} );
+	call assert_equals( 1, exten!:geta( obj ), ${-} );
 	call assert_throws( "Expression", ${ () { var x; call x:xxx(); } } );
 	call assert_throws( "Member function", ${ () { var ( exten ) x; call x:xxx(); } } );
 	call assert_throws( "Expected '('", ${ () { var ( exten ) x; call x:geta; } } );
 	call assert_throws( "Wrong number", ${ () { var ( exten ) x; call x:geta(0); } } );
+	#call assert_throws( "Wrong number", ${ () { var ( exten ) x; call exten:geta(); } } );
 }
 
 function testtype() {

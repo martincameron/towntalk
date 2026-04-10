@@ -65,6 +65,7 @@
 		global [ a expr ];       Global variable initialized with array of specified length.
 		struct s { a,b,c }       Enumeration or layout for typed arrays.
 		struct t( s ) { d,e,f }  Struct with fields inherited from s.
+		struct u { ( s ) a }     Struct with field a associated with struct s.
 		function f(param){stmts} Function declaration.
 		program name{statements} Entry point function (no arguments).
 
@@ -76,8 +77,10 @@
 		let var = expr;          Assign expression to local or global variable.
 		let var! = expr;         Assign expression to global variable.
 		let [ arr idx ] = expr;  Assign expression to array at specified index.
-		let struc.f(arr) = expr; Assign expression to array at named field of specified struct.
-		let var.field = expr;    Assign expr to local or global array variable at named field of associated struct.
+		let struc.f(arr) = expr; Assign expression to named field of structured array.
+		let struc.f.g(arr) = x;  Assign expression to named field of structured array obtained from arr via associated structs.
+		let var.field = expr;    Assign expr to named field of structured array in local or global variable using associated struct.
+		let var.f.g = expr;      Assign expr to named field of structured array obtained from variable via associated structs.
 		print expr;              Write number or string to standard output.
 		write expr;              Same as print, but do not add a newline.
 		error expr;              Same as print, but write to standard error.
@@ -121,14 +124,21 @@
 		[arr idx]                Array element.
 		struct or struct!        Structure reference.
 		struct.field             Index of struct field.
-		struct.field(array)      Value of specified field of structured array expression.
-		variable.field           Value of specified field of associated structure of local or global variable.
+		struct.field(array)      Value of specified field of structured array.
+		struct.f.g(array)        Value of specified field of structured array obtained via associated structs.
+		variable.field           Value of specified field of structured array in local or global variable using associated struct.
+		variable.f.g             Value of specified field of structured array obtained from variable via associated structs.
 		@function                Reference to declared function.
 		@(expr ...)              Recursive function call.
 		:(func expr ...)         Call function reference with specified args.
 		:struct.memb(this ...)   Call member-function. Equivalent to ":(struct.memb(this) this ...)", but this evaluated once.
+		:struct.f.memb(this ...) Call member-function obtained from instance of struct via associated structs.
 		:variable.member(...)    Call member-function using associated structure. Equivalent to ":struct.member(variable ...)".
+		:variable.f.memb(...)    Call member-function obtained from variable via associated structs.
+		struct:func(this ...)    Call static member-function of specified structure. Equivalent to "struct_func(this ...)".
+		struct.f:func(this ...)  Call static member-function obtained from instance of struct via associated structs.
 		variable:func(...)       Call static member-function using associated structure. Equivalent to "struct_func(variable ...)".
+		variable.field:func(...) call static member-function obtained via associated structs.
 		global!:func(...)        Call static member-function using associated structure of global variable.
 		`(expr operator ...)     Infix expression, eg `( 1 + 2 ). '(...) may also be used.
 		+(num num ...)           Addition.
@@ -216,6 +226,11 @@ struct global_assignment_statement {
 struct structure_statement {
 	struct statement stmt;
 	struct structure *structure;
+};
+
+struct member {
+	struct string str;
+	struct structure *struc;
 };
 
 /* The maximum integer value. */
@@ -330,6 +345,21 @@ struct string* new_string_value( char *source ) {
 		strcpy( str->string, source );
 	}
 	return str;
+}
+
+static struct member* new_member_value( char *field, struct structure *struc ) {
+	int length = strlen( field );
+	struct member *memb = malloc( sizeof( struct member ) + sizeof( char ) * ( length + 1 ) );
+	if( memb ) {
+		memset( memb, 0, sizeof( struct string ) );
+		memb->str.string = ( char * ) &memb[ 1 ];
+		strcpy( memb->str.string, field );
+		memb->str.string[ length ] = 0;
+		memb->str.reference_count = 1;
+		memb->str.length = length;
+		memb->struc = struc;
+	}
+	return memb;
 }
 
 /* Return a 5-bit hash-code to be used for case-insensitively indexing the specified string. */
@@ -992,6 +1022,26 @@ static int get_string_list_index( struct string_list *list, char *value ) {
 		idx = -1;
 	}
 	return idx;
+}
+
+static struct string* get_string_list_item( struct string_list *list, char *value, int value_len, int *idx_ref ) {
+	int idx = 0;
+	struct string *item;
+	while( list ) {
+		item = list->str;
+		if( item->length == value_len && strncmp( item->string, value, value_len ) == 0 ) {
+			if( idx_ref ) {
+				*idx_ref = idx;
+			}
+			return item;
+		}
+		idx++;
+		list = list->next;
+	}
+	if( idx_ref ) {
+		*idx_ref = -1;
+	}
+	return NULL;
 }
 
 /* Assign an uncatchable exception with the specified exit code and message to vars and return EXCEPTION. */
@@ -3985,50 +4035,168 @@ static struct element* parse_index_expression( struct element *elem,
 	return elem->next;
 }
 
-static struct element* parse_struct_expression( struct element *elem,
-	struct function *func, struct variables *vars, struct structure *struc, struct expression *prev, char *message ) {
-	int idx, count;
-	struct element *next = elem->next;
-	char *field = field_end( elem->str.string, "!." );
-	struct expression param = { 0 }, *expr = calloc( 1, sizeof( struct value_expression ) );
-	if( expr ) {
-		prev->next = expr;
-		expr->line = elem->line;
-		( ( struct value_expression * ) expr )->str = &struc->str;
-		if( field[ 0 ] == '!' && !field[ 1 ] ) {
-			field++;
+static struct expression* create_member_expression( struct expression *src, struct structure *struc,
+	char *field, struct structure **assign_struct, int *assign_idx, char **member_func, char *message ) {
+	struct expression *expr;
+	struct member *memb;
+	char *end;
+	int idx;
+	while( field[ 0 ] && field[ 0 ] != ':' && message[ 0 ] == 0 ) {
+		end = field_end( field, ".:" );
+		memb = ( struct member * ) get_string_list_item( struc->fields, field, end - field, &idx );
+		if( idx >= 0 ) {
+			if( ( end[ 0 ] == 0 || end[ 0 ] == ':' ) && assign_struct ) {
+				*assign_struct = struc;
+				*assign_idx = idx;
+			} else {
+				expr = calloc( 1, sizeof( struct value_expression ) );
+				if( expr ) {
+					expr->line = src->line;
+					expr->index = idx;
+					( ( struct value_expression * ) expr )->str = &struc->str;
+					( ( struct value_expression * ) expr )->num = idx;
+					expr->parameters = src;
+					expr->evaluate = evaluate_member_expression;
+					if( end[ 0 ] == '.' && end[ 1 ] ) {
+						end++;
+					}
+					src = expr;
+				} else {
+					strcpy( message, OUT_OF_MEMORY );
+				}
+			}
+			struc = memb->struc;
+			if( end[ 0 ] && end[ 0 ] != ':' && struc == NULL ) {
+				sprintf( message, "Field '%.64s' has no associated structure on line %d.", field, src->line );
+			}
+			field = end;
+		} else {
+			sprintf( message, "Field '%.64s' not declared on line %d.", field, src->line );
 		}
-		if( field[ 0 ] ) {
-			idx = get_string_list_index( struc->fields, &field[ 1 ] );
-			if( idx >= 0 ) {
-				expr->index = idx;
-				( ( struct value_expression * ) expr )->num = idx;
+	}
+	if( field[ 0 ] == ':' && message[ 0 ] == 0 ) {
+		if( member_func ) {
+			*member_func = &field[ 1 ];
+		} else {
+			sprintf( message, "Unexpected '%.64s' on line %d.", field, src->line );
+		}
+	}
+	return src;
+}
+
+static struct element* parse_member_call_expression( struct structure *struc, struct expression *this, char *memb,
+	struct element *elem, struct element *params, struct function *func, struct variables *vars, struct expression *prev, char *message ) {
+	char qname[ 128 ];
+	int num_params, qlen, mlen = strlen( memb );
+	struct expression *expr;
+	struct function *decl = NULL;
+	struct element *next = elem->next;
+	if( struc ) {
+		while( struc && decl == NULL ) {
+			qlen = struc->str.length + 1 + mlen;
+			if( qlen < 128 ) {
+				strcpy( qname, struc->str.string );
+				qname[ struc->str.length ] = '_';
+				strcpy( &qname[ struc->str.length + 1 ], memb );
+				decl = ( struct function * ) get_decl_indexed( func, qname, qlen, FUNCTION );
+			}
+			struc = struc->super;
+		}
+		if( decl ) {
+			expr = calloc( 1, sizeof( struct function_expression ) );
+			if( expr ) {
+				prev->next = expr;
+				expr->line = elem->line;
+				expr->parameters = this;
+				( ( struct function_expression * ) expr )->function = decl;
 				if( next && next->str.string[ 0 ] == '(' ) {
-					parse_expressions( next->child, func, vars, 0, &param, &count, message );
-					expr->parameters = param.next;
+					if( params == next ) {
+						params = next->child;
+					}
+					parse_expressions( params, func, vars, 0, this, &num_params, message );
 					if( message[ 0 ] == 0 ) {
-						if( count == 1 ) {
-							expr->evaluate = evaluate_member_expression;
+						if( num_params + 1 == ( ( struct function_expression * ) expr )->function->num_parameters ) {
+							expr->evaluate = evaluate_call_expression;
 							next = next->next;
 						} else {
-							sprintf( message, "Wrong number of arguments to struct expression on line %d.", next->line );
+							sprintf( message, "Wrong number of arguments to '%.64s()' on line %d.", decl->str.string, next->line );
 						}
 					}
 				} else {
-					expr->evaluate = evaluate_number_literal_expression;
+					sprintf( message, "Expected '(' after function name on line %d.", elem->line );
 				}
 			} else {
-				sprintf( message, "Field '%.64s' not declared on line %d.", elem->str.string, elem->line );
+				strcpy( message, OUT_OF_MEMORY );
 			}
 		} else {
-			idx = ARRAY + 1;
-			expr->index = idx;
-			( ( struct value_expression * ) expr )->num = idx;
-			struc->str.reference_count++;
-			expr->evaluate = evaluate_string_literal_expression;
+			sprintf( message, "Member function not found for expression '%.64s' on line %d.", elem->str.string, elem->line );
 		}
 	} else {
-		strcpy( message, OUT_OF_MEMORY );
+		sprintf( message, "Expression '%.64s' has no associated structure on line %d.", elem->str.string, elem->line );
+	}
+	return next;
+}
+
+static struct element* parse_struct_expression( struct element *elem,
+	struct function *func, struct variables *vars, struct structure *struc, struct expression *prev, char *message ) {
+	int idx;
+	struct expression *expr;
+	char *member_func = NULL;
+	struct element *next = elem->next, *child;
+	char *field = field_end( elem->str.string, "!.:" );
+	if( field[ 0 ] == '!' && ( field[ 1 ] == 0 || field[ 1 ] == ':' ) ) {
+		field++;
+	}
+	if( field[ 0 ] && next && next->str.string[ 0 ] == '(' ) {
+		prev->next = NULL;
+		child = next->child;
+		if( child ) {
+			child = parse_expression( child, func, vars, prev, message );
+			if( message[ 0 ] == 0 ) {
+				if( field[ 0 ] == ':' ) {
+					member_func = &field[ 1 ];
+				} else {
+					prev->next = create_member_expression( prev->next, struc, &field[ 1 ], NULL, NULL, &member_func, message );
+					if( message[ 0 ] == 0 ) {
+						struc = ( struct structure * ) ( ( struct value_expression * ) prev->next )->str;
+					}
+				}
+				if( message[ 0 ] == 0 && member_func ) {
+					return parse_member_call_expression( struc, prev->next, member_func, elem, child, func, vars, prev, message );
+				}
+			}
+		}
+		if( message[ 0 ] == 0 ) {
+			if( prev->next && child == NULL ) {
+				next = next->next;
+			} else {
+				sprintf( message, "Wrong number of arguments to struct expression on line %d.", next->line );
+			}
+		}
+	} else {
+		expr = calloc( 1, sizeof( struct value_expression ) );
+		if( expr ) {
+			prev->next = expr;
+			expr->line = elem->line;
+			if( field[ 0 ] ) {
+				idx = get_string_list_index( struc->fields, &field[ 1 ] );
+				if( idx >= 0 ) {
+					expr->index = idx;
+					( ( struct value_expression * ) expr )->num = idx;
+					expr->evaluate = evaluate_number_literal_expression;
+				} else {
+					sprintf( message, "Field '%.64s' not declared on line %d.", elem->str.string, elem->line );
+				}
+			} else {
+				expr->index = STRUCT;
+				struc->str.reference_count++;
+				( ( struct value_expression * ) expr )->str = &struc->str;
+				( ( struct value_expression * ) expr )->num = STRUCT;
+				expr->evaluate = evaluate_string_literal_expression;
+			}
+		} else {
+			strcpy( message, OUT_OF_MEMORY );
+		}
 	}
 	return next;
 }
@@ -4094,55 +4262,54 @@ static struct element* parse_thiscall_expression( struct element *elem,
 			}
 		}
 		field = field_end( elem->str.string, "!." );
-		if( struc && field[ 0 ] ) {
-			( ( struct value_expression * ) expr )->str = &struc->str;
-			idx = get_string_list_index( struc->fields, &field[ 1 ] );
-			if( idx >= 0 ) {
-				if( next && next->str.string[ 0 ] == '(' ) {
-					parse_expressions( next->child, func, vars, 0, &param, &count, message );
-					expr->parameters = param.next;
-					if( local || captured || global ) {
-						this = calloc( 1, sizeof( struct value_expression ) );
-						if( this ) {
-							if( local ) {
-								this->index = local->index;
-								this->evaluate = evaluate_local;
-							} else if( captured ) {
-								var = &vars->locals[ captured->index ];
-								this->index = ( long_int ) var->number_value;
-								( ( struct value_expression * ) this )->num = var->number_value;
-								if( var->string_value ) {
-									var->string_value->reference_count++;
-									( ( struct value_expression * ) this )->str = var->string_value;
-									this->evaluate = evaluate_string_literal_expression;
-								} else {
-									this->evaluate = evaluate_number_literal_expression;
-								}
+		if( struc && field[ 0 ] && field[ 1 ] ) {
+			if( next && next->str.string[ 0 ] == '(' ) {
+				parse_expressions( next->child, func, vars, 0, &param, &count, message );
+				expr->parameters = param.next;
+				if( message[ 0 ] == 0 && ( local || captured || global ) ) {
+					this = calloc( 1, sizeof( struct value_expression ) );
+					if( this ) {
+						if( local ) {
+							this->index = local->index;
+							this->evaluate = evaluate_local;
+						} else if( captured ) {
+							var = &vars->locals[ captured->index ];
+							this->index = ( long_int ) var->number_value;
+							( ( struct value_expression * ) this )->num = var->number_value;
+							if( var->string_value ) {
+								var->string_value->reference_count++;
+								( ( struct value_expression * ) this )->str = var->string_value;
+								this->evaluate = evaluate_string_literal_expression;
 							} else {
-								( ( struct value_expression * ) this )->str = &global->str;
-								this->evaluate = evaluate_global;
+								this->evaluate = evaluate_number_literal_expression;
 							}
-							this->next = expr->parameters;
-							expr->parameters = this;
-							count++;
 						} else {
-							strcpy( message, OUT_OF_MEMORY );
+							( ( struct value_expression * ) this )->str = &global->str;
+							this->evaluate = evaluate_global;
 						}
+						this->line = elem->line;
+						this->next = expr->parameters;
+						expr->parameters = this;
+						count++;
+					} else {
+						strcpy( message, OUT_OF_MEMORY );
 					}
-					if( message[ 0 ] == 0 ) {
-						if( count > 0 && count < 256 ) {
+				}
+				if( message[ 0 ] == 0 ) {
+					if( count > 0 && count < 256 ) {
+						expr->parameters = create_member_expression( expr->parameters, struc, &field[ 1 ], &struc, &idx, NULL, message );
+						( ( struct value_expression * ) expr )->str = &struc->str;
+						if( message[ 0 ] == 0 ) {
 							expr->index = ( ( idx & 0x7FFFFF ) << 8 ) | count;
 							expr->evaluate = evaluate_thiscall_expression;
 							next = next->next;
-						} else {
-							sprintf( message, "Expected expression after '(' on line %d.", next->line );
 						}
+					} else {
+						sprintf( message, "Expected expression after '(' on line %d.", next->line );
 					}
-				} else {
-					sprintf( message, "Expected '(' after '%.64s' on line %d.", elem->str.string, elem->line );
 				}
 			} else {
-				sprintf( message, "Field '%.64s' not declared on line %d.", &elem->str.string[ 1 ], elem->line );
+				sprintf( message, "Expected '(' after '%.64s' on line %d.", elem->str.string, elem->line );
 			}
 		} else {
 			sprintf( message, "Undeclared variable, structure or field '%.64s' on line %d.", elem->str.string, elem->line );
@@ -4153,77 +4320,15 @@ static struct element* parse_thiscall_expression( struct element *elem,
 	return next;
 }
 
-static struct element* parse_member_call_expression( struct structure *struc, struct expression *this,
-	char *memb, struct element *elem, struct function *func, struct variables *vars, struct expression *prev, char *message ) {
-	char qname[ 128 ];
-	int num_params, qlen, mlen = strlen( memb );
-	struct expression *expr;
-	struct function *decl = NULL;
-	struct element *next = elem->next;
-	if( struc ) {
-		while( struc && decl == NULL ) {
-			qlen = struc->str.length + 1 + mlen;
-			if( qlen < 128 ) {
-				strcpy( qname, struc->str.string );
-				qname[ struc->str.length ] = '_';
-				strcpy( &qname[ struc->str.length + 1 ], memb );
-				decl = ( struct function * ) get_decl_indexed( func, qname, qlen, FUNCTION );
-			}
-			struc = struc->super;
-		}
-		if( decl ) {
-			expr = calloc( 1, sizeof( struct function_expression ) );
-			if( expr ) {
-				prev->next = expr;
-				expr->line = elem->line;
-				expr->parameters = this;
-				( ( struct function_expression * ) expr )->function = decl;
-				if( next && next->str.string[ 0 ] == '(' ) {
-					parse_expressions( next->child, func, vars, 0, this, &num_params, message );
-					if( message[ 0 ] == 0 ) {
-						if( num_params + 1 == ( ( struct function_expression * ) expr )->function->num_parameters ) {
-							expr->evaluate = evaluate_call_expression;
-							next = next->next;
-						} else {
-							sprintf( message, "Wrong number of arguments to '%.64s()' on line %d.", decl->str.string, next->line );
-						}
-					}
-				} else {
-					sprintf( message, "Expected '(' after function name on line %d.", elem->line );
-				}
-			} else {
-				strcpy( message, OUT_OF_MEMORY );
-			}
-		} else {
-			sprintf( message, "Member function not found for expression '%.64s' on line %d.", elem->str.string, elem->line );
-		}
-	} else {
-		sprintf( message, "Expression '%.64s' has no associated structure on line %d.", elem->str.string, elem->line );
-	}
-	return next;
-}
-
 static struct element* parse_member_expression( struct structure *struc, struct expression *this,
 	char *memb, struct element *elem, struct function *func, struct variables *vars, struct expression *prev, char *message ) {
 	struct element *next = elem->next;
-	struct expression *expr;
-	int idx;
+	char *member_func = NULL;
 	if( struc ) {
-		idx = get_string_list_index( struc->fields, memb );
-		if( idx >= 0 ) {
-			expr = calloc( 1, sizeof( struct value_expression ) );
-			if( expr ) {
-				prev->next = expr;
-				( ( struct value_expression * ) expr )->str = &struc->str;
-				expr->index = idx;
-				expr->line = elem->line;
-				expr->parameters = this;
-				expr->evaluate = evaluate_member_expression;
-			} else {
-				strcpy( message, OUT_OF_MEMORY );
-			}
-		} else {
-			sprintf( message, "Field not declared in expression '%.64s' on line %d.", elem->str.string, elem->line );
+		prev->next = this = create_member_expression( this, struc, memb, NULL, NULL, &member_func, message );
+		if( message[ 0 ] == 0 && member_func ) {
+			struc = ( struct structure * ) ( ( struct value_expression * ) this )->str;
+			return parse_member_call_expression( struc, this, member_func, elem, next, func, vars, prev, message );
 		}
 	} else {
 		sprintf( message, "Expression '%.64s' has no associated structure on line %d.", elem->str.string, elem->line );
@@ -4244,7 +4349,7 @@ static struct element* parse_local_expression( struct element *elem,
 		if( field[ 0 ] == '.' ) {
 			next = parse_member_expression( local->type, expr, &field[ 1 ], elem, func, vars, prev, message );
 		} else if( field[ 0 ] == ':' ) {
-			next = parse_member_call_expression( local->type, expr, &field[ 1 ], elem, func, vars, prev, message );
+			next = parse_member_call_expression( local->type, expr, &field[ 1 ], elem, next, func, vars, prev, message );
 		} else if( !strcmp( field, "++" ) ) {
 			expr->evaluate = evaluate_local_post_inc;
 		} else if( !strcmp( field, "--" ) ) {
@@ -4279,7 +4384,7 @@ static struct element* parse_capture_expression( struct element *elem,
 		if( field[ 0 ] == '.' ) {
 			next = parse_member_expression( local->type, expr, &field[ 1 ], elem, func, vars, prev, message );
 		} else if( field[ 0 ] == ':' ) {
-			next = parse_member_call_expression( local->type, expr, &field[ 1 ], elem, func, vars, prev, message );
+			next = parse_member_call_expression( local->type, expr, &field[ 1 ], elem, next, func, vars, prev, message );
 		}
 	} else {
 		strcpy( message, OUT_OF_MEMORY );
@@ -4309,9 +4414,9 @@ static struct element* parse_global_expression( struct element *elem, struct fun
 		if( field[ 0 ] == '.' || ( field[ 0 ] == '!' && field[ 1 ] && field[ 1 ] != ':' ) ) {
 			next = parse_member_expression( global->type, expr, &field[ 1 ], elem, func, vars, prev, message );
 		} else if( field[ 0 ] == ':' ) {
-			next = parse_member_call_expression( global->type, expr, &field[ 1 ], elem, func, vars, prev, message );
+			next = parse_member_call_expression( global->type, expr, &field[ 1 ], elem, next, func, vars, prev, message );
 		} else if( field[ 0 ] == '!' && field[ 1 ] == ':' ) {
-			next = parse_member_call_expression( global->type, expr, &field[ 2 ], elem, func, vars, prev, message );
+			next = parse_member_call_expression( global->type, expr, &field[ 2 ], elem, next, func, vars, prev, message );
 		}
 	} else {
 		strcpy( message, OUT_OF_MEMORY );
@@ -4643,31 +4748,30 @@ static struct element* parse_struct_assignment( struct element *elem,
 		prev->head.next = ( struct expression * ) stmt;
 		struc = ( struct structure * ) find_decl( func, next->str.string, STRUCT, "!." );
 		field = field_end( next->str.string, "!." );
-		if( struc && field[ 0 ] ) {
-			( ( struct structure_statement * ) stmt )->structure = struc;
-			idx = get_string_list_index( struc->fields, &field[ 1 ] );
-			if( idx >= 0 ) {
-				next = next->next;
-				expr.next = NULL;
-				parse_expressions( next->child, func, vars, 0, &expr, &count, message );
-				stmt->head.parameters = expr.next;
-				if( message[ 0 ] == 0 ) {
-					if( count == 1 ) {
+		if( struc && field[ 0 ] && field[ 1 ] ) {
+			next = next->next;
+			expr.next = NULL;
+			parse_expressions( next->child, func, vars, 0, &expr, &count, message );
+			stmt->head.parameters = expr.next;
+			if( message[ 0 ] == 0 ) {
+				if( count == 1 ) {
+					expr.next = create_member_expression( expr.next, struc, &field[ 1 ], &struc, &idx, NULL, message );
+					stmt->head.parameters = expr.next;
+					if( message[ 0 ] == 0 ) {
+						( ( struct structure_statement * ) stmt )->structure = struc;
 						next = parse_expression( next->next->next, func, vars, expr.next, message );
 						if( expr.next->next ) {
 							stmt->head.line = elem->line;
 							stmt->head.index = idx;
 							stmt->head.evaluate = execute_struct_assignment;
 						}
-					} else {
-						sprintf( message, "Invalid structure assignment on line %d.", next->line );
 					}
+				} else {
+					sprintf( message, "Invalid structure assignment on line %d.", next->line );
 				}
-			} else {
-				sprintf( message, "Field '%.64s' not declared on line %d.", next->str.string, next->line );
 			}
 		} else {
-			sprintf( message, "Undeclared structure or field '%.64s' on line %d.", next->str.string, next->line );
+			sprintf( message, "Undeclared structure or missing field '%.64s' on line %d.", next->str.string, next->line );
 		}
 	} else {
 		strcpy( message, OUT_OF_MEMORY );
@@ -4688,25 +4792,25 @@ static struct element* parse_local_assignment( struct element *elem,
 		if( stmt ) {
 			prev->head.next = ( struct expression * ) stmt;
 			stmt->head.line = elem->line;
-			( ( struct structure_statement * ) stmt )->structure = struc;
-			idx = get_string_list_index( struc->fields, &field[ 1 ] );
-			if( idx >= 0 ) {
-				stmt->head.index = idx;
-				expr.next = calloc( 1, sizeof( struct expression ) );
+			expr.next = calloc( 1, sizeof( struct expression ) );
+			stmt->head.parameters = expr.next;
+			if( expr.next ) {
+				expr.next->line = elem->line;
+				expr.next->index = local->index;
+				expr.next->evaluate = evaluate_local;
+				expr.next = create_member_expression( expr.next, struc, &field[ 1 ], &struc, &idx, NULL, message );
 				stmt->head.parameters = expr.next;
-				if( expr.next ) {
-					expr.next->line = elem->line;
-					expr.next->index = local->index;
-					expr.next->evaluate = evaluate_local;
+				if( message[ 0 ] == 0 ) {
+					( ( struct structure_statement * ) stmt )->structure = struc;
 					next = parse_expression( next->next->next, func, vars, expr.next, message );
 					if( expr.next->next ) {
+						stmt->head.line = elem->line;
+						stmt->head.index = idx;
 						stmt->head.evaluate = execute_struct_assignment;
 					}
-				} else {
-					strcpy( message, OUT_OF_MEMORY );
 				}
 			} else {
-				sprintf( message, "Field '%.64s' not declared on line %d.", elem->str.string, elem->line );
+				strcpy( message, OUT_OF_MEMORY );
 			}
 		} else {
 			strcpy( message, OUT_OF_MEMORY );
@@ -4748,25 +4852,25 @@ static struct element* parse_global_assignment( struct element *elem,
 		if( stmt ) {
 			prev->head.next = ( struct expression * ) stmt;
 			stmt->head.line = elem->line;
-			( ( struct structure_statement * ) stmt )->structure = struc;
-			idx = get_string_list_index( struc->fields, &field[ 1 ] );
-			if( idx >= 0 ) {
-				stmt->head.index = idx;
-				expr.next = calloc( 1, sizeof( struct value_expression ) );
+			expr.next = calloc( 1, sizeof( struct value_expression ) );
+			stmt->head.parameters = expr.next;
+			if( expr.next ) {
+				expr.next->line = elem->line;
+				expr.next->evaluate = evaluate_global;
+				( ( struct value_expression * ) expr.next )->str = &global->str;
+				expr.next = create_member_expression( expr.next, struc, &field[ 1 ], &struc, &idx, NULL, message );
 				stmt->head.parameters = expr.next;
-				if( expr.next ) {
-					expr.next->line = elem->line;
-					expr.next->evaluate = evaluate_global;
-					( ( struct value_expression * ) expr.next )->str = &global->str;
+				if( message[ 0 ] == 0 ) {
+					( ( struct structure_statement * ) stmt )->structure = struc;
 					next = parse_expression( next->next->next, func, vars, expr.next, message );
 					if( expr.next->next ) {
+						stmt->head.line = elem->line;
+						stmt->head.index = idx;
 						stmt->head.evaluate = execute_struct_assignment;
 					}
-				} else {
-					strcpy( message, OUT_OF_MEMORY );
 				}
 			} else {
-				sprintf( message, "Field '%.64s' not declared on line %d.", elem->str.string, elem->line );
+				strcpy( message, OUT_OF_MEMORY );
 			}
 		} else {
 			strcpy( message, OUT_OF_MEMORY );
@@ -5770,16 +5874,36 @@ static struct element* parse_import( struct element *elem,
 	return next;
 }
 
-static int add_structure_field( struct structure *struc, struct element *elem, char *message ) {
+static struct element* add_structure_field( struct structure *struc, struct element *elem, struct function *func, char *message ) {
 	struct string *field;
-	if( validate_name( elem, message ) ) {
+	struct element *child;
+	struct structure *field_struc = NULL;
+	if( elem->str.string[ 0 ] == '(' ) {
+		child = elem->child;
+		if( child && child->next == NULL ) {
+			field_struc = ( struct structure * ) find_decl( func, child->str.string, STRUCT, NULL );
+			if( field_struc ) {
+				elem = elem->next;
+			} else {
+				sprintf( message, "Structure '%.64s' not declared on line %d.", child->str.string, child->line );
+			}
+		} else {
+			sprintf( message, "Invalid field definition on line %d.", elem->line );
+		}
+	}
+	if( message[ 0 ] == 0 && validate_name( elem, message ) ) {
 		if( struc->fields && get_string_list_index( struc->fields, elem->str.string ) >= 0 ) {
 			sprintf( message, "Field '%.64s' already defined on line %d.", elem->str.string, elem->line );
 		} else {
-			field = new_string_value( elem->str.string );
+			field = ( struct string * ) new_member_value( elem->str.string, field_struc );
 			if( field ) {
 				if( append_string_list( &struc->fields, &struc->fields_tail, field ) ) {
-					if( struc->length++ >= 32768 ) {
+					if( struc->length++ < 32768 ) {
+						elem = elem->next;
+						if( elem && elem->str.string[ 0 ] == ',' ) {
+							elem = elem->next;
+						}
+					} else {
 						sprintf( message, "Too many fields on line %d.", elem->line );
 					}
 				} else {
@@ -5791,7 +5915,7 @@ static int add_structure_field( struct structure *struc, struct element *elem, c
 			}
 		}
 	}
-	return message[ 0 ] == 0;
+	return elem;
 }
 
 static struct element* skip_comments( struct element *elem, char *message ) {
@@ -5902,11 +6026,8 @@ static struct element* parse_struct_declaration( struct element *elem,
 									child = parse_struct_member_function( struct_name, child, func, message );
 								}
 							}
-						} else if( add_structure_field( struc, child, message ) ) {
-							child = child->next;
-							if( child && child->str.string[ 0 ] == ',' ) {
-								child = child->next;
-							}
+						} else {
+							child = add_structure_field( struc, child, func, message );
 						}
 					}
 				}
