@@ -62,11 +62,12 @@ function assert_throws( expected, elem ) {
 		call :( $function( elem ) );
 	} catch err {
 		let err = $str( err );
-		if <e( $len( expected ) $len( err ) ) {
-			let err = $sub( err 0 $len( expected ) );
+		if &&( <( $len( expected ) $len( err ) ) $eq( expected $sub( err 0 $len( expected ) ) ) ) {
+			return 0;
 		}
+		return assert_equals( expected err elem );
 	}
-	call assert_equals( expected, err, elem );
+	throw $str( "Assertion failed on line " $line( elem ) ". Exception '" expected "' not thrown." );
 }
 
 function except( elem ) {
@@ -795,6 +796,8 @@ function teststruct() {
 	call assert_throws( "Field 'xxx' not declared", ${ () { let ext.xxx = 1; } } );
 	call assert_throws( "Field 'a.a' has no", ${ () { var ( struc ) s; return s.a.a; } } );
 	call assert_throws( "Unexpected ':'", ${ () { let struc.e.a:( 0 ) = 0; } } );
+	call assert_throws( "Unexpected '.'", ${ () { let struc.e.a.( 0 ) = 0; } } );
+	call assert_throws( "Unexpected '.e", ${ () { let struc..e( 0 ) = 0; } } );
 }
 
 function testfuncref() {

@@ -2515,7 +2515,7 @@ static struct string* find_decl( struct function *func, char *name, enum referen
 	char qname[ 128 ];
 	struct string *str;
 	struct string_list *imports = NULL;
-	int qlen, flen = terminators ? field_end( name, terminators ) - name : strlen( name );
+	int qlen, flen = terminators ? field_end( name, terminators ) - name : ( int ) strlen( name );
 	if( func->file->type == SOURCE ) {
 		imports = ( ( struct source * ) func->file )->imports;
 	}
@@ -4035,18 +4035,19 @@ static struct element* parse_index_expression( struct element *elem,
 	return elem->next;
 }
 
-static struct expression* create_member_expression( struct expression *src, struct structure *struc,
-	char *field, struct structure **assign_struct, int *assign_idx, char **member_func, char *message ) {
+static struct expression* create_member_expression( struct expression *src,
+	struct structure **struct_ref, char *field, int *assign_idx, char **member_func, char *message ) {
+	struct structure *struc = *struct_ref;
 	struct expression *expr;
 	struct member *memb;
 	char *end;
 	int idx;
-	while( field[ 0 ] && field[ 0 ] != ':' && message[ 0 ] == 0 ) {
+	while( field[ 0 ] && field[ 0 ] != '.' && field[ 0 ] != ':' && message[ 0 ] == 0 ) {
 		end = field_end( field, ".:" );
 		memb = ( struct member * ) get_string_list_item( struc->fields, field, end - field, &idx );
 		if( idx >= 0 ) {
-			if( ( end[ 0 ] == 0 || end[ 0 ] == ':' ) && assign_struct ) {
-				*assign_struct = struc;
+			if( ( end[ 0 ] == 0 || end[ 0 ] == ':' ) && assign_idx ) {
+				*struct_ref = struc;
 				*assign_idx = idx;
 			} else {
 				expr = calloc( 1, sizeof( struct value_expression ) );
@@ -4057,25 +4058,26 @@ static struct expression* create_member_expression( struct expression *src, stru
 					( ( struct value_expression * ) expr )->num = idx;
 					expr->parameters = src;
 					expr->evaluate = evaluate_member_expression;
-					if( end[ 0 ] == '.' && end[ 1 ] ) {
+					if( end[ 0 ] == '.' && end[ 1 ] && end[ 1 ] != '.' && end[ 1 ] != ':' ) {
 						end++;
 					}
 					src = expr;
+					struc = memb->struc;
+					if( struc == NULL && end[ 0 ] && end[ 0 ] != '.' ) {
+						sprintf( message, "Field '%.64s' has no associated structure on line %d.", field, src->line );
+					}
 				} else {
 					strcpy( message, OUT_OF_MEMORY );
 				}
-			}
-			struc = memb->struc;
-			if( end[ 0 ] && end[ 0 ] != ':' && struc == NULL ) {
-				sprintf( message, "Field '%.64s' has no associated structure on line %d.", field, src->line );
 			}
 			field = end;
 		} else {
 			sprintf( message, "Field '%.64s' not declared on line %d.", field, src->line );
 		}
 	}
-	if( field[ 0 ] == ':' && message[ 0 ] == 0 ) {
-		if( member_func ) {
+	if( message[ 0 ] == 0 && field[ 0 ] ) {
+		if( field[ 0 ] == ':' && member_func ) {
+			*struct_ref = struc;
 			*member_func = &field[ 1 ];
 		} else {
 			sprintf( message, "Unexpected '%.64s' on line %d.", field, src->line );
@@ -4156,10 +4158,7 @@ static struct element* parse_struct_expression( struct element *elem,
 				if( field[ 0 ] == ':' ) {
 					member_func = &field[ 1 ];
 				} else {
-					prev->next = create_member_expression( prev->next, struc, &field[ 1 ], NULL, NULL, &member_func, message );
-					if( message[ 0 ] == 0 ) {
-						struc = ( struct structure * ) ( ( struct value_expression * ) prev->next )->str;
-					}
+					prev->next = create_member_expression( prev->next, &struc, &field[ 1 ], NULL, &member_func, message );
 				}
 				if( message[ 0 ] == 0 && member_func ) {
 					return parse_member_call_expression( struc, prev->next, member_func, elem, child, func, vars, prev, message );
@@ -4297,7 +4296,7 @@ static struct element* parse_thiscall_expression( struct element *elem,
 				}
 				if( message[ 0 ] == 0 ) {
 					if( count > 0 && count < 256 ) {
-						expr->parameters = create_member_expression( expr->parameters, struc, &field[ 1 ], &struc, &idx, NULL, message );
+						expr->parameters = create_member_expression( expr->parameters, &struc, &field[ 1 ], &idx, NULL, message );
 						( ( struct value_expression * ) expr )->str = &struc->str;
 						if( message[ 0 ] == 0 ) {
 							expr->index = ( ( idx & 0x7FFFFF ) << 8 ) | count;
@@ -4325,9 +4324,8 @@ static struct element* parse_member_expression( struct structure *struc, struct 
 	struct element *next = elem->next;
 	char *member_func = NULL;
 	if( struc ) {
-		prev->next = this = create_member_expression( this, struc, memb, NULL, NULL, &member_func, message );
+		prev->next = this = create_member_expression( this, &struc, memb, NULL, &member_func, message );
 		if( message[ 0 ] == 0 && member_func ) {
-			struc = ( struct structure * ) ( ( struct value_expression * ) this )->str;
 			return parse_member_call_expression( struc, this, member_func, elem, next, func, vars, prev, message );
 		}
 	} else {
@@ -4755,7 +4753,7 @@ static struct element* parse_struct_assignment( struct element *elem,
 			stmt->head.parameters = expr.next;
 			if( message[ 0 ] == 0 ) {
 				if( count == 1 ) {
-					expr.next = create_member_expression( expr.next, struc, &field[ 1 ], &struc, &idx, NULL, message );
+					expr.next = create_member_expression( expr.next, &struc, &field[ 1 ], &idx, NULL, message );
 					stmt->head.parameters = expr.next;
 					if( message[ 0 ] == 0 ) {
 						( ( struct structure_statement * ) stmt )->structure = struc;
@@ -4798,7 +4796,7 @@ static struct element* parse_local_assignment( struct element *elem,
 				expr.next->line = elem->line;
 				expr.next->index = local->index;
 				expr.next->evaluate = evaluate_local;
-				expr.next = create_member_expression( expr.next, struc, &field[ 1 ], &struc, &idx, NULL, message );
+				expr.next = create_member_expression( expr.next, &struc, &field[ 1 ], &idx, NULL, message );
 				stmt->head.parameters = expr.next;
 				if( message[ 0 ] == 0 ) {
 					( ( struct structure_statement * ) stmt )->structure = struc;
@@ -4858,7 +4856,7 @@ static struct element* parse_global_assignment( struct element *elem,
 				expr.next->line = elem->line;
 				expr.next->evaluate = evaluate_global;
 				( ( struct value_expression * ) expr.next )->str = &global->str;
-				expr.next = create_member_expression( expr.next, struc, &field[ 1 ], &struc, &idx, NULL, message );
+				expr.next = create_member_expression( expr.next, &struc, &field[ 1 ], &idx, NULL, message );
 				stmt->head.parameters = expr.next;
 				if( message[ 0 ] == 0 ) {
 					( ( struct structure_statement * ) stmt )->structure = struc;

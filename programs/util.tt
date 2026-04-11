@@ -456,18 +456,15 @@ library util {
 	// Throw an exception if the specified no-argument function does not throw an
 	// exception with a message that starts with the specified string when compiled and invoked.
 	function assert_throws( expected, func ) {
-		var err;
+		var err = "(No exception thrown)";
 		try {
 			call :( func );
-			let err = "(No exception thrown)";
 		} catch err {
 			let err = $str( err );
-			if <e( $len( expected ) $len( err ) ) {
-				let err = $sub( err 0 $len( expected ) );
+			if &&( <e( $len( expected ) $len( err ) ) $eq( expected $sub( err 0 $len( expected ) ) ) ) {
+				return 0;
 			}
 		}
-		if $cmp( expected err ) {
-			throw assertion_failed( expected err [ $trace( NULL ) 1 ] );
-		}
+		throw assertion_failed( expected err [ $trace( NULL ) 1 ] );
 	}
 }
