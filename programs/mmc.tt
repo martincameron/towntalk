@@ -1082,6 +1082,8 @@ library mmc {
 			if <>( this.pitch 0 ) {
 				var rate = waveform.sample_rate;
 				call waveform:adjust_pitch( _/( <<( this.pitch audiodata_FP_SHIFT ) 96 ) );
+				print $str( "Resampling instrument " instrument.index( this.parent )
+					" from " waveform.sample_rate "hz to " rate "hz." );
 				let waveform = waveform:resample_channel( 0 rate );
 			}
 			let instrument.audiodata( this.parent ) = waveform;
@@ -1433,6 +1435,7 @@ program compiler {
 		let module = new_module( $sub( mt_file 0 +( $endidx( mt_file "/\\" ) 1 ) ) );
 		call parse( $load( mt_file ) module );
 		save module:write() output;
+		print "Done.";
 	} else if &&( mod_file output ) {
 		print $str( "Decompiling '" mod_file "' to '" output "'."  );
 		let idx = +( $endidx( output "/\\" ) 1 );
@@ -1441,6 +1444,7 @@ program compiler {
 		call module:read( $load( mod_file ) );
 		save module:decompile( $str( $sub( output idx -( ?( >( end idx ) end $len( output ) ) idx ) ) "_" ),
 			$function( ${ ( name data ) { save data $str( module.resource_path name ); } } ) ) output;
+		print "Done.";
 	} else {
 		error $str( "Micromod Compiler! " VERSION );
 		error "          Compile: -mt input.mt -out output.mod";
