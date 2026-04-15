@@ -1256,6 +1256,7 @@ static enum result evaluate_seqtick_expression( struct expression *this,
 static enum result evaluate_seqmix_expression( struct expression *this,
 	struct variables *vars, struct variable *result ) {
 	int length, idx, end;
+	SDL_AudioStatus status = SDL_GetAudioStatus();
 	struct expression *parameter = this->parameters;
 	struct variable arr = { 0, NULL }, var = { 0, NULL };
 	struct fxenvironment *fxenv = ( struct fxenvironment * ) vars->func->env;
@@ -1264,7 +1265,7 @@ static enum result evaluate_seqmix_expression( struct expression *this,
 		if( arr.string_value && arr.string_value->type == ARRAY ) {
 			length = ( ( struct array * ) arr.string_value )->length;
 			SDL_LockAudio();
-			if( SDL_GetAudioStatus() == SDL_AUDIO_STOPPED ) {
+			if( status == SDL_AUDIO_STOPPED ) {
 				if( fxenv->tick_len < MIN_TICK_LEN ) {
 					fxenv->tick_len = DEFAULT_PERIOD * SAMPLE_RATE / 24000;
 				}
